@@ -66,6 +66,9 @@ class UserTenant(Base):
     )
     # Role name as used in casbin grouping policy: e.g. "owner", "admin", "member"
     role: Mapped[str] = mapped_column(String(64), nullable=False, default="member")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
 
     user: Mapped["User"] = relationship(back_populates="memberships")
     tenant: Mapped["Tenant"] = relationship(back_populates="memberships")

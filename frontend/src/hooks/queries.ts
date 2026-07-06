@@ -4,15 +4,19 @@ import {
   useQueryClient,
 } from "@tanstack/react-query";
 import {
+  addMember,
   createAgent,
   createTenant,
   deleteAgent,
   fetchAgents,
   fetchMe,
+  fetchMembers,
   fetchTenants,
+  removeMember,
   updateAgent,
+  updateMember,
 } from "@/api/endpoints";
-import type { AgentCreate, AgentUpdate } from "@/api/types";
+import type { AgentCreate, AgentUpdate, MemberCreate, MemberUpdate } from "@/api/types";
 
 // Query key factory — centralised so cache invalidation is consistent.
 export const qk = {
@@ -20,6 +24,7 @@ export const qk = {
   tenants: ["tenants"] as const,
   agents: ["agents"] as const,
   agent: (id: string) => ["agents", id] as const,
+  members: ["members"] as const,
 };
 
 // ---------- auth ----------
@@ -67,5 +72,35 @@ export function useDeleteAgent() {
   return useMutation({
     mutationFn: (id: string) => deleteAgent(id),
     onSuccess: () => qc.invalidateQueries({ queryKey: qk.agents }),
+  });
+}
+
+// ---------- members ----------
+export function useMembers() {
+  return useQuery({ queryKey: qk.members, queryFn: fetchMembers });
+}
+
+export function useAddMember() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: MemberCreate) => addMember(payload),
+    onSuccess: () => qc.invalidateQueries({ queryKey: qk.members }),
+  });
+}
+
+export function useUpdateMember() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ userId, payload }: { userId: string; payload: MemberUpdate }) =>
+      updateMember(userId, payload),
+    onSuccess: () => qc.invalidateQueries({ queryKey: qk.members }),
+  });
+}
+
+export function useRemoveMember() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (userId: string) => removeMember(userId),
+    onSuccess: () => qc.invalidateQueries({ queryKey: qk.members }),
   });
 }

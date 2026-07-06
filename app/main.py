@@ -8,7 +8,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 
-from app.api.v1 import agents, auth, chat, tenants
+from app.api.v1 import agents, auth, chat, tenants, users
 from app.core.config import settings
 
 
@@ -46,6 +46,7 @@ def create_app() -> FastAPI:
     app.include_router(auth.router, prefix=prefix)
     app.include_router(tenants.router, prefix=prefix)
     app.include_router(agents.router, prefix=prefix)
+    app.include_router(users.router, prefix=prefix)
     app.include_router(chat.router, prefix=prefix)
 
     @app.get("/health", tags=["meta"])

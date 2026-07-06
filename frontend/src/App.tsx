@@ -9,6 +9,7 @@ import { DashboardPage } from "@/pages/dashboard-page";
 import { AgentsPage } from "@/pages/agents-page";
 import { RolesPage } from "@/pages/roles-page";
 import { PermissionsPage } from "@/pages/permissions-page";
+import { UsersPage } from "@/pages/users-page";
 import { NotFoundPage } from "@/pages/not-found-page";
 
 const queryClient = new QueryClient({
@@ -40,6 +41,7 @@ export default function App() {
               >
                 <Route path="/" element={<DashboardPage />} />
                 <Route path="/agents" element={<AgentsPage />} />
+                <Route path="/users" element={<UsersPage />} />
                 <Route path="/roles" element={<RolesPage />} />
                 <Route path="/permissions" element={<PermissionsPage />} />
               </Route>

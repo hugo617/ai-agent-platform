@@ -7,6 +7,7 @@ import {
   Menu,
   Shield,
   ShieldCheck,
+  Users,
   X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -23,6 +24,7 @@ interface NavItem {
 const NAV_ITEMS: NavItem[] = [
   { to: "/", label: "概览", icon: LayoutDashboard },
   { to: "/agents", label: "智能体", icon: Bot },
+  { to: "/users", label: "用户", icon: Users },
   { to: "/roles", label: "角色", icon: Shield },
   { to: "/permissions", label: "权限矩阵", icon: ShieldCheck },
 ];

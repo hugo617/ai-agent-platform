@@ -2,6 +2,7 @@
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.models.tenant import Tenant, User, UserTenant
 from app.repositories.base import BaseRepository
@@ -47,6 +48,16 @@ class UserTenantRepository(BaseRepository[UserTenant]):
 
     async def list_for_user(self, user_id: str) -> list[UserTenant]:
         stmt = select(UserTenant).where(UserTenant.user_id == user_id)
+        result = await self.db.execute(stmt)
+        return list(result.scalars().all())
+
+    async def list_for_tenant(self, tenant_id: str) -> list[UserTenant]:
+        """Return all memberships in a tenant, eager-loading each user."""
+        stmt = (
+            select(UserTenant)
+            .where(UserTenant.tenant_id == tenant_id)
+            .options(selectinload(UserTenant.user))
+        )
         result = await self.db.execute(stmt)
         return list(result.scalars().all())
 

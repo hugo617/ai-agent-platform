@@ -14,6 +14,26 @@ export interface User {
   created_at: string;
 }
 
+// A tenant member = (user, role) pair. Used by the user-management page.
+export interface Member {
+  user_id: string;
+  role: string;
+  email: string | null;
+  display_name: string | null;
+  joined_at: string | null;
+}
+
+export interface MemberCreate {
+  user_id: string;
+  role: string;
+  email?: string | null;
+  display_name?: string | null;
+}
+
+export interface MemberUpdate {
+  role: string;
+}
+
 export interface UserTenant {
   tenant: Tenant;
   role: string;

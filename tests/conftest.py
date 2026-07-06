@@ -38,6 +38,7 @@ def _make_casbin(owner_user: str, tenant_id: str):
         ("agents", "read"), ("agents", "create"), ("agents", "update"),
         ("agents", "delete"), ("conversations", "read"),
         ("conversations", "create"), ("conversations", "chat"),
+        ("users", "read"), ("users", "create"), ("users", "update"), ("users", "delete"),
     ]:
         e.add_policy("owner", tenant_id, obj, act)
     for obj, act in [

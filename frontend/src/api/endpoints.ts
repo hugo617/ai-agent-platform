@@ -4,6 +4,9 @@ import type {
   Agent,
   AgentCreate,
   AgentUpdate,
+  Member,
+  MemberCreate,
+  MemberUpdate,
   MeResponse,
   Tenant,
 } from "./types";
@@ -103,4 +106,27 @@ export async function updateAgent(id: string, payload: AgentUpdate): Promise<Age
 
 export async function deleteAgent(id: string): Promise<void> {
   await api.delete(`/agents/${id}`);
+}
+
+// ---------- users (tenant members) ----------
+export async function fetchMembers(): Promise<Member[]> {
+  const { data } = await api.get<Member[]>("/users/");
+  return data;
+}
+
+export async function addMember(payload: MemberCreate): Promise<Member> {
+  const { data } = await api.post<Member>("/users/", payload);
+  return data;
+}
+
+export async function updateMember(
+  userId: string,
+  payload: MemberUpdate
+): Promise<Member> {
+  const { data } = await api.patch<Member>(`/users/${userId}`, payload);
+  return data;
+}
+
+export async function removeMember(userId: string): Promise<void> {
+  await api.delete(`/users/${userId}`);
 }

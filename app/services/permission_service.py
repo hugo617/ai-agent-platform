@@ -50,6 +50,35 @@ class PermissionService:
 
         await run_in_threadpool(_do)
 
+    async def set_role_for_user_in_domain(
+        self, user_id: str, role: str, tenant_id: str
+    ) -> None:
+        """Replace the user's role in a domain (drop prior roles, add the new one).
+
+        Used when an admin changes a member's role: casbin's grouping policy is
+        synchronised so the new role takes effect immediately.
+        """
+
+        def _do() -> None:
+            e = _casbin_mod.get_enforcer()
+            with _casbin_mod.enforcer_lock():
+                for old in e.get_roles_for_user_in_domain(user_id, tenant_id):
+                    e.delete_roles_for_user_in_domain(user_id, old, tenant_id)
+                e.add_role_for_user_in_domain(user_id, role, tenant_id)
+
+        await run_in_threadpool(_do)
+
+    async def remove_user_from_tenant(self, user_id: str, tenant_id: str) -> None:
+        """Strip every role a user holds in a domain (removes their access)."""
+
+        def _do() -> None:
+            e = _casbin_mod.get_enforcer()
+            with _casbin_mod.enforcer_lock():
+                for old in e.get_roles_for_user_in_domain(user_id, tenant_id):
+                    e.delete_roles_for_user_in_domain(user_id, old, tenant_id)
+
+        await run_in_threadpool(_do)
+
     async def get_roles_for_user_in_domain(self, user_id: str, tenant_id: str) -> list[str]:
         def _do() -> list[str]:
             e = _casbin_mod.get_enforcer()
@@ -96,6 +125,10 @@ class PermissionService:
             ("conversations", "read"),
             ("conversations", "create"),
             ("conversations", "chat"),
+            ("users", "read"),
+            ("users", "create"),
+            ("users", "update"),
+            ("users", "delete"),
         ]
         member_perms = [
             ("agents", "read"),

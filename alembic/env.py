@@ -28,10 +28,23 @@ if config.config_file_name is not None:
 
 target_metadata = Base.metadata
 
+# Tables managed by external libraries (not by our migrations). Without this,
+# alembic autogenerate tries to drop them on every run because they are not on
+# Base.metadata.
+_EXCLUDED_TABLES = {"casbin_rule"}
+include_object = lambda obj, name, type_, reflected, compare_to: (  # noqa: E731
+    type_ != "table" or name not in _EXCLUDED_TABLES
+)
+
 
 def run_migrations_offline() -> None:
     url = config.get_main_option("sqlalchemy.url")
-    context.configure(url=url, target_metadata=target_metadata, literal_binds=True)
+    context.configure(
+        url=url,
+        target_metadata=target_metadata,
+        literal_binds=True,
+        include_object=include_object,
+    )
     with context.begin_transaction():
         context.run_migrations()
 
@@ -43,7 +56,11 @@ def run_migrations_online() -> None:
         poolclass=pool.NullPool,
     )
     with connectable.connect() as connection:
-        context.configure(connection=connection, target_metadata=target_metadata)
+        context.configure(
+            connection=connection,
+            target_metadata=target_metadata,
+            include_object=include_object,
+        )
         with context.begin_transaction():
             context.run_migrations()
 
