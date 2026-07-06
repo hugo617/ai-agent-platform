@@ -13,6 +13,7 @@ SQLAlchemy==2.0.36
 greenlet==3.1.1
 alembic==1.14.0
 psycopg[binary]==3.2.3
+psycopg2-binary==2.9.10  # casbin-sqlalchemy-adapter uses the sync psycopg2 driver
 pgvector==0.3.6
 
 # Auth (verify Logto-issued JWT)

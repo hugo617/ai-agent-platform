@@ -54,15 +54,7 @@ cp .env.example .env       # 按需修改（DATABASE_URL / OPENAI_API_KEY 等）
 docker-compose up -d       # 起 PostgreSQL(pgvector) + Logto
 ```
 
-### 2. 配置 Logto（首次）
-
-1. 打开 Logto 管理台 http://localhost:3002，完成初始化（创建账号）
-2. 创建一个 **Traditional Web** 应用，记下 App ID
-3. 在 API 设置里创建一个 API resource，identifier 填 `http://localhost:8000/api`
-4. 在 Custom JWT 配置里，把用户的 `tenant_id` 加进 access token claims
-5. 把 `.env` 里的 `LOGTO_AUDIENCE` 对齐到上面的 identifier
-
-### 3. 安装后端依赖 & 初始化数据库
+### 2. 安装后端依赖 & 初始化数据库
 
 ```bash
 python -m venv .venv && source .venv/bin/activate
@@ -72,9 +64,20 @@ alembic upgrade head          # 建表
 uvicorn app.main:app --reload # 启动后端，访问 http://localhost:8000/docs
 ```
 
-### 4. 创建第一个租户
+### 3. 启动前端
 
-通过 `/api/v1/tenants/` 接口（带 Logto 签发的 access token）创建租户，系统会自动 seed 该租户的 owner 角色与默认权限策略。
+```bash
+cd frontend
+npm install
+npm run dev                   # 访问 http://localhost:3000
+```
+
+### 4. 登录
+
+打开 http://localhost:3000，点击 **🚀 一键开发登录** —— 无需配置 Logto 即可进入控制台。
+
+> **认证机制**：MVP 阶段后端内置 `/dev/token` + `/dev/bootstrap` 端点，用内存 RSA 密钥签发 JWT，
+> 走与 Logto 完全相同的 JWKS+RS256 验签代码路径。需要真实 Logto/OIDC 登录时见 [docs/LOGTO_SETUP.md](docs/LOGTO_SETUP.md)。
 
 ## 测试
 
@@ -90,6 +93,9 @@ pytest --cov=app              # 带覆盖率
 | 方法 | 路径 | 说明 | 权限 |
 |------|------|------|------|
 | GET | `/health` | 健康检查 | 公开 |
+| POST | `/dev/bootstrap` | 创建开发租户+用户（仅 dev） | 公开 |
+| POST | `/dev/token` | 签发开发 JWT（仅 dev） | 公开 |
+| GET | `/oidc/jwks` | 开发模式 JWKS（仅 dev） | 公开 |
 | GET | `/api/v1/auth/me` | 当前用户 + 租户 + 角色 | 已认证 |
 | POST | `/api/v1/tenants/` | 创建租户（自动 seed 权限） | 已认证 |
 | GET/POST | `/api/v1/agents/` | Agent 列表 / 创建 | agents:read / agents:create |

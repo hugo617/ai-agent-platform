@@ -1,14 +1,22 @@
 """Application settings — loaded from environment variables / .env file."""
 
+import json
 from functools import lru_cache
+from pathlib import Path
 
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+# Resolve the .env path relative to the project root (two levels up from this
+# file: app/core/config.py → app/core → app → project root). Using an absolute
+# path is necessary because pydantic-settings resolves relative env_file paths
+# against the process cwd, which differs between `uvicorn`, `alembic`, `pytest`.
+_ENV_FILE = Path(__file__).resolve().parents[2] / ".env"
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=".env", env_file_encoding="utf-8", case_sensitive=True, extra="ignore"
+        env_file=str(_ENV_FILE), env_file_encoding="utf-8", extra="ignore"
     )
 
     # Application
@@ -16,10 +24,12 @@ class Settings(BaseSettings):
     app_env: str = "development"
     app_debug: bool = True
     api_v1_prefix: str = "/api/v1"
-    cors_origins: list[str] = ["http://localhost:3000"]
+    # Stored as a raw string (JSON array or comma-separated) so pydantic-settings
+    # never tries to JSON-parse a bare URL. Use ``settings.cors_origins_list``.
+    cors_origins: str = "http://localhost:3000"
 
-    # Database
-    database_url: str = "sqlite+aiosqlite:///:memory:"
+    # Database — required in production; tests inject it via the environment.
+    database_url: str
 
     # Logto (auth)
     logto_endpoint: str = "http://localhost:3001"
@@ -37,10 +47,22 @@ class Settings(BaseSettings):
 
     @field_validator("cors_origins", mode="before")
     @classmethod
-    def _split_cors(cls, v):
-        if isinstance(v, str):
-            return [origin.strip() for origin in v.split(",") if origin.strip()]
+    def _coerce_cors(cls, v):
+        """Normalise to a plain string (JSON array or comma-separated)."""
+        if isinstance(v, list):
+            return ",".join(v)
         return v
+
+    @property
+    def cors_origins_list(self) -> list[str]:
+        """Parse ``cors_origins`` into a list (JSON array or comma-separated)."""
+        v = self.cors_origins.strip()
+        if v.startswith("["):
+            try:
+                return json.loads(v)
+            except json.JSONDecodeError:
+                pass
+        return [o.strip() for o in v.split(",") if o.strip()]
 
     @property
     def is_testing(self) -> bool:

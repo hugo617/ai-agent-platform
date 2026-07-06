@@ -1,10 +1,12 @@
 """FastAPI application entry point."""
 
+import time
 from contextlib import asynccontextmanager
 
+import jwt
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 
 from app.api.v1 import agents, auth, chat, tenants
 from app.core.config import settings
@@ -33,7 +35,7 @@ def create_app() -> FastAPI:
 
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=settings.cors_origins,
+        allow_origins=settings.cors_origins_list,
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
@@ -48,7 +50,84 @@ def create_app() -> FastAPI:
 
     @app.get("/health", tags=["meta"])
     async def health() -> dict:
-        return {"status": "ok", "app": settings.app_name}
+        return {"status": "ok", "app": settings.app_name, "env": settings.app_env}
+
+    # ------------------------------------------------------------------
+    # Dev-only helpers: JWKS endpoint + test-token minting.
+    #
+    # When LOGTO_ISSUER points at this backend (e.g.
+    # ``http://localhost:8000/oidc``), the JWT verifier in security.py
+    # fetches signing keys from ``/oidc/jwks`` below — so dev tokens minted
+    # by ``/dev/token`` validate through the *exact same* code path as real
+    # Logto tokens. This lets you log in to the frontend without configuring
+    # Logto yet.
+    #
+    # Gated behind development mode; raises 404 in other envs.
+    # ------------------------------------------------------------------
+
+    @app.get("/oidc/jwks", tags=["dev"])
+    async def jwks() -> Response:
+        """Serve the dev public key as a JWKS document."""
+        if settings.app_env != "development":
+            return JSONResponse(status_code=404, content={"detail": "not found"})
+        from app.core.dev_keys import jwks_json
+
+        return Response(content=jwks_json(), media_type="application/json")
+
+    @app.post("/dev/token", tags=["dev"])
+    async def dev_token(payload: dict) -> dict:
+        """Mint a short-lived dev JWT for local login.
+
+        Body (all optional, defaults provided):
+            {"sub": "dev-user", "tenant_id": "dev-tenant", "email": null}
+        """
+        if settings.app_env != "development":
+            return JSONResponse(status_code=404, content={"detail": "not found"})
+        from app.core.dev_keys import get_dev_keys
+
+        keys = get_dev_keys()
+        now = int(time.time())
+        claims = {
+            "sub": payload.get("sub", "dev-user"),
+            "tenant_id": payload.get("tenant_id", "dev-tenant"),
+            "email": payload.get("email"),
+            "iss": settings.logto_issuer,
+            "aud": settings.logto_audience,
+            "iat": now,
+            "exp": now + 3600,
+        }
+        token = jwt.encode(claims, keys.private_pem, algorithm="RS256", headers={"kid": keys.kid})
+        return {"access_token": token, "expires_in": 3600}
+
+    @app.post("/dev/bootstrap", tags=["dev"])
+    async def dev_bootstrap(payload: dict = None) -> dict:
+        """Create a dev tenant + user + seed casbin policies for local login.
+
+        Idempotent — safe to call repeatedly. After this, mint a token via
+        ``/dev/token`` with the same ``sub`` / ``tenant_id`` and sign in.
+        """
+        if settings.app_env != "development":
+            return JSONResponse(status_code=404, content={"detail": "not found"})
+
+        from app.core.database import AsyncSessionLocal
+        from app.schemas.tenant import TenantCreate
+        from app.services.tenant_service import TenantService
+
+        user_id = (payload or {}).get("sub", "dev-user")
+        tenant_name = (payload or {}).get("tenant_name", "Development Tenant")
+
+        async with AsyncSessionLocal() as db:
+            svc = TenantService(db)
+            tenants = await svc.list_user_tenants(user_id)
+            if tenants:
+                return {"tenant_id": tenants[0].id, "user_id": user_id, "exists": True}
+
+            tenant = await svc.create_tenant(
+                owner_user_id=user_id,
+                payload=TenantCreate(name=tenant_name),
+                owner_email=(payload or {}).get("email"),
+            )
+            return {"tenant_id": tenant.id, "user_id": user_id, "exists": False}
 
     @app.exception_handler(PermissionError)
     async def _permission_handler(request: Request, exc: PermissionError) -> JSONResponse:

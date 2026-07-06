@@ -16,7 +16,12 @@ from app.core.database import Base
 from app.models import agent, message, tenant  # noqa: F401
 
 config = context.config
-config.set_main_option("sqlalchemy.url", settings.database_url.replace("+psycopg", ""))
+# Use the sync psycopg driver for alembic (app runtime uses async +psycopg).
+sync_url = settings.database_url.replace("+psycopg", "+psycopg")
+# Force plain postgresql:// -> postgresql+psycopg:// for sync migrations.
+if sync_url.startswith("postgresql://"):
+    sync_url = sync_url.replace("postgresql://", "postgresql+psycopg://", 1)
+config.set_main_option("sqlalchemy.url", sync_url)
 
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)

@@ -18,10 +18,10 @@ export default defineConfig({
         target: "http://localhost:8000",
         changeOrigin: true,
       },
-      "/health": {
-        target: "http://localhost:8000",
-        changeOrigin: true,
-      },
+      // Dev-only endpoints (token minting, bootstrap, JWKS) + health check.
+      "/dev": { target: "http://localhost:8000", changeOrigin: true },
+      "/oidc": { target: "http://localhost:8000", changeOrigin: true },
+      "/health": { target: "http://localhost:8000", changeOrigin: true },
     },
   },
 });

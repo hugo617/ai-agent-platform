@@ -8,7 +8,7 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-aap_secret}
       POSTGRES_DB: ${POSTGRES_DB:-aap}
     ports:
-      - "5432:5432"
+      - "5433:5432"
     volumes:
       - aap_pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -18,7 +18,7 @@ services:
       retries: 10
 
   logto:
-    image: svhd/logto:latest
+    image: svhd/logto:1.27.0
     container_name: aap-logto
     depends_on:
       logto-db:
