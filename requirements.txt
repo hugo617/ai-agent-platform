@@ -1,0 +1,33 @@
+# Web framework
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+python-multipart==0.0.20
+
+# Settings & validation
+pydantic==2.10.4
+pydantic-settings==2.7.1 ; python_version < "3.13"
+pydantic-settings>=2.7.1 ; python_version >= "3.13"
+
+# Database
+SQLAlchemy==2.0.36
+greenlet==3.1.1
+alembic==1.14.0
+psycopg[binary]==3.2.3
+pgvector==0.3.6
+
+# Auth (verify Logto-issued JWT)
+PyJWT==2.10.1
+cryptography==44.0.0
+httpx==0.28.1
+
+# Authorization (pycasbin + SQLAlchemy adapter)
+pycasbin==2.8.0
+casbin-sqlalchemy-adapter==1.4.0
+
+# Agent
+langgraph==0.2.61
+langchain-openai==0.2.14
+langchain-core==0.3.28
+
+# Utilities
+python-dateutil==2.9.0.post0

@@ -1,0 +1,57 @@
+services:
+  postgres:
+    # pgvector image = PostgreSQL 16 with the vector extension preinstalled
+    image: pgvector/pgvector:pg16
+    container_name: aap-postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-aap}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-aap_secret}
+      POSTGRES_DB: ${POSTGRES_DB:-aap}
+    ports:
+      - "5432:5432"
+    volumes:
+      - aap_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-aap}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  logto:
+    image: svhd/logto:latest
+    container_name: aap-logto
+    depends_on:
+      logto-db:
+        condition: service_healthy
+    environment:
+      TRUST_PROXY: "1"
+      DB_URL: postgresql://logto:logto_secret@logto-db:5432/logto
+      ENDPOINT: http://localhost:3001
+      ADMIN_ENDPOINT: http://localhost:3002
+    ports:
+      - "3001:3001"   # OIDC core
+      - "3002:3002"   # admin console
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3001/api/status"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  logto-db:
+    image: postgres:16-alpine
+    container_name: aap-logto-db
+    environment:
+      POSTGRES_USER: logto
+      POSTGRES_PASSWORD: logto_secret
+      POSTGRES_DB: logto
+    volumes:
+      - aap_logtodata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U logto"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  aap_pgdata:
+  aap_logtodata:
