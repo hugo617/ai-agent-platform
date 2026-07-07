@@ -38,6 +38,8 @@ class RoleRepository(BaseRepository[Role]):
         return (await self.db.execute(stmt)).scalar_one_or_none()
 
 
+# TODO: reserved — these back the unbuilt permission-management UI. No endpoint
+# uses them yet; keep until /roles/permissions CRUD lands.
 class PermissionRepository(BaseRepository[Permission]):
     """Scaffolded for the permission-management UI (not yet wired)."""
 
@@ -47,6 +49,7 @@ class PermissionRepository(BaseRepository[Permission]):
         super().__init__(db)
 
 
+# TODO: reserved — see PermissionRepository above.
 class RolePermissionRepository(BaseRepository[RolePermission]):
     """Scaffolded for the permission-management UI (not yet wired)."""
     model = RolePermission

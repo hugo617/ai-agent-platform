@@ -166,11 +166,20 @@ export function UsersPage() {
     setSelected(next);
   };
 
-  // Clear row selection whenever the filter/search/page changes so the
-  // "已选 N 项" count never references users that aren't on screen.
+  // Clear row selection whenever the visible result set changes (filters,
+  // search, page, OR sort) so the "已选 N 项" count never references users that
+  // aren't on screen. Omitting sort here left stale ids checked after a re-sort,
+  // which would target the wrong users in any future batch action.
   useEffect(() => {
     setSelected(new Set());
-  }, [filters.search, filters.status, filters.role, filters.page]);
+  }, [
+    filters.search,
+    filters.status,
+    filters.role,
+    filters.page,
+    filters.sort_by,
+    filters.sort_order,
+  ]);
 
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),

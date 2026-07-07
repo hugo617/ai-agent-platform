@@ -39,26 +39,34 @@ class LoggingService:
         user_agent: str | None = None,
         session_id: str | None = None,
     ) -> None:
-        """Append a SystemLog row. Never raises — audit is best-effort."""
+        """Append a SystemLog row. Never raises — audit is best-effort.
+
+        Runs inside a nested transaction (SAVEPOINT) so that a failure writing
+        the log row rolls back *only* the audit insert, leaving the surrounding
+        business transaction untouched. Without this, a DB error during the
+        audit flush would poison the session and the caller's subsequent
+        ``commit()`` would fail with PendingRollbackError — audit logging could
+        break an otherwise-successful user update.
+        """
         try:
-            self.db.add(
-                SystemLog(
-                    level=level,
-                    action=action,
-                    module=module,
-                    message=message,
-                    details_json=details,
-                    resource_type=resource_type,
-                    resource_id=resource_id,
-                    old_values=old_values,
-                    new_values=new_values,
-                    user_id=user_id,
-                    tenant_id=tenant_id,
-                    ip=ip,
-                    user_agent=user_agent,
-                    session_id=session_id,
+            async with self.db.begin_nested():
+                self.db.add(
+                    SystemLog(
+                        level=level,
+                        action=action,
+                        module=module,
+                        message=message,
+                        details_json=details,
+                        resource_type=resource_type,
+                        resource_id=resource_id,
+                        old_values=old_values,
+                        new_values=new_values,
+                        user_id=user_id,
+                        tenant_id=tenant_id,
+                        ip=ip,
+                        user_agent=user_agent,
+                        session_id=session_id,
+                    )
                 )
-            )
-            await self.db.flush()
         except Exception:  # noqa: BLE001 — audit must not break the request
             logger.warning("failed to write audit log: %s", action, exc_info=True)

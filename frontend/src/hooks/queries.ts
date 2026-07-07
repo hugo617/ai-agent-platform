@@ -14,7 +14,6 @@ import {
   deleteAgent,
   deleteUser,
   fetchAgents,
-  fetchMe,
   fetchMembers,
   fetchOrganizationTree,
   fetchRoleLabels,
@@ -22,7 +21,6 @@ import {
   fetchTenants,
   fetchUserStatistics,
   fetchUsers,
-  logout,
   removeMember,
   resetUserPassword,
   terminateSession,
@@ -39,11 +37,13 @@ import type {
   RoleCreate,
   UserFilters,
   UserFormData,
+  UserStatus,
 } from "@/api/types";
 
 // Query key factory — centralised so cache invalidation is consistent.
+// NOTE: the /me query key is owned by auth-context.tsx (["auth","me",token]) so
+// it is intentionally absent here to avoid a split-brain key.
 export const qk = {
-  me: ["auth", "me"] as const,
   tenants: ["tenants"] as const,
   agents: ["agents"] as const,
   agent: (id: string) => ["agents", id] as const,
@@ -56,11 +56,6 @@ export const qk = {
   orgTree: ["organizations", "tree"] as const,
   sessions: ["auth", "sessions"] as const,
 };
-
-// ---------- auth ----------
-export function useMe() {
-  return useQuery({ queryKey: qk.me, queryFn: fetchMe });
-}
 
 // ---------- tenants ----------
 export function useTenants() {
@@ -176,7 +171,7 @@ export function useDeleteUser() {
 export function useChangeUserStatus() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, status }: { id: string; status: string }) =>
+    mutationFn: ({ id, status }: { id: string; status: UserStatus }) =>
       changeUserStatus(id, status),
     onSuccess: () => invalidateUsers(qc),
   });
@@ -219,19 +214,12 @@ export function useCreateOrganization() {
   });
 }
 
-// ---------- auth (sessions) ----------
-// NOTE: useLogin is intentionally omitted — login-page.tsx calls the `login()`
-// endpoint directly and hands the token to auth-context.signIn(), which already
-// resets the /me query. Adding a useLogin hook here would duplicate that.
-export function useLogout() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: () => logout(),
-    onSuccess: () => {
-      qc.removeQueries({ queryKey: qk.sessions });
-    },
-  });
-}
+// ---------- auth ----------
+// NOTE: there is no useLogin/useLogout hook by design. login-page.tsx calls the
+// `login()` endpoint directly and hands the token to auth-context.signIn()
+// (which already resets the /me query); dashboard-layout.tsx calls `logout()`
+// directly before clearing local state. Wrapping them in mutations would just
+// duplicate that wiring.
 
 // Sessions UI is not built yet — these power the future "active sessions" page.
 export function useSessions() {

@@ -87,6 +87,8 @@ class PermissionService:
 
         return await run_in_threadpool(_do)
 
+    # TODO: reserved — expose via a future /roles/permissions or permissions
+    # inspection page. Not currently called by any endpoint.
     async def get_implicit_permissions_for_user(
         self, user_id: str, tenant_id: str
     ) -> list[list[str]]:

@@ -23,6 +23,7 @@ import type {
   UserFull,
   UserListResponse,
   UserStatistics,
+  UserStatus,
 } from "./types";
 
 // ---------- auth ----------
@@ -192,7 +193,7 @@ export async function deleteUser(id: string): Promise<void> {
 
 export async function changeUserStatus(
   id: string,
-  status: string
+  status: UserStatus
 ): Promise<UserFull> {
   const { data } = await api.patch<UserFull>(`/users/${id}/status`, { status });
   return data;
@@ -211,6 +212,9 @@ export async function fetchUserStatistics(): Promise<UserStatistics> {
 }
 
 // ---------- roles ----------
+// TODO: reserved — fetchRoles / deleteRole / fetchUser / fetchAgent /
+// fetchOrganizations back the unbuilt Roles / Organizations / detail pages.
+// Only the label + tree variants + the CRUD mutations are wired today.
 export async function fetchRoles(): Promise<Role[]> {
   const { data } = await api.get<Role[]>("/roles/");
   return data;

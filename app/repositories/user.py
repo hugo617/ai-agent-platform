@@ -86,7 +86,10 @@ class UserListRepository:
             "username": User.username,
             "email": User.email,
         }[f.sort_by]
-        stmt = stmt.order_by(col.asc() if f.sort_order == "asc" else col.desc())
+        # Secondary sort by id makes pagination deterministic even when the
+        # primary column has ties (e.g. NULL usernames, same created_at).
+        direction = col.asc() if f.sort_order == "asc" else col.desc()
+        stmt = stmt.order_by(direction, User.id.asc())
         return stmt
 
     async def list(self, tenant_id: str, f: UserFilters) -> tuple[list[User], int]:

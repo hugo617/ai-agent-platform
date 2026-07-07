@@ -21,18 +21,19 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.local_auth import create_access_token
-from app.core.password import verify_password
+from app.core.password import hash_password, verify_password
 from app.models.security import UserSession
 from app.repositories.security import SessionRepository
 from app.repositories.tenant import UserRepository, UserTenantRepository
 from app.services.logging_service import LoggingService
 
-# A precomputed bcrypt hash used only to keep login timing constant when the
-# identifier doesn't resolve to a real user (see login()). Computed once at
-# import so the per-request cost stays a single verify, never a hash.
-_DUMMY_HASH = (
-    "$2b$12$CwTycUXWue0Thq9StjUM0uJ8eVfP3xK9JQ5xXlQ9mVZ3k0WQe1rYq"
-)
+# A real bcrypt hash generated at import time. We run ``verify_password``
+# against it whenever the login identifier doesn't resolve to a real user so
+# the response takes roughly the same time as a genuine login (bcrypt is
+# deliberately slow) — otherwise an attacker could enumerate accounts by timing.
+# Generating it here (rather than hard-coding a literal) guarantees the cost
+# factor matches ``settings.salt_rounds`` and the hash is always well-formed.
+_DUMMY_HASH = hash_password("dummy-account-enumeration-guard")
 
 
 class AuthError(Exception):
@@ -60,19 +61,23 @@ class AuthService:
         Raises ``AuthError`` on any failure.
         """
         user = await self.users.get_by_login_identifier(identifier)
-        if user is None or not user.password:
-            # Run a dummy bcrypt verify so the response time is roughly the
-            # same as a real login — otherwise an attacker can tell whether an
-            # identifier exists by timing (bcrypt is deliberately slow).
-            verify_password(password, _DUMMY_HASH)
-            raise AuthError("invalid credentials")
+        # Always run exactly one bcrypt verify, whether or not the account
+        # exists — this keeps response time roughly constant so an attacker
+        # cannot tell which identifiers are real by timing. ``verify_password``
+        # returns False for a None hash, so the no-password (OIDC-only) case is
+        # covered by the same branch.
+        stored_hash = user.password if (user is not None and user.password) else _DUMMY_HASH
+        password_ok = verify_password(password, stored_hash)
 
+        # Account-state checks come AFTER the (slow) bcrypt verify so a
+        # locked/inactive account takes the same time to reject as a valid one.
+        if user is None:
+            raise AuthError("invalid credentials")
         if user.status == "locked":
             raise AuthError("account is locked; contact an administrator")
         if user.status != "active":
             raise AuthError("account is not active")
-
-        if not verify_password(password, user.password):
+        if not user.password or not password_ok:
             raise AuthError("invalid credentials")
 
         # Resolve tenant from the user's memberships (first wins). A user with

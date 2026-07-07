@@ -14,6 +14,7 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useAuth } from "@/components/auth/auth-context";
+import { logout } from "@/api/endpoints";
 
 interface NavItem {
   to: string;
@@ -34,7 +35,14 @@ export function DashboardLayout() {
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
-  const handleSignOut = () => {
+  const handleSignOut = async () => {
+    // Ask the backend to revoke the session row (best-effort: a network error
+    // must not strand the user in a logged-in UI). Local state is cleared after.
+    try {
+      await logout();
+    } catch {
+      // 401 is expected if the token already expired; ignore either way.
+    }
     signOut();
     navigate("/login", { replace: true });
   };

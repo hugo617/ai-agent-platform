@@ -16,6 +16,13 @@ from typing import Sequence, Union
 
 from alembic import op
 import sqlalchemy as sa
+from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.types import JSON
+
+# Match the ORM models exactly: JSONB on Postgres, plain JSON on SQLite (used
+# by the test suite). Using a bare ``sa.JSON()`` here would create a JSON column
+# on Postgres and leave ``alembic autogenerate`` reporting a permanent diff.
+_MetadataJSON = JSONB().with_variant(JSON, "sqlite")
 
 
 # revision identifiers, used by Alembic.
@@ -46,7 +53,7 @@ def upgrade() -> None:
     )
     op.add_column(
         'users',
-        sa.Column('metadata', sa.JSON(), server_default=sa.text("'{}'"), nullable=False),
+        sa.Column('metadata', _MetadataJSON, server_default=sa.text("'{}'"), nullable=False),
     )
     op.add_column(
         'users',
@@ -239,11 +246,11 @@ def upgrade() -> None:
         sa.Column('action', sa.String(length=100), nullable=False),
         sa.Column('module', sa.String(length=50), nullable=False),
         sa.Column('message', sa.Text(), nullable=False),
-        sa.Column('details', sa.JSON(), nullable=True),
+        sa.Column('details', _MetadataJSON, nullable=True),
         sa.Column('resource_type', sa.String(length=100), nullable=True),
         sa.Column('resource_id', sa.String(length=255), nullable=True),
-        sa.Column('old_values', sa.JSON(), nullable=True),
-        sa.Column('new_values', sa.JSON(), nullable=True),
+        sa.Column('old_values', _MetadataJSON, nullable=True),
+        sa.Column('new_values', _MetadataJSON, nullable=True),
         sa.Column('user_id', sa.String(length=128), nullable=True),
         sa.Column('session_id', sa.String(length=255), nullable=True),
         sa.Column('tenant_id', sa.String(length=32), nullable=True),

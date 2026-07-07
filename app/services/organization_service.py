@@ -74,8 +74,10 @@ class OrganizationService:
     async def update(
         self, actor_id: str, tenant_id: str, org_id: str, payload: OrganizationUpdate
     ) -> OrganizationRead:
-        await permission_service.require(actor_id, tenant_id, self.OBJECT, "update")
-        org = await self.repo.get_for_tenant(tenant_id, org_id)
+        await permission_service.require(user_id=actor_id, tenant_id=tenant_id, obj=self.OBJECT, act="update")
+        all_orgs = await self.repo.list_for_tenant(tenant_id)
+        by_id = {o.id: o for o in all_orgs}
+        org = by_id.get(org_id)
         if org is None:
             raise ValueError(f"organization {org_id} not found")
         for field in ("name", "code", "leader_id", "status", "sort_order"):
@@ -86,15 +88,22 @@ class OrganizationService:
             if payload.parent_id == org.id:
                 raise ValueError("an organization cannot be its own parent")
             if payload.parent_id:
-                parent = await self.repo.get_for_tenant(tenant_id, payload.parent_id)
+                # Reject cycles: the new parent must not be a descendant of org.
+                if _is_descendant(org_id, payload.parent_id, by_id):
+                    raise ValueError(
+                        "cannot move an organization beneath its own descendant"
+                    )
+                parent = by_id.get(payload.parent_id)
                 if parent is None:
                     raise ValueError(
                         f"parent organization {payload.parent_id} not found"
                     )
-                org.path = _compute_path(parent.path, parent.id)
             else:
-                org.path = None
+                parent = None
             org.parent_id = payload.parent_id or None
+            # Recompute ``path`` for the moved node and its entire subtree —
+            # otherwise descendants keep stale materialised paths.
+            _recompute_subtree_paths(org, by_id)
         await self.logs.record(
             action="organization.update",
             module="organizations",
@@ -110,23 +119,23 @@ class OrganizationService:
     async def delete(
         self, actor_id: str, tenant_id: str, org_id: str
     ) -> None:
-        await permission_service.require(actor_id, tenant_id, self.OBJECT, "delete")
-        org = await self.repo.get_for_tenant(tenant_id, org_id)
+        await permission_service.require(user_id=actor_id, tenant_id=tenant_id, obj=self.OBJECT, act="delete")
+        all_orgs = await self.repo.list_for_tenant(tenant_id)
+        by_id = {o.id: o for o in all_orgs}
+        org = by_id.get(org_id)
         if org is None:
             raise ValueError(f"organization {org_id} not found")
-        # Reparent direct children to this org's parent and recompute their path
-        # so the lineage stays consistent (avoids stale ancestor chains).
-        grandparent_path: str | None = None
-        if org.parent_id:
-            grandparent = await self.repo.get_for_tenant(tenant_id, org.parent_id)
-            grandparent_path = grandparent.path if grandparent else None
-        children = [
-            o for o in await self.repo.list_for_tenant(tenant_id)
-            if o.parent_id == org_id
-        ]
+        # Reparent direct children to this org's parent so the lineage stays
+        # consistent, then recompute their subtree paths.
+        new_parent_id = org.parent_id
+        grandparent = by_id.get(new_parent_id) if new_parent_id else None
+        grandparent_path = grandparent.path if grandparent else None
+        children = [o for o in all_orgs if o.parent_id == org_id]
         for c in children:
-            c.parent_id = org.parent_id
-            c.path = _compute_path(grandparent_path, org.parent_id)
+            c.parent_id = new_parent_id
+            c.path = _compute_path(grandparent_path, new_parent_id)
+            # Cascade the new path to the reparented child's own descendants.
+            _recompute_subtree_paths(c, by_id)
         await self.repo.delete(org)
         await self.logs.record(
             action="organization.delete",
@@ -166,3 +175,40 @@ def _compute_path(parent_path: str | None, parent_id: str | None) -> str | None:
         return None
     prefix = parent_path or ""
     return f"{prefix}/{parent_id}"
+
+
+def _is_descendant(
+    ancestor_id: str, candidate_id: str, by_id: dict[str, Organization]
+) -> bool:
+    """True if ``candidate_id`` is ``ancestor_id`` or sits beneath it.
+
+    Used to reject reparenting a node under one of its own descendants (which
+    would create a cycle). Walks parent links upward from the candidate.
+    """
+    cur = candidate_id
+    seen: set[str] = set()
+    while cur is not None and cur not in seen:
+        if cur == ancestor_id:
+            return True
+        seen.add(cur)
+        node = by_id.get(cur)
+        cur = node.parent_id if node is not None else None
+    return False
+
+
+def _recompute_subtree_paths(
+    root: Organization, by_id: dict[str, Organization]
+) -> None:
+    """Recompute ``path`` for ``root`` and all of its descendants.
+
+    A node's path is built from its parent's path + the parent's id. We walk
+    down from ``root`` breadth-first so each child reads its (already-updated)
+    parent path. ``root``'s own path is assumed already correct.
+    """
+    frontier = [root]
+    while frontier:
+        parent = frontier.pop()
+        for o in by_id.values():
+            if o.parent_id == parent.id:
+                o.path = _compute_path(parent.path, parent.id)
+                frontier.append(o)

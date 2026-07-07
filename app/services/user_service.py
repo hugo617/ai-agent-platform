@@ -23,7 +23,7 @@ from app.core.password import hash_password
 from app.models.organization import Organization
 from app.models.rbac import Role
 from app.models.tenant import User, UserTenant
-from app.repositories.security import LoginMethodRepository
+from app.repositories.security import LoginMethodRepository, SessionRepository
 from app.repositories.tenant import UserRepository, UserTenantRepository
 from app.repositories.user import (
     UserFilters,
@@ -52,6 +52,7 @@ class UserService:
         self.memberships = UserTenantRepository(db)
         self.list_repo = UserListRepository(db)
         self.login_methods = LoginMethodRepository(db)
+        self.sessions = SessionRepository(db)
         self.logs = LoggingService(db)
 
     # ------------------------------------------------------------------ read
@@ -264,6 +265,9 @@ class UserService:
         user.deleted_at = datetime.utcnow()
         user.updated_by = actor_id
         await permission_service.remove_user_from_tenant(user_id, tenant_id)
+        # Revoke every outstanding session so a deleted user's token stops
+        # working immediately (get_current_user also rejects soft-deleted users).
+        await self.sessions.deactivate_all_for_user(user_id)
         await self.logs.record(
             action="user.delete",
             module="users",
@@ -291,6 +295,10 @@ class UserService:
         old = user.status
         user.status = status
         user.updated_by = actor_id
+        # Locking / disabling an account must kill its outstanding sessions —
+        # otherwise the change has no effect until the token expires.
+        if status != "active":
+            await self.sessions.deactivate_all_for_user(user_id)
         await self.logs.record(
             action="user.status_change",
             module="users",
@@ -316,6 +324,9 @@ class UserService:
         user.password = hash_password(payload.new_password)
         user.password_updated_at = datetime.utcnow()
         user.updated_by = actor_id
+        # Force re-authentication everywhere: drop all sessions so the new
+        # password is the only way back in.
+        await self.sessions.deactivate_all_for_user(user_id)
         await self.logs.record(
             action="user.reset_password",
             module="users",

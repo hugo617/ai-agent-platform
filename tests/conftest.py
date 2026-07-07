@@ -104,6 +104,16 @@ async def test_env() -> AsyncIterator[_TestEnv]:
     tenant_id = f"tnt-{uuid.uuid4().hex}"
     enforcer = _make_casbin(owner_user, tenant_id)
 
+    # The owner's User + UserTenant rows must exist in the DB: get_current_user
+    # re-validates account state and membership on every request.
+    from app.models.tenant import Tenant, User, UserTenant
+
+    async with factory() as session:
+        session.add(Tenant(id=tenant_id, name="Test Tenant"))
+        session.add(User(id=owner_user, email="owner@example.com", status="active"))
+        session.add(UserTenant(user_id=owner_user, tenant_id=tenant_id, role="owner"))
+        await session.commit()
+
     yield _TestEnv(engine, factory, owner_user, tenant_id, enforcer)
 
     async with engine.begin() as conn:
@@ -150,6 +160,9 @@ async def app_client(test_env: _TestEnv) -> AsyncIterator[AsyncClient]:
     app.dependency_overrides[get_db] = override_get_db
 
     async def fake_decode(token: str):
+        # No ``jti`` on the mocked token: get_current_user only consults the
+        # sessions table when a jti is present, so the mock never trips the
+        # revocation check. account-state/membership checks use the seeded rows.
         return {
             "sub": test_env.owner_user,
             "tenant_id": test_env.tenant_id,

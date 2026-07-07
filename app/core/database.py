@@ -41,8 +41,3 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
         except Exception:
             await session.rollback()
             raise
-
-
-async def get_sync_db_url() -> str:
-    """casbin-sqlalchemy-adapter needs a sync psycopg DSN."""
-    return settings.database_url.replace("+psycopg", "")

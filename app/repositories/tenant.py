@@ -83,15 +83,19 @@ class UserTenantRepository(BaseRepository[UserTenant]):
         return list(result.scalars().all())
 
     async def list_for_tenant(self, tenant_id: str) -> list[UserTenant]:
-        """Return all memberships in a tenant, eager-loading each user."""
+        """Return all memberships in a tenant, eager-loading each user.
+
+        Excludes soft-deleted users so the member directory stays consistent
+        with the user list (which also filters ``is_deleted``).
+        """
         stmt = (
             select(UserTenant)
-            .where(UserTenant.tenant_id == tenant_id)
+            .join(User, UserTenant.user_id == User.id)
+            .where(
+                UserTenant.tenant_id == tenant_id,
+                User.is_deleted.is_(False),
+            )
             .options(selectinload(UserTenant.user))
         )
         result = await self.db.execute(stmt)
         return list(result.scalars().all())
-
-    async def get_role(self, user_id: str, tenant_id: str) -> str | None:
-        membership = await self.get_membership(user_id, tenant_id)
-        return membership.role if membership else None

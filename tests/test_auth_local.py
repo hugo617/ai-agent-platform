@@ -165,23 +165,47 @@ async def test_sessions_listed_after_login(app_client_real_auth, db_session, ten
 
 
 @pytest.mark.asyncio
-async def test_logout_deactivates_session(app_client_real_auth, db_session, tenant_owner):
-    """End-to-end: logout marks the session inactive."""
-    await _seed_user_via_db(db_session, tenant_owner["tenant_id"])
+async def test_logout_deactivates_session(
+    app_client_real_auth, db_session, tenant_owner
+):
+    """End-to-end: logout marks the session inactive AND revokes the token.
+
+    The calling token now fails subsequent requests (``get_current_user``
+    rejects the deactivated session) — session revocation is enforced, not
+    just recorded. We use the owner token (no jti, no session row) to read the
+    sessions table and confirm the row was flipped to inactive.
+    """
+    uid = await _seed_user_via_db(db_session, tenant_owner["tenant_id"])
     tok = (
         await app_client_real_auth.post(
             "/api/v1/auth/login",
             json={"username": "realmember", "password": "Pass1234!"},
         )
     ).json()["access_token"]
+    jti = _decode_jti(tok)
+
     resp = await app_client_real_auth.post(
         "/api/v1/auth/logout", headers={"Authorization": f"Bearer {tok}"}
     )
     assert resp.status_code == 204
-    # The stateless token is still valid, but the session is no longer "active".
-    sessions = (
-        await app_client_real_auth.get(
-            "/api/v1/auth/sessions", headers={"Authorization": f"Bearer {tok}"}
-        )
-    ).json()
-    assert all(s["is_active"] for s in sessions)  # active list excludes it
+
+    # The logged-out token is now rejected (session deactivated → 401).
+    resp = await app_client_real_auth.get(
+        "/api/v1/auth/sessions", headers={"Authorization": f"Bearer {tok}"}
+    )
+    assert resp.status_code == 401
+
+    # Confirm the session row itself was flipped to inactive, using the shared
+    # test session (same in-memory DB) to inspect the row directly.
+    from app.repositories.security import SessionRepository
+
+    row = await SessionRepository(db_session).get_by_session_id(jti)
+    assert row is not None
+    assert row.is_active is False
+    assert row.user_id == uid
+
+
+def _decode_jti(token: str) -> str:
+    import jwt
+
+    return str(jwt.decode(token, options={"verify_signature": False})["jti"])
