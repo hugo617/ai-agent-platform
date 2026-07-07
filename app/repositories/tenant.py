@@ -1,6 +1,8 @@
 """Tenant / user repositories."""
 
-from sqlalchemy import select
+from datetime import datetime
+
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -31,6 +33,35 @@ class UserRepository(BaseRepository[User]):
             self.db.add(user)
             await self.db.flush()
         return user
+
+    async def get_by_username(self, username: str) -> User | None:
+        stmt = select(User).where(
+            User.username == username, User.is_deleted.is_(False)
+        )
+        result = await self.db.execute(stmt)
+        return result.scalar_one_or_none()
+
+    async def get_by_email(self, email: str) -> User | None:
+        stmt = select(User).where(
+            User.email == email, User.is_deleted.is_(False)
+        )
+        result = await self.db.execute(stmt)
+        return result.scalar_one_or_none()
+
+    async def get_by_login_identifier(self, identifier: str) -> User | None:
+        """Look up by username OR email (used by the login endpoint)."""
+        stmt = select(User).where(
+            or_(User.username == identifier, User.email == identifier),
+            User.is_deleted.is_(False),
+        )
+        result = await self.db.execute(stmt)
+        return result.scalar_one_or_none()
+
+    async def update_last_login(self, user_id: str) -> None:
+        user = await self.db.get(User, user_id)
+        if user is not None:
+            user.last_login_at = datetime.utcnow()
+            await self.db.flush()
 
 
 class UserTenantRepository(BaseRepository[UserTenant]):

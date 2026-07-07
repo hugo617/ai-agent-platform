@@ -31,11 +31,22 @@ class Settings(BaseSettings):
     # Database — required in production; tests inject it via the environment.
     database_url: str
 
-    # Logto (auth)
+    # Logto (auth) — verifies externally issued JWT (OIDC).
     logto_endpoint: str = "http://localhost:3001"
     logto_issuer: str = "http://localhost:3001/oidc"
     logto_audience: str = "http://localhost:8000/api"
     logto_admin_subject: str = "admin-user"
+
+    # Local password auth (bcrypt) — mints HS256 JWTs with iss="local"
+    # that flow through the same get_current_user pipeline as Logto tokens.
+    jwt_secret: str = "change-me-in-production"
+    jwt_algorithm: str = "HS256"
+    salt_rounds: int = 12
+    access_token_ttl_minutes: int = 60
+    session_ttl_hours: int = 168  # 7 days
+
+    # Frontend URL — used for welcome/reset emails and CORS default.
+    app_url: str = "http://localhost:3000"
 
     # pycasbin
     casbin_model_path: str = "casbin_model.conf"

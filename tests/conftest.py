@@ -18,6 +18,9 @@ os.environ.setdefault("APP_ENV", "testing")
 os.environ.setdefault("DATABASE_URL", "sqlite+aiosqlite:///:memory:")
 os.environ.setdefault("OPENAI_API_KEY", "test-key")
 os.environ.setdefault("CORS_ORIGINS", "http://localhost:3000")
+# Settings used by the new local-auth code paths.
+os.environ.setdefault("JWT_SECRET", "test-secret")
+os.environ.setdefault("SALT_ROUNDS", "4")  # keep tests fast
 
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
@@ -39,8 +42,20 @@ def _make_casbin(owner_user: str, tenant_id: str):
         ("agents", "delete"), ("conversations", "read"),
         ("conversations", "create"), ("conversations", "chat"),
         ("users", "read"), ("users", "create"), ("users", "update"), ("users", "delete"),
+        ("roles", "read"), ("roles", "create"), ("roles", "update"), ("roles", "delete"),
+        ("organizations", "read"), ("organizations", "create"),
+        ("organizations", "update"), ("organizations", "delete"),
     ]:
         e.add_policy("owner", tenant_id, obj, act)
+    # admin: manage users + read-mostly elsewhere (no agent delete, no billing).
+    for obj, act in [
+        ("agents", "read"), ("agents", "create"), ("agents", "update"),
+        ("conversations", "read"), ("conversations", "create"),
+        ("conversations", "chat"),
+        ("users", "read"), ("users", "create"), ("users", "update"),
+        ("roles", "read"), ("organizations", "read"),
+    ]:
+        e.add_policy("admin", tenant_id, obj, act)
     for obj, act in [
         ("agents", "read"), ("conversations", "read"),
         ("conversations", "create"), ("conversations", "chat"),
@@ -66,7 +81,15 @@ async def test_env() -> AsyncIterator[_TestEnv]:
     from app.core.database import Base
 
     # Ensure models are imported so they register on metadata.
-    from app.models import agent, message, tenant  # noqa: F401
+    from app.models import (  # noqa: F401
+        agent,
+        log,
+        message,
+        organization,
+        rbac,
+        security,
+        tenant,
+    )
 
     engine = create_async_engine(
         "sqlite+aiosqlite:///:memory:",
@@ -135,6 +158,44 @@ async def app_client(test_env: _TestEnv) -> AsyncIterator[AsyncClient]:
 
     with patch.object(casbin_mod, "get_enforcer", return_value=test_env.enforcer), \
          patch.object(deps_mod, "decode_token", new=AsyncMock(side_effect=fake_decode)):
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            yield client
+
+    app.dependency_overrides.clear()
+
+
+@pytest_asyncio.fixture
+async def app_client_real_auth(test_env: _TestEnv) -> AsyncIterator[AsyncClient]:
+    """Like ``app_client`` but with REAL JWT verification (no decode_token mock).
+
+    Used by tests that exercise the local-login → /me → /sessions round-trip
+    end-to-end. The owner still authenticates via the ``fake`` bearer for the
+    *setup* calls (user creation) by stubbing decode_token — but this fixture
+    is intended for the calls that present a real minted token. To keep setup
+    simple, callers create users via db_session directly.
+    """
+    from contextlib import asynccontextmanager
+
+    from app.core import casbin_enforcer as casbin_mod
+    from app.core.database import get_db
+    from app.main import create_app
+
+    app = create_app()
+
+    @asynccontextmanager
+    async def noop_lifespan(_app):
+        yield
+
+    app.router.lifespan_context = noop_lifespan
+
+    async def override_get_db():
+        async with test_env.factory() as session:
+            yield session
+
+    app.dependency_overrides[get_db] = override_get_db
+
+    with patch.object(casbin_mod, "get_enforcer", return_value=test_env.enforcer):
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             yield client

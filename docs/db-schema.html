@@ -1,0 +1,1108 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI Agent Platform — 数据库 Schema</title>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<style>
+:root {
+  --bg: #0f1117;
+  --surface: #1a1d27;
+  --surface-2: #232733;
+  --border: #2e3345;
+  --text: #e2e8f0;
+  --text-muted: #8b92a5;
+  --accent: #6c8cff;
+  --accent-dim: rgba(108,140,255,0.12);
+  --pk: #f0b429;
+  --fk: #5b9cf6;
+  --uk: #a78bfa;
+  --nn: #64748b;
+  --default: #64748b;
+  --success: #34d399;
+  --warn: #fb923c;
+  --danger: #f87171;
+  --radius: 8px;
+  --radius-lg: 12px;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans SC", sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+.container { max-width: 1200px; margin: 0 auto; padding: 2rem 1.5rem; }
+
+/* Header */
+.header {
+  text-align: center;
+  padding: 3rem 0 2rem;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 3rem;
+}
+.header h1 {
+  font-size: clamp(1.5rem, 4vw, 2.25rem);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  margin-bottom: 0.5rem;
+}
+.header h1 span { color: var(--accent); }
+.stats {
+  display: flex;
+  justify-content: center;
+  gap: 2rem;
+  margin-top: 1rem;
+  flex-wrap: wrap;
+}
+.stat {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--text-muted);
+  font-size: 0.875rem;
+}
+.stat strong {
+  color: var(--text);
+  font-weight: 600;
+  font-size: 1.125rem;
+}
+
+/* Section */
+.section { margin-bottom: 3rem; }
+.section-title {
+  font-size: 1.25rem;
+  font-weight: 600;
+  margin-bottom: 1.25rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.section-title .dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+.section-title .hint {
+  font-size: 0.8125rem;
+  font-weight: 400;
+  color: var(--text-muted);
+  margin-left: auto;
+}
+
+/* ER Diagram */
+.er-wrapper {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 2rem;
+  overflow-x: auto;
+}
+.mermaid { display: flex; justify-content: center; }
+.mermaid svg { max-width: 100%; height: auto; }
+
+/* Relation Cards */
+.relation-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  gap: 1rem;
+}
+.relation-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1rem 1.25rem;
+  transition: border-color 0.2s;
+}
+.relation-card:hover { border-color: var(--accent); }
+.relation-card .rel-type {
+  font-size: 0.75rem;
+  color: var(--accent);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 0.375rem;
+}
+.relation-card .rel-desc {
+  font-size: 0.9375rem;
+  font-weight: 500;
+}
+.relation-card .rel-detail {
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+  margin-top: 0.25rem;
+}
+
+/* Legend */
+.legend {
+  display: flex;
+  gap: 1.25rem;
+  flex-wrap: wrap;
+  padding: 1rem 1.25rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  margin-bottom: 1.5rem;
+}
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+}
+.badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.125rem 0.5rem;
+  border-radius: 4px;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  font-family: "SF Mono", "Fira Code", monospace;
+}
+.badge-pk { background: rgba(240,180,41,0.15); color: var(--pk); }
+.badge-fk { background: rgba(91,156,246,0.15); color: var(--fk); }
+.badge-uk { background: rgba(167,139,250,0.15); color: var(--uk); }
+.badge-nn { background: rgba(100,116,139,0.15); color: var(--nn); }
+.badge-check { background: rgba(52,211,153,0.12); color: var(--success); }
+
+/* Table Cards */
+.table-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(480px, 1fr));
+  gap: 1.25rem;
+}
+.table-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  transition: border-color 0.2s;
+}
+.table-card:hover { border-color: var(--accent); }
+.table-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1.25rem;
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--border);
+}
+.table-card-header h3 {
+  font-size: 1rem;
+  font-weight: 600;
+  font-family: "SF Mono", "Fira Code", monospace;
+}
+.table-card-header .tag {
+  font-size: 0.6875rem;
+  padding: 0.125rem 0.5rem;
+  border-radius: 999px;
+  background: var(--accent-dim);
+  color: var(--accent);
+  font-weight: 600;
+}
+.table-card-body { padding: 0; }
+
+.field-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8125rem;
+}
+.field-table th {
+  text-align: left;
+  padding: 0.5rem 1rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  border-bottom: 1px solid var(--border);
+  background: rgba(0,0,0,0.15);
+}
+.field-table td {
+  padding: 0.5rem 1rem;
+  border-bottom: 1px solid rgba(46,51,69,0.5);
+  vertical-align: top;
+}
+.field-table tr:last-child td { border-bottom: none; }
+.field-table .field-name {
+  font-family: "SF Mono", "Fira Code", monospace;
+  font-weight: 500;
+  white-space: nowrap;
+}
+.field-table .field-type {
+  font-family: "SF Mono", "Fira Code", monospace;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.field-table .field-desc {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+}
+.badge-group { display: flex; gap: 0.25rem; flex-wrap: wrap; }
+
+/* Index section */
+.index-section {
+  padding: 0.75rem 1rem;
+  border-top: 1px solid var(--border);
+  background: rgba(0,0,0,0.1);
+}
+.index-section h4 {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  margin-bottom: 0.5rem;
+}
+.index-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+.index-tag {
+  font-family: "SF Mono", "Fira Code", monospace;
+  font-size: 0.6875rem;
+  padding: 0.2rem 0.5rem;
+  border-radius: 4px;
+  background: rgba(100,116,139,0.12);
+  color: var(--text-muted);
+}
+
+/* Check section */
+.check-section {
+  padding: 0.75rem 1rem;
+  border-top: 1px solid var(--border);
+}
+.check-section h4 {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  margin-bottom: 0.5rem;
+}
+.check-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+/* Footer */
+.footer {
+  text-align: center;
+  padding: 2rem 0;
+  color: var(--text-muted);
+  font-size: 0.8125rem;
+  border-top: 1px solid var(--border);
+  margin-top: 3rem;
+}
+
+/* Responsive */
+@media (max-width: 560px) {
+  .container { padding: 1rem; }
+  .table-grid { grid-template-columns: 1fr; }
+  .relation-grid { grid-template-columns: 1fr; }
+  .stats { gap: 1rem; }
+}
+</style>
+</head>
+<body>
+<div class="container">
+
+  <!-- Header -->
+  <div class="header">
+    <h1>AI Agent Platform <span>数据库 Schema</span></h1>
+    <p style="color:var(--text-muted); margin-top:0.25rem;">PostgreSQL &middot; 多租户 AI Agent SaaS（共享数据库 + tenant_id 隔离）</p>
+    <div class="stats">
+      <div class="stat"><strong>14</strong> 张表</div>
+      <div class="stat"><strong>20+</strong> 条外键关系</div>
+      <div class="stat"><strong>140+</strong> 个字段</div>
+      <div class="stat">更新于 2026-07-07</div>
+    </div>
+  </div>
+
+  <!-- ER Diagram -->
+  <div class="section">
+    <div class="section-title"><span class="dot"></span>实体关系图<span class="hint">核心租户隔离 + 用户/角色/组织/会话/审计</span></div>
+    <div class="er-wrapper">
+      <pre class="mermaid">%%{init: {"theme": "dark", "themeVariables": {"primaryColor": "#232733", "primaryBorderColor": "#6c8cff", "primaryTextColor": "#e2e8f0", "lineColor": "#4a5068", "secondaryColor": "#1a1d27", "tertiaryColor": "#0f1117"}}}%%
+erDiagram
+    tenants ||--o{ user_tenants : ""
+    users ||--o{ user_tenants : ""
+    tenants ||--o{ agents : ""
+    tenants ||--o{ conversations : ""
+    agents ||--o{ conversations : ""
+    conversations ||--o{ messages : ""
+
+    tenants ||--o{ roles : ""
+    tenants ||--o{ permissions : ""
+    roles ||--o{ role_permissions : ""
+    permissions ||--o{ role_permissions : ""
+
+    tenants ||--o{ organizations : ""
+    organizations ||--o{ organizations : ""
+    organizations ||--o{ user_organizations : ""
+    users ||--o{ user_organizations : ""
+
+    users ||--o{ user_sessions : ""
+    users ||--o{ user_login_methods : ""
+    users ||--o{ system_logs : ""
+    tenants ||--o{ system_logs : ""
+
+    tenants {
+        varchar id PK
+        varchar name
+        timestamptz created_at
+    }
+    users {
+        varchar id PK
+        varchar username
+        varchar email
+        varchar password
+        varchar status
+        timestamptz created_at
+    }
+    user_tenants {
+        varchar user_id PK
+        varchar tenant_id PK
+        varchar role
+        timestamptz created_at
+    }
+    agents {
+        varchar id PK
+        varchar tenant_id FK
+        varchar name
+        timestamptz created_at
+    }
+    conversations {
+        varchar id PK
+        varchar tenant_id FK
+        varchar agent_id FK
+        varchar user_id
+        timestamptz created_at
+    }
+    messages {
+        varchar id PK
+        varchar conversation_id FK
+        varchar tenant_id
+        varchar role
+        text content
+        timestamptz created_at
+    }
+    roles {
+        varchar id PK
+        varchar code
+        varchar tenant_id FK
+        boolean is_system
+        timestamptz created_at
+    }
+    permissions {
+        varchar id PK
+        varchar code
+        varchar tenant_id FK
+        varchar type
+        timestamptz created_at
+    }
+    role_permissions {
+        varchar id PK
+        varchar role_id FK
+        varchar permission_id FK
+        varchar tenant_id
+    }
+    organizations {
+        varchar id PK
+        varchar tenant_id FK
+        varchar name
+        varchar parent_id FK
+        varchar leader_id FK
+        timestamptz created_at
+    }
+    user_organizations {
+        varchar id PK
+        varchar user_id FK
+        varchar organization_id FK
+        boolean is_main
+    }
+    user_sessions {
+        varchar id PK
+        varchar user_id FK
+        varchar session_id UK
+        varchar device_type
+        boolean is_active
+        timestamptz expires_at
+    }
+    user_login_methods {
+        varchar id PK
+        varchar user_id FK
+        varchar login_type
+        varchar identifier
+        boolean is_primary
+    }
+    system_logs {
+        varchar id PK
+        varchar action
+        varchar module
+        varchar user_id FK
+        varchar tenant_id FK
+        jsonb old_values
+        jsonb new_values
+        timestamptz created_at
+    }
+    casbin_rule {
+        integer id PK
+        varchar ptype
+        varchar v0
+        varchar v1
+        varchar v2
+        varchar v3
+    }
+      </pre>
+    </div>
+  </div>
+
+  <!-- Legend -->
+  <div class="section">
+    <div class="section-title"><span class="dot"></span>约束图例</div>
+    <div class="legend">
+      <div class="legend-item"><span class="badge badge-pk">PK</span> 主键</div>
+      <div class="legend-item"><span class="badge badge-fk">FK</span> 外键</div>
+      <div class="legend-item"><span class="badge badge-uk">UK</span> 唯一</div>
+      <div class="legend-item"><span class="badge badge-nn">NN</span> 非空</div>
+      <div class="legend-item"><span class="badge badge-check">CHECK</span> 约束</div>
+      <div class="legend-item"><span class="badge" style="background:rgba(100,116,139,0.12);color:var(--text-muted)">IDX</span> 索引</div>
+    </div>
+  </div>
+
+  <!-- Relations -->
+  <div class="section">
+    <div class="section-title"><span class="dot"></span>关联关系</div>
+    <div class="relation-grid">
+
+      <div class="relation-card">
+        <div class="rel-type">多对多 · CASCADE</div>
+        <div class="rel-desc">tenants ↔ users（经 user_tenants）</div>
+        <div class="rel-detail">用户可加入多个租户，每成员关系带一个角色；任一端删除级联清除成员关系</div>
+      </div>
+
+      <div class="relation-card">
+        <div class="rel-type">一对多 · CASCADE</div>
+        <div class="rel-desc">tenants → agents / conversations</div>
+        <div class="rel-detail">租户删除时级联清除其下所有 Agent 定义与会话</div>
+      </div>
+
+      <div class="relation-card">
+        <div class="rel-type">一对多 · CASCADE</div>
+        <div class="rel-desc">agents → conversations → messages</div>
+        <div class="rel-detail">Agent 删除级联清会话；会话删除级联清消息</div>
+      </div>
+
+      <div class="relation-card">
+        <div class="rel-type">一对多 · CASCADE</div>
+        <div class="rel-desc">tenants → roles / permissions</div>
+        <div class="rel-detail">租户删除时级联清除其角色与权限定义（display 层，不影响 casbin_rule）</div>
+      </div>
+
+      <div class="relation-card">
+        <div class="rel-type">多对多 · CASCADE</div>
+        <div class="rel-desc">roles ↔ permissions（经 role_permissions）</div>
+        <div class="rel-detail">角色挂多个权限；任一端删除级联清除关联</div>
+      </div>
+
+      <div class="relation-card">
+        <div class="rel-type">软关联 · 无 FK</div>
+        <div class="rel-desc">user_tenants.role → roles.code</div>
+        <div class="rel-detail">成员角色名与 casbin 角色名一一对应，但不建 FK（保持 casbin 解耦）</div>
+      </div>
+
+      <div class="relation-card">
+        <div class="rel-type">自引用 · SET NULL</div>
+        <div class="rel-desc">organizations.parent_id → organizations.id</div>
+        <div class="rel-detail">组织树父子关系；父组织删除时子组织父级置空（不级联）</div>
+      </div>
+
+      <div class="relation-card">
+        <div class="rel-type">多对多 · CASCADE</div>
+        <div class="rel-desc">users ↔ organizations（经 user_organizations）</div>
+        <div class="rel-detail">用户可属多个组织，is_main 标记主组织</div>
+      </div>
+
+      <div class="relation-card">
+        <div class="rel-type">一对多 · CASCADE</div>
+        <div class="rel-desc">users → user_sessions / user_login_methods</div>
+        <div class="rel-detail">用户删除时级联清除其会话与登录方式记录</div>
+      </div>
+
+      <div class="relation-card">
+        <div class="rel-type">一对多 · SET NULL</div>
+        <div class="rel-desc">users / tenants → system_logs</div>
+        <div class="rel-detail">审计日志用 SET NULL：用户/租户删除后保留历史日志</div>
+      </div>
+
+      <div class="relation-card">
+        <div class="rel-type">软引用 · 无 FK</div>
+        <div class="rel-desc">conversations.user_id → users.id</div>
+        <div class="rel-detail">仅存 ID 不建外键：用户被删时保留会话历史用于审计</div>
+      </div>
+
+      <div class="relation-card">
+        <div class="rel-type">软引用 · 无 FK</div>
+        <div class="rel-desc">messages.tenant_id → tenants.id</div>
+        <div class="rel-detail">冗余租户 ID 加速隔离查询，Repository 层强制 WHERE tenant_id</div>
+      </div>
+
+      <div class="relation-card">
+        <div class="rel-type">独立表</div>
+        <div class="rel-desc">casbin_rule（无 FK 关系）</div>
+        <div class="rel-detail">由 casbin-sqlalchemy-adapter 自管，Alembic 已配置排除，不参与迁移</div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Table Details -->
+  <div class="section">
+    <div class="section-title"><span class="dot"></span>表详情<span class="hint">按模块分组：租户核心 · 用户与权限 · 组织 · 会话与安全 · 审计</span></div>
+    <div class="table-grid">
+
+      <!-- tenants -->
+      <div class="table-card">
+        <div class="table-card-header">
+          <h3>tenants</h3>
+          <span class="tag">租户聚合根</span>
+        </div>
+        <div class="table-card-body">
+          <table class="field-table">
+            <thead><tr><th>字段</th><th>类型</th><th>约束</th><th>说明</th></tr></thead>
+            <tbody>
+              <tr><td class="field-name">id</td><td class="field-type">varchar(32)</td><td><span class="badge badge-pk">PK</span></td><td class="field-desc">主键, uuid4().hex（无连字符）</td></tr>
+              <tr><td class="field-name">name</td><td class="field-type">varchar(128)</td><td><span class="badge badge-nn">NN</span></td><td class="field-desc">租户名称</td></tr>
+              <tr><td class="field-name">created_at</td><td class="field-type">timestamptz</td><td><span class="badge badge-nn">NN</span></td><td class="field-desc">创建时间, now()</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- users -->
+      <div class="table-card">
+        <div class="table-card-header">
+          <h3>users</h3>
+          <span class="tag">全局身份（含本地密码）</span>
+        </div>
+        <div class="table-card-body">
+          <table class="field-table">
+            <thead><tr><th>字段</th><th>类型</th><th>约束</th><th>说明</th></tr></thead>
+            <tbody>
+              <tr><td class="field-name">id</td><td class="field-type">varchar(128)</td><td><span class="badge badge-pk">PK</span></td><td class="field-desc">主键, 镜像 Logto sub 或本地账号 uuid4().hex</td></tr>
+              <tr><td class="field-name">username</td><td class="field-type">varchar(50)</td><td><span class="badge badge-nn">IDX</span></td><td class="field-desc">用户名（本地账号登录用），可空</td></tr>
+              <tr><td class="field-name">email</td><td class="field-type">varchar(255)</td><td><span class="badge badge-nn">IDX</span></td><td class="field-desc">邮箱, 可空（全局唯一索引）</td></tr>
+              <tr><td class="field-name">display_name</td><td class="field-type">varchar(128)</td><td></td><td class="field-desc">显示名, 可空</td></tr>
+              <tr><td class="field-name">real_name</td><td class="field-type">varchar(100)</td><td><span class="badge badge-nn">IDX</span></td><td class="field-desc">真实姓名, 可空</td></tr>
+              <tr><td class="field-name">phone</td><td class="field-type">varchar(20)</td><td><span class="badge badge-nn">IDX</span></td><td class="field-desc">手机号, 可空</td></tr>
+              <tr><td class="field-name">avatar</td><td class="field-type">varchar(255)</td><td></td><td class="field-desc">头像路径, 默认 /avatars/default.jpg</td></tr>
+              <tr><td class="field-name">password</td><td class="field-type">varchar(255)</td><td></td><td class="field-desc">bcrypt 哈希, OIDC 账号为 null</td></tr>
+              <tr><td class="field-name">status</td><td class="field-type">varchar(20)</td><td></td><td class="field-desc">状态: active/inactive/locked, 默认 active</td></tr>
+              <tr><td class="field-name">metadata</td><td class="field-type">jsonb</td><td></td><td class="field-desc">扩展元数据(JSON), 默认 {}</td></tr>
+              <tr><td class="field-name">is_deleted</td><td class="field-type">boolean</td><td><span class="badge badge-nn">IDX</span></td><td class="field-desc">软删除标记, 默认 false</td></tr>
+              <tr><td class="field-name">deleted_at</td><td class="field-type">timestamptz</td><td></td><td class="field-desc">删除时间, 可空</td></tr>
+              <tr><td class="field-name">password_updated_at</td><td class="field-type">timestamptz</td><td><span class="badge badge-nn">NN</span></td><td class="field-desc">密码更新时间</td></tr>
+              <tr><td class="field-name">last_login_at</td><td class="field-type">timestamptz</td><td></td><td class="field-desc">最后登录时间, 可空</td></tr>
+              <tr><td class="field-name">created_by</td><td class="field-type">varchar(128)</td><td><span class="badge badge-fk">FK</span></td><td class="field-desc">创建人 → users.id（自引用）</td></tr>
+              <tr><td class="field-name">updated_by</td><td class="field-type">varchar(128)</td><td><span class="badge badge-fk">FK</span></td><td class="field-desc">更新人 → users.id（自引用）</td></tr>
+              <tr><td class="field-name">created_at</td><td class="field-type">timestamptz</td><td><span class="badge badge-nn">NN</span></td><td class="field-desc">创建时间, now()</td></tr>
+              <tr><td class="field-name">updated_at</td><td class="field-type">timestamptz</td><td><span class="badge badge-nn">NN</span></td><td class="field-desc">更新时间, now() + onupdate</td></tr>
+            </tbody>
+          </table>
+          <div class="index-section">
+            <h4>索引</h4>
+            <div class="index-list">
+              <span class="index-tag">ix_users_username</span>
+              <span class="index-tag">ix_users_email</span>
+              <span class="index-tag">ix_users_phone</span>
+              <span class="index-tag">ix_users_real_name</span>
+              <span class="index-tag">ix_users_is_deleted</span>
+            </div>
+          </div>
+          <div class="check-section">
+            <h4>应用层约束</h4>
+            <div class="check-list">
+              <span class="badge badge-check">status ∈ {active, inactive, locked}</span>
+              <span class="badge badge-check">username 全局唯一（应用层校验）</span>
+              <span class="badge badge-check">password 由 bcrypt 哈希</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- user_tenants -->
+      <div class="table-card">
+        <div class="table-card-header">
+          <h3>user_tenants</h3>
+          <span class="tag">多对多关联（租户成员）</span>
+        </div>
+        <div class="table-card-body">
+          <table class="field-table">
+            <thead><tr><th>字段</th><th>类型</th><th>约束</th><th>说明</th></tr></thead>
+            <tbody>
+              <tr><td class="field-name">user_id</td><td class="field-type">varchar(128)</td><td><span class="badge badge-pk">PK</span> <span class="badge badge-fk">FK</span> <span class="badge badge-nn">NN</span></td><td class="field-desc">→ users.id, CASCADE</td></tr>
+              <tr><td class="field-name">tenant_id</td><td class="field-type">varchar(32)</td><td><span class="badge badge-pk">PK</span> <span class="badge badge-fk">FK</span> <span class="badge badge-nn">NN</span></td><td class="field-desc">→ tenants.id, CASCADE</td></tr>
+              <tr><td class="field-name">role</td><td class="field-type">varchar(64)</td><td><span class="badge badge-nn">NN</span></td><td class="field-desc">角色名, 对应 casbin g 策略: owner/admin/member, 默认 member</td></tr>
+              <tr><td class="field-name">created_at</td><td class="field-type">timestamptz</td><td><span class="badge badge-nn">NN</span></td><td class="field-desc">加入时间, now()</td></tr>
+            </tbody>
+          </table>
+          <div class="index-section">
+            <h4>索引 / 约束</h4>
+            <div class="index-list">
+              <span class="index-tag">PRIMARY KEY (user_id, tenant_id)</span>
+            </div>
+          </div>
+          <div class="check-section">
+            <h4>应用层约束</h4>
+            <div class="check-list">
+              <span class="badge badge-check">role ∈ {owner, admin, member}</span>
+              <span class="badge badge-check">改角色时同步 casbin grouping policy</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- agents -->
+      <div class="table-card">
+        <div class="table-card-header">
+          <h3>agents</h3>
+          <span class="tag">租户资源</span>
+        </div>
+        <div class="table-card-body">
+          <table class="field-table">
+            <thead><tr><th>字段</th><th>类型</th><th>约束</th><th>说明</th></tr></thead>
+            <tbody>
+              <tr><td class="field-name">id</td><td class="field-type">varchar(32)</td><td><span class="badge badge-pk">PK</span></td><td class="field-desc">主键, uuid4().hex</td></tr>
+              <tr><td class="field-name">tenant_id</td><td class="field-type">varchar(32)</td><td><span class="badge badge-fk">FK</span> <span class="badge badge-nn">NN</span></td><td class="field-desc">→ tenants.id, CASCADE</td></tr>
+              <tr><td class="field-name">name</td><td class="field-type">varchar(128)</td><td><span class="badge badge-nn">NN</span></td><td class="field-desc">Agent 名称</td></tr>
+              <tr><td class="field-name">system_prompt</td><td class="field-type">text</td><td></td><td class="field-desc">系统提示词, 默认空串</td></tr>
+              <tr><td class="field-name">model</td><td class="field-type">varchar(64)</td><td></td><td class="field-desc">模型名, 默认 gpt-4o-mini</td></tr>
+              <tr><td class="field-name">created_at</td><td class="field-type">timestamptz</td><td><span class="badge badge-nn">NN</span></td><td class="field-desc">创建时间, now()</td></tr>
+            </tbody>
+          </table>
+          <div class="index-section">
+            <h4>索引</h4>
+            <div class="index-list">
+              <span class="index-tag">ix_agents_tenant_id (tenant_id)</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- conversations -->
+      <div class="table-card">
+        <div class="table-card-header">
+          <h3>conversations</h3>
+          <span class="tag">租户资源</span>
+        </div>
+        <div class="table-card-body">
+          <table class="field-table">
+            <thead><tr><th>字段</th><th>类型</th><th>约束</th><th>说明</th></tr></thead>
+            <tbody>
+              <tr><td class="field-name">id</td><td class="field-type">varchar(32)</td><td><span class="badge badge-pk">PK</span></td><td class="field-desc">主键, uuid4().hex</td></tr>
+              <tr><td class="field-name">tenant_id</td><td class="field-type">varchar(32)</td><td><span class="badge badge-fk">FK</span> <span class="badge badge-nn">NN</span></td><td class="field-desc">→ tenants.id, CASCADE</td></tr>
+              <tr><td class="field-name">agent_id</td><td class="field-type">varchar(32)</td><td><span class="badge badge-fk">FK</span> <span class="badge badge-nn">NN</span></td><td class="field-desc">→ agents.id, CASCADE</td></tr>
+              <tr><td class="field-name">user_id</td><td class="field-type">varchar(128)</td><td></td><td class="field-desc">发起用户, 软引用 users.id（无 FK, 保留历史）</td></tr>
+              <tr><td class="field-name">title</td><td class="field-type">varchar(255)</td><td></td><td class="field-desc">会话标题, 可空</td></tr>
+              <tr><td class="field-name">created_at</td><td class="field-type">timestamptz</td><td><span class="badge badge-nn">NN</span></td><td class="field-desc">创建时间, now()</td></tr>
+            </tbody>
+          </table>
+          <div class="index-section">
+            <h4>索引</h4>
+            <div class="index-list">
+              <span class="index-tag">ix_conversations_tenant_id</span>
+              <span class="index-tag">ix_conversations_agent_id</span>
+              <span class="index-tag">ix_conversations_user_id</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- messages -->
+      <div class="table-card">
+        <div class="table-card-header">
+          <h3>messages</h3>
+          <span class="tag">租户资源</span>
+        </div>
+        <div class="table-card-body">
+          <table class="field-table">
+            <thead><tr><th>字段</th><th>类型</th><th>约束</th><th>说明</th></tr></thead>
+            <tbody>
+              <tr><td class="field-name">id</td><td class="field-type">varchar(32)</td><td><span class="badge badge-pk">PK</span></td><td class="field-desc">主键, uuid4().hex</td></tr>
+              <tr><td class="field-name">conversation_id</td><td class="field-type">varchar(32)</td><td><span class="badge badge-fk">FK</span> <span class="badge badge-nn">NN</span></td><td class="field-desc">→ conversations.id, CASCADE</td></tr>
+              <tr><td class="field-name">tenant_id</td><td class="field-type">varchar(32)</td><td></td><td class="field-desc">冗余租户 ID（软引用）, 加速 WHERE 隔离</td></tr>
+              <tr><td class="field-name">role</td><td class="field-type">varchar(16)</td><td><span class="badge badge-nn">NN</span></td><td class="field-desc">消息角色: user / assistant</td></tr>
+              <tr><td class="field-name">content</td><td class="field-type">text</td><td><span class="badge badge-nn">NN</span></td><td class="field-desc">消息内容</td></tr>
+              <tr><td class="field-name">created_at</td><td class="field-type">timestamptz</td><td><span class="badge badge-nn">NN</span></td><td class="field-desc">创建时间, now()</td></tr>
+            </tbody>
+          </table>
+          <div class="index-section">
+            <h4>索引</h4>
+            <div class="index-list">
+              <span class="index-tag">ix_messages_conversation_id</span>
+              <span class="index-tag">ix_messages_tenant_id</span>
+            </div>
+          </div>
+          <div class="check-section">
+            <h4>应用层约束</h4>
+            <div class="check-list">
+              <span class="badge badge-check">role ∈ {user, assistant}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- roles -->
+      <div class="table-card">
+        <div class="table-card-header">
+          <h3>roles</h3>
+          <span class="tag">RBAC 显示层</span>
+        </div>
+        <div class="table-card-body">
+          <table class="field-table">
+            <thead><tr><th>字段</th><th>类型</th><th>约束</th><th>说明</th></tr></thead>
+            <tbody>
+              <tr><td class="field-name">id</td><td class="field-type">varchar(32)</td><td><span class="badge badge-pk">PK</span></td><td class="field-desc">主键, uuid4().hex</td></tr>
+              <tr><td class="field-name">name</td><td class="field-type">varchar(50)</td><td><span class="badge badge-nn">NN</span></td><td class="field-desc">角色名称</td></tr>
+              <tr><td class="field-name">code</td><td class="field-type">varchar(100)</td><td><span class="badge badge-nn">NN</span></td><td class="field-desc">角色代码（对应 casbin 角色名: owner/admin/member）</td></tr>
+              <tr><td class="field-name">tenant_id</td><td class="field-type">varchar(32)</td><td><span class="badge badge-fk">FK</span> <span class="badge badge-nn">NN</span></td><td class="field-desc">→ tenants.id, CASCADE</td></tr>
+              <tr><td class="field-name">description</td><td class="field-type">varchar(255)</td><td></td><td class="field-desc">描述, 可空</td></tr>
+              <tr><td class="field-name">is_system</td><td class="field-type">boolean</td><td></td><td class="field-desc">系统内置角色, 不可删, 默认 false</td></tr>
+              <tr><td class="field-name">is_deleted</td><td class="field-type">boolean</td><td></td><td class="field-desc">软删除标记, 默认 false</td></tr>
+              <tr><td class="field-name">deleted_at</td><td class="field-type">timestamptz</td><td></td><td class="field-desc">删除时间, 可空</td></tr>
+              <tr><td class="field-name">sort_order</td><td class="field-type">integer</td><td></td><td class="field-desc">排序, 默认 0</td></tr>
+              <tr><td class="field-name">status</td><td class="field-type">varchar(20)</td><td></td><td class="field-desc">状态, 默认 active</td></tr>
+              <tr><td class="field-name">created_by</td><td class="field-type">varchar(128)</td><td><span class="badge badge-fk">FK</span></td><td class="field-desc">创建人 → users.id</td></tr>
+              <tr><td class="field-name">updated_by</td><td class="field-type">varchar(128)</td><td><span class="badge badge-fk">FK</span></td><td class="field-desc">更新人 → users.id</td></tr>
+              <tr><td class="field-name">created_at</td><td class="field-type">timestamptz</td><td><span class="badge badge-nn">NN</span></td><td class="field-desc">创建时间</td></tr>
+              <tr><td class="field-name">updated_at</td><td class="field-type">timestamptz</td><td><span class="badge badge-nn">NN</span></td><td class="field-desc">更新时间</td></tr>
+            </tbody>
+          </table>
+          <div class="index-section">
+            <h4>索引 / 约束</h4>
+            <div class="index-list">
+              <span class="index-tag">idx_roles_tenant_id</span>
+              <span class="index-tag">UNIQUE (tenant_id, code) — uq_roles_tenant_code</span>
+              <span class="index-tag">UNIQUE (tenant_id, name) — uq_roles_tenant_name</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- permissions -->
+      <div class="table-card">
+        <div class="table-card-header">
+          <h3>permissions</h3>
+          <span class="tag">RBAC 显示层</span>
+        </div>
+        <div class="table-card-body">
+          <table class="field-table">
+            <thead><tr><th>字段</th><th>类型</th><th>约束</th><th>说明</th></tr></thead>
+            <tbody>
+              <tr><td class="field-name">id</td><td class="field-type">varchar(32)</td><td><span class="badge badge-pk">PK</span></td><td class="field-desc">主键, uuid4().hex</td></tr>
+              <tr><td class="field-name">name</td><td class="field-type">varchar(50)</td><td><span class="badge badge-nn">NN</span></td><td class="field-desc">权限名称</td></tr>
+              <tr><td class="field-name">code</td><td class="field-type">varchar(100)</td><td><span class="badge badge-nn">NN</span></td><td class="field-desc">权限代码</td></tr>
+              <tr><td class="field-name">tenant_id</td><td class="field-type">varchar(32)</td><td><span class="badge badge-fk">FK</span> <span class="badge badge-nn">NN</span></td><td class="field-desc">→ tenants.id, CASCADE</td></tr>
+              <tr><td class="field-name">type</td><td class="field-type">varchar(20)</td><td></td><td class="field-desc">类型: menu/page/button/api/data, 默认 api</td></tr>
+              <tr><td class="field-name">description</td><td class="field-type">varchar(255)</td><td></td><td class="field-desc">描述, 可空</td></tr>
+              <tr><td class="field-name">sort_order</td><td class="field-type">integer</td><td></td><td class="field-desc">排序, 默认 0</td></tr>
+              <tr><td class="field-name">is_system</td><td class="field-type">boolean</td><td></td><td class="field-desc">系统内置, 默认 false</td></tr>
+              <tr><td class="field-name">is_deleted</td><td class="field-type">boolean</td><td></td><td class="field-desc">软删除标记, 默认 false</td></tr>
+              <tr><td class="field-name">status</td><td class="field-type">varchar(20)</td><td></td><td class="field-desc">状态, 默认 active</td></tr>
+              <tr><td class="field-name">created_at</td><td class="field-type">timestamptz</td><td><span class="badge badge-nn">NN</span></td><td class="field-desc">创建时间</td></tr>
+            </tbody>
+          </table>
+          <div class="index-section">
+            <h4>索引 / 约束</h4>
+            <div class="index-list">
+              <span class="index-tag">UNIQUE (tenant_id, code) — uq_permissions_tenant_code</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- role_permissions -->
+      <div class="table-card">
+        <div class="table-card-header">
+          <h3>role_permissions</h3>
+          <span class="tag">角色-权限关联</span>
+        </div>
+        <div class="table-card-body">
+          <table class="field-table">
+            <thead><tr><th>字段</th><th>类型</th><th>约束</th><th>说明</th></tr></thead>
+            <tbody>
+              <tr><td class="field-name">id</td><td class="field-type">varchar(32)</td><td><span class="badge badge-pk">PK</span></td><td class="field-desc">主键, uuid4().hex</td></tr>
+              <tr><td class="field-name">role_id</td><td class="field-type">varchar(32)</td><td><span class="badge badge-fk">FK</span> <span class="badge badge-nn">NN</span></td><td class="field-desc">→ roles.id, CASCADE</td></tr>
+              <tr><td class="field-name">permission_id</td><td class="field-type">varchar(32)</td><td><span class="badge badge-fk">FK</span> <span class="badge badge-nn">NN</span></td><td class="field-desc">→ permissions.id, CASCADE</td></tr>
+              <tr><td class="field-name">tenant_id</td><td class="field-type">varchar(32)</td><td><span class="badge badge-nn">NN</span></td><td class="field-desc">租户 ID（冗余, 隔离查询）</td></tr>
+              <tr><td class="field-name">created_at</td><td class="field-type">timestamptz</td><td><span class="badge badge-nn">NN</span></td><td class="field-desc">创建时间</td></tr>
+            </tbody>
+          </table>
+          <div class="index-section">
+            <h4>索引 / 约束</h4>
+            <div class="index-list">
+              <span class="index-tag">UNIQUE (tenant_id, role_id, permission_id) — uq_role_permission_tenant</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- organizations -->
+      <div class="table-card">
+        <div class="table-card-header">
+          <h3>organizations</h3>
+          <span class="tag">组织架构树</span>
+        </div>
+        <div class="table-card-body">
+          <table class="field-table">
+            <thead><tr><th>字段</th><th>类型</th><th>约束</th><th>说明</th></tr></thead>
+            <tbody>
+              <tr><td class="field-name">id</td><td class="field-type">varchar(32)</td><td><span class="badge badge-pk">PK</span></td><td class="field-desc">主键, uuid4().hex</td></tr>
+              <tr><td class="field-name">tenant_id</td><td class="field-type">varchar(32)</td><td><span class="badge badge-fk">FK</span> <span class="badge badge-nn">NN</span></td><td class="field-desc">→ tenants.id, CASCADE</td></tr>
+              <tr><td class="field-name">name</td><td class="field-type">varchar(200)</td><td><span class="badge badge-nn">NN</span></td><td class="field-desc">组织名称</td></tr>
+              <tr><td class="field-name">code</td><td class="field-type">varchar(100)</td><td></td><td class="field-desc">组织代码, 可空</td></tr>
+              <tr><td class="field-name">path</td><td class="field-type">varchar(255)</td><td></td><td class="field-desc">层级路径（如 /父id/子id）, 可空</td></tr>
+              <tr><td class="field-name">parent_id</td><td class="field-type">varchar(32)</td><td><span class="badge badge-fk">FK</span></td><td class="field-desc">父组织 → organizations.id（自引用）, SET NULL</td></tr>
+              <tr><td class="field-name">leader_id</td><td class="field-type">varchar(128)</td><td><span class="badge badge-fk">FK</span></td><td class="field-desc">负责人 → users.id, SET NULL</td></tr>
+              <tr><td class="field-name">status</td><td class="field-type">varchar(20)</td><td></td><td class="field-desc">状态, 默认 active</td></tr>
+              <tr><td class="field-name">sort_order</td><td class="field-type">integer</td><td></td><td class="field-desc">排序, 默认 0</td></tr>
+              <tr><td class="field-name">created_at</td><td class="field-type">timestamptz</td><td><span class="badge badge-nn">NN</span></td><td class="field-desc">创建时间</td></tr>
+              <tr><td class="field-name">updated_at</td><td class="field-type">timestamptz</td><td><span class="badge badge-nn">NN</span></td><td class="field-desc">更新时间</td></tr>
+            </tbody>
+          </table>
+          <div class="index-section">
+            <h4>索引</h4>
+            <div class="index-list">
+              <span class="index-tag">idx_organizations_tenant_id</span>
+              <span class="index-tag">idx_organizations_parent_id</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- user_organizations -->
+      <div class="table-card">
+        <div class="table-card-header">
+          <h3>user_organizations</h3>
+          <span class="tag">用户-组织关联</span>
+        </div>
+        <div class="table-card-body">
+          <table class="field-table">
+            <thead><tr><th>字段</th><th>类型</th><th>约束</th><th>说明</th></tr></thead>
+            <tbody>
+              <tr><td class="field-name">id</td><td class="field-type">varchar(32)</td><td><span class="badge badge-pk">PK</span></td><td class="field-desc">主键, uuid4().hex</td></tr>
+              <tr><td class="field-name">user_id</td><td class="field-type">varchar(128)</td><td><span class="badge badge-fk">FK</span> <span class="badge badge-nn">NN</span></td><td class="field-desc">→ users.id, CASCADE</td></tr>
+              <tr><td class="field-name">organization_id</td><td class="field-type">varchar(32)</td><td><span class="badge badge-fk">FK</span> <span class="badge badge-nn">NN</span></td><td class="field-desc">→ organizations.id, CASCADE</td></tr>
+              <tr><td class="field-name">position</td><td class="field-type">varchar(100)</td><td></td><td class="field-desc">职位, 可空</td></tr>
+              <tr><td class="field-name">is_main</td><td class="field-type">boolean</td><td></td><td class="field-desc">是否主组织, 默认 false</td></tr>
+              <tr><td class="field-name">joined_at</td><td class="field-type">timestamptz</td><td><span class="badge badge-nn">NN</span></td><td class="field-desc">加入时间</td></tr>
+            </tbody>
+          </table>
+          <div class="index-section">
+            <h4>索引 / 约束</h4>
+            <div class="index-list">
+              <span class="index-tag">idx_user_organizations_user_id</span>
+              <span class="index-tag">idx_user_organizations_org_id</span>
+              <span class="index-tag">UNIQUE (user_id, organization_id) — uq_user_organization</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- user_sessions -->
+      <div class="table-card">
+        <div class="table-card-header">
+          <h3>user_sessions</h3>
+          <span class="tag">登录会话</span>
+        </div>
+        <div class="table-card-body">
+          <table class="field-table">
+            <thead><tr><th>字段</th><th>类型</th><th>约束</th><th>说明</th></tr></thead>
+            <tbody>
+              <tr><td class="field-name">id</td><td class="field-type">varchar(32)</td><td><span class="badge badge-pk">PK</span></td><td class="field-desc">主键, uuid4().hex</td></tr>
+              <tr><td class="field-name">user_id</td><td class="field-type">varchar(128)</td><td><span class="badge badge-fk">FK</span> <span class="badge badge-nn">NN</span></td><td class="field-desc">→ users.id, CASCADE</td></tr>
+              <tr><td class="field-name">session_id</td><td class="field-type">varchar(255)</td><td><span class="badge badge-uk">UK</span> <span class="badge badge-nn">NN</span></td><td class="field-desc">会话 ID（= JWT jti）, 唯一</td></tr>
+              <tr><td class="field-name">device_id</td><td class="field-type">varchar(255)</td><td></td><td class="field-desc">设备 ID, 可空</td></tr>
+              <tr><td class="field-name">device_type</td><td class="field-type">varchar(20)</td><td></td><td class="field-desc">设备类型: web/mobile/desktop</td></tr>
+              <tr><td class="field-name">device_name</td><td class="field-type">varchar(200)</td><td></td><td class="field-desc">设备名称, 可空</td></tr>
+              <tr><td class="field-name">platform</td><td class="field-type">varchar(100)</td><td></td><td class="field-desc">平台: Windows/macOS/Linux/iOS/Android</td></tr>
+              <tr><td class="field-name">token_hash</td><td class="field-type">varchar(255)</td><td></td><td class="field-desc">Token 哈希, 可空</td></tr>
+              <tr><td class="field-name">ip_address</td><td class="field-type">varchar(45)</td><td></td><td class="field-desc">IP 地址（IPv4/IPv6）</td></tr>
+              <tr><td class="field-name">user_agent</td><td class="field-type">text</td><td></td><td class="field-desc">User-Agent</td></tr>
+              <tr><td class="field-name">expires_at</td><td class="field-type">timestamptz</td><td><span class="badge badge-nn">NN</span></td><td class="field-desc">过期时间</td></tr>
+              <tr><td class="field-name">is_active</td><td class="field-type">boolean</td><td></td><td class="field-desc">是否活跃, 默认 true</td></tr>
+              <tr><td class="field-name">impersonator_id</td><td class="field-type">varchar(128)</td><td><span class="badge badge-fk">FK</span></td><td class="field-desc">代登录者 → users.id, SET NULL</td></tr>
+              <tr><td class="field-name">created_at</td><td class="field-type">timestamptz</td><td><span class="badge badge-nn">NN</span></td><td class="field-desc">创建时间</td></tr>
+              <tr><td class="field-name">last_accessed_at</td><td class="field-type">timestamptz</td><td><span class="badge badge-nn">NN</span></td><td class="field-desc">最后访问时间</td></tr>
+            </tbody>
+          </table>
+          <div class="index-section">
+            <h4>索引</h4>
+            <div class="index-list">
+              <span class="index-tag">idx_user_sessions_user_id</span>
+              <span class="index-tag">idx_user_sessions_expires_at</span>
+              <span class="index-tag">idx_user_sessions_is_active</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- user_login_methods -->
+      <div class="table-card">
+        <div class="table-card-header">
+          <h3>user_login_methods</h3>
+          <span class="tag">多登录方式</span>
+        </div>
+        <div class="table-card-body">
+          <table class="field-table">
+            <thead><tr><th>字段</th><th>类型</th><th>约束</th><th>说明</th></tr></thead>
+            <tbody>
+              <tr><td class="field-name">id</td><td class="field-type">varchar(32)</td><td><span class="badge badge-pk">PK</span></td><td class="field-desc">主键, uuid4().hex</td></tr>
+              <tr><td class="field-name">user_id</td><td class="field-type">varchar(128)</td><td><span class="badge badge-fk">FK</span> <span class="badge badge-nn">NN</span></td><td class="field-desc">→ users.id, CASCADE</td></tr>
+              <tr><td class="field-name">login_type</td><td class="field-type">varchar(20)</td><td></td><td class="field-desc">登录方式: email/phone/wechat/oauth, 默认 email</td></tr>
+              <tr><td class="field-name">identifier</td><td class="field-type">varchar(255)</td><td><span class="badge badge-nn">NN</span></td><td class="field-desc">标识符（邮箱/手机号/openid）</td></tr>
+              <tr><td class="field-name">is_verified</td><td class="field-type">boolean</td><td></td><td class="field-desc">是否已验证, 默认 false</td></tr>
+              <tr><td class="field-name">is_primary</td><td class="field-type">boolean</td><td></td><td class="field-desc">是否主登录方式, 默认 false</td></tr>
+              <tr><td class="field-name">last_used_at</td><td class="field-type">timestamptz</td><td></td><td class="field-desc">最后使用时间, 可空</td></tr>
+              <tr><td class="field-name">created_at</td><td class="field-type">timestamptz</td><td><span class="badge badge-nn">NN</span></td><td class="field-desc">创建时间</td></tr>
+            </tbody>
+          </table>
+          <div class="index-section">
+            <h4>索引 / 约束</h4>
+            <div class="index-list">
+              <span class="index-tag">idx_user_login_methods_user_id</span>
+              <span class="index-tag">idx_user_login_methods_identifier</span>
+              <span class="index-tag">UNIQUE (user_id, login_type, identifier) — uq_user_login_method</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- verification_codes -->
+      <div class="table-card">
+        <div class="table-card-header">
+          <h3>verification_codes</h3>
+          <span class="tag">短信/邮箱验证码</span>
+        </div>
+        <div class="table-card-body">
+          <table class="field-table">
+            <thead><tr><th>字段</th><th>类型</th><th>约束</th><th>说明</th></tr></thead>
+            <tbody>
+              <tr><td class="field-name">id</td><td class="field-type">varchar(32)</td><td><span class="badge badge-pk">PK</span></td><td class="field-desc">主键, uuid4().hex</td></tr>
+              <tr><td class="field-name">phone</td><td class="field-type">varchar(20)</td><td><span class="badge badge-nn">NN</span></td><td class="field-desc">手机号</td></tr>
+              <tr><td class="field-name">code</td><td class="field-type">varchar(10)</td><td><span class="badge badge-nn">NN</span></td><td class="field-desc">验证码</td></tr>
+              <tr><td class="field-name">type</td><td class="field-type">varchar(20)</td><td><span class="badge badge-nn">NN</span></td><td class="field-desc">类型: login/register/reset</td></tr>
+              <tr><td class="field-name">expires_at</td><td class="field-type">timestamptz</td><td><span class="badge badge-nn">NN</span></td><td class="field-desc">过期时间</td></tr>
+              <tr><td class="field-name">used_at</td><td class="field-type">timestamptz</td><td></td><td class="field-desc">使用时间, 可空</td></tr>
+              <tr><td class="field-name">tenant_id</td><td class="field-type">varchar(32)</td><td><span class="badge badge-fk">FK</span></td><td class="field-desc">→ tenants.id, CASCADE</td></tr>
+              <tr><td class="field-name">ip</td><td class="field-type">varchar(50)</td><td></td><td class="field-desc">请求 IP, 可空</td></tr>
+              <tr><td class="field-name">created_at</td><td class="field-type">timestamptz</td><td><span class="badge badge-nn">NN</span></td><td class="field-desc">创建时间</td></tr>
+            </tbody>
+          </table>
+          <div class="index-section">
+            <h4>索引</h4>
+            <div class="index-list">
+              <span class="index-tag">idx_verification_codes_expires_at</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- system_logs -->
+      <div class="table-card">
+        <div class="table-card-header">
+          <h3>system_logs</h3>
+          <span class="tag">操作审计日志</span>
+        </div>
+        <div class="table-card-body">
+          <table class="field-table">
+            <thead><tr><th>字段</th><th>类型</th><th>约束</th><th>说明</th></tr></thead>
+            <tbody>
+              <tr><td class="field-name">id</td><td class="field-type">varchar(32)</td><td><span class="badge badge-pk">PK</span></td><td class="field-desc">主键, uuid4().hex</td></tr>
+              <tr><td class="field-name">level</td><td class="field-type">varchar(20)</td><td><span class="badge badge-nn">NN</span></td><td class="field-desc">级别: info/warn/error/debug, 默认 info</td></tr>
+              <tr><td class="field-name">action</td><td class="field-type">varchar(100)</td><td><span class="badge badge-nn">NN</span></td><td class="field-desc">操作类型（user.create/role.delete...）</td></tr>
+              <tr><td class="field-name">module</td><td class="field-type">varchar(50)</td><td><span class="badge badge-nn">NN</span></td><td class="field-desc">模块（users/roles/organizations...）</td></tr>
+              <tr><td class="field-name">message</td><td class="field-type">text</td><td><span class="badge badge-nn">NN</span></td><td class="field-desc">日志消息</td></tr>
+              <tr><td class="field-name">details</td><td class="field-type">jsonb</td><td></td><td class="field-desc">详细信息(JSON)</td></tr>
+              <tr><td class="field-name">resource_type</td><td class="field-type">varchar(100)</td><td></td><td class="field-desc">资源类型, 可空</td></tr>
+              <tr><td class="field-name">resource_id</td><td class="field-type">varchar(255)</td><td></td><td class="field-desc">资源 ID, 可空</td></tr>
+              <tr><td class="field-name">old_values</td><td class="field-type">jsonb</td><td></td><td class="field-desc">变更前值(JSONB)</td></tr>
+              <tr><td class="field-name">new_values</td><td class="field-type">jsonb</td><td></td><td class="field-desc">变更后值(JSONB)</td></tr>
+              <tr><td class="field-name">user_id</td><td class="field-type">varchar(128)</td><td><span class="badge badge-fk">FK</span></td><td class="field-desc">操作人 → users.id, SET NULL</td></tr>
+              <tr><td class="field-name">session_id</td><td class="field-type">varchar(255)</td><td></td><td class="field-desc">会话 ID, 可空</td></tr>
+              <tr><td class="field-name">tenant_id</td><td class="field-type">varchar(32)</td><td><span class="badge badge-fk">FK</span></td><td class="field-desc">租户 ID → tenants.id, SET NULL</td></tr>
+              <tr><td class="field-name">user_agent</td><td class="field-type">varchar(500)</td><td></td><td class="field-desc">User-Agent, 可空</td></tr>
+              <tr><td class="field-name">ip</td><td class="field-type">varchar(45)</td><td></td><td class="field-desc">IP 地址, 可空</td></tr>
+              <tr><td class="field-name">request_id</td><td class="field-type">varchar(100)</td><td></td><td class="field-desc">请求 ID, 可空</td></tr>
+              <tr><td class="field-name">duration_ms</td><td class="field-type">integer</td><td></td><td class="field-desc">执行耗时（毫秒）, 可空</td></tr>
+              <tr><td class="field-name">created_at</td><td class="field-type">timestamptz</td><td><span class="badge badge-nn">NN</span></td><td class="field-desc">创建时间</td></tr>
+            </tbody>
+          </table>
+          <div class="index-section">
+            <h4>索引</h4>
+            <div class="index-list">
+              <span class="index-tag">idx_system_logs_resource (resource_type, resource_id)</span>
+              <span class="index-tag">idx_system_logs_tenant_id</span>
+              <span class="index-tag">idx_system_logs_user_id</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- casbin_rule -->
+      <div class="table-card">
+        <div class="table-card-header">
+          <h3>casbin_rule</h3>
+          <span class="tag">权限策略（适配器托管）</span>
+        </div>
+        <div class="table-card-body">
+          <table class="field-table">
+            <thead><tr><th>字段</th><th>类型</th><th>约束</th><th>说明</th></tr></thead>
+            <tbody>
+              <tr><td class="field-name">id</td><td class="field-type">integer</td><td><span class="badge badge-pk">PK</span> <span class="badge badge-nn">NN</span></td><td class="field-desc">自增主键</td></tr>
+              <tr><td class="field-name">ptype</td><td class="field-type">varchar(255)</td><td></td><td class="field-desc">策略类型: p（策略）/ g（角色分组）</td></tr>
+              <tr><td class="field-name">v0</td><td class="field-type">varchar(255)</td><td></td><td class="field-desc">主体 sub（p）/ 用户 user_id（g）</td></tr>
+              <tr><td class="field-name">v1</td><td class="field-type">varchar(255)</td><td></td><td class="field-desc">租户 dom（p）/ 角色 role（g）</td></tr>
+              <tr><td class="field-name">v2</td><td class="field-type">varchar(255)</td><td></td><td class="field-desc">对象 obj</td></tr>
+              <tr><td class="field-name">v3</td><td class="field-type">varchar(255)</td><td></td><td class="field-desc">动作 act</td></tr>
+              <tr><td class="field-name">v4</td><td class="field-type">varchar(255)</td><td></td><td class="field-desc">保留字段</td></tr>
+              <tr><td class="field-name">v5</td><td class="field-type">varchar(255)</td><td></td><td class="field-desc">保留字段</td></tr>
+            </tbody>
+          </table>
+          <div class="index-section">
+            <h4>说明</h4>
+            <div class="index-list">
+              <span class="index-tag">由 casbin-sqlalchemy-adapter 1.4.0 自动建表</span>
+              <span class="index-tag">Alembic env.py 已配置 include_object 排除</span>
+              <span class="index-tag">不参与 Alembic 迁移</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Footer -->
+  <div class="footer">
+    AI Agent Platform &middot; PostgreSQL Schema 文档 &middot; 更新于 2026-07-07
+  </div>
+
+</div>
+
+<script>
+mermaid.initialize({ startOnLoad: true });
+</script>
+</body>
+</html>

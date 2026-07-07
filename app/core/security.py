@@ -48,12 +48,28 @@ def _get_jwks_client() -> PyJWKClient:
 
 
 async def decode_token(token: str) -> dict[str, Any]:
-    """Verify and decode an access token (Logto-issued or dev-minted).
+    """Verify and decode an access token (local, Logto-issued, or dev-minted).
 
     Returns the JWT claims payload. Raises ``TokenError`` on any failure.
+
+    Three token kinds flow through here:
+      1. **Local** — HS256, ``iss == "local"``, signed with ``JWT_SECRET``.
+         Issued by ``POST /api/v1/auth/login`` (username/password login).
+      2. **Logto** — RS256, verified against the issuer's JWKS endpoint.
+      3. **Dev** — RS256, verified with the in-memory dev RSA key (dev env only).
     """
     if not token:
         raise TokenError("missing token")
+
+    # Peek at the (unverified) payload to dispatch on ``iss``. A local token
+    # never touches the JWKS/dev-key path. Any decode error here falls through
+    # to the RS256 handling below, which will surface the real failure.
+    try:
+        unverified = jwt.decode(token, options={"verify_signature": False})
+    except jwt.InvalidTokenError:
+        unverified = {}
+    if unverified.get("iss") == "local":
+        return _verify_local_token(token)
 
     # In dev mode the issuer points at our own backend; fetching JWKS over HTTP
     # would deadlock a single-worker uvicorn, so we use the in-memory dev key.
@@ -92,6 +108,28 @@ def _verify_with_dev_key(token: str) -> dict[str, Any]:
             audience=settings.logto_audience,
             issuer=settings.logto_issuer,
             options={"require": ["exp", "iat", "iss", "aud"]},
+        )
+        return payload
+    except jwt.ExpiredSignatureError as e:
+        raise TokenError("token expired") from e
+    except jwt.InvalidTokenError as e:
+        raise TokenError(f"invalid token: {e}") from e
+
+
+def _verify_local_token(token: str) -> dict[str, Any]:
+    """Validate a locally-minted HS256 token (``iss == "local"``).
+
+    These tokens are produced by ``POST /api/v1/auth/login``. They carry the
+    same claim shape (``sub``, ``tenant_id``, ``email``) as Logto tokens, so
+    downstream code in ``deps.get_current_user`` does not care which kind it is.
+    """
+    try:
+        payload = jwt.decode(
+            token,
+            settings.jwt_secret,
+            algorithms=[settings.jwt_algorithm],
+            issuer="local",
+            options={"require": ["exp", "iat", "iss", "sub"]},
         )
         return payload
     except jwt.ExpiredSignatureError as e:
