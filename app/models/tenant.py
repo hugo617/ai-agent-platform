@@ -7,8 +7,10 @@ from sqlalchemy import (
     Boolean,
     DateTime,
     ForeignKey,
+    Index,
     String,
     func,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -48,10 +50,32 @@ class User(Base):
     """
 
     __tablename__ = "users"
+    __table_args__ = (
+        # Partial unique indexes scoped to non-deleted rows enforce username /
+        # email uniqueness at the DB layer (the application's check-then-insert
+        # in UserService.create is racy under concurrency). Mirrored in the
+        # migration c1d2e3f4a5b6 -> ce505ae8a1bd. Soft-deleted rows keep their
+        # identifiers so they can be reused — every lookup filters
+        # is_deleted=False, so this matches the existing reuse semantics.
+        Index(
+            "uq_users_username_active",
+            "username",
+            unique=True,
+            postgresql_where=text("is_deleted = false"),
+            sqlite_where=text("is_deleted = 0"),
+        ),
+        Index(
+            "uq_users_email_active",
+            "email",
+            unique=True,
+            postgresql_where=text("is_deleted = false"),
+            sqlite_where=text("is_deleted = 0"),
+        ),
+    )
 
     id: Mapped[str] = mapped_column(String(128), primary_key=True)
-    email: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
-    username: Mapped[str | None] = mapped_column(String(50), nullable=True, index=True)
+    email: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    username: Mapped[str | None] = mapped_column(String(50), nullable=True)
     display_name: Mapped[str | None] = mapped_column(String(128), nullable=True)
     real_name: Mapped[str | None] = mapped_column(String(100), nullable=True, index=True)
     phone: Mapped[str | None] = mapped_column(String(20), nullable=True, index=True)
