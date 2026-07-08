@@ -163,6 +163,47 @@ async def test_duplicate_username_rejected(app_client):
 
 
 @pytest.mark.asyncio
+async def test_db_enforces_username_uniqueness(db_session):
+    """The partial unique index must reject a duplicate at the DB layer too.
+
+    The application's check-then-insert is racy under concurrency; the index is
+    the real guarantee. Drive a raw insert to confirm IntegrityError fires
+    (without relying on UserService's pre-check).
+    """
+    import uuid
+
+    from sqlalchemy.exc import IntegrityError
+
+    from app.models.tenant import User
+
+    async def _add(name: str):
+        db_session.add(
+            User(id=uuid.uuid4().hex, username=name, email=f"{name}@x.com", status="active")
+        )
+        await db_session.flush()
+
+    await _add("uniq_user")
+    with pytest.raises(IntegrityError):
+        await _add("uniq_user")  # same username, different id -> blocked by index
+    await db_session.rollback()
+
+
+@pytest.mark.asyncio
+async def test_soft_deleted_username_can_be_reused(app_client):
+    """The unique index is PARTIAL (is_deleted=false), so once a user is
+    soft-deleted their username is free for a new account — matching the
+    is_deleted filter every lookup already applies."""
+    created = (
+        await app_client.post("/api/v1/users/", json=_create_payload("reuse"), headers=AUTH)
+    ).json()
+    await app_client.delete(f"/api/v1/users/{created['id']}", headers=AUTH)
+
+    # Recreating the same username must now succeed (not 400 duplicate).
+    resp = await app_client.post("/api/v1/users/", json=_create_payload("reuse"), headers=AUTH)
+    assert resp.status_code == 201, resp.text
+
+
+@pytest.mark.asyncio
 async def test_statistics(app_client):
     await app_client.post("/api/v1/users/", json=_create_payload("stat1"), headers=AUTH)
     await app_client.post("/api/v1/users/", json=_create_payload("stat2"), headers=AUTH)

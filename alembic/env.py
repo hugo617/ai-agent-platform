@@ -25,11 +25,14 @@ from app.models import (  # noqa: F401
 )
 
 config = context.config
-# Use the sync psycopg driver for alembic (app runtime uses async +psycopg).
-sync_url = settings.database_url.replace("+psycopg", "+psycopg")
-# Force plain postgresql:// -> postgresql+psycopg:// for sync migrations.
-if sync_url.startswith("postgresql://"):
-    sync_url = sync_url.replace("postgresql://", "postgresql+psycopg://", 1)
+# Alembic runs migrations via a *sync* connection, so normalise the runtime
+# (async) DATABASE_URL to its sync driver equivalent:
+#   postgresql+psycopg://...  -> postgresql+psycopg://...  (already sync)
+#   postgresql://...          -> postgresql+psycopg://...
+#   sqlite+aiosqlite://...    -> sqlite://...              (sync pysqlite)
+# Leaving an async URL here makes engine_from_config() fail at connect time.
+sync_url = settings.database_url.replace("sqlite+aiosqlite://", "sqlite://")
+sync_url = sync_url.replace("postgresql://", "postgresql+psycopg://")
 config.set_main_option("sqlalchemy.url", sync_url)
 
 if config.config_file_name is not None:
