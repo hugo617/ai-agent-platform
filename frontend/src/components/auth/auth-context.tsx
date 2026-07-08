@@ -1,7 +1,7 @@
 import * as React from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { fetchMe } from "@/api/endpoints";
-import { getStoredToken, setStoredToken } from "@/api/client";
+import { AUTH_EXPIRED_EVENT, getStoredToken, setStoredToken } from "@/api/client";
 import type { MeResponse } from "@/api/types";
 
 /**
@@ -53,6 +53,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setToken(null);
     qc.clear();
   }, [qc]);
+
+  // React to the global 401 interceptor (see api/client.ts): when the backend
+  // rejects the token we clear local state so the next render redirects to
+  // /login instead of looping on failing queries.
+  React.useEffect(() => {
+    const handler = () => signOut();
+    window.addEventListener(AUTH_EXPIRED_EVENT, handler);
+    return () => window.removeEventListener(AUTH_EXPIRED_EVENT, handler);
+  }, [signOut]);
 
   const value: AuthState = {
     token,

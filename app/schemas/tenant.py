@@ -1,4 +1,8 @@
-"""Pydantic schemas for tenant / user DTOs."""
+"""Pydantic schemas for tenant DTOs.
+
+User DTOs live in ``app/schemas/user.py``; this module only holds Tenant
+create/read shapes.
+"""
 
 from datetime import datetime
 
@@ -17,17 +21,3 @@ class TenantRead(TenantBase):
     model_config = ConfigDict(from_attributes=True)
     id: str
     created_at: datetime
-
-
-class UserRead(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-    id: str
-    email: str | None = None
-    display_name: str | None = None
-    created_at: datetime
-
-
-class UserTenantRead(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-    tenant: TenantRead
-    role: str

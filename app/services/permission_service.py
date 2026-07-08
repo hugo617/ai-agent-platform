@@ -87,6 +87,8 @@ class PermissionService:
 
         return await run_in_threadpool(_do)
 
+    # TODO: reserved — expose via a future /roles/permissions or permissions
+    # inspection page. Not currently called by any endpoint.
     async def get_implicit_permissions_for_user(
         self, user_id: str, tenant_id: str
     ) -> list[list[str]]:
@@ -129,16 +131,41 @@ class PermissionService:
             ("users", "create"),
             ("users", "update"),
             ("users", "delete"),
+            ("roles", "read"),
+            ("roles", "create"),
+            ("roles", "update"),
+            ("roles", "delete"),
+            ("organizations", "read"),
+            ("organizations", "create"),
+            ("organizations", "update"),
+            ("organizations", "delete"),
+        ]
+        admin_perms = [
+            ("agents", "read"),
+            ("agents", "create"),
+            ("agents", "update"),
+            ("conversations", "read"),
+            ("conversations", "create"),
+            ("conversations", "chat"),
+            ("users", "read"),
+            ("users", "create"),
+            ("users", "update"),
+            ("roles", "read"),
+            ("organizations", "read"),
         ]
         member_perms = [
             ("agents", "read"),
             ("conversations", "read"),
             ("conversations", "create"),
             ("conversations", "chat"),
+            ("roles", "read"),
+            ("organizations", "read"),
         ]
 
         for obj, act in owner_perms:
             await self.add_policy("owner", tenant_id, obj, act)
+        for obj, act in admin_perms:
+            await self.add_policy("admin", tenant_id, obj, act)
         for obj, act in member_perms:
             await self.add_policy("member", tenant_id, obj, act)
 

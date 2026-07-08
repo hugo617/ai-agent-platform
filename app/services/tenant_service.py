@@ -33,6 +33,12 @@ class TenantService:
         # 4. Seed default permission policies in casbin (idempotent)
         await permission_service.seed_tenant_defaults(tenant.id, owner_user_id)
 
+        # 5. Seed the owner/admin/member display roles (idempotent) so the
+        #    user-management role dropdown is populated from the start.
+        from app.services.rbac_service import RbacService
+
+        await RbacService(self.db).seed_defaults(tenant.id)
+
         await self.db.commit()
         return TenantRead.model_validate(tenant)
 

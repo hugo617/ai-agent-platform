@@ -4,7 +4,7 @@ import json
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import field_validator
+from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Resolve the .env path relative to the project root (two levels up from this
@@ -31,11 +31,25 @@ class Settings(BaseSettings):
     # Database — required in production; tests inject it via the environment.
     database_url: str
 
-    # Logto (auth)
+    # Logto (auth) — verifies externally issued JWT (OIDC).
     logto_endpoint: str = "http://localhost:3001"
     logto_issuer: str = "http://localhost:3001/oidc"
     logto_audience: str = "http://localhost:8000/api"
     logto_admin_subject: str = "admin-user"
+
+    # Local password auth (bcrypt) — mints HS256 JWTs with iss="local"
+    # that flow through the same get_current_user pipeline as Logto tokens.
+    # IMPORTANT: the default is a placeholder only safe for local dev. Setting
+    # it to the default outside development/testing is rejected at startup so a
+    # misconfigured production deploy cannot mint forgeable tokens silently.
+    jwt_secret: str = "change-me-in-production"
+    jwt_algorithm: str = "HS256"
+    salt_rounds: int = 12
+    access_token_ttl_minutes: int = 60
+    session_ttl_hours: int = 168  # 7 days
+
+    # Frontend URL — used for welcome/reset emails and CORS default.
+    app_url: str = "http://localhost:3000"
 
     # pycasbin
     casbin_model_path: str = "casbin_model.conf"
@@ -44,6 +58,24 @@ class Settings(BaseSettings):
     openai_api_key: str = "sk-replace-me"
     openai_base_url: str = "https://api.openai.com/v1"
     openai_model: str = "gpt-4o-mini"
+
+    @model_validator(mode="after")
+    def _jwt_secret_not_default(self) -> "Settings":
+        """Reject the placeholder JWT secret outside development/testing.
+
+        A production deploy that forgets to set JWT_SECRET would otherwise sign
+        local tokens with a publicly-known key — anyone could forge an admin
+        token. Runs as a model_validator (after all fields are populated) so it
+        sees ``app_env`` loaded from the .env file, not just the raw shell env.
+        """
+        if (
+            self.jwt_secret == "change-me-in-production"
+            and self.app_env not in ("development", "testing")
+        ):
+            raise ValueError(
+                "JWT_SECRET must be changed from its default in non-dev environments"
+            )
+        return self
 
     @field_validator("cors_origins", mode="before")
     @classmethod
