@@ -155,3 +155,9 @@ def extract_tenant(claims: dict[str, Any]) -> str | None:
     """
     tenant_id = claims.get("tenant_id")
     return str(tenant_id) if tenant_id else None
+
+
+def extract_platform_role(claims: dict[str, Any]) -> str | None:
+    """Return the platform role from JWT claims, or None for normal users."""
+    role = claims.get("platform_role")
+    return str(role) if role else None

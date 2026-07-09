@@ -104,6 +104,11 @@ export function DashboardLayout() {
           </Button>
           <div className="flex-1" />
           <div className="flex items-center gap-3">
+            {me?.platform_role === "super_admin" && (
+              <Badge className="bg-amber-100 text-amber-800 hover:bg-amber-100 border-amber-300">
+                🛡️ 超级管理员
+              </Badge>
+            )}
             {me?.roles?.[0] && (
               <Badge variant="secondary">{me.roles[0]}</Badge>
             )}

@@ -14,6 +14,7 @@ from app.api.deps import CurrentUser, get_current_user
 from app.core.config import settings
 from app.core.database import get_db
 from app.core.security import TokenError, decode_token
+from app.repositories.tenant import UserRepository
 from app.schemas.auth import (
     LoginRequest,
     MeResponse,
@@ -27,14 +28,23 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 
 @router.get("/me", response_model=MeResponse)
-async def me(user: CurrentUser = Depends(get_current_user)) -> MeResponse:
+async def me(
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> MeResponse:
     roles = await permission_service.get_roles_for_user_in_domain(
         user.user_id, user.tenant_id
     )
+    # Read platform_role from the user row (authoritative, not the JWT).
+    platform_role = user.platform_role
+    if platform_role is None:
+        db_user = await UserRepository(db).get(user.user_id)
+        platform_role = db_user.platform_role if db_user else None
     return MeResponse(
         user_id=user.user_id,
         tenant_id=user.tenant_id,
         email=user.email,
+        platform_role=platform_role,
         roles=roles,
     )
 

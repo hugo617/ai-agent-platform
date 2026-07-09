@@ -14,7 +14,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.organization import Organization, UserOrganization
-from app.models.tenant import User, UserTenant
+from app.models.tenant import Tenant, User, UserTenant
 
 
 class UserFilters:
@@ -47,22 +47,42 @@ class UserFilters:
 class UserListRepository:
     """Read-side queries for the user list + statistics.
 
-    Operates within a tenant: the caller passes ``tenant_id`` (resolved from
-    the request principal) and every query is scoped to members of that tenant.
+    Operates within a tenant by default. When ``super_admin=True``, returns
+    users across all tenants with their current tenant membership info.
     """
 
     def __init__(self, db: AsyncSession) -> None:
         self.db = db
 
     def _base(self, tenant_id: str):
-        """Join users ↔ user_tenants, scoped to the tenant and non-deleted."""
+        """Join users ↔ user_tenants, scoped to the tenant and non-deleted.
+
+        Filters to the *current* membership row (``valid_to IS NULL``) so SCD2
+        history rows (a member's prior role assignments) don't double-count a
+        user after a role change. This is the read-side consequence of the SCD2
+        write path — see permission_service.py's RBAC「宪法」.
+        """
         return (
             select(User)
             .join(UserTenant, UserTenant.user_id == User.id)
             .where(
                 UserTenant.tenant_id == tenant_id,
+                UserTenant.valid_to.is_(None),
                 User.is_deleted.is_(False),
             )
+        )
+
+    def _base_all(self):
+        """All non-deleted users with their current tenant (LEFT JOIN).
+
+        Used by super admin to see users across all tenants. Users without an
+        active membership still appear (tenant fields will be None).
+        """
+        return (
+            select(User, UserTenant.tenant_id, Tenant.name.label("tenant_name"))
+            .outerjoin(UserTenant, (UserTenant.user_id == User.id) & UserTenant.valid_to.is_(None))
+            .outerjoin(Tenant, Tenant.id == UserTenant.tenant_id)
+            .where(User.is_deleted.is_(False))
         )
 
     def _apply(self, stmt, f: UserFilters, tenant_id: str):
@@ -92,7 +112,12 @@ class UserListRepository:
         stmt = stmt.order_by(direction, User.id.asc())
         return stmt
 
-    async def list(self, tenant_id: str, f: UserFilters) -> tuple[list[User], int]:
+    async def list(
+        self, tenant_id: str, f: UserFilters, super_admin: bool = False
+    ) -> tuple[list[User], int]:
+        """List users. When ``super_admin`` is True, returns all users across tenants."""
+        if super_admin:
+            return await self._list_all(f)
         stmt = self._apply(self._base(tenant_id), f, tenant_id)
         stmt = stmt.limit(f.limit).offset(f.offset)
         result = await self.db.execute(stmt)
@@ -101,6 +126,21 @@ class UserListRepository:
         count_stmt = select(func.count()).select_from(self._base(tenant_id).subquery())
         count_stmt = self._apply(count_stmt, f, tenant_id)
         # apply() adds ORDER BY which is meaningless for COUNT — strip it.
+        count_stmt = count_stmt.order_by(None)
+        total = (await self.db.execute(count_stmt)).scalar_one()
+        return users, int(total)
+
+    async def _list_all(self, f: UserFilters) -> tuple[list[User], int]:
+        """List all non-deleted users across tenants with their current membership."""
+        base = self._base_all()
+        stmt = self._apply(base, f, "")
+        stmt = stmt.limit(f.limit).offset(f.offset)
+        result = await self.db.execute(stmt)
+        rows = result.all()
+        users = [row.User for row in rows]
+
+        count_stmt = select(func.count()).select_from(base.subquery())
+        count_stmt = self._apply(count_stmt, f, "")
         count_stmt = count_stmt.order_by(None)
         total = (await self.db.execute(count_stmt)).scalar_one()
         return users, int(total)
@@ -139,6 +179,23 @@ class UserListRepository:
             "recent_logins": int(recent),
             "new_this_month": int(new_month),
         }
+
+    async def batch_tenant_info(
+        self, user_ids: list[str]
+    ) -> dict[str, tuple[str | None, str | None]]:
+        """Return ``{user_id: (tenant_id, tenant_name)}`` for current memberships."""
+        if not user_ids:
+            return {}
+        stmt = (
+            select(UserTenant.user_id, UserTenant.tenant_id, Tenant.name)
+            .join(Tenant, Tenant.id == UserTenant.tenant_id)
+            .where(
+                UserTenant.user_id.in_(user_ids),
+                UserTenant.valid_to.is_(None),
+            )
+        )
+        result = await self.db.execute(stmt)
+        return {row.user_id: (row.tenant_id, row.name) for row in result}
 
     async def list_organizations(self, user_id: str) -> list[Organization]:
         stmt = (

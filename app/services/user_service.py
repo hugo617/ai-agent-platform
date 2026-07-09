@@ -22,7 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.password import hash_password
 from app.models.organization import Organization
 from app.models.rbac import Role
-from app.models.tenant import User, UserTenant
+from app.models.tenant import User
 from app.repositories.security import LoginMethodRepository, SessionRepository
 from app.repositories.tenant import UserRepository, UserTenantRepository
 from app.repositories.user import (
@@ -57,10 +57,25 @@ class UserService:
 
     # ------------------------------------------------------------------ read
 
-    async def list(self, actor_id: str, tenant_id: str, filters: UserFilters) -> UserListResponse:
-        await permission_service.require(actor_id, tenant_id, self.OBJECT, "read")
-        users, total = await self.list_repo.list(tenant_id, filters)
-        items = [await self._read(tenant_id, u) for u in users]
+    async def list(
+        self,
+        actor_id: str,
+        tenant_id: str,
+        filters: UserFilters,
+        platform_role: str | None = None,
+    ) -> UserListResponse:
+        is_super_admin = platform_role == "super_admin"
+        if not is_super_admin:
+            await permission_service.require(actor_id, tenant_id, self.OBJECT, "read")
+
+        users, total = await self.list_repo.list(
+            tenant_id, filters, super_admin=is_super_admin
+        )
+        if is_super_admin:
+            tenant_info = await self.list_repo.batch_tenant_info([u.id for u in users])
+            items = [await self._read_all(u, tenant_info) for u in users]
+        else:
+            items = [await self._read(tenant_id, u) for u in users]
         return UserListResponse(
             items=items,
             total=total,
@@ -69,15 +84,38 @@ class UserService:
             total_pages=(total + filters.limit - 1) // filters.limit,
         )
 
-    async def get(self, actor_id: str, tenant_id: str, user_id: str) -> UserRead:
-        await permission_service.require(actor_id, tenant_id, self.OBJECT, "read")
-        user = await self.list_repo.get(tenant_id, user_id)
-        if user is None:
-            raise ValueError(f"user {user_id} not found in this tenant")
-        return await self._read(tenant_id, user)
+    async def get(
+        self,
+        actor_id: str,
+        tenant_id: str,
+        user_id: str,
+        platform_role: str | None = None,
+    ) -> UserRead:
+        is_super_admin = platform_role == "super_admin"
+        if not is_super_admin:
+            await permission_service.require(actor_id, tenant_id, self.OBJECT, "read")
 
-    async def statistics(self, actor_id: str, tenant_id: str) -> UserStatistics:
-        await permission_service.require(actor_id, tenant_id, self.OBJECT, "read")
+        if is_super_admin:
+            user = await self.users.get(user_id)
+            if user is None or user.is_deleted:
+                raise ValueError(f"user {user_id} not found")
+            tenant_info = await self.list_repo.batch_tenant_info([user_id])
+            return await self._read_all(user, tenant_info)
+        else:
+            user = await self.list_repo.get(tenant_id, user_id)
+            if user is None:
+                raise ValueError(f"user {user_id} not found in this tenant")
+            return await self._read(tenant_id, user)
+
+    async def statistics(
+        self,
+        actor_id: str,
+        tenant_id: str,
+        platform_role: str | None = None,
+    ) -> UserStatistics:
+        is_super_admin = platform_role == "super_admin"
+        if not is_super_admin:
+            await permission_service.require(actor_id, tenant_id, self.OBJECT, "read")
         return UserStatistics(**await self.list_repo.statistics(tenant_id))
 
     async def _read(self, tenant_id: str, user: User) -> UserRead:
@@ -98,6 +136,26 @@ class UserService:
         orgs = await self.list_repo.list_organizations(user.id)
         data = serialize_user(user, organizations=orgs)
         data["role"] = role_brief
+        return UserRead.model_validate(data)
+
+    async def _read_all(
+        self, user: User, tenant_info: dict[str, tuple[str | None, str | None]]
+    ) -> UserRead:
+        """Read a user for super admin view, including their cross-tenant info."""
+        tid, tname = tenant_info.get(user.id, (None, None))
+        membership = await self.memberships.get_membership(user.id, tid) if tid else None
+        role = membership.role if membership else None
+        role_brief = None
+        if role and tid:
+            r = await self._find_role(tid, role)
+            role_brief = {"id": r.id, "name": r.name, "code": r.code} if r else None
+            if role_brief is None:
+                role_brief = {"id": "", "name": role, "code": role}
+        orgs = await self.list_repo.list_organizations(user.id)
+        data = serialize_user(user, organizations=orgs)
+        data["role"] = role_brief
+        data["tenant_id"] = tid
+        data["tenant_name"] = tname
         return UserRead.model_validate(data)
 
     async def _find_role(self, tenant_id: str, code: str) -> Role | None:
@@ -147,11 +205,8 @@ class UserService:
             await self.db.rollback()
             raise ValueError("username or email already exists") from e
 
-        # Tenant membership + casbin role.
-        self.db.add(
-            UserTenant(user_id=user.id, tenant_id=tenant_id, role=payload.role)
-        )
-        await self.db.flush()
+        # Tenant membership + casbin role (SCD2 write path).
+        await self.memberships.assign_role(user.id, tenant_id, payload.role)
         await permission_service.add_role_for_user_in_domain(
             user.id, payload.role, tenant_id
         )
@@ -214,16 +269,17 @@ class UserService:
                 changes["status"] = payload.status
         user.updated_by = actor_id
 
-        # Role change (mirrored into casbin).
+        # Role change (mirrored into casbin) — SCD2 write path.
         if payload.role is not None:
-            membership = await self.memberships.get_membership(user.id, tenant_id)
+            membership = await self.memberships.current_role(user.id, tenant_id)
             if membership is None:
                 raise ValueError(f"user {user_id} is not a member of this tenant")
             if membership.role != payload.role:
                 old_role = membership.role
-                membership.role = payload.role
+                await self.memberships.assign_role(
+                    user.id, tenant_id, payload.role
+                )
                 changes["role"] = {"from": old_role, "to": payload.role}
-                await self.db.flush()
                 await permission_service.set_role_for_user_in_domain(
                     user.id, payload.role, tenant_id
                 )

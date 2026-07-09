@@ -43,7 +43,9 @@ async def user_statistics(
     db: AsyncSession = Depends(get_db),
 ) -> UserStatistics:
     """Aggregate counts for the dashboard cards."""
-    return await UserService(db).statistics(user.user_id, user.tenant_id)
+    return await UserService(db).statistics(
+        user.user_id, user.tenant_id, platform_role=user.platform_role
+    )
 
 
 @router.get(
@@ -72,7 +74,9 @@ async def list_users(
         page=page,
         limit=limit,
     )
-    return await UserService(db).list(user.user_id, user.tenant_id, filters)
+    return await UserService(db).list(
+        user.user_id, user.tenant_id, filters, platform_role=user.platform_role
+    )
 
 
 @router.get(
@@ -86,7 +90,9 @@ async def get_user(
     db: AsyncSession = Depends(get_db),
 ) -> UserRead:
     try:
-        return await UserService(db).get(user.user_id, user.tenant_id, user_id)
+        return await UserService(db).get(
+            user.user_id, user.tenant_id, user_id, platform_role=user.platform_role
+        )
     except ValueError as e:
         raise _not_found(e) from e
 

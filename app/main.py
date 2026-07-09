@@ -83,7 +83,7 @@ def create_app() -> FastAPI:
         """Mint a short-lived dev JWT for local login.
 
         Body (all optional, defaults provided):
-            {"sub": "dev-user", "tenant_id": "dev-tenant", "email": null}
+            {"sub": "dev-user", "tenant_id": "dev-tenant", "email": null, "platform_role": null}
         """
         if settings.app_env != "development":
             return JSONResponse(status_code=404, content={"detail": "not found"})
@@ -95,6 +95,7 @@ def create_app() -> FastAPI:
             "sub": payload.get("sub", "dev-user"),
             "tenant_id": payload.get("tenant_id", "dev-tenant"),
             "email": payload.get("email"),
+            "platform_role": payload.get("platform_role"),
             "iss": settings.logto_issuer,
             "aud": settings.logto_audience,
             "iat": now,

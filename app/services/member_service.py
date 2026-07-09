@@ -49,28 +49,21 @@ class MemberService:
             user.display_name = payload.display_name
             await self.db.flush()
 
-        existing = await self.memberships.get_membership(payload.user_id, tenant_id)
-        if existing is not None:
-            # Idempotent: update role instead of failing on duplicate.
-            existing.role = payload.role
-            await self.db.flush()
+        # SCD2 write path: assign_role opens/closes rows so the membership
+        # history is preserved. Casbin grouping is synced to the new role
+        # immediately (set_role drops prior roles + adds the new one).
+        existing = await self.memberships.current_role(payload.user_id, tenant_id)
+        membership = await self.memberships.assign_role(
+            payload.user_id, tenant_id, payload.role
+        )
+        if existing is None:
+            await permission_service.add_role_for_user_in_domain(
+                payload.user_id, payload.role, tenant_id
+            )
+        else:
             await permission_service.set_role_for_user_in_domain(
                 payload.user_id, payload.role, tenant_id
             )
-            await self.db.commit()
-            await self.db.refresh(existing, attribute_names=["user"])
-            return self._to_read(existing)
-
-        membership = UserTenant(
-            user_id=payload.user_id,
-            tenant_id=tenant_id,
-            role=payload.role,
-        )
-        self.db.add(membership)
-        await self.db.flush()
-        await permission_service.add_role_for_user_in_domain(
-            payload.user_id, payload.role, tenant_id
-        )
         await self.db.commit()
         await self.db.refresh(membership, attribute_names=["user"])
         return self._to_read(membership)
@@ -80,12 +73,16 @@ class MemberService:
     ) -> MemberRead:
         await permission_service.require(actor_id, tenant_id, self.OBJECT, "update")
 
-        membership = await self.memberships.get_membership(target_user_id, tenant_id)
+        membership = await self.memberships.current_role(target_user_id, tenant_id)
         if membership is None:
             raise ValueError(f"user {target_user_id} is not a member of this tenant")
 
-        membership.role = payload.role
-        await self.db.flush()
+        # SCD2 write: assign_role closes the current row and opens a new one with
+        # the new role; casbin grouping is resynced so the change takes effect at
+        # once (no re-login needed).
+        membership = await self.memberships.assign_role(
+            target_user_id, tenant_id, payload.role
+        )
         await permission_service.set_role_for_user_in_domain(
             target_user_id, payload.role, tenant_id
         )
@@ -99,10 +96,12 @@ class MemberService:
         if actor_id == target_user_id:
             raise ValueError("cannot remove yourself")
 
-        membership = await self.memberships.get_membership(target_user_id, tenant_id)
+        membership = await self.memberships.current_role(target_user_id, tenant_id)
         if membership is None:
             raise ValueError(f"user {target_user_id} is not a member of this tenant")
 
-        await self.memberships.delete(membership)
+        # SCD2 write: close the active row (history preserved, no physical
+        # delete) and strip the casbin grouping so access stops immediately.
+        await self.memberships.remove_member(target_user_id, tenant_id)
         await permission_service.remove_user_from_tenant(target_user_id, tenant_id)
         await self.db.commit()

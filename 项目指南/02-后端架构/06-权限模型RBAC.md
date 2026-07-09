@@ -191,6 +191,65 @@ async def set_role_for_user_in_domain(self, user_id, role, tenant_id):
 
 ---
 
+## 权限变更的历史回溯(SCD2)
+
+> 📋 状态:**按需项(现阶段不实施)**。仅当业务出现「任意时间点还原」合规需求时才做,
+> 是[表设计原则第 6 条](03-数据库与ORM.md)的具体展开。完整施工图见
+> [`docs/auth-history-scd2-plan.md`](../../docs/auth-history-scd2-plan.md)。
+
+上面讲的都是「现在」——casbin 只回答「现在能不能做」。但合规场景常要回答**「过去某时刻」**:
+
+- 场景 i:「张三在 3 月 1 日是什么角色?」(单成员还原)
+- 场景 ii:「admin 角色当时的权限集是什么?」(单角色还原)
+
+casbin 帮不上——它不存历史。所以给**授权链**两张表加上时间维度,用 **SCD2**(缓慢变化维 Type 2 / 时态表)模式。
+
+### 双层职责「宪法」(改权限前必读)
+
+> **历史回溯看 SCD2 表;实时鉴权看 casbin;SCD2 当前态是 casbin 的同步源。**
+
+```
+管理员改权限
+   ↓
+写 SCD2 表(关旧行 valid_to=now + 插新行 valid_to=NULL)   ← 历史在这里
+   ↓
+用 SCD2 当前态同步 casbin                                 ← 实时鉴权用这个
+   ↓
+写 system_logs(谁、何时、从 X 改成 Y)                    ← 审计底座
+```
+
+这条宪法顺手治好了「双层 RBAC 谁为准」:`role_permissions` 不再是死表,而是**角色权限历史还原的唯一数据源**,它的当前态同步给 casbin。
+
+### 只在两张表上做,别全局铺
+
+| 表 | 加 SCD2? | 为什么 |
+|---|---|---|
+| `user_tenants`(成员↔角色) | ✅ | 场景 i 的数据源 |
+| `role_permissions`(角色↔权限) | ✅ | 场景 ii 的数据源 |
+| `users`、`agents`、会话/消息 | ❌ | 用主表 + `system_logs` 日志即可,还原价值低 |
+
+**为什么不全局铺?** SCD2 会让每次 update 变成「关旧行 + 插新行」,查询都要带 `WHERE valid_to IS NULL`,全局铺会成倍增加复杂度和踩坑面。只在「有合规还原价值」的两张表上做,是唯一理性选择。
+
+### 两张表的形态
+
+加 `valid_from`(生效时间,非空)和 `valid_to`(失效时间,可空,`NULL` = 当前生效):
+
+- **当前态查询**:`WHERE valid_to IS NULL`
+- **时间点还原**:`WHERE valid_from <= ts AND (valid_to IS NULL OR valid_to > ts)`
+- **「移除成员」**:从物理删行 → 改成 `valid_to = now()`(历史保留)
+
+> ⚠️ **写路径必须封装**:`UserTenantRepository` / `RolePermissionRepository` 提供 `assign_role` / `grant` 等方法,**业务代码绝不直接碰 `valid_from/valid_to`**。漏关旧行 = 脏数据。这是 SCD2 能 hold 住的命脉。
+>
+> ⚠️ **新牵连点**:所有读这两张表当前态的查询都要带 `WHERE valid_to IS NULL`,漏了会读到历史脏数据。靠 Repository 封装 + 「当前态数量 = 期望值」的回归测试兜底。
+
+### casbin 侧几乎不动
+
+`assign_role` 写完 SCD2 行后,照旧调 `set_role_for_user_in_domain` 同步 casbin。casbin 永远只管「现在」,不碰历史——两者解耦。
+
+详见 [`docs/auth-history-scd2-plan.md`](../../docs/auth-history-scd2-plan.md)。
+
+---
+
 ## casbin 的策略存哪?
 
 存数据库的 `casbin_rule` 表(由 `casbin-sqlalchemy-adapter` 自动管理)。
