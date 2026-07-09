@@ -2,6 +2,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Route, Routes } from "react-router-dom";
 import { AuthProvider } from "@/components/auth/auth-context";
 import { ProtectedRoute } from "@/components/auth/protected-route";
+import { RequireUserManagement } from "@/components/auth/require-permission";
 import { ToastProvider } from "@/components/ui/toast";
 import { DashboardLayout } from "@/components/layout/dashboard-layout";
 import { LoginPage } from "@/pages/login-page";
@@ -41,9 +42,15 @@ export default function App() {
               >
                 <Route path="/" element={<DashboardPage />} />
                 <Route path="/agents" element={<AgentsPage />} />
-                <Route path="/users" element={<UsersPage />} />
-                <Route path="/roles" element={<RolesPage />} />
-                <Route path="/permissions" element={<PermissionsPage />} />
+
+                {/* User-management routes also require authorization: a plain
+                    member is redirected to "/". The backend still enforces 403
+                    as the hard boundary; this guard is a UX layer. */}
+                <Route element={<RequireUserManagement />}>
+                  <Route path="/users" element={<UsersPage />} />
+                  <Route path="/roles" element={<RolesPage />} />
+                  <Route path="/permissions" element={<PermissionsPage />} />
+                </Route>
               </Route>
 
               <Route path="*" element={<NotFoundPage />} />

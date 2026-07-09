@@ -14,20 +14,23 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useAuth } from "@/components/auth/auth-context";
+import { canManageUsers } from "@/lib/permission";
 import { logout } from "@/api/endpoints";
 
 interface NavItem {
   to: string;
   label: string;
   icon: React.ComponentType<{ className?: string }>;
+  /** When true, the item is hidden for users who can't manage users (members). */
+  needsUserManagement?: boolean;
 }
 
 const NAV_ITEMS: NavItem[] = [
   { to: "/", label: "概览", icon: LayoutDashboard },
   { to: "/agents", label: "智能体", icon: Bot },
-  { to: "/users", label: "用户", icon: Users },
-  { to: "/roles", label: "角色", icon: Shield },
-  { to: "/permissions", label: "权限矩阵", icon: ShieldCheck },
+  { to: "/users", label: "用户", icon: Users, needsUserManagement: true },
+  { to: "/roles", label: "角色", icon: Shield, needsUserManagement: true },
+  { to: "/permissions", label: "权限矩阵", icon: ShieldCheck, needsUserManagement: true },
 ];
 
 export function DashboardLayout() {
@@ -61,7 +64,9 @@ export function DashboardLayout() {
           <span className="text-lg font-semibold">权限控制台</span>
         </div>
         <nav className="flex flex-col gap-1 p-4">
-          {NAV_ITEMS.map((item) => (
+          {NAV_ITEMS.filter(
+            (item) => !item.needsUserManagement || canManageUsers(me),
+          ).map((item) => (
             <NavLink
               key={item.to}
               to={item.to}
