@@ -85,7 +85,8 @@ class UserListRepository:
             .where(User.is_deleted.is_(False))
         )
 
-    def _apply(self, stmt, f: UserFilters, tenant_id: str):
+    def _apply_filters(self, stmt, f: UserFilters):
+        """Apply WHERE filters (search / status / role) to a statement."""
         if f.search:
             like = f"%{f.search}%"
             stmt = stmt.where(
@@ -100,7 +101,9 @@ class UserListRepository:
             stmt = stmt.where(User.status == f.status)
         if f.role:
             stmt = stmt.where(UserTenant.role == f.role)
+        return stmt
 
+    def _apply_sort(self, stmt, f: UserFilters):
         col = {
             "created_at": User.created_at,
             "username": User.username,
@@ -109,8 +112,7 @@ class UserListRepository:
         # Secondary sort by id makes pagination deterministic even when the
         # primary column has ties (e.g. NULL usernames, same created_at).
         direction = col.asc() if f.sort_order == "asc" else col.desc()
-        stmt = stmt.order_by(direction, User.id.asc())
-        return stmt
+        return stmt.order_by(direction, User.id.asc())
 
     async def list(
         self, tenant_id: str, f: UserFilters, super_admin: bool = False
@@ -118,30 +120,31 @@ class UserListRepository:
         """List users. When ``super_admin`` is True, returns all users across tenants."""
         if super_admin:
             return await self._list_all(f)
-        stmt = self._apply(self._base(tenant_id), f, tenant_id)
+        stmt = self._apply_sort(self._apply_filters(self._base(tenant_id), f), f)
         stmt = stmt.limit(f.limit).offset(f.offset)
         result = await self.db.execute(stmt)
         users = list(result.scalars().all())
 
-        count_stmt = select(func.count()).select_from(self._base(tenant_id).subquery())
-        count_stmt = self._apply(count_stmt, f, tenant_id)
-        # apply() adds ORDER BY which is meaningless for COUNT — strip it.
-        count_stmt = count_stmt.order_by(None)
+        # Filters must be applied INSIDE the subquery (on User) — wrapping them
+        # on the outer count() references a free-standing users table and yields
+        # a cartesian product (total >> actual rows).
+        counted = self._apply_filters(self._base(tenant_id), f).subquery()
+        count_stmt = select(func.count()).select_from(counted)
         total = (await self.db.execute(count_stmt)).scalar_one()
         return users, int(total)
 
     async def _list_all(self, f: UserFilters) -> tuple[list[User], int]:
         """List all non-deleted users across tenants with their current membership."""
         base = self._base_all()
-        stmt = self._apply(base, f, "")
+        stmt = self._apply_sort(self._apply_filters(base, f), f)
         stmt = stmt.limit(f.limit).offset(f.offset)
         result = await self.db.execute(stmt)
         rows = result.all()
         users = [row.User for row in rows]
 
-        count_stmt = select(func.count()).select_from(base.subquery())
-        count_stmt = self._apply(count_stmt, f, "")
-        count_stmt = count_stmt.order_by(None)
+        # Same cartesian-product guard as list(): apply filters inside the subquery.
+        counted = self._apply_filters(base, f).subquery()
+        count_stmt = select(func.count()).select_from(counted)
         total = (await self.db.execute(count_stmt)).scalar_one()
         return users, int(total)
 
@@ -149,14 +152,28 @@ class UserListRepository:
         stmt = self._base(tenant_id).where(User.id == user_id)
         return (await self.db.execute(stmt)).scalar_one_or_none()
 
-    async def statistics(self, tenant_id: str) -> dict[str, int]:
-        base = self._base(tenant_id)
+    async def statistics(
+        self, tenant_id: str, *, super_admin: bool = False
+    ) -> dict[str, int]:
+        # Super admin counts across ALL tenants (just the users table — no join,
+        # so multi-tenant members don't double-count); tenant admins count only
+        # their own via the membership join. Must stay consistent with list()'s
+        # total so the stat cards and pagination never disagree.
+
+        def _base():
+            # A fresh base each call: extra filters must be applied INSIDE the
+            # subquery (on User), not on the outer count() — otherwise the outer
+            # where references a free-standing users table and triggers a
+            # cartesian product (active > total).
+            if super_admin:
+                return select(User).where(User.is_deleted.is_(False))
+            return self._base(tenant_id)
 
         def _count(extra):
-            stmt = select(func.count()).select_from(base.subquery())
+            stmt = _base()
             if extra is not None:
                 stmt = stmt.where(extra)
-            return stmt.order_by(None)
+            return select(func.count()).select_from(stmt.subquery()).order_by(None)
 
         thirty_days_ago = datetime.utcnow() - timedelta(days=30)
         month_start = datetime.utcnow().replace(day=1, hour=0, minute=0, second=0, microsecond=0)

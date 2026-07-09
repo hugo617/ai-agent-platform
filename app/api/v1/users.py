@@ -20,17 +20,21 @@ from app.schemas.user import (
     UserStatusUpdate,
     UserUpdate,
 )
+from app.services.errors import NotFoundError
 from app.services.user_service import UserService
 
 router = APIRouter(prefix="/users", tags=["users"])
 
 
-def _bad_request(e: ValueError) -> HTTPException:
+def _http_exc(e: ValueError) -> HTTPException:
+    """Map a service ValueError to the right HTTP status by exception type.
+
+    Uses the exception type (not a substring match on the message) so the
+    error text can be freely localized without breaking the 404/400 routing.
+    """
+    if isinstance(e, NotFoundError):
+        return HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
     return HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
-
-
-def _not_found(e: ValueError) -> HTTPException:
-    return HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
 
 
 @router.get(
@@ -106,7 +110,7 @@ async def get_user(
             user.user_id, user.tenant_id, user_id, platform_role=user.platform_role
         )
     except ValueError as e:
-        raise _not_found(e) from e
+        raise _http_exc(e) from e
 
 
 @router.post(
@@ -123,7 +127,7 @@ async def create_user(
     try:
         return await UserService(db).create(user.user_id, user.tenant_id, payload)
     except ValueError as e:
-        raise _bad_request(e) from e
+        raise _http_exc(e) from e
 
 
 @router.put(
@@ -139,13 +143,14 @@ async def update_user(
 ) -> UserRead:
     try:
         return await UserService(db).update(
-            user.user_id, user.tenant_id, user_id, payload
+            user.user_id,
+            user.tenant_id,
+            user_id,
+            payload,
+            platform_role=user.platform_role,
         )
     except ValueError as e:
-        msg = str(e)
-        if "not found" in msg:
-            raise _not_found(e) from e
-        raise _bad_request(e) from e
+        raise _http_exc(e) from e
 
 
 @router.delete(
@@ -159,12 +164,14 @@ async def delete_user(
     db: AsyncSession = Depends(get_db),
 ) -> None:
     try:
-        await UserService(db).delete(user.user_id, user.tenant_id, user_id)
+        await UserService(db).delete(
+            user.user_id,
+            user.tenant_id,
+            user_id,
+            platform_role=user.platform_role,
+        )
     except ValueError as e:
-        msg = str(e)
-        if "not found" in msg:
-            raise _not_found(e) from e
-        raise _bad_request(e) from e
+        raise _http_exc(e) from e
 
 
 @router.patch(
@@ -180,13 +187,14 @@ async def change_user_status(
 ) -> UserRead:
     try:
         return await UserService(db).change_status(
-            user.user_id, user.tenant_id, user_id, payload.status
+            user.user_id,
+            user.tenant_id,
+            user_id,
+            payload.status,
+            platform_role=user.platform_role,
         )
     except ValueError as e:
-        msg = str(e)
-        if "not found" in msg:
-            raise _not_found(e) from e
-        raise _bad_request(e) from e
+        raise _http_exc(e) from e
 
 
 @router.post(
@@ -206,6 +214,7 @@ async def reset_password(
             user.tenant_id,
             user_id,
             payload,
+            platform_role=user.platform_role,
         )
     except ValueError as e:
-        raise _not_found(e) from e
+        raise _http_exc(e) from e

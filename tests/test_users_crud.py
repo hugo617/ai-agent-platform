@@ -57,6 +57,30 @@ async def test_search_and_filter(app_client):
 
 
 @pytest.mark.asyncio
+async def test_filtered_total_matches_actual_rows(app_client):
+    """The pagination total must equal the number of matching rows, not a
+    cartesian-product inflation. Regression for the count() bug where filters
+    were applied on the outer query instead of inside the subquery."""
+    for i in range(3):
+        await app_client.post(
+            "/api/v1/users/", json=_create_payload(f"act{i}"), headers=AUTH
+        )
+    for i in range(2):
+        body = _create_payload(f"lok{i}")
+        body["status"] = "locked"
+        await app_client.post("/api/v1/users/", json=body, headers=AUTH)
+
+    for s in ("active", "locked"):
+        resp = await app_client.get(
+            f"/api/v1/users/?status={s}&limit=100", headers=AUTH
+        )
+        body = resp.json()
+        assert body["total"] == len(body["items"]), (
+            f"status={s}: total={body['total']} but only {len(body['items'])} rows"
+        )
+
+
+@pytest.mark.asyncio
 async def test_sorting(app_client):
     await app_client.post("/api/v1/users/", json=_create_payload("aaa"), headers=AUTH)
     await app_client.post("/api/v1/users/", json=_create_payload("zzz"), headers=AUTH)
@@ -248,17 +272,56 @@ async def test_super_admin_get_user_other_tenant(super_admin_client):
 
 @pytest.mark.asyncio
 async def test_super_admin_delete_cross_tenant_user(super_admin_client):
-    """Super admin can delete a user from another tenant (permission bypass)."""
-    # Delete should bypass the permission check (not 403). It may 404 if the
-    # user happens to not be in the caller's tenant scope — the super admin
-    # permission bypass is at the casbin level; the data-layer tenant scoping
-    # is a separate concern.
+    """Super admin can soft-delete a user from another tenant (global delete).
+
+    This exercises the full cross-tenant write path: the super admin sits in
+    "Test Tenant" but deletes "cross-user" who belongs to "Other Tenant".
+    """
     resp = await super_admin_client.delete(
         "/api/v1/users/cross-user", headers=SA_AUTH
     )
-    # Permission check should pass — no 403. The result may be 200, 204, or 404
-    # depending on data-layer scoping, but must not be 403.
-    assert resp.status_code != 403, "Super admin should not get permission denied"
+    assert resp.status_code == 204, resp.text
+
+    # Globally soft-deleted: gone from the super-admin list view...
+    lst = await super_admin_client.get("/api/v1/users/?limit=20", headers=SA_AUTH)
+    emails = {u["email"] for u in lst.json()["items"]}
+    assert "cross@example.com" not in emails
+
+    # ...and a direct GET now 404s.
+    get = await super_admin_client.get("/api/v1/users/cross-user", headers=SA_AUTH)
+    assert get.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_super_admin_update_cross_tenant_user(super_admin_client):
+    """Super admin can update a user's profile across tenants.
+
+    The super admin edits real_name on "cross-user" (Other Tenant). Role change
+    is intentionally ignored for super admins (cross-tenant membership is
+    managed via the members page).
+    """
+    resp = await super_admin_client.put(
+        "/api/v1/users/cross-user",
+        json={"real_name": "Edited By Super Admin", "role": "admin"},
+        headers=SA_AUTH,
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["real_name"] == "Edited By Super Admin"
+    assert body["email"] == "cross@example.com"
+    assert body["tenant_name"] == "Other Tenant"
+
+
+@pytest.mark.asyncio
+async def test_super_admin_change_status_cross_tenant(super_admin_client):
+    """Super admin can lock a user in another tenant."""
+    resp = await super_admin_client.patch(
+        "/api/v1/users/cross-user/status",
+        json={"status": "locked"},
+        headers=SA_AUTH,
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["status"] == "locked"
 
 
 @pytest.mark.asyncio
@@ -290,3 +353,26 @@ async def test_super_admin_me_returns_platform_role(super_admin_client):
     resp = await super_admin_client.get("/api/v1/auth/me", headers=SA_AUTH)
     assert resp.status_code == 200
     assert resp.json()["platform_role"] == "super_admin"
+
+
+@pytest.mark.asyncio
+async def test_super_admin_statistics_match_list(super_admin_client):
+    """Super admin stat cards must count users across ALL tenants, and the
+    statistics total must equal the list pagination total (same data source).
+
+    Before the fix, statistics() ignored platform_role and counted only the
+    caller's tenant, so the cards showed a smaller number than the list.
+    """
+    stats = (await super_admin_client.get(
+        "/api/v1/users/statistics", headers=SA_AUTH
+    )).json()
+    lst = (await super_admin_client.get(
+        "/api/v1/users/?limit=50", headers=SA_AUTH
+    )).json()
+
+    # The cross-tenant user must be counted (proves statistics is cross-tenant).
+    emails = {u["email"] for u in lst["items"]}
+    assert "cross@example.com" in emails
+    assert stats["total"] == lst["total"]
+    # status breakdowns should sum to the total (active + inactive + locked).
+    assert stats["active"] + stats["inactive"] + stats["locked"] == stats["total"]

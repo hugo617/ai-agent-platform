@@ -83,7 +83,9 @@ class PermissionService:
         """
 
         if not await self.check(user_id, tenant_id, obj, act, platform_role=platform_role):
-            raise PermissionError(f"denied: {user_id} cannot {act} {obj} in {tenant_id}")
+            raise PermissionError(
+                f"无权限：{user_id} 不能在租户 {tenant_id} 中对 {obj} 执行 {act}"
+            )
 
     # ---------- roles ----------
     async def add_role_for_user_in_domain(self, user_id: str, role: str, tenant_id: str) -> None:
