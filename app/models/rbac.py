@@ -1,10 +1,16 @@
 """ORM models for roles and permissions (RBAC).
 
-These tables are a *display + admin* layer over pycasbin: a tenant's seeded
-``Role`` rows (owner/admin/member) mirror the role names used in casbin's
-grouping policy, and the role dropdown on the user form reads from here. The
-authoritative permission check still goes through casbin (``permission_service``)
-— these tables are what admins browse/assign, not what enforces access.
+Two layers coexist (see the RBAC「宪法」in ``permission_service``):
+
+- ``roles`` / ``permissions`` — display + admin layer. A tenant's seeded
+  ``Role`` rows (owner/admin/member) mirror the role names used in casbin's
+  grouping policy, and the role dropdown on the user form reads from here.
+- ``role_permissions`` — **角色权限历史还原的唯一数据源(SCD2)**。它的当前态
+  (``valid_to IS NULL``)同步给 casbin;历史行支持「任意时间点还原某角色的权限集」。
+  casbin 永远只回答「现在能不能做」,历史回溯看这张表。
+
+改角色权限集必须走 ``RolePermissionRepository.grant/revoke``(关旧行 + 插新行),
+业务代码绝不直接操作 ``valid_from`` / ``valid_to``。
 """
 
 import uuid
@@ -18,6 +24,7 @@ from sqlalchemy import (
     String,
     UniqueConstraint,
     func,
+    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -94,10 +101,27 @@ class Permission(Base):
 
 
 class RolePermission(Base):
+    """A (role, permission) grant with a SCD2 time dimension.
+
+    ``valid_to IS NULL`` marks the current/active grant; every other row is
+    history supporting "what permissions did this role have at time T?". Writes
+    go through ``RolePermissionRepository.grant/revoke`` (close old row + open
+    new row) — never set ``valid_from``/``valid_to`` directly.
+    """
+
     __tablename__ = "role_permissions"
     __table_args__ = (
-        UniqueConstraint(
-            "tenant_id", "role_id", "permission_id", name="uq_role_permission_tenant"
+        # Partial unique index: at most one *active* grant per
+        # (tenant, role, permission). History rows (valid_to set) are exempt.
+        # Mirrored PG/SQLite — see migration for the dual-dialect form.
+        Index(
+            "uq_role_permissions_active",
+            "tenant_id",
+            "role_id",
+            "permission_id",
+            unique=True,
+            postgresql_where=text("valid_to IS NULL"),
+            sqlite_where=text("valid_to IS NULL"),
         ),
     )
 
@@ -108,7 +132,18 @@ class RolePermission(Base):
     permission_id: Mapped[str] = mapped_column(
         String(32), ForeignKey("permissions.id", ondelete="CASCADE"), nullable=False
     )
+    # NOTE: tenant_id is a deliberate *soft reference* (no ForeignKey). It is a
+    # denormalised business key carried for tenant-scoped queries; the tenant
+    # link is already enforced transitively via role_id → roles.tenant_id (with
+    # ondelete CASCADE). Adding an FK here would create a competing cascade path
+    # against role_id, so it is registered as a known intentional exception.
     tenant_id: Mapped[str] = mapped_column(String(32), nullable=False)
+    valid_from: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    valid_to: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

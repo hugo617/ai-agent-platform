@@ -2,7 +2,7 @@
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.tenant import Tenant, UserTenant
+from app.models.tenant import Tenant
 from app.repositories.tenant import TenantRepository, UserRepository, UserTenantRepository
 from app.schemas.tenant import TenantCreate, TenantRead
 from app.services.permission_service import permission_service
@@ -26,18 +26,24 @@ class TenantService:
         tenant = Tenant(name=payload.name)
         await self.tenants.add(tenant)
 
-        # 3. Link owner with the "owner" role (DB side, mirrors casbin grouping)
-        self.db.add(UserTenant(user_id=owner_user_id, tenant_id=tenant.id, role="owner"))
-        await self.db.flush()
-
-        # 4. Seed default permission policies in casbin (idempotent)
-        await permission_service.seed_tenant_defaults(tenant.id, owner_user_id)
-
-        # 5. Seed the owner/admin/member display roles (idempotent) so the
-        #    user-management role dropdown is populated from the start.
+        # 3. Seed the owner/admin/member display roles FIRST (idempotent) so the
+        #    role dropdown is populated and seed_tenant_defaults can resolve the
+        #    role ids when writing role_permissions SCD2 rows.
         from app.services.rbac_service import RbacService
 
         await RbacService(self.db).seed_defaults(tenant.id)
+
+        # 4. Link owner with the "owner" role (SCD2 write path: assign_role opens
+        #    a current-state user_tenants row that mirrors the casbin grouping).
+        await self.memberships.assign_role(owner_user_id, tenant.id, "owner")
+
+        # 5. Seed default permission policies: casbin policies + permissions +
+        #    role_permissions SCD2 current rows, all from the single source of
+        #    truth (permission_service.DEFAULT_*_PERMS). Pass ``db`` so the SCD2
+        #    tables are seeded in lockstep with casbin.
+        await permission_service.seed_tenant_defaults(
+            tenant.id, owner_user_id, db=self.db
+        )
 
         await self.db.commit()
         return TenantRead.model_validate(tenant)

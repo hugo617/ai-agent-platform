@@ -89,6 +89,12 @@ class User(Base):
         DateTime(timezone=True), nullable=True
     )
     status: Mapped[str] = mapped_column(String(20), default="active")
+    # Platform-level role (null for normal users, "super_admin" for cross-tenant
+    # administrators). Separate from the tenant-scoped role on user_tenants.
+    platform_role: Mapped[str | None] = mapped_column(
+        String(32), nullable=True, default=None
+    )
+
     # ``metadata`` is reserved by SQLAlchemy's DeclarativeBase, so the Python
     # attribute is ``info_json`` while the DB column stays ``metadata``.
     # JSONB on Postgres, plain JSON on SQLite (tests).
@@ -121,22 +127,50 @@ class User(Base):
 
 
 class UserTenant(Base):
-    """Association table: a user can belong to multiple tenants with a role."""
+    """Membership of a user in a tenant, with an SCD2 time dimension.
+
+    ``valid_to IS NULL`` marks the *current* role assignment; every other row is
+    history supporting "what role did this user hold at time T?". Writes go
+    through ``UserTenantRepository.assign_role`` / ``remove_member`` (close old
+    row + open new row) — never set ``valid_from``/``valid_to`` directly.
+    """
 
     __tablename__ = "user_tenants"
+    __table_args__ = (
+        # Partial unique index: at most one *active* membership per
+        # (user, tenant). History rows (valid_to set) are exempt, so a member
+        # can be re-added after removal. Mirrored PG/SQLite.
+        Index(
+            "uq_user_tenants_active",
+            "user_id",
+            "tenant_id",
+            unique=True,
+            postgresql_where=text("valid_to IS NULL"),
+            sqlite_where=text("valid_to IS NULL"),
+        ),
+    )
 
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
     user_id: Mapped[str] = mapped_column(
         String(128),
         ForeignKey("users.id", ondelete="CASCADE"),
-        primary_key=True,
+        nullable=False,
+        index=True,
     )
     tenant_id: Mapped[str] = mapped_column(
         String(32),
         ForeignKey("tenants.id", ondelete="CASCADE"),
-        primary_key=True,
+        nullable=False,
+        index=True,
     )
     # Role name as used in casbin grouping policy: e.g. "owner", "admin", "member"
     role: Mapped[str] = mapped_column(String(64), nullable=False, default="member")
+    valid_from: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    valid_to: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

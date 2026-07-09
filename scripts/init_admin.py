@@ -28,8 +28,10 @@ from sqlalchemy import select  # noqa: E402
 
 from app.core.database import AsyncSessionLocal  # noqa: E402
 from app.core.password import hash_password  # noqa: E402
-from app.models.tenant import Tenant, User, UserTenant  # noqa: E402
+from app.models.tenant import Tenant, User  # noqa: E402
+from app.repositories.tenant import UserTenantRepository  # noqa: E402
 from app.services.permission_service import permission_service  # noqa: E402
+from app.services.rbac_service import RbacService  # noqa: E402
 
 ADMIN_USERNAME = os.environ.get("ADMIN_USERNAME", "admin")
 ADMIN_EMAIL = os.environ.get("ADMIN_EMAIL", "admin@example.com")
@@ -54,6 +56,7 @@ async def main() -> int:
         user = (
             await db.execute(select(User).where(User.username == ADMIN_USERNAME))
         ).scalar_one_or_none()
+        is_new = False
         if user is None:
             user = User(
                 id=uuid.uuid4().hex,
@@ -61,9 +64,11 @@ async def main() -> int:
                 email=ADMIN_EMAIL,
                 password=hash_password(ADMIN_PASSWORD),
                 status="active",
+                platform_role="super_admin",
             )
             db.add(user)
             await db.flush()
+            is_new = True
             print(f"created admin user: {user.username} ({user.id})")
         else:
             # Re-hash the password if the env override changed.
@@ -76,26 +81,29 @@ async def main() -> int:
             else:
                 print(f"admin user exists: {user.username} ({user.id})")
 
-        # 3. Link as owner (idempotent).
-        membership = (
-            await db.execute(
-                select(UserTenant).where(
-                    UserTenant.user_id == user.id,
-                    UserTenant.tenant_id == tenant.id,
-                )
-            )
-        ).scalar_one_or_none()
-        if membership is None:
-            db.add(UserTenant(user_id=user.id, tenant_id=tenant.id, role="owner"))
+        # Ensure the admin has platform_role="super_admin" (idempotent).
+        if user.platform_role != "super_admin":
+            user.platform_role = "super_admin"
             await db.flush()
-            print(f"linked {user.username} as owner of {tenant.name}")
-        else:
-            membership.role = "owner"
-            await db.flush()
-            print("membership exists (role=owner)")
+            if not is_new:
+                print(f"upgraded {user.username} to super_admin")
 
-        # 4. Seed casbin policies for the tenant (idempotent).
-        await permission_service.seed_tenant_defaults(tenant.id, user.id)
+        # 3. Seed the owner/admin/member display roles FIRST so the
+        #    role_permissions SCD2 seed can resolve the role ids (idempotent).
+        await RbacService(db).seed_defaults(tenant.id)
+
+        # 4. Link as owner via the SCD2 write path (idempotent): assign_role
+        #    reuses the current row if it already carries "owner", otherwise
+        #    closes the old row and opens a new one — history preserved.
+        memberships = UserTenantRepository(db)
+        before = await memberships.current_role(user.id, tenant.id)
+        await memberships.assign_role(user.id, tenant.id, "owner")
+        print("linked owner" if before is None else "membership exists (role=owner)")
+
+        # 5. Seed casbin policies + permissions + role_permissions SCD2 rows for
+        #    the tenant (idempotent). Pass ``db`` so the SCD2 tables are seeded
+        #    in lockstep with casbin.
+        await permission_service.seed_tenant_defaults(tenant.id, user.id, db=db)
 
         await db.commit()
 

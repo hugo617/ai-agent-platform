@@ -9,6 +9,11 @@ from sqlalchemy.orm import selectinload
 from app.models.tenant import Tenant, User, UserTenant
 from app.repositories.base import BaseRepository
 
+# Predicate matching the "current/active" SCD2 row. Every read that should see
+# only the present state must carry this; history rows (valid_to set) hold the
+# audit trail. Kept as a module-level expression so it cannot drift.
+_ACTIVE = UserTenant.valid_to.is_(None)
+
 
 class TenantRepository(BaseRepository[Tenant]):
     model = Tenant
@@ -65,37 +70,127 @@ class UserRepository(BaseRepository[User]):
 
 
 class UserTenantRepository(BaseRepository[UserTenant]):
+    """Membership repository with SCD2 write encapsulation.
+
+    Writes go through ``assign_role`` / ``remove_member`` only — they close the
+    prior active row and open a new one so history is preserved. Never mutate
+    ``valid_from`` / ``valid_to`` from business code.
+    """
+
     model = UserTenant
 
     def __init__(self, db: AsyncSession) -> None:
         super().__init__(db)
 
-    async def get_membership(self, user_id: str, tenant_id: str) -> UserTenant | None:
-        stmt = select(UserTenant).where(
-            UserTenant.user_id == user_id, UserTenant.tenant_id == tenant_id
-        )
-        result = await self.db.execute(stmt)
-        return result.scalar_one_or_none()
+    # ----------------------------------------------------------- SCD2 writes
 
-    async def list_for_user(self, user_id: str) -> list[UserTenant]:
-        stmt = select(UserTenant).where(UserTenant.user_id == user_id)
-        result = await self.db.execute(stmt)
-        return list(result.scalars().all())
+    async def assign_role(
+        self,
+        user_id: str,
+        tenant_id: str,
+        role: str,
+        *,
+        at: datetime | None = None,
+    ) -> UserTenant:
+        """Set ``user_id``'s role in ``tenant_id`` to ``role`` (SCD2).
 
-    async def list_for_tenant(self, tenant_id: str) -> list[UserTenant]:
-        """Return all memberships in a tenant, eager-loading each user.
+        Closes any currently-active row for this (user, tenant) by setting
+        ``valid_to = at``, then inserts a fresh active row. Idempotent: if the
+        active role already equals ``role`` the existing row is reused.
 
-        Excludes soft-deleted users so the member directory stays consistent
-        with the user list (which also filters ``is_deleted``).
+        ``at`` defaults to ``utcnow()``; tests pass an explicit value so
+        time-point assertions are deterministic.
         """
+        ts = at or datetime.utcnow()
+        current = await self.current_role(user_id, tenant_id)
+        if current is not None and current.role == role:
+            return current  # no change → no history churn
+        if current is not None:
+            current.valid_to = ts
+            await self.db.flush()
+        row = UserTenant(
+            user_id=user_id,
+            tenant_id=tenant_id,
+            role=role,
+            valid_from=ts,
+            valid_to=None,
+        )
+        self.db.add(row)
+        await self.db.flush()
+        return row
+
+    async def remove_member(
+        self,
+        user_id: str,
+        tenant_id: str,
+        *,
+        at: datetime | None = None,
+    ) -> bool:
+        """Close the active membership row (history preserved, no physical delete).
+
+        Returns True if a row was closed, False if there was no active member.
+        """
+        ts = at or datetime.utcnow()
+        current = await self.current_role(user_id, tenant_id)
+        if current is None:
+            return False
+        current.valid_to = ts
+        await self.db.flush()
+        return True
+
+    # ----------------------------------------------------------- SCD2 reads
+
+    async def current_role(
+        self, user_id: str, tenant_id: str
+    ) -> UserTenant | None:
+        """The *active* membership row, or None if not currently a member."""
+        stmt = select(UserTenant).where(
+            UserTenant.user_id == user_id,
+            UserTenant.tenant_id == tenant_id,
+            _ACTIVE,
+        )
+        return (await self.db.execute(stmt)).scalar_one_or_none()
+
+    async def member_role_at(
+        self, user_id: str, tenant_id: str, ts: datetime
+    ) -> UserTenant | None:
+        """SCD2 point-in-time restore (scenario i): role held at ``ts``."""
+        stmt = select(UserTenant).where(
+            UserTenant.user_id == user_id,
+            UserTenant.tenant_id == tenant_id,
+            UserTenant.valid_from <= ts,
+            (UserTenant.valid_to.is_(None)) | (UserTenant.valid_to > ts),
+        )
+        return (await self.db.execute(stmt)).scalar_one_or_none()
+
+    async def current_members(self, tenant_id: str) -> list[UserTenant]:
+        """Active memberships in a tenant, eager-loading each user (for the
+        member directory). Replaces the old ``list_for_tenant`` semantics."""
         stmt = (
             select(UserTenant)
             .join(User, UserTenant.user_id == User.id)
             .where(
                 UserTenant.tenant_id == tenant_id,
+                _ACTIVE,
                 User.is_deleted.is_(False),
             )
             .options(selectinload(UserTenant.user))
         )
-        result = await self.db.execute(stmt)
-        return list(result.scalars().all())
+        return list((await self.db.execute(stmt)).scalars().all())
+
+    # -------------------------------------------- backward-compat shims
+    # Kept thin (current-state only) so existing callers compile; service-layer
+    # migration (step 8) routes them through the SCD2 methods above.
+
+    async def get_membership(self, user_id: str, tenant_id: str) -> UserTenant | None:
+        """Active membership (alias of ``current_role``)."""
+        return await self.current_role(user_id, tenant_id)
+
+    async def list_for_user(self, user_id: str) -> list[UserTenant]:
+        """Active memberships for a user across tenants."""
+        stmt = select(UserTenant).where(UserTenant.user_id == user_id, _ACTIVE)
+        return list((await self.db.execute(stmt)).scalars().all())
+
+    async def list_for_tenant(self, tenant_id: str) -> list[UserTenant]:
+        """Active memberships in a tenant (alias of ``current_members``)."""
+        return await self.current_members(tenant_id)
