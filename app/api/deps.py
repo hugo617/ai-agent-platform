@@ -10,7 +10,13 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.core.security import TokenError, decode_token, extract_platform_role, extract_subject, extract_tenant
+from app.core.security import (
+    TokenError,
+    decode_token,
+    extract_platform_role,
+    extract_subject,
+    extract_tenant,
+)
 from app.repositories.tenant import UserRepository, UserTenantRepository
 from app.services.permission_service import permission_service
 
