@@ -173,6 +173,24 @@ async def get_my_agents():
 
 ---
 
+## 前端也有权限层(UX,非安全边界)
+
+前端在「后端 403」之外加了一层**体验性**拦截,避免普通成员看到一堆无意义的空页面:
+
+- **菜单过滤**:侧边栏「用户/角色/权限」三项对 member 角色隐藏(`dashboard-layout.tsx`
+  按 `canManageUsers(me)` 过滤)。
+- **路由守卫**:普通成员直接输 URL 进 `/users` 会被重定向到首页
+  (`RequireUserManagement` 布局路由)。
+
+判定依据 `canManageUsers(me)`(`frontend/src/lib/permission.ts`):`platform_role ==
+super_admin` 或 `roles` 含 `owner`/`admin` → true;否则 false。与 casbin 角色码一致。
+
+> ⚠️ **这是 UX 层,不是安全边界**。前端判定可被绕过(改 JS、直接调 API),真正的越权
+> 拦截仍靠本篇讲的**后端声明式校验 + 双重校验**返回 403。前端这层只是让普通用户的界面
+> 干净一点。详见 [03-认证与路由守卫](../03-前端架构/03-认证与路由守卫.md) 的「权限路由守卫」节。
+
+---
+
 ## 改角色时怎么立即生效?
 
 管理员改了某用户的角色(比如 member → admin),casbin 的策略要**同步更新**,否则还是
@@ -263,8 +281,8 @@ casbin 帮不上——它不存历史。所以给**授权链**两张表加上时
 ## 记住三句话
 
 1. **RBAC = 人 → 角色 → 权限**,不直接给人配权限。
-2. **声明式校验**:接口上贴 `require_permission` 标签,框架自动拦。
-3. **双重校验**:Controller 校验 + AI 工具内部再校验,防绕过。
+2. **声明式校验**:接口上贴 `require_permission` 标签,框架自动拦,这是**硬边界**。
+3. **双重校验 + 前端 UX 层**:Controller 校验 + AI 工具内部再校验防绕过;前端再叠一层菜单/路由过滤提升体验(非安全边界)。
 
 ---
 
