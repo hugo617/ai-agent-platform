@@ -5,13 +5,27 @@ through ``Depends`` and the heavy lifting (auth, tenancy, authorization) is
 centralised here.
 """
 
-from fastapi import Depends, Header, HTTPException, status
+from fastapi import Depends, HTTPException, status
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.core.security import TokenError, decode_token, extract_subject, extract_tenant
+from app.core.security import TokenError, decode_token, extract_platform_role, extract_subject, extract_tenant
 from app.repositories.tenant import UserRepository, UserTenantRepository
 from app.services.permission_service import permission_service
+
+# Standard "Authorization: Bearer <token>" security scheme.
+#
+# Using HTTPBearer (instead of a raw ``Header`` parameter) makes FastAPI expose
+# a proper securityScheme in the OpenAPI spec. API clients (Apifox, Swagger UI,
+# generated SDKs) then auto-fill the token from a single "Auth" field instead of
+# shipping an empty ``authorization`` header that conflicts with a manual one.
+#
+# ``auto_error=False``: HTTPBearer's default raises HTTP 403 on a missing/
+# malformed header, but the HTTP-correct status for "no credentials" is 401
+# (Unauthorized), not 403 (Forbidden). We therefore disable its built-in error
+# and raise 401 ourselves in get_current_user, preserving the original contract.
+bearer_scheme = HTTPBearer(auto_error=False)
 
 
 class CurrentUser:
@@ -23,25 +37,19 @@ class CurrentUser:
         tenant_id: str,
         email: str | None = None,
         jti: str | None = None,
+        platform_role: str | None = None,
     ) -> None:
         self.user_id = user_id
         self.tenant_id = tenant_id
         self.email = email
         # Token id (jti). None for tokens without one (e.g. mocked in tests).
         self.jti = jti
-
-
-def _get_bearer(authorization: str | None) -> str:
-    if not authorization or not authorization.lower().startswith("bearer "):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="missing or malformed Authorization header",
-        )
-    return authorization.split(" ", 1)[1].strip()
+        # Platform-level role ("super_admin" or None for normal users).
+        self.platform_role = platform_role
 
 
 async def get_current_user(
-    authorization: str | None = Header(default=None),
+    credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme),
     db: AsyncSession = Depends(get_db),
 ) -> CurrentUser:
     """Verify the access token and resolve the active tenant.
@@ -60,7 +68,15 @@ async def get_current_user(
       3. The token's ``jti`` matches an active ``UserSession`` row, if a session
          was ever recorded for it (logout / "log out everywhere" revoke it).
     """
-    token = _get_bearer(authorization)
+    # bearer_scheme uses auto_error=False, so a missing/malformed header arrives
+    # here as None. Raise the HTTP-correct 401 (not HTTPBearer's default 403).
+    if credentials is None or not credentials.credentials:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="missing or malformed Authorization header",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    token = credentials.credentials
     try:
         claims = await decode_token(token)
     except TokenError as e:
@@ -118,7 +134,12 @@ async def get_current_user(
             )
 
     email = claims.get("email") or (user.email if user else None)
-    return CurrentUser(user_id=user_id, tenant_id=tenant_id, email=email, jti=jti_str)
+    platform_role = extract_platform_role(claims) or (
+        getattr(user, "platform_role", None) if user else None
+    )
+    return CurrentUser(
+        user_id=user_id, tenant_id=tenant_id, email=email, jti=jti_str, platform_role=platform_role
+    )
 
 
 def require_permission(obj: str, act: str):
@@ -130,7 +151,9 @@ def require_permission(obj: str, act: str):
     """
 
     async def _guard(user: CurrentUser = Depends(get_current_user)) -> CurrentUser:
-        allowed = await permission_service.check(user.user_id, user.tenant_id, obj, act)
+        allowed = await permission_service.check(
+            user.user_id, user.tenant_id, obj, act, platform_role=user.platform_role
+        )
         if not allowed:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
