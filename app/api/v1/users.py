@@ -59,20 +59,32 @@ async def list_users(
     role: str | None = Query(default=None),
     sort_by: str = Query(default="created_at"),
     sort_order: str = Query(default="desc"),
-    page: int = Query(default=1, ge=1),
-    limit: int = Query(default=10, ge=1, le=100),
+    # Declared as ``str | None`` (not ``int``): some API clients (Apifox, etc.)
+    # send ``?page&limit`` with EMPTY values, i.e. the empty string. A bare
+    # ``int`` (or even ``int | None``) rejects "" with 422 at parse time. Taking
+    # it as a string lets us coerce "" → default below, so all of
+    # ``?page``, ``?page=``, and ``?page=2`` work.
+    page: str | None = Query(default="1"),
+    limit: str | None = Query(default="10"),
     user: CurrentUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> UserListResponse:
     """Paginated, filterable, sortable user list for the current tenant."""
+    try:
+        page_n = int(page) if page else 1
+        limit_n = int(limit) if limit else 10
+    except ValueError:
+        page_n, limit_n = 1, 10
+    page_n = max(page_n, 1)
+    limit_n = max(1, min(limit_n, 100))
     filters = UserFilters(
-        search=search,
-        status=status_filter,
-        role=role,
-        sort_by=sort_by,
-        sort_order=sort_order,
-        page=page,
-        limit=limit,
+        search=search or None,
+        status=status_filter or None,
+        role=role or None,
+        sort_by=sort_by or "created_at",
+        sort_order=sort_order or "desc",
+        page=page_n,
+        limit=limit_n,
     )
     return await UserService(db).list(
         user.user_id, user.tenant_id, filters, platform_role=user.platform_role
