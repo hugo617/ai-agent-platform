@@ -133,9 +133,85 @@ async def tenant_owner(test_env: _TestEnv) -> dict:
     return {"user_id": test_env.owner_user, "tenant_id": test_env.tenant_id}
 
 
+async def _build_client(
+    test_env: _TestEnv,
+    *,
+    user_id: str,
+    email: str,
+    role: str,
+    platform_role: str | None = None,
+) -> AsyncIterator[AsyncClient]:
+    """Build an AsyncClient impersonating a user with a given tenant-scoped role.
+
+    Seeds a fresh User + UserTenant(row=role) and binds the same role in casbin
+    (the default policies for owner/admin/member are already seeded by
+    ``_make_casbin``). The JWT is mocked so the impersonated identity flows
+    through ``get_current_user`` unchanged.
+    """
+    from contextlib import asynccontextmanager
+
+    from app.api import deps as deps_mod
+    from app.core import casbin_enforcer as casbin_mod
+    from app.core.database import get_db
+    from app.main import create_app
+    from app.models.tenant import User, UserTenant
+
+    # Seed the impersonated user + membership (get_current_user re-validates
+    # account state + membership on every request).
+    async with test_env.factory() as session:
+        session.add(User(id=user_id, email=email, status="active"))
+        session.add(UserTenant(user_id=user_id, tenant_id=test_env.tenant_id, role=role))
+        await session.commit()
+
+    # Bind the role in casbin (grouping policy: user → role in this tenant).
+    test_env.enforcer.add_role_for_user_in_domain(user_id, role, test_env.tenant_id)
+
+    app = create_app()
+
+    # Disable lifespan: it would call get_enforcer() whose SQLAlchemy adapter
+    # points at the unrelated global SQLite URL. We inject our own enforcer.
+    @asynccontextmanager
+    async def noop_lifespan(_app):
+        yield
+
+    app.router.lifespan_context = noop_lifespan
+
+    async def override_get_db():
+        async with test_env.factory() as session:
+            yield session
+
+    app.dependency_overrides[get_db] = override_get_db
+
+    async def fake_decode(token: str):
+        # No ``jti`` on the mocked token: get_current_user only consults the
+        # sessions table when a jti is present, so the mock never trips the
+        # revocation check.
+        claims: dict = {
+            "sub": user_id,
+            "tenant_id": test_env.tenant_id,
+            "email": email,
+        }
+        if platform_role is not None:
+            claims["platform_role"] = platform_role
+        return claims
+
+    with patch.object(casbin_mod, "get_enforcer", return_value=test_env.enforcer), \
+         patch.object(deps_mod, "decode_token", new=AsyncMock(side_effect=fake_decode)):
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            yield client
+
+    app.dependency_overrides.clear()
+
+
 @pytest_asyncio.fixture
 async def app_client(test_env: _TestEnv) -> AsyncIterator[AsyncClient]:
-    """FastAPI test client wired to the test engine, seeded casbin, mock JWT."""
+    """FastAPI test client wired to the test engine, seeded casbin, mock JWT.
+
+    Impersonates the tenant owner (full users:* permissions). The owner's
+    User/UserTenant rows are seeded by ``test_env`` itself, so unlike
+    ``_build_client`` (used for admin/member) this fixture does NOT re-seed.
+    """
     from contextlib import asynccontextmanager
 
     from app.api import deps as deps_mod
@@ -176,6 +252,30 @@ async def app_client(test_env: _TestEnv) -> AsyncIterator[AsyncClient]:
             yield client
 
     app.dependency_overrides.clear()
+
+
+@pytest_asyncio.fixture
+async def tenant_admin_client(test_env: _TestEnv) -> AsyncIterator[AsyncClient]:
+    """Impersonates a tenant admin (users:read/create/update, NO delete)."""
+    async for client in _build_client(
+        test_env,
+        user_id=f"admin-{uuid.uuid4().hex}",
+        email="admin@example.com",
+        role="admin",
+    ):
+        yield client
+
+
+@pytest_asyncio.fixture
+async def member_client(test_env: _TestEnv) -> AsyncIterator[AsyncClient]:
+    """Impersonates a plain member (no users:* permissions at all)."""
+    async for client in _build_client(
+        test_env,
+        user_id=f"member-{uuid.uuid4().hex}",
+        email="member@example.com",
+        role="member",
+    ):
+        yield client
 
 
 @pytest_asyncio.fixture
