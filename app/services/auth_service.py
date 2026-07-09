@@ -92,7 +92,9 @@ class AuthService:
         # token so a future "is this token still active?" check is possible
         # without keeping the raw token around.
         await self.users.update_last_login(user.id)
-        token, jti = create_access_token(user.id, tenant_id, email=user.email)
+        token, jti = create_access_token(
+            user.id, tenant_id, email=user.email, platform_role=getattr(user, "platform_role", None)
+        )
         await self._create_session(
             user.id, jti, token=token, ip=ip, user_agent=user_agent
         )

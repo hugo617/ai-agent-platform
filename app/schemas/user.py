@@ -44,6 +44,9 @@ class UserRead(BaseModel):
     last_login_at: datetime | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None
+    # Cross-tenant fields: set only when the caller is a super admin.
+    tenant_id: str | None = None
+    tenant_name: str | None = None
 
 
 class UserCreate(BaseModel):

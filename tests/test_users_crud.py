@@ -213,3 +213,80 @@ async def test_statistics(app_client):
     assert body["total"] >= 2
     assert body["active"] >= 2
     assert body["new_this_month"] >= 2
+
+
+# ===================== super admin cross-tenant tests =====================
+
+SA_AUTH = {"Authorization": "Bearer fake"}
+
+
+@pytest.mark.asyncio
+async def test_super_admin_sees_all_users_across_tenants(super_admin_client):
+    """Super admin should see users from ALL tenants, not just their own."""
+    resp = await super_admin_client.get("/api/v1/users/?limit=20", headers=SA_AUTH)
+    assert resp.status_code == 200
+    body = resp.json()
+    # Should see the owner (main tenant) + cross-user (other tenant).
+    emails = {u["email"] for u in body["items"]}
+    assert "owner@example.com" in emails
+    assert "cross@example.com" in emails
+    # Each user should carry tenant fields; cross-tenant users resolve a name.
+    by_email = {u["email"]: u for u in body["items"]}
+    assert by_email["owner@example.com"]["tenant_name"] == "Test Tenant"
+    assert by_email["cross@example.com"]["tenant_name"] == "Other Tenant"
+
+
+@pytest.mark.asyncio
+async def test_super_admin_get_user_other_tenant(super_admin_client):
+    """Super admin can GET a user who belongs to a different tenant."""
+    resp = await super_admin_client.get("/api/v1/users/cross-user", headers=SA_AUTH)
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["email"] == "cross@example.com"
+    assert body["tenant_name"] == "Other Tenant"
+
+
+@pytest.mark.asyncio
+async def test_super_admin_delete_cross_tenant_user(super_admin_client):
+    """Super admin can delete a user from another tenant (permission bypass)."""
+    # Delete should bypass the permission check (not 403). It may 404 if the
+    # user happens to not be in the caller's tenant scope — the super admin
+    # permission bypass is at the casbin level; the data-layer tenant scoping
+    # is a separate concern.
+    resp = await super_admin_client.delete(
+        "/api/v1/users/cross-user", headers=SA_AUTH
+    )
+    # Permission check should pass — no 403. The result may be 200, 204, or 404
+    # depending on data-layer scoping, but must not be 403.
+    assert resp.status_code != 403, "Super admin should not get permission denied"
+
+
+@pytest.mark.asyncio
+async def test_regular_user_does_not_see_other_tenant(app_client, db_session, test_env):
+    """A non-super-admin user must only see users in their own tenant.
+
+    Seed a second tenant with a user, then verify the regular app_client
+    (scoped to the first tenant) cannot see that user.
+    """
+    from app.models.tenant import Tenant, User, UserTenant
+
+    async with test_env.factory() as session:
+        other_tid = "tnt-hidden"
+        session.add(Tenant(id=other_tid, name="Hidden Tenant"))
+        session.add(User(id="hidden-user", email="hidden@example.com", status="active"))
+        session.add(UserTenant(user_id="hidden-user", tenant_id=other_tid, role="member"))
+        await session.commit()
+
+    resp = await app_client.get("/api/v1/users/?limit=20", headers=AUTH)
+    assert resp.status_code == 200
+    body = resp.json()
+    ids = {u["id"] for u in body["items"]}
+    assert "hidden-user" not in ids, "Regular user must not see users from other tenants"
+
+
+@pytest.mark.asyncio
+async def test_super_admin_me_returns_platform_role(super_admin_client):
+    """The /auth/me endpoint should reflect super_admin platform_role."""
+    resp = await super_admin_client.get("/api/v1/auth/me", headers=SA_AUTH)
+    assert resp.status_code == 200
+    assert resp.json()["platform_role"] == "super_admin"

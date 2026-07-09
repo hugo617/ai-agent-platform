@@ -69,6 +69,9 @@ export interface UserFull {
   last_login_at: string | null;
   created_at: string | null;
   updated_at: string | null;
+  // Cross-tenant fields (set only for super admin).
+  tenant_id: string | null;
+  tenant_name: string | null;
 }
 
 export interface UserFormData {
@@ -217,6 +220,7 @@ export interface MeResponse {
   user_id: string;
   tenant_id: string | null;
   email: string | null;
+  platform_role: string | null;
   roles: string[];
 }
 

@@ -63,6 +63,7 @@ import {
 import { Pagination } from "@/components/ui/pagination";
 import { useToast } from "@/components/ui/toast";
 import { apiErrorMessage } from "@/api/client";
+import { useAuth } from "@/components/auth/auth-context";
 import type { UserFilters, UserFull, UserStatistics, UserStatus } from "@/api/types";
 import {
   useChangeUserStatus,
@@ -120,6 +121,8 @@ const EMPTY_FORM = {
 
 export function UsersPage() {
   const toast = useToast();
+  const { me } = useAuth();
+  const isSuperAdmin = me?.platform_role === "super_admin";
 
   // ---- filters / pagination state ----
   const [filters, setFilters] = useState<UserFilters>({
@@ -284,7 +287,7 @@ export function UsersPage() {
 
   return (
     <div className="space-y-6">
-      <PageHeader stats={stats} onCreate={openCreate} />
+      <PageHeader stats={stats} onCreate={openCreate} isSuperAdmin={isSuperAdmin} />
 
       <Filters
         searchInput={searchInput}
@@ -322,6 +325,7 @@ export function UsersPage() {
                     <TableHead>用户</TableHead>
                     <TableHead>邮箱</TableHead>
                     <TableHead>角色</TableHead>
+                    {isSuperAdmin && <TableHead>所属租户</TableHead>}
                     <TableHead>状态</TableHead>
                     <TableHead>最后登录</TableHead>
                     <TableHead>创建时间</TableHead>
@@ -356,6 +360,11 @@ export function UsersPage() {
                           "-"
                         )}
                       </TableCell>
+                      {isSuperAdmin && (
+                        <TableCell className="text-muted-foreground">
+                          {u.tenant_name ?? <span className="italic">无租户</span>}
+                        </TableCell>
+                      )}
                       <TableCell>{statusBadge(u.status)}</TableCell>
                       <TableCell className="text-muted-foreground">{fmt(u.last_login_at)}</TableCell>
                       <TableCell className="text-muted-foreground">{fmt(u.created_at)}</TableCell>
@@ -565,9 +574,11 @@ export function UsersPage() {
 function PageHeader({
   stats,
   onCreate,
+  isSuperAdmin = false,
 }: {
   stats: UserStatistics | undefined;
   onCreate: () => void;
+  isSuperAdmin?: boolean;
 }) {
   const cards = [
     { label: "用户总数", value: stats?.total ?? 0, icon: UsersIcon, color: "text-blue-500" },
@@ -581,7 +592,7 @@ function PageHeader({
         <div>
           <h1 className="text-3xl font-bold tracking-tight">用户</h1>
           <p className="text-muted-foreground">
-            管理当前租户的用户账号、角色与状态
+            {isSuperAdmin ? "管理全平台用户账号、角色与状态" : "管理当前租户的用户账号、角色与状态"}
           </p>
         </div>
         <Button onClick={onCreate}>

@@ -179,6 +179,65 @@ async def app_client(test_env: _TestEnv) -> AsyncIterator[AsyncClient]:
 
 
 @pytest_asyncio.fixture
+async def super_admin_client(test_env: _TestEnv) -> AsyncIterator[AsyncClient]:
+    """Like ``app_client`` but the mocked token has ``platform_role=super_admin``
+    and the DB has a second tenant with an extra user, so cross-tenant tests work."""
+    from contextlib import asynccontextmanager
+
+    from app.api import deps as deps_mod
+    from app.core import casbin_enforcer as casbin_mod
+    from app.core.database import get_db
+    from app.main import create_app
+
+    # Seed a second tenant + user so cross-tenant queries have data.
+    from app.models.tenant import Tenant, User, UserTenant
+
+    other_tenant_id = f"tnt-other-{uuid.uuid4().hex}"
+    async with test_env.factory() as session:
+        session.add(Tenant(id=other_tenant_id, name="Other Tenant"))
+        session.add(User(id="cross-user", email="cross@example.com", status="active"))
+        session.add(UserTenant(user_id="cross-user", tenant_id=other_tenant_id, role="member"))
+        await session.commit()
+
+    # Mark the owner as a super admin.
+    async with test_env.factory() as session:
+        user = await session.get(User, test_env.owner_user)
+        if user is not None:
+            user.platform_role = "super_admin"
+            await session.commit()
+
+    app = create_app()
+
+    @asynccontextmanager
+    async def noop_lifespan(_app):
+        yield
+
+    app.router.lifespan_context = noop_lifespan
+
+    async def override_get_db():
+        async with test_env.factory() as session:
+            yield session
+
+    app.dependency_overrides[get_db] = override_get_db
+
+    async def fake_decode(token: str):
+        return {
+            "sub": test_env.owner_user,
+            "tenant_id": test_env.tenant_id,
+            "email": "owner@example.com",
+            "platform_role": "super_admin",
+        }
+
+    with patch.object(casbin_mod, "get_enforcer", return_value=test_env.enforcer), \
+         patch.object(deps_mod, "decode_token", new=AsyncMock(side_effect=fake_decode)):
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            yield client
+
+    app.dependency_overrides.clear()
+
+
+@pytest_asyncio.fixture
 async def app_client_real_auth(test_env: _TestEnv) -> AsyncIterator[AsyncClient]:
     """Like ``app_client`` but with REAL JWT verification (no decode_token mock).
 

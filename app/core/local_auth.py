@@ -23,7 +23,10 @@ LOCAL_ISSUER = "local"
 
 
 def create_access_token(
-    user_id: str, tenant_id: str, email: str | None = None
+    user_id: str,
+    tenant_id: str,
+    email: str | None = None,
+    platform_role: str | None = None,
 ) -> tuple[str, str]:
     """Mint a short-lived HS256 access token for a local user.
 
@@ -39,6 +42,7 @@ def create_access_token(
         "sub": user_id,
         "tenant_id": tenant_id,
         "email": email,
+        "platform_role": platform_role,
         "iat": now,
         "exp": now + ttl,
         "jti": jti,

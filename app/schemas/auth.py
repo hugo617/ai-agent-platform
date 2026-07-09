@@ -9,6 +9,7 @@ class MeResponse(BaseModel):
     user_id: str
     tenant_id: str | None
     email: str | None = None
+    platform_role: str | None = None
     roles: list[str] = []
 
 
