@@ -77,7 +77,9 @@ def __getattr__(name: str):
 
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
     """FastAPI dependency — yields a scoped async session per request."""
-    async with _get_session_factory() as session:
+    # _get_session_factory() returns the async_sessionmaker (factory); the
+    # extra () instantiates an AsyncSession, which is the async context manager.
+    async with _get_session_factory()() as session:
         try:
             yield session
         except Exception:

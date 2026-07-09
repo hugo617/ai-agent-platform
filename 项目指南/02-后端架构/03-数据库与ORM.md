@@ -206,6 +206,30 @@ alembic upgrade head
 
 ---
 
+## 新增表的设计原则(给 AI 的 checklist)
+
+> 后面加业务、要新建表时,**先过这 8 条**。现阶段「权限表 + 基础属性表」已齐全——
+> **按需加表,不预建空架子,不过度设计**。流程(8 步)见
+> [04-二开/02-新增后端模块](../04-二开脚手架/02-新增后端模块.md);这里是**判断标准**。
+
+建一张新表前,逐条自检:
+
+| # | 原则 | 怎么做 |
+|---|---|---|
+| 1 | **能不加就不加** | 先看能否复用现有表的字段,或塞进 `metadata`(JSONB)。新表是「确有新业务实体」时的最后手段。 |
+| 2 | **必备字段** | `id`:`String(32)` + `default=_uuid()`(uuid hex,不自增 int);`created_at`:`DateTime(timezone=True), server_default=func.now()`。业务实体再加 `updated_at`(带 `onupdate=func.now()`)。 |
+| 3 | **租户归属** | 业务表必须有 `tenant_id`(`ForeignKey("tenants.id", ondelete="CASCADE")`),Repository 继承 `TenantScopedRepository`。**全局身份表**(`users`、`tenants` 本身)除外。详见 [04-多租户隔离](04-多租户隔离.md)。 |
+| 4 | **软删除看情况** | 有「删除后标识符要复用」或「需审计/可恢复」的表:加 `is_deleted` + `deleted_at` + partial unique(抄 `User` 的 `uq_users_username_active`)。**纯 append-only 的表**(消息、日志、验证码)不需要软删除。 |
+| 5 | **命名规范** | 表名**复数蛇形**(`users`、`role_permissions`);普通索引 `ix_` / `idx_`;唯一约束 `uq_`;**外键必须显式写 `ondelete`**(`CASCADE` / `SET NULL` 想清楚再定)。 |
+| 6 | **历史维度:默认不搞** | 绝大多数表用「当前态主表 + `system_logs` 审计」即可(够回答「谁、何时、把什么从 X 改成 Y」)。**只有授权链这类有「任意时间点还原」合规刚需的表**,才上 SCD2(`valid_from` / `valid_to`)。**SCD2 是按需项,不是标配**——现阶段不实施,真有需求再按 [`docs/auth-history-scd2-plan.md`](../../docs/auth-history-scd2-plan.md) 加。 |
+| 7 | **审计落库** | 关键写操作(建/改/删)在 Service 层调 `logging_service` 写 `system_logs`,带 `old_values` / `new_values`。 |
+| 8 | **双库兼容** | 生产 PG、测试 SQLite,一份代码两边跑。时间用 `DateTime(timezone=True)`;JSON 用 `JSONB().with_variant(JSON, "sqlite")`;**partial index 必须同时写 `postgresql_where` 和 `sqlite_where`**(漏一个测试库就报错)。 |
+
+> 💡 **一句话定位**:权限表(`roles`/`permissions`/`role_permissions`/`casbin_rule`)+ 基础属性表
+> (`users`/`tenants`/`organizations`/会话/审计)已覆盖脚手架需求。加新业务表时套这 8 条即可。
+
+---
+
 ## 记住三句话
 
 1. **ORM**:用 Python 类描述表,继承 `Base`。
