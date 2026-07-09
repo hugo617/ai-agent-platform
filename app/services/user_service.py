@@ -39,6 +39,7 @@ from app.schemas.user import (
     UserStatistics,
     UserUpdate,
 )
+from app.services.errors import BizError, NotFoundError
 from app.services.logging_service import LoggingService
 from app.services.permission_service import permission_service
 
@@ -98,13 +99,13 @@ class UserService:
         if is_super_admin:
             user = await self.users.get(user_id)
             if user is None or user.is_deleted:
-                raise ValueError(f"user {user_id} not found")
+                raise NotFoundError(f"用户 {user_id} 不存在")
             tenant_info = await self.list_repo.batch_tenant_info([user_id])
             return await self._read_all(user, tenant_info)
         else:
             user = await self.list_repo.get(tenant_id, user_id)
             if user is None:
-                raise ValueError(f"user {user_id} not found in this tenant")
+                raise NotFoundError(f"用户 {user_id} 不在该租户中")
             return await self._read(tenant_id, user)
 
     async def statistics(
@@ -116,7 +117,9 @@ class UserService:
         is_super_admin = platform_role == "super_admin"
         if not is_super_admin:
             await permission_service.require(actor_id, tenant_id, self.OBJECT, "read")
-        return UserStatistics(**await self.list_repo.statistics(tenant_id))
+        return UserStatistics(
+            **await self.list_repo.statistics(tenant_id, super_admin=is_super_admin)
+        )
 
     async def _read(self, tenant_id: str, user: User) -> UserRead:
         # Re-fetch via a fresh select so all columns (incl. server defaults like
@@ -142,6 +145,14 @@ class UserService:
         self, user: User, tenant_info: dict[str, tuple[str | None, str | None]]
     ) -> UserRead:
         """Read a user for super admin view, including their cross-tenant info."""
+        # Re-fetch via a fresh select so all columns are loaded eagerly —
+        # avoids lazy-load IO on an object whose session may have been expired
+        # by a commit (Session.get() would return the stale identity-map row).
+        fresh = (
+            await self.db.execute(select(User).where(User.id == user.id))
+        ).scalar_one_or_none()
+        if fresh is not None:
+            user = fresh
         tid, tname = tenant_info.get(user.id, (None, None))
         membership = await self.memberships.get_membership(user.id, tid) if tid else None
         role = membership.role if membership else None
@@ -174,13 +185,13 @@ class UserService:
         await permission_service.require(actor_id, tenant_id, self.OBJECT, "create")
 
         if payload.status not in VALID_STATUSES:
-            raise ValueError(f"invalid status: {payload.status}")
+            raise BizError(f"无效的状态: {payload.status}")
 
         # Uniqueness checks (global on username/email — IDs are cross-tenant).
         if await self.users.get_by_username(payload.username):
-            raise ValueError("username already exists")
+            raise BizError("用户名已存在")
         if payload.email and await self.users.get_by_email(str(payload.email)):
-            raise ValueError("email already exists")
+            raise BizError("邮箱已存在")
 
         # Validate organization_ids belong to this tenant.
         await self._validate_org_ids(tenant_id, payload.organization_ids)
@@ -203,7 +214,7 @@ class UserService:
             await self.db.flush()
         except IntegrityError as e:
             await self.db.rollback()
-            raise ValueError("username or email already exists") from e
+            raise BizError("用户名或邮箱已存在") from e
 
         # Tenant membership + casbin role (SCD2 write path).
         await self.memberships.assign_role(user.id, tenant_id, payload.role)
@@ -235,25 +246,38 @@ class UserService:
     # ----------------------------------------------------------------- update
 
     async def update(
-        self, actor_id: str, tenant_id: str, user_id: str, payload: UserUpdate
+        self,
+        actor_id: str,
+        tenant_id: str,
+        user_id: str,
+        payload: UserUpdate,
+        platform_role: str | None = None,
     ) -> UserRead:
-        await permission_service.require(actor_id, tenant_id, self.OBJECT, "update")
+        is_super_admin = platform_role == "super_admin"
+        if not is_super_admin:
+            await permission_service.require(actor_id, tenant_id, self.OBJECT, "update")
 
-        user = await self.list_repo.get(tenant_id, user_id)
-        if user is None:
-            raise ValueError(f"user {user_id} not found in this tenant")
+        # Super admin looks up globally (cross-tenant); tenant admins are scoped.
+        if is_super_admin:
+            user = await self.users.get(user_id)
+            if user is None or user.is_deleted:
+                raise NotFoundError(f"用户 {user_id} 不存在")
+        else:
+            user = await self.list_repo.get(tenant_id, user_id)
+            if user is None:
+                raise NotFoundError(f"用户 {user_id} 不在该租户中")
 
         old = _snapshot(user)
         changes: dict[str, Any] = {}
 
         if payload.username is not None and payload.username != user.username:
             if await self.users.get_by_username(payload.username):
-                raise ValueError("username already exists")
+                raise BizError("用户名已存在")
             user.username = payload.username
             changes["username"] = payload.username
         if payload.email is not None and str(payload.email) != user.email:
             if await self.users.get_by_email(str(payload.email)):
-                raise ValueError("email already exists")
+                raise BizError("邮箱已存在")
             user.email = str(payload.email)
             changes["email"] = str(payload.email)
         for field in ("display_name", "real_name", "phone", "avatar"):
@@ -263,17 +287,20 @@ class UserService:
                 changes[field] = v
         if payload.status is not None:
             if payload.status not in VALID_STATUSES:
-                raise ValueError(f"invalid status: {payload.status}")
+                raise BizError(f"无效的状态: {payload.status}")
             if payload.status != user.status:
                 user.status = payload.status
                 changes["status"] = payload.status
         user.updated_by = actor_id
 
         # Role change (mirrored into casbin) — SCD2 write path.
-        if payload.role is not None:
+        # Super admins operate cross-tenant: a tenant-scoped role change is
+        # ambiguous (which tenant's membership?), so it is ignored here. Role
+        # management for cross-tenant users should go through the members page.
+        if payload.role is not None and not is_super_admin:
             membership = await self.memberships.current_role(user.id, tenant_id)
             if membership is None:
-                raise ValueError(f"user {user_id} is not a member of this tenant")
+                raise NotFoundError(f"用户 {user_id} 不是该租户的成员")
             if membership.role != payload.role:
                 old_role = membership.role
                 await self.memberships.assign_role(
@@ -284,8 +311,9 @@ class UserService:
                     user.id, payload.role, tenant_id
                 )
 
-        # Org links.
-        if payload.organization_ids is not None:
+        # Org links (tenant-scoped — skipped for super admins editing across
+        # tenants, since the org tree belongs to a specific tenant).
+        if payload.organization_ids is not None and not is_super_admin:
             await self._validate_org_ids(tenant_id, payload.organization_ids)
             await self.list_repo.sync_organizations(user.id, payload.organization_ids)
             changes["organization_ids"] = payload.organization_ids
@@ -303,24 +331,50 @@ class UserService:
             new_values=changes or None,
         )
         await self.db.commit()
+        if is_super_admin:
+            tenant_info = await self.list_repo.batch_tenant_info([user.id])
+            return await self._read_all(user, tenant_info)
         return await self._read(tenant_id, user)
 
     # ----------------------------------------------------------------- delete
 
-    async def delete(self, actor_id: str, tenant_id: str, user_id: str) -> None:
-        await permission_service.require(actor_id, tenant_id, self.OBJECT, "delete")
+    async def delete(
+        self,
+        actor_id: str,
+        tenant_id: str,
+        user_id: str,
+        platform_role: str | None = None,
+    ) -> None:
+        is_super_admin = platform_role == "super_admin"
+        if not is_super_admin:
+            await permission_service.require(actor_id, tenant_id, self.OBJECT, "delete")
         if actor_id == user_id:
-            raise ValueError("cannot delete yourself")
+            raise BizError("不能删除自己")
 
-        user = await self.list_repo.get(tenant_id, user_id)
-        if user is None:
-            raise ValueError(f"user {user_id} not found in this tenant")
+        # Super admin soft-deletes the global User and tears down membership
+        # across ALL tenants; a tenant admin only operates within their tenant.
+        if is_super_admin:
+            user = await self.users.get(user_id)
+            if user is None or user.is_deleted:
+                raise NotFoundError(f"用户 {user_id} 不存在")
+            affected_tenants = [
+                m.tenant_id for m in await self.memberships.list_for_user(user_id)
+            ]
+        else:
+            user = await self.list_repo.get(tenant_id, user_id)
+            if user is None:
+                raise NotFoundError(f"用户 {user_id} 不在该租户中")
+            affected_tenants = [tenant_id]
 
         old = _snapshot(user)
         user.is_deleted = True
         user.deleted_at = datetime.utcnow()
         user.updated_by = actor_id
-        await permission_service.remove_user_from_tenant(user_id, tenant_id)
+        # Close every active membership (SCD2) + strip casbin roles. Super
+        # admins iterate all the user's tenants; tenant admins just their own.
+        for tid in affected_tenants:
+            await self.memberships.remove_member(user_id, tid)
+            await permission_service.remove_user_from_tenant(user_id, tid)
         # Revoke every outstanding session so a deleted user's token stops
         # working immediately (get_current_user also rejects soft-deleted users).
         await self.sessions.deactivate_all_for_user(user_id)
@@ -340,14 +394,26 @@ class UserService:
     # ----------------------------------------------------- status / password
 
     async def change_status(
-        self, actor_id: str, tenant_id: str, user_id: str, status: str
+        self,
+        actor_id: str,
+        tenant_id: str,
+        user_id: str,
+        status: str,
+        platform_role: str | None = None,
     ) -> UserRead:
-        await permission_service.require(actor_id, tenant_id, self.OBJECT, "update")
+        is_super_admin = platform_role == "super_admin"
+        if not is_super_admin:
+            await permission_service.require(actor_id, tenant_id, self.OBJECT, "update")
         if status not in VALID_STATUSES:
-            raise ValueError(f"invalid status: {status}")
-        user = await self.list_repo.get(tenant_id, user_id)
-        if user is None:
-            raise ValueError(f"user {user_id} not found in this tenant")
+            raise BizError(f"无效的状态: {status}")
+        if is_super_admin:
+            user = await self.users.get(user_id)
+            if user is None or user.is_deleted:
+                raise NotFoundError(f"用户 {user_id} 不存在")
+        else:
+            user = await self.list_repo.get(tenant_id, user_id)
+            if user is None:
+                raise NotFoundError(f"用户 {user_id} 不在该租户中")
         old = user.status
         user.status = status
         user.updated_by = actor_id
@@ -368,15 +434,30 @@ class UserService:
             new_values={"status": status},
         )
         await self.db.commit()
+        if is_super_admin:
+            tenant_info = await self.list_repo.batch_tenant_info([user.id])
+            return await self._read_all(user, tenant_info)
         return await self._read(tenant_id, user)
 
     async def reset_password(
-        self, actor_id: str, tenant_id: str, user_id: str, payload: PasswordReset
+        self,
+        actor_id: str,
+        tenant_id: str,
+        user_id: str,
+        payload: PasswordReset,
+        platform_role: str | None = None,
     ) -> None:
-        await permission_service.require(actor_id, tenant_id, self.OBJECT, "update")
-        user = await self.list_repo.get(tenant_id, user_id)
-        if user is None:
-            raise ValueError(f"user {user_id} not found in this tenant")
+        is_super_admin = platform_role == "super_admin"
+        if not is_super_admin:
+            await permission_service.require(actor_id, tenant_id, self.OBJECT, "update")
+        if is_super_admin:
+            user = await self.users.get(user_id)
+            if user is None or user.is_deleted:
+                raise NotFoundError(f"用户 {user_id} 不存在")
+        else:
+            user = await self.list_repo.get(tenant_id, user_id)
+            if user is None:
+                raise NotFoundError(f"用户 {user_id} 不在该租户中")
         user.password = hash_password(payload.new_password)
         user.password_updated_at = datetime.utcnow()
         user.updated_by = actor_id
@@ -407,7 +488,7 @@ class UserService:
         found = list((await self.db.execute(stmt)).scalars().all())
         missing = set(org_ids) - {o.id for o in found}
         if missing:
-            raise ValueError(f"unknown organization ids: {sorted(missing)}")
+            raise BizError(f"未知的组织 ID: {sorted(missing)}")
 
 
 def _snapshot(user: User) -> dict[str, Any]:

@@ -70,9 +70,9 @@ export function apiErrorMessage(err: unknown): string {
     if (Array.isArray(data.detail) && data.detail.length > 0) {
       const first = data.detail[0] as { msg?: string } | undefined;
       if (first?.msg) return first.msg;
-      return "validation error";
+      return "请求参数校验失败";
     }
   }
   if (err instanceof Error) return err.message;
-  return "unknown error";
+  return "未知错误";
 }

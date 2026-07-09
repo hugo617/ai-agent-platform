@@ -45,7 +45,7 @@ class Settings(BaseSettings):
     jwt_secret: str = "change-me-in-production"
     jwt_algorithm: str = "HS256"
     salt_rounds: int = 12
-    access_token_ttl_minutes: int = 60
+    access_token_ttl_minutes: int = 10080  # 7 days
     session_ttl_hours: int = 168  # 7 days
 
     # Frontend URL — used for welcome/reset emails and CORS default.

@@ -163,7 +163,7 @@ def require_permission(obj: str, act: str):
         if not allowed:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"forbidden: cannot {act} {obj}",
+                detail=f"无权限：不能执行 {act} 操作于 {obj}",
             )
         return user
 

@@ -1,6 +1,16 @@
+%% ===============================================================
+%% AI Agent Platform — 数据库 Schema（权威数据源）
+%% 数据库：PostgreSQL 16（测试用 SQLite 镜像）
+%% 多租户 SaaS：共享数据库 + tenant_id 隔离
+%% 维护：每次 model / 迁移变更后同步本文件 + db-schema.html
+%% 表清单：16 张（15 应用表 + 1 casbin_rule 适配器托管）
+%% 更新于：2026-07-09
+%% ===============================================================
+
 erDiagram
-    tenants ||--o{ user_tenants : "租户成员"
-    users ||--o{ user_tenants : "所属租户"
+    %% ---------- 实体关系 ----------
+    tenants ||--o{ user_tenants : "租户成员(SCD2)"
+    users ||--o{ user_tenants : "成员关系(SCD2)"
     tenants ||--o{ agents : "租户下 Agent"
     tenants ||--o{ conversations : "租户会话"
     agents ||--o{ conversations : "Agent 会话"
@@ -8,19 +18,23 @@ erDiagram
 
     tenants ||--o{ roles : "租户角色"
     tenants ||--o{ permissions : "租户权限"
-    roles ||--o{ role_permissions : "角色-权限"
-    permissions ||--o{ role_permissions : "角色-权限"
+    roles ||--o{ role_permissions : "角色-权限(SCD2)"
+    permissions ||--o{ role_permissions : "角色-权限(SCD2)"
     roles }o--o{ users : "经 user_tenants.role 软关联"
 
     tenants ||--o{ organizations : "租户组织"
-    organizations ||--o{ organizations : "父子组织"
+    organizations ||--o{ organizations : "父子组织(SET NULL)"
     organizations ||--o{ user_organizations : "组织成员"
     users ||--o{ user_organizations : "所属组织"
 
     users ||--o{ user_sessions : "登录会话"
     users ||--o{ user_login_methods : "登录方式"
-    users ||--o{ system_logs : "操作人(审计)"
-    tenants ||--o{ system_logs : "租户日志"
+    users ||--o{ system_logs : "操作人(SET NULL)"
+    tenants ||--o{ system_logs : "租户日志(SET NULL)"
+
+    tenants ||--o{ verification_codes : "验证码"
+
+    %% ========== 表结构 ==========
 
     tenants {
         varchar(32) id PK "主键, uuid4().hex"
@@ -30,35 +44,39 @@ erDiagram
 
     users {
         varchar(128) id PK "主键, 镜像 Logto sub 或本地账号 uuid4().hex"
-        varchar(255) email "邮箱, 可空(全局唯一索引)"
-        varchar(50) username "用户名, 可空(本地账号登录用)"
+        varchar(255) email "邮箱, 可空（部分唯一索引 uq_users_email_active）"
+        varchar(50) username "用户名, 可空（部分唯一索引 uq_users_username_active, 本地登录用）"
         varchar(128) display_name "显示名, 可空"
-        varchar(100) real_name "真实姓名, 可空"
-        varchar(20) phone "手机号, 可空"
+        varchar(100) real_name "真实姓名, 可空（IDX）"
+        varchar(20) phone "手机号, 可空（IDX）"
         varchar(255) avatar "头像路径, 默认 /avatars/default.jpg"
         varchar(255) password "bcrypt 哈希, OIDC 账号为 null"
+        varchar(32) platform_role "平台角色: null=普通用户, super_admin=跨租户超管"
         varchar(20) status "状态: active/inactive/locked, 默认 active"
-        jsonb metadata "扩展元数据(JSON), 默认 {}"
-        boolean is_deleted "软删除标记, 默认 false"
+        jsonb metadata "扩展元数据(JSONB), 默认 {}"
+        boolean is_deleted "软删除标记, 默认 false（IDX）"
         timestamptz deleted_at "删除时间, 可空"
         timestamptz password_updated_at "密码更新时间"
         timestamptz last_login_at "最后登录时间, 可空"
-        varchar(128) created_by "创建人, FK→users.id"
-        varchar(128) updated_by "更新人, FK→users.id"
+        varchar(128) created_by "创建人, FK→users.id（自引用, 无 ondelete）"
+        varchar(128) updated_by "更新人, FK→users.id（自引用, 无 ondelete）"
         timestamptz created_at NN "创建时间, now()"
-        timestamptz updated_at "更新时间, now()+onupdate"
+        timestamptz updated_at NN "更新时间, now()+onupdate"
     }
 
     user_tenants {
-        varchar(128) user_id PK "复合主键 + FK→users.id"
-        varchar(32) tenant_id PK "复合主键 + FK→tenants.id"
-        varchar(64) role NN "角色: owner/admin/member"
-        timestamptz created_at NN "加入时间, now()"
+        varchar(32) id PK "代理主键, uuid4().hex（SCD2 后改主键）"
+        varchar(128) user_id FK "FK→users.id, CASCADE, IDX"
+        varchar(32) tenant_id FK "FK→tenants.id, CASCADE, IDX"
+        varchar(64) role NN "角色名(对应 casbin g): owner/admin/member, 默认 member"
+        timestamptz valid_from NN "SCD2: 生效时间（历史回溯）"
+        timestamptz valid_to "SCD2: 失效时间, NULL=当前生效"
+        timestamptz created_at NN "创建时间, now()"
     }
 
     agents {
         varchar(32) id PK "主键, uuid4().hex"
-        varchar(32) tenant_id FK "外键→tenants.id, CASCADE"
+        varchar(32) tenant_id FK "FK→tenants.id, CASCADE, IDX"
         varchar(128) name NN "Agent 名称"
         text system_prompt "系统提示词, 默认空串"
         varchar(64) model "模型名, 默认 gpt-4o-mini"
@@ -67,17 +85,17 @@ erDiagram
 
     conversations {
         varchar(32) id PK "主键, uuid4().hex"
-        varchar(32) tenant_id FK "外键→tenants.id, CASCADE"
-        varchar(32) agent_id FK "外键→agents.id, CASCADE"
-        varchar(128) user_id "发起用户(软引用 users.id), 无 FK"
+        varchar(32) tenant_id FK "FK→tenants.id, CASCADE, IDX"
+        varchar(32) agent_id FK "FK→agents.id, CASCADE, IDX"
+        varchar(128) user_id "发起用户（软引用 users.id, 无 FK, IDX）保留历史"
         varchar(255) title "会话标题, 可空"
         timestamptz created_at NN "创建时间, now()"
     }
 
     messages {
         varchar(32) id PK "主键, uuid4().hex"
-        varchar(32) conversation_id FK "外键→conversations.id, CASCADE"
-        varchar(32) tenant_id "软引用 tenants.id, 无 FK(冗余)"
+        varchar(32) conversation_id FK "FK→conversations.id, CASCADE, IDX"
+        varchar(32) tenant_id "冗余租户 ID（软引用, 无 FK, IDX）加速隔离查询"
         varchar(16) role NN "角色: user/assistant"
         text content NN "消息内容"
         timestamptz created_at NN "创建时间, now()"
@@ -85,121 +103,123 @@ erDiagram
 
     roles {
         varchar(32) id PK "主键, uuid4().hex"
-        varchar(50) name NN "角色名称"
-        varchar(100) code NN "角色代码(对应 casbin 角色名)"
-        varchar(32) tenant_id FK "外键→tenants.id, CASCADE"
+        varchar(50) name NN "角色名称（uq_roles_tenant_name 唯一）"
+        varchar(100) code NN "角色代码(对应 casbin 角色名)（uq_roles_tenant_code 唯一）"
+        varchar(32) tenant_id FK "FK→tenants.id, CASCADE（IDX idx_roles_tenant_id）"
         varchar(255) description "描述, 可空"
-        boolean is_system "系统内置角色(owner/admin/member), 不可删"
-        boolean is_deleted "软删除标记"
+        boolean is_system "系统内置(owner/admin/member), 不可删, 默认 false"
+        boolean is_deleted "软删除标记, 默认 false"
         timestamptz deleted_at "删除时间, 可空"
         integer sort_order "排序, 默认 0"
         varchar(20) status "状态, 默认 active"
-        varchar(128) created_by "创建人, FK→users.id"
-        varchar(128) updated_by "更新人, FK→users.id"
+        varchar(128) created_by "创建人, FK→users.id（无 ondelete）"
+        varchar(128) updated_by "更新人, FK→users.id（无 ondelete）"
         timestamptz created_at NN "创建时间"
-        timestamptz updated_at "更新时间"
+        timestamptz updated_at NN "更新时间, now()+onupdate"
     }
 
     permissions {
         varchar(32) id PK "主键, uuid4().hex"
         varchar(50) name NN "权限名称"
-        varchar(100) code NN "权限代码"
-        varchar(32) tenant_id FK "外键→tenants.id, CASCADE"
-        varchar(20) type "类型: menu/page/button/api/data"
+        varchar(100) code NN "权限代码（uq_permissions_tenant_code 唯一）"
+        varchar(32) tenant_id FK "FK→tenants.id, CASCADE"
+        varchar(20) type "类型: menu/page/button/api/data, 默认 api"
         varchar(255) description "描述, 可空"
         integer sort_order "排序, 默认 0"
-        boolean is_system "系统内置"
-        boolean is_deleted "软删除标记"
+        boolean is_system "系统内置, 默认 false"
+        boolean is_deleted "软删除标记, 默认 false"
         varchar(20) status "状态, 默认 active"
         timestamptz created_at NN "创建时间"
     }
 
     role_permissions {
         varchar(32) id PK "主键, uuid4().hex"
-        varchar(32) role_id FK "外键→roles.id, CASCADE"
-        varchar(32) permission_id FK "外键→permissions.id, CASCADE"
-        varchar(32) tenant_id NN "租户 ID(冗余, 隔离查询)"
+        varchar(32) role_id FK "FK→roles.id, CASCADE"
+        varchar(32) permission_id FK "FK→permissions.id, CASCADE"
+        varchar(32) tenant_id NN "租户 ID（软引用, 无 FK 冗余; 由 role_id 间接保证）"
+        timestamptz valid_from NN "SCD2: 生效时间"
+        timestamptz valid_to "SCD2: 失效时间, NULL=当前生效"
         timestamptz created_at NN "创建时间"
     }
 
     organizations {
         varchar(32) id PK "主键, uuid4().hex"
-        varchar(32) tenant_id FK "外键→tenants.id, CASCADE"
+        varchar(32) tenant_id FK "FK→tenants.id, CASCADE（IDX idx_organizations_tenant_id）"
         varchar(200) name NN "组织名称"
         varchar(100) code "组织代码, 可空"
         varchar(255) path "层级路径(如 /父id/子id), 可空"
-        varchar(32) parent_id FK "父组织, 自引用 FK, SET NULL"
+        varchar(32) parent_id FK "父组织, 自引用 FK→organizations.id, SET NULL（IDX）"
         varchar(128) leader_id FK "负责人, FK→users.id, SET NULL"
         varchar(20) status "状态, 默认 active"
         integer sort_order "排序, 默认 0"
         timestamptz created_at NN "创建时间"
-        timestamptz updated_at "更新时间"
+        timestamptz updated_at NN "更新时间, now()+onupdate"
     }
 
     user_organizations {
         varchar(32) id PK "主键, uuid4().hex"
-        varchar(128) user_id FK "外键→users.id, CASCADE"
-        varchar(32) organization_id FK "外键→organizations.id, CASCADE"
+        varchar(128) user_id FK "FK→users.id, CASCADE（IDX）"
+        varchar(32) organization_id FK "FK→organizations.id, CASCADE（IDX）"
         varchar(100) position "职位, 可空"
-        boolean is_main "是否主组织"
-        timestamptz joined_at "加入时间"
+        boolean is_main "是否主组织, 默认 false"
+        timestamptz joined_at NN "加入时间, now()"
     }
 
     user_sessions {
         varchar(32) id PK "主键, uuid4().hex"
-        varchar(128) user_id FK "外键→users.id, CASCADE"
-        varchar(255) session_id UK "会话 ID(= JWT jti), 唯一"
+        varchar(128) user_id FK "FK→users.id, CASCADE（IDX）"
+        varchar(255) session_id UK "会话 ID(= JWT jti), 全局唯一"
         varchar(255) device_id "设备 ID, 可空"
         varchar(20) device_type "设备类型: web/mobile/desktop"
         varchar(200) device_name "设备名称, 可空"
         varchar(100) platform "平台: Windows/macOS/Linux/iOS/Android"
         varchar(255) token_hash "Token 哈希, 可空"
-        varchar(45) ip_address "IP 地址(IPv4/IPv6)"
-        text user_agent "User-Agent"
-        timestamptz expires_at NN "过期时间"
-        boolean is_active "是否活跃, 默认 true"
+        varchar(45) ip_address "IP 地址(IPv4/IPv6), 可空"
+        text user_agent "User-Agent, 可空"
+        timestamptz expires_at NN "过期时间（IDX）"
+        boolean is_active "是否活跃, 默认 true（IDX）"
         varchar(128) impersonator_id FK "代登录者, FK→users.id, SET NULL"
         timestamptz created_at NN "创建时间"
-        timestamptz last_accessed_at "最后访问时间"
+        timestamptz last_accessed_at NN "最后访问时间, now()+onupdate"
     }
 
     user_login_methods {
         varchar(32) id PK "主键, uuid4().hex"
-        varchar(128) user_id FK "外键→users.id, CASCADE"
-        varchar(20) login_type "登录方式: email/phone/wechat/oauth"
-        varchar(255) identifier NN "标识符(邮箱/手机号/openid)"
-        boolean is_verified "是否已验证"
-        boolean is_primary "是否主登录方式"
+        varchar(128) user_id FK "FK→users.id, CASCADE（IDX）"
+        varchar(20) login_type "登录方式: email/phone/wechat/oauth, 默认 email"
+        varchar(255) identifier NN "标识符(邮箱/手机号/openid)（IDX）"
+        boolean is_verified "是否已验证, 默认 false"
+        boolean is_primary "是否主登录方式, 默认 false"
         timestamptz last_used_at "最后使用时间, 可空"
         timestamptz created_at NN "创建时间"
     }
 
     verification_codes {
         varchar(32) id PK "主键, uuid4().hex"
-        varchar(20) phone NN "手机号"
+        varchar(20) phone NN "手机号（仅手机, 无 email 字段 — 已知待补）"
         varchar(10) code NN "验证码"
         varchar(20) type NN "类型: login/register/reset"
-        timestamptz expires_at NN "过期时间"
+        timestamptz expires_at NN "过期时间（IDX idx_verification_codes_expires_at）"
         timestamptz used_at "使用时间, 可空"
-        varchar(32) tenant_id FK "外键→tenants.id, CASCADE"
+        varchar(32) tenant_id FK "FK→tenants.id, CASCADE, 可空"
         varchar(50) ip "请求 IP, 可空"
         timestamptz created_at NN "创建时间"
     }
 
     system_logs {
         varchar(32) id PK "主键, uuid4().hex"
-        varchar(20) level NN "级别: info/warn/error/debug"
+        varchar(20) level NN "级别: info/warn/error/debug, 默认 info"
         varchar(100) action NN "操作类型(user.create/role.delete...)"
         varchar(50) module NN "模块(users/roles/organizations...)"
         text message NN "日志消息"
-        jsonb details "详细信息(JSON)"
-        varchar(100) resource_type "资源类型, 可空"
+        jsonb details "详细信息(JSONB)"
+        varchar(100) resource_type "资源类型, 可空（复合 IDX resource_type+resource_id）"
         varchar(255) resource_id "资源 ID, 可空"
         jsonb old_values "变更前值(JSONB)"
         jsonb new_values "变更后值(JSONB)"
-        varchar(128) user_id FK "操作人, FK→users.id, SET NULL"
+        varchar(128) user_id FK "操作人, FK→users.id, SET NULL（IDX）"
         varchar(255) session_id "会话 ID, 可空"
-        varchar(32) tenant_id FK "租户 ID, FK→tenants.id, SET NULL"
+        varchar(32) tenant_id FK "租户 ID, FK→tenants.id, SET NULL（IDX）"
         varchar(500) user_agent "User-Agent, 可空"
         varchar(45) ip "IP 地址, 可空"
         varchar(100) request_id "请求 ID, 可空"
@@ -209,11 +229,11 @@ erDiagram
 
     casbin_rule {
         integer id PK "主键, 自增"
-        varchar(255) ptype "策略类型: p/g"
-        varchar(255) v0 "主体/角色: sub"
-        varchar(255) v1 "租户/主体: dom"
-        varchar(255) v2 "对象: obj"
-        varchar(255) v3 "动作: act"
-        varchar(255) v4 "保留字段 v4"
-        varchar(255) v5 "保留字段 v5"
+        varchar(255) ptype "策略类型: p(策略)/g(角色分组)"
+        varchar(255) v0 "主体 sub(p) / 用户 user_id(g)"
+        varchar(255) v1 "租户 dom(p) / 角色 role(g)"
+        varchar(255) v2 "对象 obj"
+        varchar(255) v3 "动作 act"
+        varchar(255) v4 "保留字段"
+        varchar(255) v5 "保留字段"
     }
