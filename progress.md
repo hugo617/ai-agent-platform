@@ -8,8 +8,23 @@
 - **标准启动路径**: `./init.sh`(装依赖 + ruff + pytest)
 - **标准验证路径**: `./init.sh`(同上,后端快速验证,SQLite 内存库)
 - **完整验证路径**(需 docker): `alembic upgrade head && alembic check` + `cd frontend && npm run build`
-- **当前最高优先级未完成功能**: `custom-business-module`(占位,需先定产品方向)—— `global-rename` 已 passing
-- **当前 blocker**: 无(待用户决定产品方向 + 替换占位任务)
+- **当前最高优先级未完成功能**: `agents-api-hardening`(priority 11,方向1:Agent API 加固)—— 占位项已替换为 7 条规划任务
+- **当前 blocker**: 无
+
+## 后续任务规划(2026-07-10 制定,共 7 条,WIP=1 顺序执行)
+
+| 顺序 | id | 方向 | 范围 | plan 文档 |
+|------|----|------|------|----------|
+| 1 | `agents-api-hardening` | AI 内核 | Agent CRUD 测试补全 + 异常对齐(纯后端) | `harness/docs/plan-agents-api-hardening.md` |
+| 2 | `chat-conversation-api` | AI 内核 | DeepSeek 接入 + 会话历史 API(后端) | `harness/docs/plan-chat-conversation-api.md` |
+| 3 | `chat-frontend` | AI 内核 | 聊天页面 + SSE 流式(前端,依赖 2) | `harness/docs/plan-chat-frontend.md` |
+| 4 | `permission-matrix-api` | 权限 | 权限矩阵聚合端点(后端) | `harness/docs/plan-permission-matrix-api.md` |
+| 5 | `permission-matrix-ui` | 权限 | 可编辑权限矩阵(前端,依赖 4) | `harness/docs/plan-permission-matrix-ui.md` |
+| 6 | `tenant-org-admin-ui` | 管理控制台 | 租户/组织/成员管理页(前端) | `harness/docs/plan-tenant-org-admin-ui.md` |
+| 7 | `e2e-and-coverage` | 工程化 | E2E + 覆盖率门槛 + lint(建议最后) | `harness/docs/plan-e2e-and-coverage.md` |
+
+> 依赖链:1 → 2 → 3(对话主线);4 → 5(权限矩阵);6 独立;7 最后。
+> LLM 用 DeepSeek API(OpenAI 兼容,任务 2 切换配置)。
 
 ## 已 passing 的地基能力(详见 feature_list.json)
 
@@ -133,6 +148,32 @@
   - (a) 合并 feat/global-rename-fresh 到 main + 发 PR;
   - (b) **收口 AI 内核**(推荐):把 agents + chat 按 harness 流程补端到端验证 + 登记进 feature_list——这是平台最核心能力,目前是"裸奔"状态
   - (c) 定产品方向,把 `custom-business-module` 占位项替换为真实业务模块
+
+---
+
+### Session 006 — 2026-07-10
+- **本轮目标**: 制定后续任务规划 —— 把 5 个方向细化为 7 条 harness 任务 + 各自 plan 文档,替换占位项
+- **已完成**:
+  - 调研代码现状:确认 agents/chat 后端完整但前端 chat 零对接;permissions-page 硬编码失真(2 资源×2 角色 vs 真实 5×3);tenant/org/member 后端端点齐全但前端无管理页
+  - 与用户对齐 3 个决策:① 任务粒度按复杂度混合 ② 方向3 做可编辑权限矩阵 ③ 方向1 agents 补测试+后端对齐
+  - 确认 LLM 用 DeepSeek API(OpenAI 兼容,graph.py 已用 ChatOpenAI,只改配置)
+  - 写入 feature_list.json:删除 `custom-business-module` 占位项,新增 7 条任务(priority 11-17),每条含 id/title/user_visible_behavior/status/plan/verification/notes,JSON 校验合法(16 features)
+  - 写 7 份 plan 文档(均在 harness/docs/):每份含背景/当前状态速查/目标/前置条件/分阶段步骤/验收标准/风险表/参考文件
+- **7 份 plan 文档清单**:
+  - `plan-agents-api-hardening.md` — Agent CRUD 测试补全(权限/隔离/软删除)+ 异常对齐(NotFoundError/_http_exc)
+  - `plan-chat-conversation-api.md` — DeepSeek 配置切换 + 会话列表/历史/删除端点(Conversation model 加 updated_at)
+  - `plan-chat-frontend.md` — chat 页面 + SSE 流式对接(fetch+ReadableStream,非 EventSource;打字机效果)
+  - `plan-permission-matrix-api.md` — GET /permissions/matrix + /catalogue 聚合端点(数据源 SCD2 当前态)
+  - `plan-permission-matrix-ui.md` — 重写 permissions-page(真实数据 + 可编辑矩阵,复用 grant/revoke hooks)
+  - `plan-tenant-org-admin-ui.md` — 组织管理页(树形)+ 成员管理页 + 租户整合进 dashboard
+  - `plan-e2e-and-coverage.md` — pytest-cov 门槛 + Playwright E2E + oxlint 0 warning
+- **运行过的验证**: `feature_list.json` JSON 合法性校验 → 16 features ✅(无代码改动,无需 init.sh)
+- **已记录证据**: 无(本任务是规划,无功能验证;7 条任务的 evidence 字段待各自执行时填)
+- **提交记录**: 在 feat/global-rename-fresh 分支累积(含 Session 005 的改名 + 本次规划);待用户决定是否合并
+- **已知风险**: 无。plan 文档中的行号/文件名基于 2026-07-10 代码核实,执行前建议快速 grep 确认无漂移
+- **下一步最佳动作**:
+  - (a) 合并 feat/global-rename-fresh 到 main(含改名 + 规划);
+  - (b) 开始执行 priority 11 `agents-api-hardening`(plan 已就绪,新会话可直接开干)
 
 ---
 <!--
