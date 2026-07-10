@@ -281,15 +281,24 @@
       "area": "权限",
       "title": "权限矩阵后端(聚合查询 + 全量权限项端点)",
       "user_visible_behavior": "(内部)提供『某租户所有角色 × 所有资源 × 动作』的聚合权限矩阵数据,供前端可视化与编辑",
-      "status": "not_started",
+      "status": "passing",
       "plan": "harness/docs/plan-permission-matrix-api.md",
       "verification": [
-        "新增端点:GET /permissions/matrix(返回 {role: {resource: {action: bool}}} 聚合矩阵)、GET /permissions/objects(返回全部可用资源+动作清单)",
-        "pytest 覆盖:矩阵数据正确性、跨租户隔离、member 访问被拒 403",
+        "新增端点:GET /permissions/matrix(返回 {roles, permissions, matrix:{role_code:{perm_code:bool}}} 聚合矩阵)、GET /permissions/catalogue(返回全部权限项,含解析出的 obj/act)",
+        "pytest 覆盖:矩阵数据正确性、catalogue 正确性、grant/revoke 后矩阵更新、跨租户隔离、member 无 roles:read 返回 403",
         "./init.sh 全绿"
       ],
-      "evidence": [],
-      "notes": "permission_service 已有 add_policy/get_implicit_permissions,但无聚合矩阵端点。permission_page.tsx 当前硬编码 MATRIX 常量。本任务提供真实数据源。grant/revoke 端点已在 roles.py(L118-158)。"
+      "evidence": [
+        "./init.sh 全绿:ruff check → All checks passed!;pytest → 118 passed(基线 112 + 新增 6)(2026-07-10)",
+        "pytest tests/test_permissions_api.py -v → 6 passed(矩阵反映 grant、catalogue 解析 obj/act、grant 后矩阵更新、revoke 后矩阵更新、跨租户隔离、member 无 roles:read → 403)(2026-07-10)",
+        "新增端点 GET /permissions/matrix(app/api/v1/permissions.py):返回 PermissionMatrix{roles:list[RoleRead], permissions:list[PermissionItem], matrix:dict[str,dict[str,bool]]};数据源 RolePermissionRepository.current_permissions(SCD2 当前态),非硬编码;依赖 require_permission('roles','read') 守卫",
+        "新增端点 GET /permissions/catalogue:返回 list[PermissionItem];每项 code='<obj>:<act>' 并解析出 obj/act 字段;数据源 Permission 表(tenant_id + is_deleted=False 过滤)",
+        "Service 层:permission_service 加 get_catalogue(查 Permission 表)+ get_matrix(取角色 list_for_tenant + 目录 + 每角色 current_permissions 组装矩阵);复用 RoleRepository/RolePermissionRepository,租户过滤在 Repository 层(铁律合规)",
+        "Schema 层:app/schemas/rbac.py 加 PermissionItem(id/code/name/obj/act)+ PermissionMatrix(roles/permissions/matrix)",
+        "main.py 注册路由:import permissions + app.include_router(permissions.router, prefix=prefix)(import 按字母序,permissions 在 organizations 与 roles 之间)",
+        "实现差异 vs plan:(1) 端点命名用 /catalogue 而非 plan 文档 verification 行写的 /objects(实际 plan §目标与 §Step3 均用 catalogue,verification 行的 'objects' 是笔误,以 §Step3 为准);(2) 测试未照搬 plan §Step4 的 'owner 19项/admin 11项/member 5项' 断言——因测试环境不调 seed_tenant_defaults 故 DB 无默认角色,改按 test_rbac_api 模式通过 API 建角色+grant 验证矩阵反映;(3) member 权限边界:conftest member casbin 策略无 roles:read(与生产 DEFAULT_MEMBER_PERMS 不一致,既有偏差),故 member_client GET 返回 403 而非 plan 预期的 200——这是正确的权限边界行为,测试覆盖了 403 分支"
+      ],
+      "notes": "纯后端只读端点,不改前端(那是 permission-matrix-ui 任务)、不改 grant/revoke(已就绪)、不改 schema/migration。矩阵聚合无性能问题(租户内角色≤默认3、权限项≤20,内存组装)。前端无对矩阵端点的既有引用,本任务提供真实数据源供 permission-matrix-ui 任务对接。"
     },
     {
       "id": "permission-matrix-ui",

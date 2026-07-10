@@ -34,7 +34,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import casbin_enforcer as _casbin_mod
 from app.models.rbac import Permission, Role
-from app.repositories.rbac import RolePermissionRepository
+from app.repositories.rbac import RolePermissionRepository, RoleRepository
+from app.schemas.rbac import PermissionItem, PermissionMatrix, RoleRead
 
 
 class PermissionService:
@@ -235,6 +236,58 @@ class PermissionService:
                     e.add_policy(role_code, tenant_id, obj, act)
 
         await run_in_threadpool(_do)
+
+    # ----------------------------------------------------- aggregated reads
+
+    async def get_catalogue(
+        self, db: AsyncSession, tenant_id: str
+    ) -> list[PermissionItem]:
+        """All permission catalogue items for a tenant.
+
+        Source: the ``permissions`` rows upserted by ``seed_tenant_defaults`` /
+        ``grant`` (one row per ``<obj>:<act>`` unit). Tenant scoping happens in
+        the query (is_deleted=False), per the multi-tenant rule.
+        """
+        rows = (
+            await db.execute(
+                select(Permission).where(
+                    Permission.tenant_id == tenant_id,
+                    Permission.is_deleted.is_(False),
+                )
+            )
+        ).scalars().all()
+        items: list[PermissionItem] = []
+        for p in rows:
+            obj, act = p.code.split(":", 1) if ":" in p.code else (p.code, "")
+            items.append(
+                PermissionItem(id=p.id, code=p.code, name=p.name, obj=obj, act=act)
+            )
+        return items
+
+    async def get_matrix(
+        self, db: AsyncSession, tenant_id: str
+    ) -> PermissionMatrix:
+        """Aggregate the current role × permission matrix for a tenant.
+
+        The granted state comes from ``current_permissions`` (SCD2 current rows);
+        the matrix is True for every ``(role, permission)`` pair whose active
+        grant row exists. Tenant scoping lives in the repositories.
+        """
+        roles = await RoleRepository(db).list_for_tenant(tenant_id)
+        permissions = await self.get_catalogue(db, tenant_id)
+
+        rp_repo = RolePermissionRepository(db)
+        matrix: dict[str, dict[str, bool]] = {}
+        for role in roles:
+            active = await rp_repo.current_permissions(role.id, tenant_id)
+            granted_ids = {row.permission_id for row in active}
+            matrix[role.code] = {p.code: p.id in granted_ids for p in permissions}
+
+        return PermissionMatrix(
+            roles=[RoleRead.model_validate(r) for r in roles],
+            permissions=permissions,
+            matrix=matrix,
+        )
 
     # ----------------------------------------------------------- seed helpers
 

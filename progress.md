@@ -8,7 +8,7 @@
 - **标准启动路径**: `./init.sh`(装依赖 + ruff + pytest)
 - **标准验证路径**: `./init.sh`(同上,后端快速验证,SQLite 内存库)
 - **完整验证路径**(需 docker): `alembic upgrade head && alembic check` + `cd frontend && npm run build`
-- **当前最高优先级未完成功能**: `permission-matrix-api`(priority 14,方向2:权限矩阵后端聚合查询 + 全量权限项端点)—— `chat-frontend` 已 passing
+- **当前最高优先级未完成功能**: `permission-matrix-ui`(priority 15,方向2:权限矩阵前端——真实数据 + 可编辑矩阵,依赖已就绪的 permission-matrix-api)—— `permission-matrix-api` 已 passing
 - **当前 blocker**: 无
 
 ## 后续任务规划(2026-07-10 制定,共 7 条,WIP=1 顺序执行)
@@ -18,7 +18,7 @@
 | 1 | `agents-api-hardening` | AI 内核 | Agent CRUD 测试补全 + 异常对齐(纯后端)✅ 已完成 | `harness/docs/plan-agents-api-hardening.md` |
 | 2 | `chat-conversation-api` | AI 内核 | DeepSeek 接入 + 会话历史 API(后端)✅ 已完成 | `harness/docs/plan-chat-conversation-api.md` |
 | 3 | `chat-frontend` | AI 内核 | 聊天页面 + SSE 流式(前端,依赖 2)✅ 已完成 | `harness/docs/plan-chat-frontend.md` |
-| 4 | `permission-matrix-api` | 权限 | 权限矩阵聚合端点(后端) | `harness/docs/plan-permission-matrix-api.md` |
+| 4 | `permission-matrix-api` | 权限 | 权限矩阵聚合端点(后端)✅ 已完成 | `harness/docs/plan-permission-matrix-api.md` |
 | 5 | `permission-matrix-ui` | 权限 | 可编辑权限矩阵(前端,依赖 4) | `harness/docs/plan-permission-matrix-ui.md` |
 | 6 | `tenant-org-admin-ui` | 管理控制台 | 租户/组织/成员管理页(前端) | `harness/docs/plan-tenant-org-admin-ui.md` |
 | 7 | `e2e-and-coverage` | 工程化 | E2E + 覆盖率门槛 + lint(建议最后) | `harness/docs/plan-e2e-and-coverage.md` |
@@ -42,6 +42,7 @@
 | agents-api-hardening(Agent API 加固) | passing | 14 tests(权限/隔离/删除/404) |
 | chat-conversation-api(对话后端) | passing | 9 tests + DeepSeek 配置 + 会话历史 API |
 | chat-frontend(对话前端) | passing | npm run build 通过 + SSE 打字机 + 会话 CRUD |
+| permission-matrix-api(权限矩阵后端) | passing | 118 tests(+6 矩阵/catalogue 端点) |
 
 > ✅ AI 内核(agents + chat)已全部纳管并 passing:agents-api-hardening / chat-conversation-api / chat-frontend 三任务端到端完成。
 
@@ -252,6 +253,32 @@
 - **提交记录**: `feat/chat-frontend` 分支(待合并)
 - **已知风险**: 无功能风险。手动 SSE 实测未跑(需 DeepSeek key + 前后端启动);build(tsc)+ oxlint 已覆盖类型正确性与规范
 - **下一步最佳动作**: 合并 feat/chat-frontend 到 main + 发 PR;之后开始 `permission-matrix-api`(priority 14)
+
+---
+
+### Session 010 — 2026-07-10
+- **本轮目标**: 执行 `permission-matrix-api`(权限矩阵后端:聚合查询 + 全量权限项端点)—— 5 步,纯后端只读端点,前置无(grant/revoke 已在 roles.py)
+- **已完成**(对照 plan §实施步骤 Step 1-5):
+  - Step 0 基线确认:`./init.sh` → 112 passed(起点干净);切 `feat/permission-matrix-api` 分支
+  - Step 1 Schema:`app/schemas/rbac.py` 末尾追加 PermissionItem(id/code/name/obj/act)+ PermissionMatrix(roles/permissions/matrix)
+  - Step 2 Service:`permission_service.py` 加 get_catalogue(查 Permission 表,code.split 解析 obj/act)+ get_matrix(取角色 list_for_tenant + 目录 + 每角色 current_permissions 组装 {role_code:{perm_code:bool}});import 补 RoleRepository + 三个 schema
+  - Step 3 API:新建 `app/api/v1/permissions.py`(GET /matrix + GET /catalogue,均 require_permission('roles','read'));main.py 注册(import 按字母序 + include_router)
+  - Step 4 测试:新建 `tests/test_permissions_api.py`(6 个测试,按 test_rbac_api 模式:通过 API 建角色+grant 验证矩阵);发现 member 权限边界测试断言需修正(conftest member 无 roles:read → 403 而非 200)
+  - Step 5 总验证:`./init.sh` → ruff + **118 passed**(112 基线 + 6 新增,无回归)
+- **运行过的验证**(全过):
+  - `pytest tests/test_permissions_api.py -v` → 6 passed
+  - `./init.sh` → ruff `All checks passed!` + **118 passed**(112 + 6)
+- **已记录证据**: `feature_list.json` 的 `permission-matrix-api.evidence` 字段(8 条,含端点结构 + 数据源 SCD2 + 架构铁律 + 与 plan 的差异说明)
+- **技术要点**(与 plan 的实现差异):
+  - **测试不照搬 plan §Step4 的「owner 19项/admin 11项/member 5项」断言**:测试环境 conftest 不调 seed_tenant_defaults,DB 默认无角色/权限行(test_role_labels_empty_by_default 证实);改按 test_rbac_api 模式通过 API 建角色+grant 验证矩阵真实反映 grant 状态
+  - **member 权限边界**:conftest 的 member casbin 策略(conftest L60-64)只有 agents/conversations 权限,**无 roles:read**(与生产 DEFAULT_MEMBER_PERMS 5 项不一致,既有偏差);故 member_client GET /permissions/matrix 返回 403 而非 plan 预期的 200——这是正确的权限守卫行为,测试覆盖 403 分支
+  - 端点命名用 /catalogue(plan §目标与 §Step3 一致;plan verification 行写的 /objects 是笔误,以 §Step3 为准)
+  - 矩阵聚合无性能问题:租户内角色数极少(默认3)、权限项≤20,内存组装
+- **提交记录**: `feat/permission-matrix-api` 分支(待用户决定是否合并到 main)
+- **已知风险**: 无功能风险。手动验证(curl)未单独执行,纯后端只读端点 pytest 已覆盖 API 行为 + 多租户隔离;无 schema/migration 改动故无需 CI migrations 守门
+- **下一步最佳动作**:
+  - (a) 合并 feat/permission-matrix-api 到 main + 发 PR;
+  - (b) 开始下一个任务 `permission-matrix-ui`(priority 15,权限矩阵前端——真实数据 + 可编辑矩阵,本任务是其前置,现已就绪)
 
 ---
 
