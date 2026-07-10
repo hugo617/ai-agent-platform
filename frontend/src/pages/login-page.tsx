@@ -96,7 +96,7 @@ export function LoginPage() {
     <div className="flex min-h-screen items-center justify-center bg-muted/30 px-4">
       <Card className="w-full max-w-md">
         <CardHeader className="space-y-1">
-          <CardTitle className="text-2xl">登录权限控制台</CardTitle>
+          <CardTitle className="text-2xl">登录智能体云平台</CardTitle>
           <CardDescription>
             使用账号密码登录；或使用一键开发登录、粘贴 access token。
           </CardDescription>

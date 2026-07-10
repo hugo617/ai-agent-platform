@@ -1,6 +1,6 @@
-# ai-agent-platform
+# agenthub
 
-多租户 AI 智能体 SaaS 平台后端 —— FastAPI + pycasbin + LangGraph。
+多租户智能体云平台后端 —— FastAPI + pycasbin + LangGraph。
 
 > Phase 1：后端骨架 + 多租户权限系统 + 最简 LangGraph 智能体（前后端分离，前端在 Phase 3）。
 

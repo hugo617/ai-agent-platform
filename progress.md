@@ -8,8 +8,8 @@
 - **标准启动路径**: `./init.sh`(装依赖 + ruff + pytest)
 - **标准验证路径**: `./init.sh`(同上,后端快速验证,SQLite 内存库)
 - **完整验证路径**(需 docker): `alembic upgrade head && alembic check` + `cd frontend && npm run build`
-- **当前最高优先级未完成功能**: `global-rename`(全局改名,二开第 1 步)—— `roles-crud` 已 passing
-- **当前 blocker**: 无
+- **当前最高优先级未完成功能**: `custom-business-module`(占位,需先定产品方向)—— `global-rename` 已 passing
+- **当前 blocker**: 无(待用户决定产品方向 + 替换占位任务)
 
 ## 已 passing 的地基能力(详见 feature_list.json)
 
@@ -22,6 +22,10 @@
 | roles-crud(角色管理 CRUD 全栈) | passing | 96 tests total(13 rbac_api) |
 | db-migrations(迁移链) | passing | CI migrations job |
 | scd2-history(授权链历史) | passing | 7 tests |
+| validation-error-i18n(422 中文化) | passing | 6 tests |
+| global-rename(全局改名为 agenthub) | passing | grep 0 残留 + init.sh + npm build |
+
+> ⚠️ **未纳管的产品内核**:`agents`(CRUD)+ `chat`(SSE 流式 LangGraph)后端完整、前端有 `agents-page.tsx`,但**未进 feature_list、未做端到端验证登记**。这是平台最核心能力,后续二开前建议先收口(补测试 + 登记证据)。
 
 ## 会话记录
 
@@ -102,6 +106,33 @@
 - **提交记录**: PR #11 已 squash 合并到 main,无本地新增 commit
 - **已知风险**: 无
 - **下一步最佳动作**: 开始下一个 not_started 任务 `global-rename`(二开第 1 步),或由用户指定
+
+---
+
+### Session 005 — 2026-07-10
+- **本轮目标**: 分析后续任务方向 → 确认 `global-rename` 真实状态 → 执行全局改名(二开第 1 步)
+- **前置诊断**:
+  - 用户记得 global-rename「应该做过了」,核对后发现 main 上旧名全在,feature_list 仍 not_started → **确实未完成**
+  - 发现本地 `feat/global-rename` 分支(fafd13d)是**脏分支**:从旧分叉点拉出,diff 1069 行删除,会回滚 validation-error-i18n(删 validation_errors.py + test)、roles-crud(砍 test_rbac_api.py 139 行 + roles-page.tsx 587 行)两个已 passing 功能 → 已 `git branch -D` 强删,基于最新 main 重建 `feat/global-rename-fresh`
+- **已完成**(对照 plan-global-rename.md 的 Step 1-6):
+  - Step 1 APP_NAME 核心:`.env.example` + `app/core/config.py` 默认值 → agenthub(.env 此前已是 agenthub)
+  - Step 2 产品描述:`app/main.py` description + `pyproject.toml` name/description → 中文化
+  - Step 3 前端标题(3 处硬编码全改,含二开清单遗漏的登录页):index.html title / dashboard-layout 页头 / login-page 登录标题 → 智能体云平台 · agenthub
+  - Step 4 文档:README/NOTICE/frontend README/casbin 注释/LOGTO_SETUP 示例/项目指南(配置表+改造清单+环境准备)产品标识同步;保留文件夹名语境 + docker 网络名(ai-agent-platform_default)
+  - Step 5 OpenAPI 重导出:`create_app().openapi()` → title=agenthub,非手改
+  - Step 6 总验证:全过(见下)
+- **运行过的验证**(全过):
+  - `./init.sh` → ruff `All checks passed!` + **96 passed**
+  - `cd frontend && npm run build` → tsc -b + vite build 成功,0 类型错误
+  - grep 代码/配置层:**ai-agent-platform + 权限控制台 0 残留**;dist/index.html title 已刷新为「智能体云平台 · agenthub」
+  - md 文档剩余 ai-agent-platform 均为合理保留(文件夹名路径/docker 网络名/plan 文档自身/目录树根节点)
+- **已记录证据**: `feature_list.json` 的 `global-rename.evidence` 字段(8 条,含脏分支处理说明)
+- **提交记录**: `feat/global-rename-fresh` 分支(待用户决定是否合并到 main)
+- **已知风险**: 无功能风险。aap 缩写(docker 容器/POSTGRES_USER/CI 变量)未动(用户不可见,改需同步 DATABASE_URL);项目文件夹名未改(不影响运行)。手动浏览器验证未单独执行(纯字符串改名,tsc+grep 已充分覆盖)
+- **下一步最佳动作**:
+  - (a) 合并 feat/global-rename-fresh 到 main + 发 PR;
+  - (b) **收口 AI 内核**(推荐):把 agents + chat 按 harness 流程补端到端验证 + 登记进 feature_list——这是平台最核心能力,目前是"裸奔"状态
+  - (c) 定产品方向,把 `custom-business-module` 占位项替换为真实业务模块
 
 ---
 <!--
