@@ -203,15 +203,22 @@
       "area": "AI 内核",
       "title": "Agent 配置 API 加固(测试补全 + 异常对齐)",
       "user_visible_behavior": "(内部)Agent CRUD 达到与 users/roles 同等稳健度——权限边界/多租户隔离/软删除被测试覆盖,错误处理用类型化异常",
-      "status": "not_started",
+      "status": "passing",
       "plan": "harness/docs/plan-agents-api-hardening.md",
       "verification": [
         "pytest tests/test_agents_api.py -v 覆盖:权限边界(member 不能 create/delete)、跨租户隔离(读不到别租户 agent)、软删除(删除后列表不出现)、更新/404",
         "后端 AgentService 改用 NotFoundError/BizError(对齐 users/roles 模式),API 错误映射改 isinstance",
         "./init.sh 全绿(ruff + pytest,含新增测试)"
       ],
-      "evidence": [],
-      "notes": "当前 5 个 happy-path 测试(test_agents_api.py),无权限边界/多租户/软删除覆盖。参照 roles-crud 的后端对齐模式(errors.py)。Agent 是对话主线的配置基础,此任务是方向2的前置。"
+      "evidence": [
+        "./init.sh 全绿:ruff check → All checks passed!;pytest → 105 passed(基线 96 + 新增 9)(2026-07-10)",
+        "pytest tests/test_agents_api.py -v → 14 passed(原 5 happy-path + 新增 9:member read 200、member create/update/delete 403 ×3、admin delete 403、跨租户 agent 读取 404 且列表不含、删除后列表不出现、update/delete nonexistent 404 ×2)(2026-07-10)",
+        "后端异常对齐:agent_service.py _owned 抛 NotFoundError(ValueError 子类);agents.py 加 _http_exc(照抄 users.py:29-37 模式)+ import NotFoundError,三处 get/update/delete 的 except ValueError 由「一律 404」改为 raise _http_exc(e) from e(按异常类型分流 404/400)",
+        "向后兼容证明:异常对齐后现有 5 个 happy-path 测试零改动全过(NotFoundError 是 ValueError 子类,API 层原 except ValueError 仍捕获)——与 roles-crud 同款渐进式重构",
+        "多租户隔离验证:test_cross_tenant_agent_not_visible 用 db_session 在 tnt-other-cross-wall 租户建 agent,owner client 读取 → 404 + 列表不含(租户过滤在 Repository 层 get_for_tenant/list_for_tenant)",
+        "架构铁律遵守:Service→Repository 分层不变(仅异常类型对齐);多租户过滤仍在 Repository 层;无越界改动(3 文件:agent_service.py/agents.py/test_agents_api.py,精确对齐 plan)"
+      ],
+      "notes": "Agent 表无 is_deleted 字段,删除是硬删除(BaseRepository.delete 用 db.delete),非 User/Role 的软删除——但行为正确(删除后 get 404 + 列表不出现),测试 test_deleted_agent_absent_from_list 覆盖。本任务纯后端,不改前端(agents-page.tsx 已接通)、不改 schema、不改 LLM 配置(属 chat-conversation-api 任务)。实现完全对齐 plan 4 步。"
     },
     {
       "id": "chat-conversation-api",
