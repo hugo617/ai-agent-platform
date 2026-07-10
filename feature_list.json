@@ -121,6 +121,23 @@
       "notes": "SCD2 是按需项不是标配;见 docs/auth-history-scd2-plan.md"
     },
     {
+      "id": "validation-error-i18n",
+      "priority": 7,
+      "area": "后端",
+      "title": "Pydantic 422 校验错误中文化",
+      "user_visible_behavior": "前端表单输入不合法时(如用户名太短),返回的校验提示是中文友好文案,而非 Pydantic 内置英文",
+      "status": "not_started",
+      "plan": "harness/docs/validation-error-i18n-plan.md",
+      "verification": [
+        "pytest tests/test_validation_errors.py -v(新增测试:纯函数单测 + 端到端集成)",
+        "POST /api/v1/users body username='ab' → 422,detail[0].msg 含「用户名」「3」",
+        "pytest -q 全量回归全绿(现有断言英文 msg 的用例已更新)",
+        "./init.sh 全绿(ruff + pytest)"
+      ],
+      "evidence": [],
+      "notes": "技术方案见 plan 文档(方案 2:type 锚点 + 纯函数 + handler,422 形状不变前端零改)。TDD 5 步实施"
+    },
+    {
       "id": "global-rename",
       "priority": 10,
       "area": "二开",
