@@ -205,6 +205,15 @@ export interface OrganizationCreate {
   sort_order?: number;
 }
 
+export interface OrganizationUpdate {
+  name?: string;
+  code?: string | null;
+  parent_id?: string | null;
+  leader_id?: string | null;
+  status?: string;
+  sort_order?: number;
+}
+
 // ============= auth (local login + sessions) =============
 
 export interface LoginRequest {

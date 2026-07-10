@@ -10,6 +10,8 @@ import { DashboardPage } from "@/pages/dashboard-page";
 import { AgentsPage } from "@/pages/agents-page";
 import { ChatPage } from "@/pages/chat-page";
 import { RolesPage } from "@/pages/roles-page";
+import { OrganizationsPage } from "@/pages/organizations-page";
+import { MembersPage } from "@/pages/members-page";
 import { PermissionsPage } from "@/pages/permissions-page";
 import { UsersPage } from "@/pages/users-page";
 import { NotFoundPage } from "@/pages/not-found-page";
@@ -52,6 +54,8 @@ export default function App() {
                   <Route path="/users" element={<UsersPage />} />
                   <Route path="/roles" element={<RolesPage />} />
                   <Route path="/permissions" element={<PermissionsPage />} />
+                  <Route path="/organizations" element={<OrganizationsPage />} />
+                  <Route path="/members" element={<MembersPage />} />
                 </Route>
               </Route>
 
