@@ -325,6 +325,25 @@
   - (a) 合并 feat/permission-matrix-ui 到 main + 发 PR;
   - (b) 开始下一个任务 `tenant-org-admin-ui`(priority 16,租户/组织/成员管理前端,后端端点齐全,纯前端)
 
+### Session 013 — 2026-07-10
+- **本轮目标**: 清理废代码 + 代码质量审查 + PR + CI 守门 + 合并 feat/permission-matrix-ui 到 main
+- **已完成**:
+  - 废代码审查(6 改动文件):oxlint 0 warning;发现 **`fetchPermissionCatalogue`(endpoints.ts)是死代码** —— 页面用矩阵里的 `permissions` 数组,不单独请求 catalogue,该函数无任何调用方 → **已清理**(连同 endpoints.ts 里只服务它的 `PermissionItem` import;types.ts 的 `PermissionItem` 接口被页面使用,保留)
+  - 代码质量审查(permissions-page.tsx):数据流清晰(usePermissionMatrix → useMemo 分组 → 渲染;编辑走 grant/revoke + invalidate permissionMatrix 自动刷新);权限守卫双层(路由 RequireUserManagement 拦截 member + 页面 canManageUsers(me) 控制格子 editable);pendingCell 防重复点击;无越界(纯前端,后端零改动)
+  - 清理后重验证:`npm run build`(tsc+vite)0 类型错误 + oxlint 0 warning
+  - 提交 commit `aa32e3c` → 推送 `feat/permission-matrix-ui` → 建 PR #17(base main)
+  - CI 守门:3/3 全绿(Backend pytest+ruff 51s / Frontend typecheck+build+lint 32s / Migrations alembic upgrade on Postgres 44s),无需修复
+  - **squash 合并 PR #17 → main**(commit `d59787c`),删除远程分支,本地 fast-forward 同步;本地 feature 分支已删
+  - main 上再跑 `./init.sh` 确认 ruff + 118 passed,仓库仍可按标准路径工作
+- **运行过的验证**:
+  - `npm run build` + `npx oxlint`(清理前后各一次)→ 0 类型错误 / 0 warning
+  - `./init.sh`(main)→ ruff All checks passed! + **118 passed**
+  - CI(PR #17)→ 3 jobs pass
+- **已记录证据**: 无新增(本任务是审查+发版+废代码清理;废代码清理已并入功能 commit;feature_list 的 permission-matrix-ui.evidence 在 Session 012 已填)
+- **提交记录**: PR #17 已 squash 合并到 main,本地 commit `aa32e3c`(squash 后 `d59787c`)
+- **已知风险**: 无
+- **下一步最佳动作**: 开始下一个 not_started 任务 `tenant-org-admin-ui`(priority 16,租户/组织/成员管理前端,后端端点齐全,纯前端)
+
 ---
 
 <!--
