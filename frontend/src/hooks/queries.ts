@@ -18,14 +18,17 @@ import {
   deleteUser,
   fetchAgents,
   fetchConversations,
+  fetchEffectiveModels,
   fetchMembers,
   fetchMessages,
   fetchOrganizationTree,
   fetchPermissionMatrix,
+  fetchPlatformLlmConfig,
   fetchRoleLabels,
   fetchRolePermissions,
   fetchRoles,
   fetchSessions,
+  fetchTenantLlmConfig,
   fetchTenants,
   fetchUserStatistics,
   fetchUsers,
@@ -37,12 +40,15 @@ import {
   updateAgent,
   updateMember,
   updateOrganization,
+  updatePlatformLlmConfig,
   updateRole,
+  updateTenantLlmConfig,
   updateUser,
 } from "@/api/endpoints";
 import type {
   AgentCreate,
   AgentUpdate,
+  LlmConfigUpdate,
   MemberCreate,
   MemberUpdate,
   OrganizationCreate,
@@ -76,6 +82,9 @@ export const qk = {
   conversations: ["conversations"] as const,
   messages: (conversationId: string) =>
     ["conversations", conversationId, "messages"] as const,
+  llmConfigPlatform: ["settings", "llm", "platform"] as const,
+  llmConfigTenant: ["settings", "llm", "tenant"] as const,
+  effectiveModels: ["settings", "models"] as const,
 };
 
 // ---------- tenants ----------
@@ -345,6 +354,44 @@ export function useTerminateSession() {
   return useMutation({
     mutationFn: (sessionId: string) => terminateSession(sessionId),
     onSuccess: () => qc.invalidateQueries({ queryKey: qk.sessions }),
+  });
+}
+
+// ---------- llm settings (platform + tenant) ----------
+export function usePlatformLlmConfig() {
+  return useQuery({
+    queryKey: qk.llmConfigPlatform,
+    queryFn: fetchPlatformLlmConfig,
+  });
+}
+
+export function useUpdatePlatformLlmConfig() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: LlmConfigUpdate) => updatePlatformLlmConfig(payload),
+    onSuccess: () => qc.invalidateQueries({ queryKey: qk.llmConfigPlatform }),
+  });
+}
+
+export function useTenantLlmConfig() {
+  return useQuery({
+    queryKey: qk.llmConfigTenant,
+    queryFn: fetchTenantLlmConfig,
+  });
+}
+
+export function useUpdateTenantLlmConfig() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: LlmConfigUpdate) => updateTenantLlmConfig(payload),
+    onSuccess: () => qc.invalidateQueries({ queryKey: qk.llmConfigTenant }),
+  });
+}
+
+export function useEffectiveModels() {
+  return useQuery({
+    queryKey: qk.effectiveModels,
+    queryFn: fetchEffectiveModels,
   });
 }
 

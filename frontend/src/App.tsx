@@ -13,6 +13,7 @@ import { RolesPage } from "@/pages/roles-page";
 import { OrganizationsPage } from "@/pages/organizations-page";
 import { MembersPage } from "@/pages/members-page";
 import { PermissionsPage } from "@/pages/permissions-page";
+import { SettingsPage } from "@/pages/settings-page";
 import { UsersPage } from "@/pages/users-page";
 import { NotFoundPage } from "@/pages/not-found-page";
 
@@ -56,6 +57,7 @@ export default function App() {
                   <Route path="/permissions" element={<PermissionsPage />} />
                   <Route path="/organizations" element={<OrganizationsPage />} />
                   <Route path="/members" element={<MembersPage />} />
+                  <Route path="/settings" element={<SettingsPage />} />
                 </Route>
               </Route>
 

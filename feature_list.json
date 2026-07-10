@@ -378,7 +378,7 @@
       "area": "AI 内核",
       "title": "真实智能体对话 + LLM 配置管理 + bug 修复",
       "user_visible_behavior": "用户能用真实 API key 与智能体流式对话(选什么模型用什么模型);管理员能在设置页配置 API key/base_url/可选模型(超管平台级 + 租户级两层),对话真正跑通而非离线测试",
-      "status": "not_started",
+      "status": "passing",
       "plan": "harness/docs/plan-real-chat-llm-config.md",
       "verification": [
         "Bug 1 修复:Agent.model 在对话中真正生效(chat.py 调 stream_agent 时传 agent.model,而非用全局 settings.openai_model)",
@@ -390,7 +390,16 @@
         "cd frontend && npm run build 通过 + oxlint 0 warning",
         "(真实)用户提供真实 DeepSeek key,端到端 SSE 流式对话跑通,运行时 bug 已修,证据写入 evidence"
       ],
-      "evidence": [],
+      "evidence": [
+        "./init.sh 全绿:ruff check → All checks passed!;pytest → 131 passed(基线 118 + 新增 13:12 llm_config + 1 chat bug 修复)(2026-07-11)",
+        "真实端到端验证(真实 DeepSeek key,docker aap-postgres):alembic upgrade head 建表成功 → test1 登录 → SSE 对话真实跑通('1+1'→'2'、'2+3'→'5'、自我介绍流式输出),[DONE] 正常收到,会话历史持久化(2026-07-11)",
+        "Bug 1 修复验证:agent-reasoner(model=deepseek-reasoner)在 available_models 含 deepseek-reasoner 时对话真实用 reasoner;chat.py model = agent.model if in available_models else default_model,测试断言 stream_agent 收到的 model==agent.model(test_agent_model_is_passed_to_stream_agent)",
+        "Bug 2 修复:agents-page.tsx 删硬编码 MODELS=['gpt-4o-mini','gpt-4o','gpt-4-turbo','claude-3-5-sonnet'],改 useEffectiveModels() 动态加载;默认值 gpt-4o-mini → deepseek-chat",
+        "Bug 3 完成:app/core/crypto.py(Fernet encrypt/decrypt/mask_api_key);config.py field_encryption_key(model_validator 生产拦截默认值);LlmConfig model + 迁移 b3c4d5e6f7a8(down_revision a2b3c4d5e6f7);llm_config_service(get_effective 三级 fallback);settings.py API(5 端点);settings-page.tsx(平台级 super_admin + 租户级 canManageUsers 两 Card)",
+        "运行时 bug 修复(真实跑通时暴露,离线 mock 未覆盖):graph.py create_react_agent 的 prompt= 参数在 langgraph 0.2.61 不存在 → 改 messages_modifier=SystemMessage;输入从裸 list 改 dict {'messages':[...]}(否则 INVALID_GRAPH_NODE_RETURN_VALUE)",
+        "三级 fallback 验证:无 DB 配置 → /settings/models 返回 [deepseek-chat](env);写入租户级配置(含 deepseek-reasoner)→ 返回 [deepseek-chat,deepseek-reasoner](DB 覆盖 env)",
+        "权限边界:平台级端点 require_super_admin()(新增 deps.py,非超管 403);租户级 require_permission('settings','manage')(owner/admin,member 403);conftest casbin seed + permission_service DEFAULT_OWNER/ADMIN_PERMS 加 ('settings','manage')"
+      ],
       "notes": "背景:agents-api-hardening/chat-conversation-api/chat-frontend 三任务虽标 passing,但 progress.md 多处承认「手动 SSE 验证从未跑通」(.env 里 OPENAI_API_KEY=sk-replace-me 是占位符)。探勘发现 3 个 bug:(1) stream_agent(graph.py) 硬用全局 settings.openai_model,chat.py 调用时未传 agent.model,导致用户选什么模型对话永远用全局那个;(2) agents-page.tsx:43 硬编码 MODELS=['gpt-4o-mini','gpt-4o','gpt-4-turbo','claude-3-5-sonnet'] 与后端 DeepSeek 完全脱节,选 gpt-4o-mini 调 DeepSeek 会 model not found;(3) LLM 配置只能改 .env 无 UI 管理。已确认决策:配置粒度=超管平台级+租户级两层;取值优先级=租户>平台>env;API key 掩码不回显(GET 返 sk-***abcd,PUT 留空=不改);本任务插队 tenant-org-admin-ui(priority 16 暂停,WIP=1 转此)。加密用 cryptography==44.0.0(已装,Fernet 可用),新增 config.py field_encryption_key 字段。迁移链 head=a2b3c4d5e6f7。权限 seed 真源在 permission_service.py DEFAULT_*_PERMS + conftest.py _make_casbin,需加 ('settings','manage')。"
     }
   ]

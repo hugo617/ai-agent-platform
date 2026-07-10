@@ -22,6 +22,7 @@ from app.repositories.conversation import MessageRepository
 from app.schemas.conversation import ChatRequest
 from app.services.conversation_service import ConversationService
 from app.services.errors import NotFoundError
+from app.services.llm_config_service import llm_config_service
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
@@ -83,10 +84,24 @@ async def chat_stream(
     async def event_source():
         full_reply: list[str] = []
         try:
+            # Resolve the LLM config (tenant > platform > env) and pick the
+            # model: the agent's chosen model wins if it's in the available
+            # list, otherwise fall back to the config's default. This is the
+            # fix for "Agent.model is ignored" — previously the global config
+            # model was always used regardless of agent.model.
+            llm_cfg = await llm_config_service.get_effective(db, user.tenant_id)
+            model = (
+                agent.model
+                if agent.model in llm_cfg.available_models
+                else llm_cfg.default_model
+            )
             async for chunk in stream_agent(
                 user_id=user.user_id,
                 tenant_id=user.tenant_id,
                 db=db,
+                api_key=llm_cfg.api_key,
+                base_url=llm_cfg.base_url,
+                model=model,
                 system_prompt=agent.system_prompt,
                 history=history,
                 user_message=payload.message,

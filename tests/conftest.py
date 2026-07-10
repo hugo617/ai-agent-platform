@@ -46,6 +46,7 @@ def _make_casbin(owner_user: str, tenant_id: str):
         ("roles", "read"), ("roles", "create"), ("roles", "update"), ("roles", "delete"),
         ("organizations", "read"), ("organizations", "create"),
         ("organizations", "update"), ("organizations", "delete"),
+        ("settings", "manage"),
     ]:
         e.add_policy("owner", tenant_id, obj, act)
     # admin: manage users + read-mostly elsewhere (no agent delete, no billing).
@@ -55,6 +56,7 @@ def _make_casbin(owner_user: str, tenant_id: str):
         ("conversations", "chat"),
         ("users", "read"), ("users", "create"), ("users", "update"),
         ("roles", "read"), ("organizations", "read"),
+        ("settings", "manage"),
     ]:
         e.add_policy("admin", tenant_id, obj, act)
     for obj, act in [
@@ -84,6 +86,7 @@ async def test_env() -> AsyncIterator[_TestEnv]:
     # Ensure models are imported so they register on metadata.
     from app.models import (  # noqa: F401
         agent,
+        llm_config,
         log,
         message,
         organization,

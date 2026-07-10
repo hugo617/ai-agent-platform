@@ -57,26 +57,40 @@ class Settings(BaseSettings):
     # LLM — defaults target DeepSeek (OpenAI-compatible endpoint). The fields
     # are named ``openai_*`` because the code talks to them via langchain's
     # ``ChatOpenAI`` class, which any OpenAI-compatible API (DeepSeek, etc.)
-    # works with unchanged.
+    # works with unchanged. These are the last-resort fallback when neither a
+    # tenant-level nor platform-level LLM config row exists in the DB.
     openai_api_key: str = "sk-replace-me"
     openai_base_url: str = "https://api.deepseek.com"
     openai_model: str = "deepseek-chat"
 
-    @model_validator(mode="after")
-    def _jwt_secret_not_default(self) -> "Settings":
-        """Reject the placeholder JWT secret outside development/testing.
+    # Field-level encryption — Fernet key (base64 urlsafe 32 bytes) used to
+    # encrypt secrets stored in the DB (e.g. LLM API keys). Generate with:
+    #   python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+    # The default is a throwaway key shared here only so dev/test work out of
+    # the box; non-dev environments must override it (enforced below).
+    field_encryption_key: str = (
+        "UxCQS2ohSvdIRjZfiNyCi5uWoy8FLLiIXonkf28M4r8="  # dev/test only
+    )
 
-        A production deploy that forgets to set JWT_SECRET would otherwise sign
-        local tokens with a publicly-known key — anyone could forge an admin
-        token. Runs as a model_validator (after all fields are populated) so it
-        sees ``app_env`` loaded from the .env file, not just the raw shell env.
+    @model_validator(mode="after")
+    def _secrets_not_default(self) -> "Settings":
+        """Reject placeholder secrets outside development/testing.
+
+        A production deploy that forgets to set JWT_SECRET or
+        FIELD_ENCRYPTION_KEY would otherwise sign local tokens with a
+        publicly-known key or encrypt DB secrets with a shared one. Runs as a
+        model_validator (after all fields are populated) so it sees ``app_env``
+        loaded from the .env file, not just the raw shell env.
         """
-        if (
-            self.jwt_secret == "change-me-in-production"
-            and self.app_env not in ("development", "testing")
-        ):
+        if self.app_env in ("development", "testing"):
+            return self
+        if self.jwt_secret == "change-me-in-production":
             raise ValueError(
                 "JWT_SECRET must be changed from its default in non-dev environments"
+            )
+        if self.field_encryption_key.startswith("UxCQS2ohSvdIRjZfiNyC"):
+            raise ValueError(
+                "FIELD_ENCRYPTION_KEY must be generated for this deployment"
             )
         return self
 

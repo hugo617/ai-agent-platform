@@ -35,6 +35,8 @@ async def _mock_chat(client, monkeypatch, agent_id: str, message: str = "Hi") ->
 
     Stubs ``stream_agent`` in the chat route module so the test is offline and
     deterministic. Returns ``{"status": int, "text": str, "deltas": str}``.
+    Also stubs ``llm_config_service.get_effective`` so the model resolution is
+    deterministic without touching env/DB config.
     """
     from app.api.v1 import chat as chat_route
 
@@ -43,6 +45,12 @@ async def _mock_chat(client, monkeypatch, agent_id: str, message: str = "Hi") ->
             yield chunk
 
     monkeypatch.setattr(chat_route, "stream_agent", fake_stream)
+    # Deterministic effective config so model selection doesn't depend on env.
+    monkeypatch.setattr(
+        chat_route.llm_config_service,
+        "get_effective",
+        _async_effective(["deepseek-chat", "deepseek-reasoner"]),
+    )
 
     resp = await client.post(
         "/api/v1/chat/stream",
@@ -50,6 +58,23 @@ async def _mock_chat(client, monkeypatch, agent_id: str, message: str = "Hi") ->
         headers=AUTH,
     )
     return {"status": resp.status_code, "text": resp.text, "deltas": _collect_deltas(resp.text)}
+
+
+def _async_effective(available_models: list[str], default_model: str = "deepseek-chat"):
+    """Build an awaitable returning a fixed EffectiveLlmConfig."""
+    from app.schemas.llm_config import EffectiveLlmConfig
+
+    cfg = EffectiveLlmConfig.from_resolved(
+        api_key="test-key",
+        base_url="https://api.deepseek.com",
+        default_model=default_model,
+        available_models=available_models,
+    )
+
+    async def _resolve(*_args, **_kwargs):
+        return cfg
+
+    return _resolve
 
 
 # --------------------------------------------------------------- happy path
@@ -234,3 +259,48 @@ async def test_member_cannot_delete_conversation(member_client):
     """member has no conversations:delete → 403 (guard fires before lookup)."""
     resp = await member_client.delete("/api/v1/conversations/any-id", headers=AUTH)
     assert resp.status_code == 403
+
+
+# ----------------------------------------------- bug fix: agent.model is used
+
+
+@pytest.mark.asyncio
+async def test_agent_model_is_passed_to_stream_agent(app_client, monkeypatch):
+    """Bug 1 regression: stream_agent must receive agent.model, not the global default.
+
+    Before the fix, chat.py never forwarded the agent's model and stream_agent
+    hardcoded settings.openai_model — so every agent spoke as the same model
+    regardless of its configured ``model`` field.
+    """
+    from app.api.v1 import chat as chat_route
+
+    captured: dict = {}
+
+    async def capturing_stream(**kwargs):
+        captured.update(kwargs)
+        yield "ok"
+
+    monkeypatch.setattr(chat_route, "stream_agent", capturing_stream)
+    monkeypatch.setattr(
+        chat_route.llm_config_service,
+        "get_effective",
+        _async_effective(["deepseek-chat", "deepseek-reasoner"]),
+    )
+
+    create = await app_client.post(
+        "/api/v1/agents/",
+        json={"name": "Reasoner", "model": "deepseek-reasoner"},
+        headers=AUTH,
+    )
+    agent_id = create.json()["id"]
+
+    resp = await app_client.post(
+        "/api/v1/chat/stream",
+        json={"agent_id": agent_id, "message": "Hi"},
+        headers=AUTH,
+    )
+    assert resp.status_code == 200
+    # The agent's chosen model reached the LLM layer.
+    assert captured.get("model") == "deepseek-reasoner"
+    assert captured.get("api_key") == "test-key"
+    assert captured.get("base_url") == "https://api.deepseek.com"

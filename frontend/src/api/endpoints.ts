@@ -5,6 +5,8 @@ import type {
   AgentCreate,
   AgentUpdate,
   Conversation,
+  LlmConfig,
+  LlmConfigUpdate,
   LoginRequest,
   Member,
   MemberCreate,
@@ -306,6 +308,36 @@ export async function updateOrganization(
 
 export async function deleteOrganization(id: string): Promise<void> {
   await api.delete(`/organizations/${id}`);
+}
+
+// ---------- llm settings (platform + tenant) ----------
+export async function fetchPlatformLlmConfig(): Promise<LlmConfig | null> {
+  const { data } = await api.get<LlmConfig | null>("/settings/llm/platform");
+  return data;
+}
+
+export async function updatePlatformLlmConfig(
+  payload: LlmConfigUpdate
+): Promise<LlmConfig> {
+  const { data } = await api.put<LlmConfig>("/settings/llm/platform", payload);
+  return data;
+}
+
+export async function fetchTenantLlmConfig(): Promise<LlmConfig | null> {
+  const { data } = await api.get<LlmConfig | null>("/settings/llm/tenant");
+  return data;
+}
+
+export async function updateTenantLlmConfig(
+  payload: LlmConfigUpdate
+): Promise<LlmConfig> {
+  const { data } = await api.put<LlmConfig>("/settings/llm/tenant", payload);
+  return data;
+}
+
+export async function fetchEffectiveModels(): Promise<string[]> {
+  const { data } = await api.get<string[]>("/settings/models");
+  return data;
 }
 
 // ---------- auth (local login + sessions) ----------

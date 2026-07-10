@@ -35,23 +35,23 @@ import {
   useAgents,
   useCreateAgent,
   useDeleteAgent,
+  useEffectiveModels,
   useUpdateAgent,
 } from "@/hooks/queries";
 import { apiErrorMessage } from "@/api/client";
 import type { Agent } from "@/api/types";
 
-const MODELS = ["gpt-4o-mini", "gpt-4o", "gpt-4-turbo", "claude-3-5-sonnet"];
-
 const agentSchema = z.object({
   name: z.string().min(1, "名称不能为空").max(128),
   system_prompt: z.string().default(""),
-  model: z.string().default("gpt-4o-mini"),
+  model: z.string().default("deepseek-chat"),
 });
 
 type AgentFormValues = z.input<typeof agentSchema>;
 
 export function AgentsPage() {
   const { data: agents, isLoading } = useAgents();
+  const { data: effectiveModels } = useEffectiveModels();
   const createMut = useCreateAgent();
   const updateMut = useUpdateAgent();
   const deleteMut = useDeleteAgent();
@@ -60,14 +60,20 @@ export function AgentsPage() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Agent | null>(null);
 
+  // Available models come from the backend (GET /settings/models), not a
+  // hardcoded list — so the agent dropdown always matches the configured
+  // provider. Default to deepseek-chat until the list resolves.
+  const models = effectiveModels ?? [];
+  const defaultModel = models[0] ?? "deepseek-chat";
+
   const form = useForm<AgentFormValues>({
     resolver: zodResolver(agentSchema),
-    defaultValues: { name: "", system_prompt: "", model: "gpt-4o-mini" },
+    defaultValues: { name: "", system_prompt: "", model: defaultModel },
   });
 
   const openCreate = () => {
     setEditing(null);
-    form.reset({ name: "", system_prompt: "", model: "gpt-4o-mini" });
+    form.reset({ name: "", system_prompt: "", model: defaultModel });
     setDialogOpen(true);
   };
 
@@ -208,12 +214,17 @@ export function AgentsPage() {
                 className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
                 {...form.register("model")}
               >
-                {MODELS.map((m) => (
+                {models.map((m) => (
                   <option key={m} value={m}>
                     {m}
                   </option>
                 ))}
               </select>
+              {models.length === 0 && (
+                <p className="text-xs text-muted-foreground">
+                  暂无可用模型，请在设置页配置 LLM。
+                </p>
+              )}
             </div>
             <div className="space-y-2">
               <Label htmlFor="system_prompt">系统提示词</Label>

@@ -168,3 +168,22 @@ def require_permission(obj: str, act: str):
         return user
 
     return _guard
+
+
+def require_super_admin():
+    """Build a dependency that only platform super admins satisfy.
+
+    Used by platform-wide endpoints (e.g. the platform-level LLM config) where
+    no tenant-scoped permission exists — the action crosses all tenants, so a
+    tenant role like owner/admin must NOT be enough on its own.
+    """
+
+    async def _guard(user: CurrentUser = Depends(get_current_user)) -> CurrentUser:
+        if user.platform_role != "super_admin":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="无权限：需要平台超级管理员",
+            )
+        return user
+
+    return _guard
