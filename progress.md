@@ -441,6 +441,25 @@
 - **已知风险**: 无功能风险。真实 DeepSeek key 已验证可用;前端手动浏览器验证未跑(需前端 dev server),build(tsc)+ oxlint 已覆盖类型正确性;后端真实 SSE 已用 curl 端到端验证
 - **下一步最佳动作**: 清理废代码 + 代码质量审查 + PR + CI 守门 + 合并 feat/real-chat-llm-config 到 main
 
+### Session 018 — 2026-07-11
+- **本轮目标**: 清理废代码 + 代码质量审查 + PR + CI 守门(修复红的 Migrations)+ 合并 feat/real-chat-llm-config 到 main
+- **已完成**:
+  - 废代码审查(25 改动文件):后端 ruff F-rules 全绿 + 所有新符号有引用;前端 oxlint 0 warning + 所有新符号有引用。发现 `build_agent`(graph.py)是**既有死代码**(main 上就无调用方,非本任务引入),保留参数解耦改动保持一致性,未越界删除,PR 标注
+  - 代码质量审查:分层合规(Controller→Service→Repository→Model 单向);加密边界严谨(只在 get_effective 内部解密,Read schema 永不返回明文/密文);权限守卫双层(平台级 require_super_admin 独立守卫 + 租户级 settings:manage);三级 fallback 逻辑清晰
+  - 提交 → 推送 → PR #19(base main)
+  - **CI 守门 + 修复红的 Migrations**:首轮 Backend✅ Frontend✅ **Migrations❌**(`alembic check` 报 `Detected removed table llm_configs`)。根因:`alembic/env.py` 的 model import 列表漏了 `llm_config`(与 conftest.py 同一易漏点,我只改了 conftest 漏了 env.py),导致 Base.metadata 无此表 → autogenerate 误判为 drift。修复:env.py 加 import llm_config + model 的 available_models/is_active 加 server_default 对齐迁移。重跑 alembic check → `No new upgrade operations detected`;重推后 CI 3/3 全绿(Backend 47s / Frontend 25s / Migrations 45s)
+  - **squash 合并 PR #19 → main**(commit `0efa4c9`),删除远程分支,本地 fast-forward 同步;prune 缓存引用;本地 feature 分支已删
+  - main 上跑 init.sh 确认 ruff + 131 passed,仓库仍可按标准路径工作
+- **运行过的验证**:
+  - 废代码:ruff F-rules(后端)+ oxlint(前端)→ 全绿;符号引用核查 → 仅 build_agent 既有死代码
+  - `alembic check`(修复前后)→ 修复前 drift / 修复后 No new upgrade operations
+  - `./init.sh`(main)→ ruff All checks passed! + **131 passed**
+  - CI(PR #19)→ 首轮 Migrations 红 → 修复后 3 jobs pass
+- **已记录证据**: 无新增证据(本任务是审查+发版+修 CI;feature_list 的 evidence 在 Session 017 已填)
+- **提交记录**: PR #19 已 squash 合并到 main(`0efa4c9`);含 1 个功能 commit + 1 个 CI 修复 commit
+- **已知风险**: 无。真实 DeepSeek 对话已在 Session 017 端到端验证跑通
+- **下一步最佳动作**: 仅剩 `e2e-and-coverage`(priority 17,E2E + 覆盖率门槛 + lint)一个 not_started 任务;或由用户指定新方向
+
 ---
 
 <!--
