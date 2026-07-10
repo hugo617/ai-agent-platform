@@ -8,10 +8,10 @@
 - **标准启动路径**: `./init.sh`(装依赖 + ruff + pytest)
 - **标准验证路径**: `./init.sh`(同上,后端快速验证,SQLite 内存库)
 - **完整验证路径**(需 docker): `alembic upgrade head && alembic check` + `cd frontend && npm run build`
-- **当前最高优先级未完成功能**: `tenant-org-admin-ui`(priority 16,方向3:租户/组织/成员管理前端——后端端点齐全,纯前端补管理页)—— `permission-matrix-ui` 已 passing
+- **当前最高优先级未完成功能**: `real-chat-llm-config`(priority 18,AI 内核:真实对话 + LLM 配置管理 + bug 修复)—— 用户要求插队 `tenant-org-admin-ui`(priority 16 暂停),因 AI 内核对话「从未真实跑通」+ 发现 3 个 bug(Agent.model 被忽略 / 前端模型列表与后端脱节 / LLM 配置无 UI)
 - **当前 blocker**: 无
 
-## 后续任务规划(2026-07-10 制定,共 7 条,WIP=1 顺序执行)
+## 后续任务规划(2026-07-10 制定,2026-07-10 追加第 8 条插队,共 8 条,WIP=1 顺序执行)
 
 | 顺序 | id | 方向 | 范围 | plan 文档 |
 |------|----|------|------|----------|
@@ -20,11 +20,12 @@
 | 3 | `chat-frontend` | AI 内核 | 聊天页面 + SSE 流式(前端,依赖 2)✅ 已完成 | `harness/docs/plan-chat-frontend.md` |
 | 4 | `permission-matrix-api` | 权限 | 权限矩阵聚合端点(后端)✅ 已完成 | `harness/docs/plan-permission-matrix-api.md` |
 | 5 | `permission-matrix-ui` | 权限 | 可编辑权限矩阵(前端,依赖 4)✅ 已完成 | `harness/docs/plan-permission-matrix-ui.md` |
-| 6 | `tenant-org-admin-ui` | 管理控制台 | 租户/组织/成员管理页(前端) | `harness/docs/plan-tenant-org-admin-ui.md` |
+| 6 | `tenant-org-admin-ui` | 管理控制台 | 租户/组织/成员管理页(前端)⏸️ 暂停(被 8 插队) | `harness/docs/plan-tenant-org-admin-ui.md` |
 | 7 | `e2e-and-coverage` | 工程化 | E2E + 覆盖率门槛 + lint(建议最后) | `harness/docs/plan-e2e-and-coverage.md` |
+| **8** | **`real-chat-llm-config`** | **AI 内核** | **真实对话验证 + LLM 配置管理(超管+租户级)+ 修 3 bug(Agent.model 失效/前端模型脱节/无配置 UI)—— 用户插队,当前最高优先级** | **`harness/docs/plan-real-chat-llm-config.md`** |
 
-> 依赖链:1 → 2 → 3(对话主线);4 → 5(权限矩阵);6 独立;7 最后。
-> LLM 用 DeepSeek API(OpenAI 兼容,任务 2 切换配置)。
+> 依赖链:1 → 2 → 3(对话主线);4 → 5(权限矩阵);6 独立(暂停中);7 最后;**8 插队**(前置 2+3 已完成)。
+> LLM 用 DeepSeek API(OpenAI 兼容,任务 2 切换配置);任务 8 把对话从「离线测试 passing」推进到「真实可用」并补配置管理。
 
 ## 已 passing 的地基能力(详见 feature_list.json)
 
@@ -46,6 +47,7 @@
 | permission-matrix-ui(权限矩阵前端) | passing | npm build 通过 + 可编辑矩阵 + oxlint 0 warning |
 
 > ✅ AI 内核(agents + chat)已全部纳管并 passing:agents-api-hardening / chat-conversation-api / chat-frontend 三任务端到端完成。
+> ⚠️ **但真实对话从未跑通**:上述三任务的 evidence 均注明「手动 SSE 未跑(需真实 DeepSeek key + docker)」,`.env` 里 `OPENAI_API_KEY=sk-replace-me` 仍是占位符。`real-chat-llm-config`(priority 18)负责补真实验证 + 修 3 个 bug(Agent.model 被忽略 / 前端模型列表与后端脱节 / LLM 配置无 UI 管理)。
 
 ## 会话记录
 
@@ -343,6 +345,26 @@
 - **提交记录**: PR #17 已 squash 合并到 main,本地 commit `aa32e3c`(squash 后 `d59787c`)
 - **已知风险**: 无
 - **下一步最佳动作**: 开始下一个 not_started 任务 `tenant-org-admin-ui`(priority 16,租户/组织/成员管理前端,后端端点齐全,纯前端)
+
+---
+
+### Session 014 — 2026-07-10
+- **本轮目标**: 把用户新提的任务「真实使用智能体对话 + 修复 bug + 完善 API key/模型选择」登记进 Harness 文档体系(只改文档,不写代码,不执行)
+- **前置探勘**(为写 plan 提供技术依据):
+  - 读 graph.py / chat.py / config.py / agent model / agents-page / chat-page / .env,确认 3 个 bug:(1) stream_agent 硬用 settings.openai_model,chat.py 未传 agent.model → Agent.model 形同虚设;(2) agents-page.tsx:43 硬编码 GPT/Claude 模型列表与后端 DeepSeek 完全脱节;(3) LLM 配置仅 env 变量无 DB/UI
+  - 派 3 个 Explore agent 并行探勘后端(加密/Repository/迁移链/权限 seed)、前端(设置页/表单/API 层/导航)、测试(conftest 种子/chat mock/init.sh),结论:cryptography==44.0.0 已装 Fernet 可用 / 迁移链 head=a2b3c4d5e6f7 / 权限 seed 真源在 permission_service.py DEFAULT_*_PERMS + conftest _make_casbin
+  - 与用户对齐 4 个决策:配置粒度=超管平台级+租户级两层 / 取值优先级=租户>平台>env / API key 掩码不回显 / 本任务插队 tenant-org-admin-ui
+- **已完成**(3 个文档文件,0 代码改动):
+  - `feature_list.json`:在 e2e-and-coverage 之后插入 `real-chat-llm-config`(priority 18, area AI 内核, not_started),含完整 verification/notes(3 bug 摘要 + 4 决策 + 加密/迁移/权限 seed 技术点)
+  - `harness/docs/plan-real-chat-llm-config.md`:新建完整 plan 文档(背景+3 bug+状态速查表+目标+决策表+6 阶段 20 步实施步骤+验收标准+风险表+边界+参考文件表),对齐现有 plan 文档模板
+  - `progress.md`:任务规划表加第 8 行(标记 6 暂停);当前最高优先级改为 real-chat-llm-config;地基能力表下补「真实对话从未跑通」警告;本 Session 记录
+- **运行过的验证**: `python -c "import json; json.load(open('feature_list.json'))"`(JSON 合法性,待跑)
+- **已记录证据**: 无(本任务是登记规划,evidence 字段待执行时填)
+- **提交记录**: 待用户决定是否提交(本会话不改 git 状态)
+- **已知风险**: 无。plan 文档中的文件路径/符号名基于 2026-07-10 代码探勘核实,执行前建议快速 grep 确认无漂移
+- **下一步最佳动作**:
+  - (a) 执行 `real-chat-llm-config`(plan 已就绪,用户提供真实 DeepSeek key 后可开干);
+  - (b) 或先提交本次 3 个文档改动(feature_list.json + plan 文档 + progress.md)
 
 ---
 
