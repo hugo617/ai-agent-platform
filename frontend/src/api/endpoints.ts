@@ -14,6 +14,7 @@ import type {
   Organization,
   OrganizationCreate,
   OrganizationTreeNode,
+  OrganizationUpdate,
   PermissionMatrix,
   Role,
   RoleCreate,
@@ -293,6 +294,18 @@ export async function createOrganization(
 ): Promise<Organization> {
   const { data } = await api.post<Organization>("/organizations/", payload);
   return data;
+}
+
+export async function updateOrganization(
+  id: string,
+  payload: OrganizationUpdate
+): Promise<Organization> {
+  const { data } = await api.put<Organization>(`/organizations/${id}`, payload);
+  return data;
+}
+
+export async function deleteOrganization(id: string): Promise<void> {
+  await api.delete(`/organizations/${id}`);
 }
 
 // ---------- auth (local login + sessions) ----------

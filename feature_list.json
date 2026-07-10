@@ -333,15 +333,27 @@
       "area": "管理控制台",
       "title": "租户/组织/成员管理前端(控制台补齐)",
       "user_visible_behavior": "管理员能在 UI 管理租户、组织、成员(创建/查看/编辑/删除),无需手敲 API",
-      "status": "not_started",
+      "status": "passing",
       "plan": "harness/docs/plan-tenant-org-admin-ui.md",
       "verification": [
-        "前端新增/补齐:租户管理页、组织管理页(CRUD)、成员管理页(增删改角色)",
-        "对接已有后端端点:tenants / organizations / members(均已实现)",
+        "前端新增:组织管理页(树形 CRUD,缩进表达层级)、成员管理页(列表 + 改角色 + 移除 + 添加)",
+        "租户管理整合进 dashboard(我的租户卡片 + 创建租户 Dialog)",
+        "endpoints/hooks 补齐:updateOrganization/deleteOrganization + useUpdate/useDeleteOrganization",
+        "路由 /organizations /members 注册在 RequireUserManagement 内 + NAV_ITEMS 加组织/成员项",
         "cd frontend && npm run build 通过"
       ],
-      "evidence": [],
-      "notes": "后端 tenants.py/organizations.py/members.py 端点齐全(2+5+4=11 个端点),前端 endpoints.ts 已有 fetchTenants/createTenant/fetchMembers 等,但无独立管理页面。纯前端任务,参照 users-page.tsx 模式。"
+      "evidence": [
+        "cd frontend && npm run build 通过:tsc -b + vite build 成功,0 类型错误(2026-07-10)",
+        "npx oxlint 8 改动文件 → 0 warnings 0 errors(2026-07-10)",
+        "API 层补齐:types.ts 加 OrganizationUpdate(name/code/parent_id/leader_id/status/sort_order 全 optional);endpoints.ts 加 updateOrganization(PUT /organizations/{id})+ deleteOrganization(DELETE /organizations/{id})",
+        "hooks 层补齐:queries.ts 加 qk.organizations(['organizations'])+ useUpdateOrganization + useDeleteOrganization(onSuccess invalidate qk.organizations 级联刷新 orgTree);注释从'tree UI not built yet'更新为'organizations'",
+        "组织管理页(organizations-page.tsx 新建):useOrganizationTree 取树 → flatten 递归扁平化为带 depth 的列表 → 表格按 depth 缩进渲染;创建 Dialog(name/code/parent_id 下拉/sort_order)+ 编辑 Dialog(name/code/status/sort_order)+ 删除确认;canManageUsers 控制写操作",
+        "成员管理页(members-page.tsx 新建):useMembers 取列表 → 表格(user_id/email/display_name/角色 Badge/加入时间);DropdownMenu 改角色(排除当前角色)+ 移除确认;添加成员 Dialog(user_id 必填/role/email/display_name);canManageUsers 控制写操作",
+        "租户管理整合 dashboard:dashboard-page.tsx 加「我的租户」卡片(useTenants + isError 处理 404)+ 创建租户 Dialog(name → useCreateTenant → toast);grid 从 2 列改 3 列",
+        "路由导航:App.tsx 在 RequireUserManagement 内注册 /organizations /members;dashboard-layout NAV_ITEMS 加「组织」(Building2)「成员」(UserCog)两项 needsUserManagement:true;member 被路由守卫拦截到不了管理页",
+        "成员 API 层比 plan 预期更齐:探勘发现 fetchMembers/addMember/updateMember/removeMember + useMembers/useAddMember/useUpdateMember/useRemoveMember 早已就绪(本任务只缺页面);组织只缺 update/delete 两端点"
+      ],
+      "notes": "实现差异 vs plan:(1) 成员 API 层已全部就绪(plan §Step1 说要补 update/remove,实际早已存在),本任务只补成员页面;(2) 组织页用缩进表格(非 plan §Step3 的左右分栏),对齐 users-page/roles-page 已有模式;(3) 组织 update 后端是 PUT(plan §Step1 写 PATCH 是笔误);(4) 租户管理整合进 dashboard 而非独立页(对齐 plan §Step5 第一版方案);(5) 成员图标用 UserCog(Users 已用于用户管理页);(6) 添加成员需 user_id(已注册用户,非邀请)——MemberCreate.user_id required。手动浏览器验证未跑(需前后端启动),build(tsc)+ oxlint 已覆盖类型正确性与规范。后端零改动(纯前端)。"
     },
     {
       "id": "e2e-and-coverage",

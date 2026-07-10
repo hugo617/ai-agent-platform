@@ -13,6 +13,7 @@ import {
   createUser,
   deleteAgent,
   deleteConversation,
+  deleteOrganization,
   deleteRole,
   deleteUser,
   fetchAgents,
@@ -35,6 +36,7 @@ import {
   terminateSession,
   updateAgent,
   updateMember,
+  updateOrganization,
   updateRole,
   updateUser,
 } from "@/api/endpoints";
@@ -44,6 +46,7 @@ import type {
   MemberCreate,
   MemberUpdate,
   OrganizationCreate,
+  OrganizationUpdate,
   RoleCreate,
   RolePermissionGrant,
   RoleUpdate,
@@ -68,6 +71,7 @@ export const qk = {
   rolePermissions: (id: string) => ["roles", id, "permissions"] as const,
   permissionMatrix: ["permissions", "matrix"] as const,
   orgTree: ["organizations", "tree"] as const,
+  organizations: ["organizations"] as const,
   sessions: ["auth", "sessions"] as const,
   conversations: ["conversations"] as const,
   messages: (conversationId: string) =>
@@ -288,7 +292,7 @@ export function useRevokeRolePermission() {
   });
 }
 
-// ---------- organizations (tree UI not built yet) ----------
+// ---------- organizations ----------
 export function useOrganizationTree() {
   return useQuery({ queryKey: qk.orgTree, queryFn: fetchOrganizationTree });
 }
@@ -297,7 +301,30 @@ export function useCreateOrganization() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (payload: OrganizationCreate) => createOrganization(payload),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["organizations"] }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: qk.organizations }),
+  });
+}
+
+export function useUpdateOrganization() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      id,
+      payload,
+    }: {
+      id: string;
+      payload: OrganizationUpdate;
+    }) => updateOrganization(id, payload),
+    onSuccess: () =>
+      qc.invalidateQueries({ queryKey: qk.organizations }),
+  });
+}
+
+export function useDeleteOrganization() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => deleteOrganization(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: qk.organizations }),
   });
 }
 

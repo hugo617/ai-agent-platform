@@ -8,7 +8,7 @@
 - **标准启动路径**: `./init.sh`(装依赖 + ruff + pytest)
 - **标准验证路径**: `./init.sh`(同上,后端快速验证,SQLite 内存库)
 - **完整验证路径**(需 docker): `alembic upgrade head && alembic check` + `cd frontend && npm run build`
-- **当前最高优先级未完成功能**: `real-chat-llm-config`(priority 18,AI 内核:真实对话 + LLM 配置管理 + bug 修复)—— 用户要求插队 `tenant-org-admin-ui`(priority 16 暂停),因 AI 内核对话「从未真实跑通」+ 发现 3 个 bug(Agent.model 被忽略 / 前端模型列表与后端脱节 / LLM 配置无 UI)
+- **当前最高优先级未完成功能**: `real-chat-llm-config`(priority 18,AI 内核:真实对话 + LLM 配置管理 + 修 3 个 bug)—— `tenant-org-admin-ui` 已 passing
 - **当前 blocker**: 无
 
 ## 后续任务规划(2026-07-10 制定,2026-07-10 追加第 8 条插队,共 8 条,WIP=1 顺序执行)
@@ -20,7 +20,7 @@
 | 3 | `chat-frontend` | AI 内核 | 聊天页面 + SSE 流式(前端,依赖 2)✅ 已完成 | `harness/docs/plan-chat-frontend.md` |
 | 4 | `permission-matrix-api` | 权限 | 权限矩阵聚合端点(后端)✅ 已完成 | `harness/docs/plan-permission-matrix-api.md` |
 | 5 | `permission-matrix-ui` | 权限 | 可编辑权限矩阵(前端,依赖 4)✅ 已完成 | `harness/docs/plan-permission-matrix-ui.md` |
-| 6 | `tenant-org-admin-ui` | 管理控制台 | 租户/组织/成员管理页(前端)⏸️ 暂停(被 8 插队) | `harness/docs/plan-tenant-org-admin-ui.md` |
+| 6 | `tenant-org-admin-ui` | 管理控制台 | 租户/组织/成员管理页(前端)✅ 已完成 | `harness/docs/plan-tenant-org-admin-ui.md` |
 | 7 | `e2e-and-coverage` | 工程化 | E2E + 覆盖率门槛 + lint(建议最后) | `harness/docs/plan-e2e-and-coverage.md` |
 | **8** | **`real-chat-llm-config`** | **AI 内核** | **真实对话验证 + LLM 配置管理(超管+租户级)+ 修 3 bug(Agent.model 失效/前端模型脱节/无配置 UI)—— 用户插队,当前最高优先级** | **`harness/docs/plan-real-chat-llm-config.md`** |
 
@@ -45,6 +45,7 @@
 | chat-frontend(对话前端) | passing | npm run build 通过 + SSE 打字机 + 会话 CRUD |
 | permission-matrix-api(权限矩阵后端) | passing | 118 tests(+6 矩阵/catalogue 端点) |
 | permission-matrix-ui(权限矩阵前端) | passing | npm build 通过 + 可编辑矩阵 + oxlint 0 warning |
+| tenant-org-admin-ui(租户/组织/成员前端) | passing | npm build 通过 + 组织树 CRUD + 成员管理 + dashboard 租户卡片 |
 
 > ✅ AI 内核(agents + chat)已全部纳管并 passing:agents-api-hardening / chat-conversation-api / chat-frontend 三任务端到端完成。
 > ⚠️ **但真实对话从未跑通**:上述三任务的 evidence 均注明「手动 SSE 未跑(需真实 DeepSeek key + docker)」,`.env` 里 `OPENAI_API_KEY=sk-replace-me` 仍是占位符。`real-chat-llm-config`(priority 18)负责补真实验证 + 修 3 个 bug(Agent.model 被忽略 / 前端模型列表与后端脱节 / LLM 配置无 UI 管理)。
@@ -365,6 +366,35 @@
 - **下一步最佳动作**:
   - (a) 执行 `real-chat-llm-config`(plan 已就绪,用户提供真实 DeepSeek key 后可开干);
   - (b) 或先提交本次 3 个文档改动(feature_list.json + plan 文档 + progress.md)
+
+---
+### Session 015 — 2026-07-10
+- **本轮目标**: 执行 `tenant-org-admin-ui`(租户/组织/成员管理前端)—— 6 步,纯前端。用户在本轮明确选择此任务(覆盖 Session 014 的「插队 real-chat-llm-config」决策)
+- **已完成**(对照 plan §实施步骤 Step 1-6):
+  - Step 0 基线确认:main 上 PR #17(permission-matrix-ui)已合;切 `feat/tenant-org-admin-ui` 分支
+  - Step 1 API 层:types.ts 加 OrganizationUpdate;endpoints.ts 加 updateOrganization(PUT)+ deleteOrganization(DELETE)
+  - Step 2 hooks 层:queries.ts 加 qk.organizations + useUpdateOrganization + useDeleteOrganization(onSuccess 级联刷新 orgTree);更新过时注释
+  - Step 3 组织页:organizations-page.tsx 新建 —— useOrganizationTree 取树 → flatten 递归扁平化(带 depth)→ 表格缩进渲染;创建/编辑/删除 Dialog;canManageUsers 守卫
+  - Step 4 成员页:members-page.tsx 新建 —— useMembers 表格 + DropdownMenu 改角色 + 移除确认 + 添加成员 Dialog;canManageUsers 守卫
+  - Step 5 dashboard + 路由导航:dashboard-page 加「我的租户」卡片(含创建 Dialog);App.tsx 注册 /organizations /members(RequireUserManagement 内);NAV_ITEMS 加组织(Building2)/成员(UserCog)
+  - Step 6 验证:npm run build 通过(tsc + vite,0 类型错误);oxlint 8 文件 0 warning
+- **运行过的验证**(全过):
+  - `cd frontend && npm run build` → tsc -b + vite build 成功,0 类型错误
+  - `npx oxlint` 8 改动文件 → 0 warnings 0 errors
+  - 后端零改动(纯前端,基线 118 passed 不变)
+- **已记录证据**: `feature_list.json` 的 `tenant-org-admin-ui.evidence` 字段(9 条)
+- **技术要点**(与 plan 的实现差异):
+  - **成员 API 层比 plan 预期更齐**:探勘发现 fetchMembers/addMember/updateMember/removeMember + 对应 hooks 早已就绪(plan §Step1 说要补 update/remove),本任务只补成员页面
+  - **组织页用缩进表格**(非 plan §Step3 的左右分栏),对齐 users-page/roles-page 已有模式,一致性优先
+  - 组织 update 后端是 PUT(plan §Step1 写 PATCH 是笔误)
+  - 租户管理整合进 dashboard(非独立页,对齐 plan §Step5 第一版方案)
+  - 添加成员需 user_id(MemberCreate.user_id required,已注册用户非邀请)
+  - 成员图标用 UserCog(Users 已被用户管理页占用)
+- **提交记录**: `feat/tenant-org-admin-ui` 分支(待用户决定是否合并到 main)
+- **已知风险**: 无功能风险。手动浏览器验证未跑(需前后端启动 + 真实 token),build(tsc 类型检查)+ oxlint 已覆盖类型正确性与规范;后端零改动无需 CI migrations 守门
+- **下一步最佳动作**:
+  - (a) 合并 feat/tenant-org-admin-ui 到 main + 发 PR;
+  - (b) 执行 `real-chat-llm-config`(priority 18,真实对话 + LLM 配置管理 + 修 3 bug,现为最高优先级);
 
 ---
 
