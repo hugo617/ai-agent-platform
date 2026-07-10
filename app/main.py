@@ -9,7 +9,17 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 
-from app.api.v1 import agents, auth, chat, members, organizations, roles, tenants, users
+from app.api.v1 import (
+    agents,
+    auth,
+    chat,
+    conversations,
+    members,
+    organizations,
+    roles,
+    tenants,
+    users,
+)
 from app.core.config import settings
 from app.core.validation_errors import localize_message
 
@@ -53,6 +63,7 @@ def create_app() -> FastAPI:
     app.include_router(roles.router, prefix=prefix)
     app.include_router(organizations.router, prefix=prefix)
     app.include_router(chat.router, prefix=prefix)
+    app.include_router(conversations.router, prefix=prefix)
 
     @app.get("/health", tags=["meta"])
     async def health() -> dict:

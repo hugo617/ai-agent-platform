@@ -11,12 +11,15 @@ class ConversationRepository(TenantScopedRepository[Conversation]):
     model = Conversation
 
     async def list_for_user(self, tenant_id: str, user_id: str, limit: int = 50) -> list[Conversation]:
+        # Order by most-recently-active so a conversation with a new message
+        # bubbles to the top of the user's list.
         stmt = (
             select(Conversation)
             .where(
                 Conversation.tenant_id == tenant_id,
                 Conversation.user_id == user_id,
             )
+            .order_by(Conversation.updated_at.desc())
             .limit(limit)
         )
         result = await self.db.execute(stmt)
@@ -27,9 +30,13 @@ class MessageRepository(TenantScopedRepository[Message]):
     model = Message
 
     async def list_for_conversation(self, conversation_id: str, tenant_id: str) -> list[Message]:
-        stmt = select(Message).where(
-            Message.conversation_id == conversation_id,
-            Message.tenant_id == tenant_id,
+        stmt = (
+            select(Message)
+            .where(
+                Message.conversation_id == conversation_id,
+                Message.tenant_id == tenant_id,
+            )
+            .order_by(Message.created_at)
         )
         result = await self.db.execute(stmt)
         return list(result.scalars().all())

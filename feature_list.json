@@ -226,7 +226,7 @@
       "area": "AI 内核",
       "title": "对话后端(DeepSeek 接入 + 会话历史 API)",
       "user_visible_behavior": "用户能与 Agent 实时对话(SSE 流式),对话被持久化,能查看历史会话和消息;LLM 使用 DeepSeek API",
-      "status": "not_started",
+      "status": "passing",
       "plan": "harness/docs/plan-chat-conversation-api.md",
       "verification": [
         "LLM 切换为 DeepSeek:config 默认值 + .env.example 改为 DeepSeek(base_url=https://api.deepseek.com、model=deepseek-chat);graph.py 的 ChatOpenAI 调用不改结构",
@@ -234,8 +234,17 @@
         "pytest tests/test_chat.py 覆盖:流式对话、会话列表、历史消息、跨租户隔离、删除会话",
         "./init.sh 全绿"
       ],
-      "evidence": [],
-      "notes": "DeepSeek 用 OpenAI 兼容格式,graph.py 已用 ChatOpenAI,只改配置。conversation_service 已有 list_for_user/history/append_message 方法,repository 齐,但未暴露为 API 端点——本任务补 API+schema+测试。前置:agents-api-hardening。参考 https://api-docs.deepseek.com/zh-cn/"
+      "evidence": [
+        "./init.sh 全绿:ruff check → All checks passed!;pytest → 112 passed(基线 105 + 新增 7)(2026-07-10)",
+        "LLM 切换 DeepSeek:config.py openai_base_url 默认值→https://api.deepseek.com、openai_model→deepseek-chat(+ 注释说明字段名仍叫 openai_* 因 ChatOpenAI 类);.env.example + .env 同步;graph.py 的 ChatOpenAI 调用结构零改动(DeepSeek 兼容 OpenAI 格式)",
+        "新增会话历史 API(app/api/v1/conversations.py):GET /conversations/(会话列表,按 updated_at desc 排序)、GET /conversations/{id}/messages(历史消息,按 created_at 升序)、DELETE /conversations/{id}(硬删除,204);main.py 注册路由;ruff 自动排序 import",
+        "ConversationService 补 delete 方法(硬删除 + user_id 所有权校验,同租户其他用户无法删别人会话);create_or_get 异常对齐 NotFoundError;append_message 刷新 conv.updated_at(列表排序依据);chat.py 错误映射改 _http_exc(isinstance 模式)",
+        "Conversation model 加 updated_at 字段(server_default=func.now() + onupdate=func.now());新增 Alembic 迁移 a2b3c4d5e6f7(down_revision=1546b57e8c7b);迁移链 alembic upgrade head 验证通过(1546b57e8c7b → a2b3c4d5e6f7);ConversationRead schema 加 updated_at 字段",
+        "pytest tests/test_chat.py -v → 9 passed(原 2 持久化+跨租户拒绝 + 新增 7:会话列表、历史消息 user+assistant 顺序、删除会话+再删 404、删除不存在 404、不存在会话消息空列表、跨租户会话不可见列表+历史空、member delete 403)(2026-07-10)",
+        "conftest casbin 种子补 conversations:delete(owner 角色新增此权限,此前删除功能不存在故种子缺失);多租户隔离:conversations 端点租户过滤在 Repository 层(get_for_tenant/list_for_user),delete 额外校验 user_id 归属(用户私有数据)",
+        "SQLite 测试环境限制:Message 表 FK ondelete=CASCADE 在 SQLite 不生效(默认未开 PRAGMA foreign_keys),删除 conversation 后 message 行残留——生产 Postgres 上 CASCADE 生效;测试断言聚焦 conversation 列表不再出现(核心行为),未强测 message 级联"
+      ],
+      "notes": "实现差异 vs plan:(1) 删除策略选硬删除(plan 推荐方案 A),Conversation/Message 表无 is_deleted,加软删除需改 schema;(2) append_message 显式刷新 conv.updated_at 而非依赖 onupdate(Message 是新对象不触发 Conversation 的 onupdate);(3) conftest 种子补 conversations:delete(此前功能缺失故种子无此项)。LLM 变量名仍叫 openai_*(plan 明确建议不改名,语义为 OpenAI 兼容接口)。手动 SSE 验证未跑(需真实 DeepSeek key + docker),测试用 monkeypatch stream_agent 离线覆盖。"
     },
     {
       "id": "chat-frontend",
@@ -247,13 +256,15 @@
       "plan": "harness/docs/plan-chat-frontend.md",
       "verification": [
         "前端新增 chat 页面:左侧会话列表 + 右侧消息流 + 输入框,选 Agent 发起对话",
-        "SSE 流式对接:解析 POST /chat 的 text/event-stream,实现打字机效果渲染",
-        "前端 endpoints.ts/hooks 补:fetchConversations/fetchMessages/sendChat(stream)/deleteConversation",
+        "SSE 流式对接:解析 POST /chat/stream 的 text/event-stream(data:{delta}\\n\\n / data:[DONE]\\n\\n / data:{error}\\n\\n),实现打字机效果渲染",
+        "前端 endpoints.ts/hooks 补:fetchConversations/fetchMessages/sendChatStream(async generator, fetch+ReadableStream)/deleteConversation",
+        "路由 /chat 注册(ProtectedRoute 内、RequireUserManagement 外,member 可见)+ 导航加「对话」项",
+        "Conversation 类型补 updated_at 字段(对齐后端 chat-conversation-api 新增)",
         "cd frontend && npm run build 通过(tsc + vite)"
       ],
       "evidence": [],
       "depends_on": "chat-conversation-api",
-      "notes": "前端当前零 chat 对接。SSE 在浏览器侧用 fetch + ReadableStream(而非 EventSource,因为要带 Authorization header)。前置:chat-conversation-api。"
+      "notes": "前端当前零 chat 对接(SSE 是全新能力,无现成基建)。SSE 在浏览器侧用 fetch + ReadableStream(而非 EventSource——不支持自定义 header;而非 axios——会一次性 buffer 失去流式),手动带 Authorization header(从 client.ts 的 getStoredToken 取),手动复刻 401→AUTH_EXPIRED_EVENT。前置 chat-conversation-api ✅ 已合入(4 端点就绪:POST /chat/stream、GET/DELETE /conversations/)。"
     },
     {
       "id": "permission-matrix-api",

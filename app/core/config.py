@@ -54,10 +54,13 @@ class Settings(BaseSettings):
     # pycasbin
     casbin_model_path: str = "casbin_model.conf"
 
-    # LLM
+    # LLM — defaults target DeepSeek (OpenAI-compatible endpoint). The fields
+    # are named ``openai_*`` because the code talks to them via langchain's
+    # ``ChatOpenAI`` class, which any OpenAI-compatible API (DeepSeek, etc.)
+    # works with unchanged.
     openai_api_key: str = "sk-replace-me"
-    openai_base_url: str = "https://api.openai.com/v1"
-    openai_model: str = "gpt-4o-mini"
+    openai_base_url: str = "https://api.deepseek.com"
+    openai_model: str = "deepseek-chat"
 
     @model_validator(mode="after")
     def _jwt_secret_not_default(self) -> "Settings":

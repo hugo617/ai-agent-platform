@@ -8,7 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field
 class AgentBase(BaseModel):
     name: str = Field(..., min_length=1, max_length=128)
     system_prompt: str = ""
-    model: str = "gpt-4o-mini"
+    model: str = "deepseek-chat"
 
 
 class AgentCreate(AgentBase):

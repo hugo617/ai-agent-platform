@@ -8,7 +8,7 @@
 - **标准启动路径**: `./init.sh`(装依赖 + ruff + pytest)
 - **标准验证路径**: `./init.sh`(同上,后端快速验证,SQLite 内存库)
 - **完整验证路径**(需 docker): `alembic upgrade head && alembic check` + `cd frontend && npm run build`
-- **当前最高优先级未完成功能**: `chat-conversation-api`(priority 12,方向1 第 2 步:DeepSeek 接入 + 会话历史 API)
+- **当前最高优先级未完成功能**: `chat-frontend`(priority 13,方向1 第 3 步:聊天页面 + SSE 流式对接,前置 chat-conversation-api 已就绪)
 - **当前 blocker**: 无
 
 ## 后续任务规划(2026-07-10 制定,共 7 条,WIP=1 顺序执行)
@@ -16,7 +16,7 @@
 | 顺序 | id | 方向 | 范围 | plan 文档 |
 |------|----|------|------|----------|
 | 1 | `agents-api-hardening` | AI 内核 | Agent CRUD 测试补全 + 异常对齐(纯后端)✅ 已完成 | `harness/docs/plan-agents-api-hardening.md` |
-| 2 | `chat-conversation-api` | AI 内核 | DeepSeek 接入 + 会话历史 API(后端) | `harness/docs/plan-chat-conversation-api.md` |
+| 2 | `chat-conversation-api` | AI 内核 | DeepSeek 接入 + 会话历史 API(后端)✅ 已完成 | `harness/docs/plan-chat-conversation-api.md` |
 | 3 | `chat-frontend` | AI 内核 | 聊天页面 + SSE 流式(前端,依赖 2) | `harness/docs/plan-chat-frontend.md` |
 | 4 | `permission-matrix-api` | 权限 | 权限矩阵聚合端点(后端) | `harness/docs/plan-permission-matrix-api.md` |
 | 5 | `permission-matrix-ui` | 权限 | 可编辑权限矩阵(前端,依赖 4) | `harness/docs/plan-permission-matrix-ui.md` |
@@ -40,6 +40,7 @@
 | validation-error-i18n(422 中文化) | passing | 6 tests |
 | global-rename(全局改名为 agenthub) | passing | grep 0 残留 + init.sh + npm build |
 | agents-api-hardening(Agent API 加固) | passing | 14 tests(权限/隔离/删除/404) |
+| chat-conversation-api(对话后端) | passing | 9 tests + DeepSeek 配置 + 会话历史 API |
 
 > ⚠️ **未纳管的产品内核**:`agents`(CRUD)+ `chat`(SSE 流式 LangGraph)后端完整、前端有 `agents-page.tsx`,但**未进 feature_list、未做端到端验证登记**。这是平台最核心能力,后续二开前建议先收口(补测试 + 登记证据)。
 
@@ -199,6 +200,34 @@
 - **下一步最佳动作**:
   - (a) 合并 feat/agents-api-hardening 到 main + 发 PR;
   - (b) 开始下一个任务 `chat-conversation-api`(priority 12,DeepSeek 接入 + 会话历史 API,本任务是它的前置——现已就绪)
+
+---
+
+### Session 008 — 2026-07-10
+- **本轮目标**: 执行 `chat-conversation-api`(对话后端:DeepSeek 接入 + 会话历史 API)—— 6 步,前置 agents-api-hardening 已合入 main(PR #13)
+- **已完成**(对照 plan §实施步骤 Step 1-6):
+  - Step 1 LLM 切 DeepSeek:config.py openai_base_url/model 默认值→DeepSeek(+ 注释说明字段名保留 openai_*);.env.example + .env 同步;graph.py 零改动
+  - Step 2 Conversation 加 updated_at:model 加字段(server_default + onupdate);新建 Alembic 迁移 a2b3c4d5e6f7;ConversationRead schema + ConversationRepository 排序(updated_at desc)+ MessageRepository 排序(created_at asc);append_message 刷新 conv.updated_at
+  - Step 3 会话历史 API:新建 conversations.py(GET 列表 / GET messages / DELETE 204);ConversationService 补 delete(硬删除 + user_id 所有权校验);main.py 注册路由
+  - Step 4 异常对齐:ConversationService create_or_get/delete 抛 NotFoundError;chat.py 错误映射改 _http_exc(isinstance)
+  - Step 5 测试补全:test_chat.py 2→9 个(+7:会话列表、历史消息、删除+再删 404、删除不存在 404、不存在消息空、跨租户不可见、member delete 403);conftest 种子补 owner conversations:delete
+  - Step 6 总验证:./init.sh → ruff + **112 passed**(105 基线 + 7 新增);alembic upgrade head 迁移链通过
+- **运行过的验证**(全过):
+  - `./init.sh` → ruff `All checks passed!` + **112 passed**(105 + 7)
+  - `pytest tests/test_chat.py -v` → 9 passed
+  - `APP_ENV=testing alembic upgrade head` → 1546b57e8c7b → a2b3c4d5e6f7 迁移成功
+- **已记录证据**: `feature_list.json` 的 `chat-conversation-api.evidence` 字段(8 条,含 DeepSeek 配置 + API 端点 + 迁移 + 测试 + 架构铁律 + SQLite 限制说明)
+- **技术要点**(与 plan 的实现差异):
+  - append_message 显式刷新 conv.updated_at(非依赖 onupdate)——Message 是新对象,不触发 Conversation 的 onupdate
+  - delete 方法加 user_id 所有权校验(会话是用户私有数据,同租户其他用户不能删别人的)
+  - conftest 种子补 conversations:delete(此前功能不存在故种子缺失,owner 角色新增此权限)
+  - SQLite 测试环境限制:Message FK ondelete=CASCADE 在 SQLite 不生效(默认未开 PRAGMA foreign_keys),生产 Postgres 上生效;测试断言聚焦 conversation 列表不再出现
+  - ruff 自动修复 main.py import 排序(加了 conversations 后 import 行触发 I001)
+- **提交记录**: `feat/chat-conversation-api` 分支(待用户决定是否合并到 main)
+- **已知风险**: 无功能风险。手动 SSE 验证未跑(需真实 DeepSeek key + docker),测试用 monkeypatch stream_agent 离线覆盖。迁移链待 CI migrations job 在真实 Postgres 上守门
+- **下一步最佳动作**:
+  - (a) 合并 feat/chat-conversation-api 到 main + 发 PR(迁移需 CI 守门);
+  - (b) 开始下一个任务 `chat-frontend`(priority 13,聊天页面 + SSE 流式对接,前置已就绪)
 
 ---
 
