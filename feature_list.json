@@ -138,6 +138,24 @@
       "notes": "技术方案见 plan 文档(方案 2:type 锚点 + 纯函数 + handler,422 形状不变前端零改)。TDD 5 步实施"
     },
     {
+      "id": "roles-crud",
+      "priority": 8,
+      "area": "权限",
+      "title": "角色管理 CRUD 全栈对齐(前后端 + 权限分配)",
+      "user_visible_behavior": "owner 能在角色页面创建/编辑/删除角色,并给角色分配权限;角色列表显示真实数据而非硬编码",
+      "status": "not_started",
+      "plan": "harness/docs/plan-roles-crud.md",
+      "verification": [
+        "./init.sh 全绿(ruff + pytest,含新增角色权限边界/授权端点测试)",
+        "cd frontend && npm run build 通过",
+        "后端错误映射用异常类型(isinstance),不再字符串匹配(if 'not found' in msg)",
+        "test_rbac_api.py 覆盖:权限边界(member 403)、系统角色保护、权限授权 CRUD、404",
+        "前端角色页接真实数据,能完成角色 CRUD + 权限分配全流程"
+      ],
+      "evidence": [],
+      "notes": "后端 CRUD 已完整(8 端点),本任务主要是:后端异常对齐 + 测试补全 + 前端重写(roles-page.tsx 当前是 122 行硬编码空壳)。实施步骤见 plan 文档(7 步,5 个阶段)"
+    },
+    {
       "id": "global-rename",
       "priority": 10,
       "area": "二开",
