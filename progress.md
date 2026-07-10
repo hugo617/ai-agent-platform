@@ -280,6 +280,25 @@
   - (a) 合并 feat/permission-matrix-api 到 main + 发 PR;
   - (b) 开始下一个任务 `permission-matrix-ui`(priority 15,权限矩阵前端——真实数据 + 可编辑矩阵,本任务是其前置,现已就绪)
 
+### Session 011 — 2026-07-10
+- **本轮目标**: 清理废代码 + 代码质量审查 + PR + CI 守门 + 合并 feat/permission-matrix-api 到 main
+- **已完成**:
+  - 废代码审查(7 改动文件):ruff F-rules(F401/F811/F841/F821)全绿;新符号 `get_catalogue`/`get_matrix`/`PermissionItem`/`PermissionMatrix`/`RoleRead`(import)均有引用(非死代码)→ **无废代码,无需清理改动**
+  - 代码质量审查:`permissions.py`/`permission_service.py` 结构清晰、铁律合规(依赖单向 Controller→Service→Repository;租户过滤在 Repository/查询层 `tenant_id`+`is_deleted=False`;SCD2 当前态为矩阵数据源);两端点 require_permission('roles','read') 守卫一致
+  - 基线验证:`./init.sh` → ruff All checks passed! + **118 passed**
+  - 推送 `feat/permission-matrix-api` → 建 PR #16(base main)
+  - CI 守门:3/3 全绿(Backend pytest+ruff 40s / Frontend typecheck+build+lint 28s / Migrations alembic upgrade on Postgres 44s),无需修复
+  - **squash 合并 PR #16 → main**(commit `b1abb51`),删除远程分支,本地切回 main 并 fast-forward 同步;本地 feature 分支已删
+  - main 上再跑 `./init.sh` 确认 ruff + 118 passed,仓库仍可按标准路径工作
+- **运行过的验证**:
+  - `.venv/bin/ruff check --select F`(7 文件)→ All checks passed!
+  - `./init.sh`(feat/permission-matrix-api 与 main 两次)→ ruff All checks passed! + **118 passed**
+  - CI(PR #16)→ 3 jobs pass
+- **已记录证据**: 无新增(本任务是审查+发版,未改代码;feature_list 的 permission-matrix-api.evidence 不变,已在 Session 010 填好)
+- **提交记录**: PR #16 已 squash 合并到 main,本地 commit `77a6bcc`(squash 后 `b1abb51`)
+- **已知风险**: 无
+- **下一步最佳动作**: 开始下一个 not_started 任务 `permission-matrix-ui`(priority 15,权限矩阵前端——真实数据 + 可编辑矩阵,本任务是其前置,现已合入 main 就绪)
+
 ---
 
 <!--
