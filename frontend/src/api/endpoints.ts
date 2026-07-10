@@ -1,13 +1,15 @@
 import axios from "axios";
-import { api } from "./client";
+import { api, getStoredToken, setStoredToken, AUTH_EXPIRED_EVENT } from "./client";
 import type {
   Agent,
   AgentCreate,
   AgentUpdate,
+  Conversation,
   LoginRequest,
   Member,
   MemberCreate,
   MemberUpdate,
+  Message,
   MeResponse,
   Organization,
   OrganizationCreate,
@@ -300,4 +302,98 @@ export async function fetchSessions(): Promise<SessionRead[]> {
 
 export async function terminateSession(sessionId: string): Promise<void> {
   await api.delete(`/auth/sessions/${sessionId}`);
+}
+
+// ---------- conversations + chat (SSE streaming) ----------
+//
+// `sendChatStream` is the one endpoint that bypasses the axios `api` instance:
+// SSE responses must be consumed frame-by-frame, and axios buffers the whole
+// body (losing the streaming effect). We use a raw `fetch` + ReadableStream
+// instead, manually attaching the bearer token (axios interceptor can't run)
+// and replicating the client's 401 → auth-expired handling.
+
+export async function fetchConversations(): Promise<Conversation[]> {
+  const { data } = await api.get<Conversation[]>("/conversations/");
+  return data;
+}
+
+export async function fetchMessages(conversationId: string): Promise<Message[]> {
+  const { data } = await api.get<Message[]>(
+    `/conversations/${conversationId}/messages`,
+  );
+  return data;
+}
+
+export async function deleteConversation(conversationId: string): Promise<void> {
+  await api.delete(`/conversations/${conversationId}`);
+}
+
+export interface ChatStreamChunk {
+  delta?: string;
+  error?: string;
+}
+
+export interface ChatStreamPayload {
+  agent_id: string;
+  conversation_id?: string;
+  message: string;
+}
+
+/**
+ * Stream a chat reply from `POST /chat/stream` (Server-Sent Events).
+ *
+ * Yields `{ delta }` chunks as the assistant's reply arrives (for a typewriter
+ * effect), `{ error }` if the server reports one mid-stream, then returns when
+ * the `data: [DONE]` sentinel arrives. Pass an AbortSignal to cancel.
+ */
+export async function* sendChatStream(
+  payload: ChatStreamPayload,
+  signal?: AbortSignal,
+): AsyncGenerator<ChatStreamChunk> {
+  const token = getStoredToken();
+  const resp = await fetch("/api/v1/chat/stream", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "text/event-stream",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify(payload),
+    signal,
+  });
+
+  if (!resp.ok) {
+    // Replicate the axios interceptor's 401 handling: a stale token clears
+    // local state and fires the event AuthProvider listens for (→ /login).
+    if (resp.status === 401) {
+      setStoredToken(null);
+      window.dispatchEvent(new CustomEvent(AUTH_EXPIRED_EVENT));
+    }
+    throw new Error(`对话请求失败: ${resp.status}`);
+  }
+  if (!resp.body) throw new Error("浏览器不支持流式响应");
+
+  const reader = resp.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    // SSE frames are separated by a blank line; the last segment may be a
+    // partial frame, so keep it buffered for the next read.
+    const frames = buffer.split("\n\n");
+    buffer = frames.pop() ?? "";
+    for (const frame of frames) {
+      const line = frame.trim();
+      if (!line.startsWith("data:")) continue;
+      const data = line.slice(line.indexOf(":") + 1).trim();
+      if (data === "[DONE]") return;
+      try {
+        yield JSON.parse(data) as ChatStreamChunk;
+      } catch {
+        // Non-JSON frame (e.g. keep-alive comment) — skip.
+      }
+    }
+  }
 }

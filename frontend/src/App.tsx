@@ -8,6 +8,7 @@ import { DashboardLayout } from "@/components/layout/dashboard-layout";
 import { LoginPage } from "@/pages/login-page";
 import { DashboardPage } from "@/pages/dashboard-page";
 import { AgentsPage } from "@/pages/agents-page";
+import { ChatPage } from "@/pages/chat-page";
 import { RolesPage } from "@/pages/roles-page";
 import { PermissionsPage } from "@/pages/permissions-page";
 import { UsersPage } from "@/pages/users-page";
@@ -42,6 +43,7 @@ export default function App() {
               >
                 <Route path="/" element={<DashboardPage />} />
                 <Route path="/agents" element={<AgentsPage />} />
+                <Route path="/chat" element={<ChatPage />} />
 
                 {/* User-management routes also require authorization: a plain
                     member is redirected to "/". The backend still enforces 403

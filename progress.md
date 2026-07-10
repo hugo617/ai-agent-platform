@@ -8,7 +8,7 @@
 - **标准启动路径**: `./init.sh`(装依赖 + ruff + pytest)
 - **标准验证路径**: `./init.sh`(同上,后端快速验证,SQLite 内存库)
 - **完整验证路径**(需 docker): `alembic upgrade head && alembic check` + `cd frontend && npm run build`
-- **当前最高优先级未完成功能**: `chat-frontend`(priority 13,方向1 第 3 步:聊天页面 + SSE 流式对接,前置 chat-conversation-api 已就绪)
+- **当前最高优先级未完成功能**: `permission-matrix-api`(priority 14,方向2:权限矩阵后端聚合查询 + 全量权限项端点)—— `chat-frontend` 已 passing
 - **当前 blocker**: 无
 
 ## 后续任务规划(2026-07-10 制定,共 7 条,WIP=1 顺序执行)
@@ -17,7 +17,7 @@
 |------|----|------|------|----------|
 | 1 | `agents-api-hardening` | AI 内核 | Agent CRUD 测试补全 + 异常对齐(纯后端)✅ 已完成 | `harness/docs/plan-agents-api-hardening.md` |
 | 2 | `chat-conversation-api` | AI 内核 | DeepSeek 接入 + 会话历史 API(后端)✅ 已完成 | `harness/docs/plan-chat-conversation-api.md` |
-| 3 | `chat-frontend` | AI 内核 | 聊天页面 + SSE 流式(前端,依赖 2) | `harness/docs/plan-chat-frontend.md` |
+| 3 | `chat-frontend` | AI 内核 | 聊天页面 + SSE 流式(前端,依赖 2)✅ 已完成 | `harness/docs/plan-chat-frontend.md` |
 | 4 | `permission-matrix-api` | 权限 | 权限矩阵聚合端点(后端) | `harness/docs/plan-permission-matrix-api.md` |
 | 5 | `permission-matrix-ui` | 权限 | 可编辑权限矩阵(前端,依赖 4) | `harness/docs/plan-permission-matrix-ui.md` |
 | 6 | `tenant-org-admin-ui` | 管理控制台 | 租户/组织/成员管理页(前端) | `harness/docs/plan-tenant-org-admin-ui.md` |
@@ -41,8 +41,9 @@
 | global-rename(全局改名为 agenthub) | passing | grep 0 残留 + init.sh + npm build |
 | agents-api-hardening(Agent API 加固) | passing | 14 tests(权限/隔离/删除/404) |
 | chat-conversation-api(对话后端) | passing | 9 tests + DeepSeek 配置 + 会话历史 API |
+| chat-frontend(对话前端) | passing | npm run build 通过 + SSE 打字机 + 会话 CRUD |
 
-> ⚠️ **未纳管的产品内核**:`agents`(CRUD)+ `chat`(SSE 流式 LangGraph)后端完整、前端有 `agents-page.tsx`,但**未进 feature_list、未做端到端验证登记**。这是平台最核心能力,后续二开前建议先收口(补测试 + 登记证据)。
+> ✅ AI 内核(agents + chat)已全部纳管并 passing:agents-api-hardening / chat-conversation-api / chat-frontend 三任务端到端完成。
 
 ## 会话记录
 
@@ -228,6 +229,29 @@
 - **下一步最佳动作**:
   - (a) 合并 feat/chat-conversation-api 到 main + 发 PR(迁移需 CI 守门);
   - (b) 开始下一个任务 `chat-frontend`(priority 13,聊天页面 + SSE 流式对接,前置已就绪)
+
+### Session 009 — 2026-07-10
+- **本轮目标**: 执行 `chat-frontend`(对话前端:聊天页面 + SSE 流式对接)—— 6 步,前置 chat-conversation-api ✅ 已合入 main(PR #14)
+- **已完成**(对照 plan §实施步骤 Step 1-6):
+  - Step 0 基线确认:`./init.sh` → 112 passed(起点干净);切 `feat/chat-frontend` 分支
+  - Step 1 types.ts:Conversation 补 `updated_at`;Message.role 收紧为 `"user"|"assistant"` 联合类型
+  - Step 2 endpoints.ts:加 fetchConversations/fetchMessages/deleteConversation + **sendChatStream(async generator,SSE 技术核心)**:原生 fetch + ReadableStream(非 axios/EventSource),手动带 Authorization(getStoredToken),401 复刻 client.ts 逻辑(setStoredToken(null)+AUTH_EXPIRED_EVENT),帧解析 buffer.split("\n\n")+frames.pop(),支持 AbortSignal
+  - Step 3 queries.ts:qk 加 conversations/messages key;加 useConversations/useMessages(enabled:!!id)/useDeleteConversation(sendChatStream 不走 TanStack Query)
+  - Step 4 新建 chat-page.tsx:左会话列表 + 右消息流 + Agent Select + 输入框;发消息乐观追加 → for await chunk 追加 delta(打字机)→ invalidateQueries;会话切换/新建/删除;自动滚底
+  - Step 5 路由导航:App.tsx /chat(ProtectedRoute 内、RequireUserManagement 外);dashboard-layout 加「对话」项(MessageSquare)
+  - Step 6 验证:npm run build 通过(tsc + vite,0 类型错误);oxlint chat-page 0 警告
+- **运行过的验证**(全过):
+  - `cd frontend && npm run build` → tsc -b + vite build 成功,0 类型错误
+  - `npx oxlint src/pages/chat-page.tsx` → 0 warnings 0 errors
+  - 后端基线不变:ruff All checks passed! + 112 passed(本任务纯前端,无回归)
+- **已记录证据**: `feature_list.json` 的 `chat-frontend.evidence` 字段(8 条)
+- **技术要点**(与 plan 的实现差异):
+  - **探勘修正**:plan Step 2 的 `clearStoredToken()` 不存在,改用 `setStoredToken(null)`(codegraph 确认)
+  - **质量修复**:滚动 useEffect 原依赖 messages 数组(每次渲染新引用),改为 `[messages.length, lastContent]` 派生原语,消除 exhaustive-deps 警告
+  - useMessages 调用顺序:需在 selectedConversationId 的 useState 之后(hooks 引用的 state 必须先声明,初次有顺序 bug 已修)
+- **提交记录**: `feat/chat-frontend` 分支(待合并)
+- **已知风险**: 无功能风险。手动 SSE 实测未跑(需 DeepSeek key + 前后端启动);build(tsc)+ oxlint 已覆盖类型正确性与规范
+- **下一步最佳动作**: 合并 feat/chat-frontend 到 main + 发 PR;之后开始 `permission-matrix-api`(priority 14)
 
 ---
 
