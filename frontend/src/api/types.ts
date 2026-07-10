@@ -140,6 +140,29 @@ export interface RoleCreate {
   sort_order?: number;
 }
 
+export interface RoleUpdate {
+  name?: string;
+  description?: string;
+  sort_order?: number;
+  status?: string;
+}
+
+// role ↔ permission grants (SCD2; aligns with app/schemas/rbac.py)
+export interface RolePermissionGrant {
+  obj: string;
+  act: string;
+}
+
+export interface RolePermissionRead {
+  id: string;
+  role_id: string;
+  permission_id: string;
+  obj: string;
+  act: string;
+  valid_from: string;
+  valid_to: string | null;
+}
+
 export interface Organization {
   id: string;
   tenant_id: string;

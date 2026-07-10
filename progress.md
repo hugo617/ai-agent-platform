@@ -8,7 +8,7 @@
 - **标准启动路径**: `./init.sh`(装依赖 + ruff + pytest)
 - **标准验证路径**: `./init.sh`(同上,后端快速验证,SQLite 内存库)
 - **完整验证路径**(需 docker): `alembic upgrade head && alembic check` + `cd frontend && npm run build`
-- **当前最高优先级未完成功能**: `roles-crud`(角色管理 CRUD 全栈对齐)—— `validation-error-i18n` 已 passing
+- **当前最高优先级未完成功能**: `global-rename`(全局改名,二开第 1 步)—— `roles-crud` 已 passing
 - **当前 blocker**: 无
 
 ## 已 passing 的地基能力(详见 feature_list.json)
@@ -19,6 +19,7 @@
 | auth-logto(Logto OIDC) | passing | 4 tests |
 | rbac-permission(RBAC 多租户) | passing | 29 tests |
 | users-crud(用户管理 CRUD) | passing | 27 tests |
+| roles-crud(角色管理 CRUD 全栈) | passing | 96 tests total(13 rbac_api) |
 | db-migrations(迁移链) | passing | CI migrations job |
 | scd2-history(授权链历史) | passing | 7 tests |
 
@@ -58,6 +59,30 @@
 - **提交记录**: `feat/validation-error-i18n` 分支(本次提交)
 - **已知风险**: 无功能风险。`EmailStr` 格式错误在 Pydantic v2 落到 `value_error` type,会透传英文(plan §6 标注的可选增强,本任务范围外)
 - **下一步最佳动作**: 由用户决定(a)合并 feat/validation-error-i18n 到 main;(b)开始下一个任务 `roles-crud`
+
+### Session 003 — 2026-07-10
+- **本轮目标**: 执行 `roles-crud`(角色管理 CRUD 全栈对齐)—— 7 步 5 阶段,前后端 + 权限分配
+- **已完成**(对照 plan 的 Step 1-7):
+  - Step 0 基线确认:`./init.sh` → 88 passed(起点干净),切 `feat/roles-crud` 分支
+  - Step 1 后端 Service 异常对齐:`rbac_service.py` 6 处裸 `ValueError` 改为 `NotFoundError`/`BizError`(都是 ValueError 子类,现有 except 仍捕获),加 import
+  - Step 2 后端 API 错误映射:`roles.py` 删除 `_bad_request`/`_not_found` + 字符串匹配,改为 `_http_exc`(照抄 users.py 的 isinstance 模式),8 个端点统一 `raise _http_exc(e)`
+  - Step 3 测试补全:`test_rbac_api.py` 从 5 个测试补到 13 个(+8:member 403 ×2、系统角色保护 400、404 映射 ×2、权限授权全生命周期、revoke 非授权 404、缺失角色 404)
+  - Step 4 前端 API 层:`types.ts` 加 `RoleUpdate`/`RolePermissionGrant`/`RolePermissionRead`;`endpoints.ts` 加 `updateRole` + 3 个权限端点
+  - Step 5 前端 hooks:`queries.ts` 加 `useRoles`/`useUpdateRole`/`useDeleteRole`/`useRolePermissions`/`useGrantRolePermission`/`useRevokeRolePermission` + `rolePermissions` key
+  - Step 6 前端页面重写:`roles-page.tsx` 从 122 行硬编码空壳重写为真实数据驱动(列表表格 + 创建/编辑 Dialog + 删除确认 + 权限分配面板),参照 `users-page.tsx` 模式
+  - Step 7 总验证:`./init.sh` → ruff + **96 passed**;`cd frontend && npm run build` → tsc + vite 通过
+- **运行过的验证**(全过):
+  - `./init.sh` → ruff `All checks passed!` + **96 passed**(88 基线 + 8 新增)
+  - `pytest tests/test_rbac_api.py -v` → 13 passed
+  - `cd frontend && npm run build` → tsc + vite build 成功,0 类型错误
+- **已记录证据**: `feature_list.json` 的 `roles-crud.evidence` 字段(8 条,含命令+结果+日期+架构铁律说明)
+- **技术要点**(与 plan 的实现差异):
+  - plan 提「软删除后 code 可复用」,实际 `Role` 表 `UniqueConstraint(tenant_id,code)` 是全表唯一约束(非部分索引),软删除后 code 不可复用——本任务未改 schema(超范围),测试覆盖了列表不出现但不测 code 复用
+  - 前端 `sort_order` 用 `z.number()` + `register valueAsNumber`,而非 plan 骨架的 `z.coerce.number()`(后者推断成 unknown,TS 报错)
+  - 异常对齐利用了 Python 继承:`NotFoundError`/`BizError` 是 `ValueError` 子类,所以 `except ValueError` 仍捕获,现有 4 个测试零改动通过——这是「向后兼容的渐进式重构」
+- **提交记录**: `feat/roles-crud` 分支(本次提交)
+- **已知风险**: 无功能风险。手动验证(浏览器/curl)未单独执行,需完整 docker 环境(Postgres)+ 真实 token;前端 tsc 类型检查 + 后端 pytest 已覆盖类型正确性与 API 行为
+- **下一步最佳动作**: 由用户决定(a)合并 feat/roles-crud 到 main;(b)开始下一个任务 `global-rename`
 
 ---
 <!--

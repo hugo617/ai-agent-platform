@@ -100,3 +100,142 @@ async def test_org_tree_crud(app_client):
     flat_ids = [n["id"] for n in resp.json()]
     assert child["id"] in flat_ids  # reparented
     assert root["id"] not in flat_ids
+
+
+# --------------------------------------------------------------- permission edge
+
+
+@pytest.mark.asyncio
+async def test_member_cannot_create_role(member_client):
+    """member has no roles:create → 403 (guard fires before the body runs)."""
+    resp = await member_client.post(
+        "/api/v1/roles/",
+        json={"name": "Forbidden", "code": "forbidden"},
+        headers=AUTH,
+    )
+    assert resp.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_member_cannot_delete_role(member_client):
+    """member has no roles:delete → 403 (guard fires before lookup)."""
+    resp = await member_client.delete("/api/v1/roles/any-id", headers=AUTH)
+    assert resp.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_system_role_cannot_be_deleted(app_client, db_session, tenant_owner):
+    """System roles are protected from deletion → 400 (BizError)."""
+    from app.models.rbac import Role
+
+    role = Role(
+        tenant_id=tenant_owner["tenant_id"],
+        name="Seeded System",
+        code="seeded_system",
+        is_system=True,
+    )
+    db_session.add(role)
+    await db_session.commit()
+
+    resp = await app_client.delete(f"/api/v1/roles/{role.id}", headers=AUTH)
+    assert resp.status_code == 400
+
+
+# ---------------------------------------------------------------- 404 mapping
+
+
+@pytest.mark.asyncio
+async def test_update_nonexistent_role_returns_404(app_client):
+    """NotFoundError → 404 (not the old string-match 400)."""
+    resp = await app_client.put(
+        "/api/v1/roles/nonexistent-id",
+        json={"name": "Ghost"},
+        headers=AUTH,
+    )
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_delete_nonexistent_role_returns_404(app_client):
+    resp = await app_client.delete("/api/v1/roles/nonexistent-id", headers=AUTH)
+    assert resp.status_code == 404
+
+
+# ----------------------------------------------- role ↔ permission grant CRUD
+
+
+@pytest.mark.asyncio
+async def test_grant_list_revoke_permission(app_client):
+    """Full permission-grant lifecycle on a role: grant → list → revoke."""
+    role = (
+        await app_client.post(
+            "/api/v1/roles/",
+            json={"name": "Grantee", "code": "grantee"},
+            headers=AUTH,
+        )
+    ).json()
+
+    # grant (obj, act)
+    resp = await app_client.post(
+        f"/api/v1/roles/{role['id']}/permissions",
+        json={"obj": "documents", "act": "read"},
+        headers=AUTH,
+    )
+    assert resp.status_code == 201, resp.text
+    grant = resp.json()
+    assert grant["obj"] == "documents"
+    assert grant["act"] == "read"
+
+    # list reflects the grant
+    resp = await app_client.get(
+        f"/api/v1/roles/{role['id']}/permissions", headers=AUTH
+    )
+    assert resp.status_code == 200
+    perms = resp.json()
+    assert any(p["obj"] == "documents" and p["act"] == "read" for p in perms)
+
+    # revoke
+    resp = await app_client.delete(
+        f"/api/v1/roles/{role['id']}/permissions/{grant['permission_id']}",
+        headers=AUTH,
+    )
+    assert resp.status_code == 204
+
+    # list now empty
+    resp = await app_client.get(
+        f"/api/v1/roles/{role['id']}/permissions", headers=AUTH
+    )
+    assert resp.json() == []
+
+
+@pytest.mark.asyncio
+async def test_revoke_non_granted_permission_returns_404(app_client):
+    """Revoking a permission that isn't active → NotFoundError → 404."""
+    role = (
+        await app_client.post(
+            "/api/v1/roles/",
+            json={"name": "Empty", "code": "empty_role"},
+            headers=AUTH,
+        )
+    ).json()
+    resp = await app_client.delete(
+        f"/api/v1/roles/{role['id']}/permissions/nonexistent-perm",
+        headers=AUTH,
+    )
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_permission_endpoints_404_for_missing_role(app_client):
+    """Grant/list on a role_id that doesn't exist → 404."""
+    resp = await app_client.get(
+        "/api/v1/roles/nonexistent-role/permissions", headers=AUTH
+    )
+    assert resp.status_code == 404
+
+    resp = await app_client.post(
+        "/api/v1/roles/nonexistent-role/permissions",
+        json={"obj": "x", "act": "read"},
+        headers=AUTH,
+    )
+    assert resp.status_code == 404
