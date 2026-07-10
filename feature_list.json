@@ -126,7 +126,7 @@
       "area": "后端",
       "title": "Pydantic 422 校验错误中文化",
       "user_visible_behavior": "前端表单输入不合法时(如用户名太短),返回的校验提示是中文友好文案,而非 Pydantic 内置英文",
-      "status": "not_started",
+      "status": "passing",
       "plan": "harness/docs/validation-error-i18n-plan.md",
       "verification": [
         "pytest tests/test_validation_errors.py -v(新增测试:纯函数单测 + 端到端集成)",
@@ -134,8 +134,15 @@
         "pytest -q 全量回归全绿(现有断言英文 msg 的用例已更新)",
         "./init.sh 全绿(ruff + pytest)"
       ],
-      "evidence": [],
-      "notes": "技术方案见 plan 文档(方案 2:type 锚点 + 纯函数 + handler,422 形状不变前端零改)。TDD 5 步实施"
+      "evidence": [
+        "./init.sh 全绿:ruff check → All checks passed!;pytest → 88 passed(基线 82 + 新增 6)(2026-07-10)",
+        "pytest tests/test_validation_errors.py -v → 6 passed(5 纯函数单测 + 1 端到端集成)(2026-07-10)",
+        "集成测试 test_create_user_short_username_returns_chinese_msg:POST /api/v1/users/ username='a'(1字符 < min_length=2)→ 422,detail[0].msg 含「用户名」与「2」,响应形状 {detail:[{loc,msg,type,...}]} 不变",
+        "全量回归无破坏:无现有用例断言英文 422 msg,88 passed 全绿;前端 client.ts、所有 app/schemas/*.py、app/api/v1/users.py 零改动",
+        "Step 5 手测(curl)未单独执行——需完整 docker 环境(Postgres+Logto)+真实 token,属 init.sh 职责外的完整验证路径;端到端集成测试已通过 ASGITransport 以更强断言覆盖(422+中文msg+shape)",
+        "TDD 轨迹:Step1 RED(ModuleNotFoundError)→ Step2 GREEN(5 纯函数单测)→ Step3 handler+集成(6 passed)→ Step4 全量(88 passed)"
+      ],
+      "notes": "技术方案见 plan 文档(方案 2:type 锚点 + 纯函数 + handler,422 形状不变前端零改)。实现细节:用 _SafeDict(string.Formatter.vformat)统一处理 ctx 占位缺失,永不抛 KeyError。映射表对齐 app/schemas/user.py 字段。TDD 5 步已实施"
     },
     {
       "id": "roles-crud",
