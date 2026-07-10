@@ -8,14 +8,14 @@
 - **标准启动路径**: `./init.sh`(装依赖 + ruff + pytest)
 - **标准验证路径**: `./init.sh`(同上,后端快速验证,SQLite 内存库)
 - **完整验证路径**(需 docker): `alembic upgrade head && alembic check` + `cd frontend && npm run build`
-- **当前最高优先级未完成功能**: `agents-api-hardening`(priority 11,方向1:Agent API 加固)—— 占位项已替换为 7 条规划任务
+- **当前最高优先级未完成功能**: `chat-conversation-api`(priority 12,方向1 第 2 步:DeepSeek 接入 + 会话历史 API)
 - **当前 blocker**: 无
 
 ## 后续任务规划(2026-07-10 制定,共 7 条,WIP=1 顺序执行)
 
 | 顺序 | id | 方向 | 范围 | plan 文档 |
 |------|----|------|------|----------|
-| 1 | `agents-api-hardening` | AI 内核 | Agent CRUD 测试补全 + 异常对齐(纯后端) | `harness/docs/plan-agents-api-hardening.md` |
+| 1 | `agents-api-hardening` | AI 内核 | Agent CRUD 测试补全 + 异常对齐(纯后端)✅ 已完成 | `harness/docs/plan-agents-api-hardening.md` |
 | 2 | `chat-conversation-api` | AI 内核 | DeepSeek 接入 + 会话历史 API(后端) | `harness/docs/plan-chat-conversation-api.md` |
 | 3 | `chat-frontend` | AI 内核 | 聊天页面 + SSE 流式(前端,依赖 2) | `harness/docs/plan-chat-frontend.md` |
 | 4 | `permission-matrix-api` | 权限 | 权限矩阵聚合端点(后端) | `harness/docs/plan-permission-matrix-api.md` |
@@ -39,6 +39,7 @@
 | scd2-history(授权链历史) | passing | 7 tests |
 | validation-error-i18n(422 中文化) | passing | 6 tests |
 | global-rename(全局改名为 agenthub) | passing | grep 0 残留 + init.sh + npm build |
+| agents-api-hardening(Agent API 加固) | passing | 14 tests(权限/隔离/删除/404) |
 
 > ⚠️ **未纳管的产品内核**:`agents`(CRUD)+ `chat`(SSE 流式 LangGraph)后端完整、前端有 `agents-page.tsx`,但**未进 feature_list、未做端到端验证登记**。这是平台最核心能力,后续二开前建议先收口(补测试 + 登记证据)。
 
@@ -176,6 +177,31 @@
   - (b) 开始执行 priority 11 `agents-api-hardening`(plan 已就绪,新会话可直接开干)
 
 ---
+### Session 007 — 2026-07-10
+- **本轮目标**: 执行 `agents-api-hardening`(Agent API 加固:测试补全 + 异常对齐)—— 纯后端,4 步,参照 roles-crud 后端对齐模式
+- **已完成**(对照 plan §实施步骤 Step 1-4):
+  - Step 0 基线确认:`./init.sh` → 96 passed(起点干净);切 `feat/agents-api-hardening` 分支
+  - Step 1 Service 异常对齐:`agent_service.py` `_owned` 抛裸 `ValueError` 改为 `NotFoundError`(import from errors.py)
+  - Step 2 API 错误映射:`agents.py` 加 `_http_exc`(照抄 users.py:29-37 模式)+ import `NotFoundError`;三处 get/update/delete 的 `except ValueError → 一律 404` 改为 `raise _http_exc(e) from e`(按异常类型分流 404/400)
+  - Step 3 测试补全:`test_agents_api.py` 从 5 个补到 14 个(+9:member read 200、member create/update/delete 403 ×3、admin delete 403、跨租户 agent 404 + 列表不含、删除后列表不出现、update/delete nonexistent 404 ×2)
+  - Step 4 总验证:`./init.sh` → ruff + **105 passed**(96 基线 + 9 新增,无回归)
+- **运行过的验证**(全过):
+  - 异常对齐后回归:`pytest tests/test_agents_api.py -v` → 原 5 happy-path 全过(证明 NotFoundError 向后兼容)
+  - `./init.sh` → ruff `All checks passed!` + **105 passed**(96 + 9)
+  - `pytest tests/test_agents_api.py -v` → 14 passed
+- **已记录证据**: `feature_list.json` 的 `agents-api-hardening.evidence` 字段(6 条,含向后兼容证明 + 多租户隔离验证 + 架构铁律说明)
+- **技术要点**(与 plan 的实现差异):
+  - Agent 表无 `is_deleted` 字段(与 User/Role 不同),删除是硬删除(BaseRepository.delete 用 db.delete)——但行为正确(删除后 get 404 + 列表不出现),test_deleted_agent_absent_from_list 覆盖
+  - 跨租户隔离测试:test_cross_tenant_agent_not_visible 用 db_session 在 `tnt-other-cross-wall` 租户直接建 agent(绕过 API),owner client 读取 → 404 + 列表不含;验证租户过滤在 Repository 层(get_for_tenant/list_for_tenant)
+  - admin 权限边界:casbin 种子中 admin 有 agents:create/update 但无 agents:delete,补了 test_admin_cannot_delete_agent 覆盖
+- **提交记录**: `feat/agents-api-hardening` 分支(待用户决定是否合并到 main)
+- **已知风险**: 无功能风险。手动验证(curl)未单独执行,纯后端改动 pytest 已覆盖 API 行为 + 类型正确性
+- **下一步最佳动作**:
+  - (a) 合并 feat/agents-api-hardening 到 main + 发 PR;
+  - (b) 开始下一个任务 `chat-conversation-api`(priority 12,DeepSeek 接入 + 会话历史 API,本任务是它的前置——现已就绪)
+
+---
+
 <!--
 会话记录模板(复制使用):
 ### Session 0XX — YYYY-MM-DD

@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.agent import Agent
 from app.repositories.agent import AgentRepository
 from app.schemas.agent import AgentCreate, AgentRead, AgentUpdate
+from app.services.errors import NotFoundError
 from app.services.permission_service import permission_service
 
 
@@ -18,7 +19,7 @@ class AgentService:
     async def _owned(self, agent_id: str, tenant_id: str) -> Agent:
         agent = await self.repo.get_for_tenant(agent_id, tenant_id)
         if agent is None:
-            raise ValueError(f"agent {agent_id} not found in tenant {tenant_id}")
+            raise NotFoundError(f"agent {agent_id} not found in tenant {tenant_id}")
         return agent
 
     async def list(self, user_id: str, tenant_id: str) -> list[AgentRead]:
