@@ -415,6 +415,32 @@
 - **已知风险**: 无
 - **下一步最佳动作**: 执行 `real-chat-llm-config`(priority 18,真实对话 + LLM 配置管理 + 修 3 bug,现为最高优先级 not_started 任务)
 
+### Session 017 — 2026-07-11
+- **本轮目标**: 执行 `real-chat-llm-config`(真实对话 + LLM 配置管理 + 修 3 bug)—— 全栈,6 阶段 20 步,用户已配真实 DeepSeek key 到 .env
+- **已完成**(对照 plan §实施步骤 Step 1-20):
+  - 第一阶段(加密+数据模型):crypto.py(Fernet encrypt/decrypt/mask_api_key);config.py field_encryption_key(model_validator 生产拦截);LlmConfig model + 迁移 b3c4d5e6f7a8;schema + repository;conftest 注册 model
+  - 第二阶段(Service+API):llm_config_service(get_effective 三级 fallback);settings.py(5 端点);deps.py require_super_admin();permission_service DEFAULT_OWNER/ADMIN_PERMS + conftest casbin seed 加 settings:manage
+  - 第三阶段(修 Bug1):graph.py stream_agent/build_agent 解耦全局 settings,改 api_key/base_url/model 必传参数;chat.py 调 get_effective 解析配置 + model = agent.model ∈ available_models ? agent.model : default_model
+  - 第四阶段(测试):test_llm_config.py(12 测试:crypto/平台租户 CRUD/fallback/掩码/跨租户/权限);test_chat.py 更新(_mock_chat mock get_effective + 新增 test_agent_model_is_passed_to_stream_agent 验证 Bug1)
+  - 第五阶段(前端):types/endpoints/queries 补 LLM 配置层;settings-page.tsx(平台级 super_admin + 租户级 canManageUsers 两 Card,API key Eye 切换掩码,available_models 标签编辑器);agents-page.tsx 删硬编码 MODELS 改 useEffectiveModels;App.tsx + NAV_ITEMS 注册 /settings
+  - 第六阶段(真实验证):**DeepSeek key 下 SSE 流式对话端到端真实跑通** —— '1+1'→'2'、'2+3'→'5'、自我介绍流式;[DONE] 正常;会话持久化
+  - **运行时 bug 修复**(真实跑通暴露,离线 mock 未覆盖):① graph.py `create_react_agent(prompt=...)` 在 langgraph 0.2.61 不存在 → 改 `messages_modifier=SystemMessage`;② 输入从裸 list 改 dict `{'messages':[...]}`(否则 INVALID_GRAPH_NODE_RETURN_VALUE)
+- **运行过的验证**(全过):
+  - `./init.sh` → ruff All checks passed! + **131 passed**(118 基线 + 13 新增)
+  - `cd frontend && npm run build` → tsc + vite 0 类型错误;oxlint 7 文件 0 warning
+  - `alembic upgrade head`(真实 Postgres)→ a2b3c4d5e6f7 → b3c4d5e6f7a8 迁移成功
+  - **真实 SSE 对话**(curl + 真实 DeepSeek key)→ 流式输出 + [DONE] + 持久化;deepseek-chat 与 deepseek-reasoner 两个 agent 均按配置 model 工作
+- **已记录证据**: `feature_list.json` 的 `real-chat-llm-config.evidence` 字段(8 条,含真实端到端验证 + 运行时 bug 修复 + 三级 fallback 验证)
+- **技术要点**(与 plan 的实现差异):
+  - **运行时 bug 是最大发现**:plan 未预见 langgraph 0.2.61 的 create_react_agent API 与 plan 参考版本不同(prompt 参数不存在 + 输入需 dict)。这是「真实跑通」vs「离线 mock」的价值 —— 三个前置任务的 evidence 都注明「手动 SSE 未跑」,真实一跑就暴露
+  - 权限策略用方案 A:单 /settings 页 + 两 Card 页内分层(平台级 me.platform_role==='super_admin'、租户级 canManageUsers),路由 RequireUserManagement
+  - 平台级端点用独立的 require_super_admin()(非 settings:manage),因为平台配置跨租户,owner/admin 不应能改
+  - config.py 改 validator 名 _jwt_secret_not_default → _secrets_not_default(同时校验 jwt + field_encryption_key)
+  - main.py import settings API 模块用别名 `settings as settings_router`(与 config 的 settings 对象同名冲突)
+- **提交记录**: `feat/real-chat-llm-config` 分支(待审查 + PR + 合并)
+- **已知风险**: 无功能风险。真实 DeepSeek key 已验证可用;前端手动浏览器验证未跑(需前端 dev server),build(tsc)+ oxlint 已覆盖类型正确性;后端真实 SSE 已用 curl 端到端验证
+- **下一步最佳动作**: 清理废代码 + 代码质量审查 + PR + CI 守门 + 合并 feat/real-chat-llm-config 到 main
+
 ---
 
 <!--

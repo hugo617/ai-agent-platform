@@ -21,6 +21,9 @@ from app.api.v1 import (
     tenants,
     users,
 )
+from app.api.v1 import (
+    settings as settings_router,
+)
 from app.core.config import settings
 from app.core.validation_errors import localize_message
 
@@ -64,6 +67,7 @@ def create_app() -> FastAPI:
     app.include_router(roles.router, prefix=prefix)
     app.include_router(organizations.router, prefix=prefix)
     app.include_router(permissions.router, prefix=prefix)
+    app.include_router(settings_router.router, prefix=prefix)
     app.include_router(chat.router, prefix=prefix)
     app.include_router(conversations.router, prefix=prefix)
 

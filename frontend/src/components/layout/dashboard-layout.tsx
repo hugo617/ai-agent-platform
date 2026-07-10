@@ -7,6 +7,7 @@ import {
   LogOut,
   Menu,
   MessageSquare,
+  Settings,
   Shield,
   ShieldCheck,
   Users,
@@ -37,6 +38,7 @@ const NAV_ITEMS: NavItem[] = [
   { to: "/users", label: "用户", icon: Users, needsUserManagement: true },
   { to: "/roles", label: "角色", icon: Shield, needsUserManagement: true },
   { to: "/permissions", label: "权限矩阵", icon: ShieldCheck, needsUserManagement: true },
+  { to: "/settings", label: "设置", icon: Settings, needsUserManagement: true },
 ];
 
 export function DashboardLayout() {

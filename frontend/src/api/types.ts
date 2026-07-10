@@ -214,6 +214,26 @@ export interface OrganizationUpdate {
   sort_order?: number;
 }
 
+// ============= LLM settings =============
+
+export interface LlmConfig {
+  id: string;
+  tenant_id: string | null; // null = platform-wide
+  api_key_hint: string; // masked, e.g. "sk-***wxyz"
+  base_url: string;
+  default_model: string;
+  available_models: string[];
+  is_active: boolean;
+  updated_at: string;
+}
+
+export interface LlmConfigUpdate {
+  api_key?: string; // omit/empty = keep stored key
+  base_url?: string;
+  default_model?: string;
+  available_models?: string[];
+}
+
 // ============= auth (local login + sessions) =============
 
 export interface LoginRequest {
