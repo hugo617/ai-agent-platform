@@ -14,6 +14,7 @@ import type {
   Organization,
   OrganizationCreate,
   OrganizationTreeNode,
+  PermissionMatrix,
   Role,
   RoleCreate,
   RoleLabel,
@@ -265,6 +266,15 @@ export async function revokeRolePermission(
   permissionId: string
 ): Promise<void> {
   await api.delete(`/roles/${id}/permissions/${permissionId}`);
+}
+
+// ---------- permissions ----------
+// Only the matrix endpoint is wired up: it already carries the permission
+// catalogue (its `permissions` array), so a separate catalogue call would be
+// dead code. Add fetchPermissionCatalogue here if a future view needs it.
+export async function fetchPermissionMatrix(): Promise<PermissionMatrix> {
+  const { data } = await api.get<PermissionMatrix>("/permissions/matrix");
+  return data;
 }
 
 // ---------- organizations ----------

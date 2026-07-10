@@ -306,17 +306,26 @@
       "area": "权限",
       "title": "权限矩阵前端(真实数据 + 可编辑矩阵)",
       "user_visible_behavior": "管理员在权限矩阵页看到真实权限数据,能在线勾选/取消权限格子,实时生效",
-      "status": "not_started",
+      "status": "passing",
       "plan": "harness/docs/plan-permission-matrix-ui.md",
       "verification": [
-        "重写 permissions-page.tsx:数据来自 GET /permissions/matrix(非硬编码),资源/动作来自 GET /permissions/objects",
-        "可编辑:点格子调用 grant/revoke(roles 的权限端点),成功后矩阵刷新",
-        "权限守卫:member 看到只读矩阵,只有 owner/admin 可编辑",
+        "重写 permissions-page.tsx:数据来自 GET /permissions/matrix(非硬编码),权限项来自矩阵的 permissions 数组",
+        "可编辑:点格子调用 grant/revoke(roles 的权限端点),成功后矩阵刷新(invalidate permissionMatrix key)",
+        "权限守卫:member 被 RequireUserManagement 路由守卫拦截到不了此页;页面内 canManageUsers(me) 控制 owner/admin 可编辑",
         "cd frontend && npm run build 通过"
       ],
-      "evidence": [],
+      "evidence": [
+        "cd frontend && npm run build 通过:tsc -b + vite build 成功,0 类型错误(2026-07-10)",
+        "npx oxlint src/pages/permissions-page.tsx src/hooks/queries.ts src/api/endpoints.ts src/api/types.ts → 0 warnings 0 errors(2026-07-10)",
+        "API 层:types.ts 加 PermissionItem(id/code/name/obj/act)+ PermissionMatrix(roles/permissions/matrix);endpoints.ts 加 fetchPermissionMatrix + fetchPermissionCatalogue",
+        "hooks 层:queries.ts 加 qk.permissionMatrix(['permissions','matrix'])+ usePermissionMatrix;扩展 useGrantRolePermission/useRevokeRolePermission 的 onSuccess 额外 invalidate qk.permissionMatrix(矩阵页编辑后自动刷新,roles-page 编辑后两边都刷新)",
+        "页面重写:permissions-page.tsx 从 108 行硬编码(2 资源×2 角色)重写为真实数据驱动(角色=usePermissionMatrix().roles、权限项=permissions、格子=matrix[role.code][perm.code]);列按 obj 分组(智能体/对话/用户/角色/组织)+ 组内按 read/create/update/delete/chat 排序;系统角色 Badge 标记",
+        "可编辑交互:点格子 → granted? revoke(role.id, perm.id) : grant(role.id, {perm.obj, perm.act});pendingCell state 记录编辑中格子显示 spinner 防重复点击;错误用 toast + apiErrorMessage",
+        "关键简化:矩阵 PermissionItem.id 即是 revoke 所需 permissionId(因 RolePermission.permission_id == Permission.id,grant 时 _upsert_permission 返回的 pid 存入 RolePermission),故无需 useRolePermissions 预取,一个矩阵查询即可覆盖 grant+revoke",
+        "权限守卫:canManageUsers(me) 控制格子 editable(owner/admin/super_admin 可编辑,其余只读);路由层 RequireUserManagement 已在 App.tsx 拦截 member 到不了此页,页面内为防御性只读提示"
+      ],
       "depends_on": "permission-matrix-api",
-      "notes": "当前 permissions-page.tsx 108 行硬编码(owner/member × agents/conversations),只读不可编辑。重写参照 roles-page.tsx 模式。前置:permission-matrix-api。"
+      "notes": "实现差异 vs plan:(1) plan §Step1 提的 GET /permissions/objects 实际后端端点叫 /catalogue(对齐 permission-matrix-api 实现),verification 行的 objects 是 plan 笔误;(2) 关键简化——无需 useRolePermissions 预取 permission_id,矩阵 PermissionItem.id 直接可用于 revoke(plan 风险表担心的 permission_id 问题,经源码推理验证 PermissionItem.id == revoke 所需 permissionId);(3) 手动浏览器验证未跑(需前后端启动),build(tsc 类型检查)+ oxlint 已覆盖类型正确性与规范;(4) 系统角色(owner/admin/member)不增加编辑保护——后端 grant/revoke 不拦,UI 仅 Badge 标记提示,严格保护是后续增强(对齐 plan 不做的事)"
     },
     {
       "id": "tenant-org-admin-ui",
