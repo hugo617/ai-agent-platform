@@ -17,7 +17,7 @@ clashes with the project's dual-DB rule (see AGENTS.md).
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, String, Text, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, String, Text, func, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.types import JSON
@@ -44,11 +44,17 @@ class LlmConfig(Base):
     api_key_hint: Mapped[str] = mapped_column(String(64), nullable=False, default="")
     base_url: Mapped[str] = mapped_column(String(255), nullable=False)
     default_model: Mapped[str] = mapped_column(String(64), nullable=False)
-    # JSONB on Postgres, plain JSON on SQLite (tests).
+    # JSONB on Postgres, plain JSON on SQLite (tests). server_default must match
+    # the migration so ``alembic check`` sees no drift.
     available_models: Mapped[list[str]] = mapped_column(
-        JSONB().with_variant(JSON, "sqlite"), nullable=False, default=list
+        JSONB().with_variant(JSON, "sqlite"),
+        nullable=False,
+        default=list,
+        server_default=text("'[]'"),
     )
-    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    is_active: Mapped[bool] = mapped_column(
+        Boolean, default=True, nullable=False, server_default=text("true")
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
