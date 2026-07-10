@@ -41,6 +41,7 @@ def _make_casbin(owner_user: str, tenant_id: str):
         ("agents", "read"), ("agents", "create"), ("agents", "update"),
         ("agents", "delete"), ("conversations", "read"),
         ("conversations", "create"), ("conversations", "chat"),
+        ("conversations", "delete"),
         ("users", "read"), ("users", "create"), ("users", "update"), ("users", "delete"),
         ("roles", "read"), ("roles", "create"), ("roles", "update"), ("roles", "delete"),
         ("organizations", "read"), ("organizations", "create"),

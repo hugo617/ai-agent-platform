@@ -21,8 +21,16 @@ from app.repositories.agent import AgentRepository
 from app.repositories.conversation import MessageRepository
 from app.schemas.conversation import ChatRequest
 from app.services.conversation_service import ConversationService
+from app.services.errors import NotFoundError
 
 router = APIRouter(prefix="/chat", tags=["chat"])
+
+
+def _http_exc(e: ValueError) -> HTTPException:
+    """Map a service ValueError to the right HTTP status by exception type."""
+    if isinstance(e, NotFoundError):
+        return HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+    return HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
 async def _load_agent(db: AsyncSession, tenant_id: str, agent_id: str) -> Agent:
@@ -57,7 +65,7 @@ async def chat_stream(
             conversation_id=payload.conversation_id,
         )
     except ValueError as e:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e)) from e
+        raise _http_exc(e) from e
 
     # Persist the user's message immediately.
     await conv_service.append_message(conv.tenant_id, conv.id, "user", payload.message)

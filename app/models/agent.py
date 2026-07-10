@@ -24,7 +24,7 @@ class Agent(Base):
     )
     name: Mapped[str] = mapped_column(String(128), nullable=False)
     system_prompt: Mapped[str] = mapped_column(Text, default="")
-    model: Mapped[str] = mapped_column(String(64), default="gpt-4o-mini")
+    model: Mapped[str] = mapped_column(String(64), default="deepseek-chat")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
@@ -49,6 +49,9 @@ class Conversation(Base):
     title: Mapped[str | None] = mapped_column(String(255), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
 
     def __repr__(self) -> str:

@@ -18,6 +18,7 @@ class ConversationRead(BaseModel):
     user_id: str
     title: str | None = None
     created_at: datetime
+    updated_at: datetime
 
 
 class MessageRead(BaseModel):

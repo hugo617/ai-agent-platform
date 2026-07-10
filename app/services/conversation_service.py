@@ -6,6 +6,7 @@ from app.models.agent import Conversation
 from app.models.message import Message
 from app.repositories.conversation import ConversationRepository, MessageRepository
 from app.schemas.conversation import ConversationRead, MessageRead
+from app.services.errors import NotFoundError
 from app.services.permission_service import permission_service
 
 
@@ -31,7 +32,7 @@ class ConversationService:
         if conversation_id:
             conv = await self.conversations.get_for_tenant(conversation_id, tenant_id)
             if conv is None:
-                raise ValueError(
+                raise NotFoundError(
                     f"conversation {conversation_id} not found in tenant {tenant_id}"
                 )
             return conv
@@ -70,5 +71,28 @@ class ConversationService:
             content=content,
         )
         await self.messages.add(msg)
+        # Bump the conversation's updated_at so the list ordering reflects
+        # recent activity. Refresh from the loaded conversation (if available
+        # in this session) to keep onupdate in sync.
+        conv = await self.conversations.get_for_tenant(conversation_id, tenant_id)
+        if conv is not None:
+            conv.updated_at = msg.created_at
         await self.db.commit()
         return msg
+
+    async def delete(
+        self, user_id: str, tenant_id: str, conversation_id: str
+    ) -> None:
+        """Hard-delete a conversation owned by the caller.
+
+        Conversations are private per-user: even within the same tenant, only
+        the owner may delete theirs. (Messages cascade via the FK ondelete.)
+        """
+        await permission_service.require(user_id, tenant_id, self.OBJECT, "delete")
+        conv = await self.conversations.get_for_tenant(conversation_id, tenant_id)
+        if conv is None or conv.user_id != user_id:
+            raise NotFoundError(
+                f"conversation {conversation_id} not found in tenant {tenant_id}"
+            )
+        await self.conversations.delete(conv)
+        await self.db.commit()
