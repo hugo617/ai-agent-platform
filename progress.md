@@ -84,6 +84,25 @@
 - **已知风险**: 无功能风险。手动验证(浏览器/curl)未单独执行,需完整 docker 环境(Postgres)+ 真实 token;前端 tsc 类型检查 + 后端 pytest 已覆盖类型正确性与 API 行为
 - **下一步最佳动作**: 由用户决定(a)合并 feat/roles-crud 到 main;(b)开始下一个任务 `global-rename`
 
+### Session 004 — 2026-07-10
+- **本轮目标**: 清理废代码 + 代码质量审查 + PR + CI 守门 + 合并 feat/roles-crud 到 main
+- **已完成**:
+  - 废代码审查(7 改动文件):ruff F401/F811/F841/F821 全绿;`_require_role` 被 3 处调用(非死代码)、`_http_exc` 被 6 处调用、前端 `noUnusedLocals`/`noUnusedParameters` 严格开启且 build 通过 → **无废代码,无需清理改动**
+  - 代码质量审查:`roles.py`/`rbac_service.py`/`roles-page.tsx` 结构清晰、铁律合规(分层/租户过滤/软删除);`organizations.py` 仍用旧 `_bad_request`/`_not_found` 但属既有代码,**不在本分支范围,未越界改**
+  - 基线验证:`ruff check` 全绿 + **96 passed**
+  - 推送 `feat/roles-crud` → 建 PR #11(base main)
+  - CI 守门:3/3 全绿(Backend pytest+ruff / Frontend typecheck+build+lint / Migrations alembic upgrade on Postgres),无需修复
+  - **squash 合并 PR #11 → main**(commit `e458cbe`),删除远程分支,本地切回 main 并同步
+- **运行过的验证**:
+  - `ruff check app/api/v1/roles.py app/services/rbac_service.py tests/test_rbac_api.py` → All checks passed!
+  - `pytest -ra --strict-markers` → **96 passed**
+  - `cd frontend && npx oxlint src/` → 0 errors,4 warnings(均为既有的 button/badge/auth-context/toast,非本分支)
+  - CI(PR #11)→ 3 jobs pass
+- **已记录证据**: 无新增(本任务是审查+发版,未改代码;feature_list 的 roles-crud.evidence 不变)
+- **提交记录**: PR #11 已 squash 合并到 main,无本地新增 commit
+- **已知风险**: 无
+- **下一步最佳动作**: 开始下一个 not_started 任务 `global-rename`(二开第 1 步),或由用户指定
+
 ---
 <!--
 会话记录模板(复制使用):
