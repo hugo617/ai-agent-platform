@@ -5,11 +5,13 @@ from contextlib import asynccontextmanager
 
 import jwt
 from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 
 from app.api.v1 import agents, auth, chat, members, organizations, roles, tenants, users
 from app.core.config import settings
+from app.core.validation_errors import localize_message
 
 
 @asynccontextmanager
@@ -137,6 +139,17 @@ def create_app() -> FastAPI:
     @app.exception_handler(PermissionError)
     async def _permission_handler(request: Request, exc: PermissionError) -> JSONResponse:
         return JSONResponse(status_code=403, content={"detail": str(exc)})
+
+    @app.exception_handler(RequestValidationError)
+    async def _validation_handler(
+        request: Request, exc: RequestValidationError
+    ) -> JSONResponse:
+        # Replace each English Pydantic msg with a localized one, keeping the
+        # native 422 shape ({detail:[{loc,msg,type,...}]}) so the frontend and
+        # OpenAPI/Apifox contract are unchanged. Unknown types fall through to
+        # the original msg via localize_message's passthrough.
+        localized = [{**e, "msg": localize_message(e)} for e in exc.errors()]
+        return JSONResponse(status_code=422, content={"detail": localized})
 
     return app
 
