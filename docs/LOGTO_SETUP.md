@@ -102,7 +102,7 @@ docker compose up -d logto
 2. **创建 API Resource**（让后端能验 token）：
    - 进 API → API Resources → Create
    - API identifier 填 `http://localhost:8000/api`（和 `.env` 的 `LOGTO_AUDIENCE` 一致）
-   - 名称随意，如 `ai-agent-platform-api`
+   - 名称随意，如 `agenthub-api`
 
 3. **创建应用**（让前端能登录）：
    - Applications → Create → Traditional Web

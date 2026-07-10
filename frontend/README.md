@@ -1,6 +1,6 @@
-# ai-agent-platform · 前端
+# agenthub · 前端
 
-权限管理 SaaS 的前端控制台 —— Vite + React + TypeScript + shadcn/ui。
+智能体云平台的前端控制台 —— Vite + React + TypeScript + shadcn/ui。
 
 ## 技术栈
 

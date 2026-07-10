@@ -31,7 +31,7 @@ def create_app() -> FastAPI:
     app = FastAPI(
         title=settings.app_name,
         version="0.1.0",
-        description="Multi-tenant AI Agent SaaS platform",
+        description="多租户智能体云平台(FastAPI + pycasbin + LangGraph)",
         lifespan=lifespan,
     )
 

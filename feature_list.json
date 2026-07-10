@@ -176,8 +176,8 @@
       "priority": 10,
       "area": "二开",
       "title": "全局改名为新产品(二开第 1 步)",
-      "user_visible_behavior": "脚手架的所有 'ai-agent-platform' / '权限控制台' 标识改为新产品名",
-      "status": "not_started",
+      "user_visible_behavior": "脚手架的所有 'ai-agent-platform' / '权限控制台' 标识改为新产品名 agenthub / 智能体云平台",
+      "status": "passing",
       "plan": "harness/docs/plan-global-rename.md",
       "verification": [
         "grep -rn 'ai-agent-platform\\|权限控制台' --include='*.py' --include='*.ts' --include='*.tsx' --include='*.html' --include='*.md' --include='*.toml' --include='*.env*' . (排除 .venv/.git/node_modules/.codegraph/.zcode) → 无残留旧名",
@@ -185,8 +185,17 @@
         "前端 cd frontend && npm run build 通过(标题/页头正确渲染)",
         "docs/openapi/openapi.json 的 title 已更新(重导出产物,不手改)"
       ],
-      "evidence": [],
-      "notes": "实施步骤见 plan 文档(6 步 + 可选 aap 批次,已核实精确文件:行号,2026-07-10)"
+      "evidence": [
+        "产品名定为 agenthub(英文标识)/ 智能体云平台(中文显示名)(2026-07-10)",
+        "Step 1 APP_NAME 核心:.env.example APP_NAME=agenthub;app/core/config.py app_name 默认值 agenthub(.env:3 此前已被改为 agenthub)",
+        "Step 2 产品描述:app/main.py description 改为「多租户智能体云平台(FastAPI + pycasbin + LangGraph)」;pyproject.toml name=agenthub + description 中文化",
+        "Step 3 前端标题:frontend/index.html title→「智能体云平台 · agenthub」;dashboard-layout.tsx 页头→「智能体云平台」;login-page.tsx→「登录智能体云平台」(3 处硬编码全改,含二开清单遗漏的登录页)",
+        "Step 4 文档:README.md/NOTICE/frontend README.md 首行改 agenthub;casbin_model.conf 注释改 agenthub;LOGTO_SETUP.md:105 示例改 agenthub-api;项目指南 02-配置/01-改造清单/01-环境准备 的产品标识同步。保留项:cd ai-agent-platform/项目文件夹名说明/目录树根节点(指文件夹名)、LOGTO_SETUP.md:78,86 的 ai-agent-platform_default(docker 按文件夹名生成的网络名,plan 明确要求保留)",
+        "Step 5 OpenAPI 重导出:APP_ENV=testing .venv/bin/python create_app().openapi() → docs/openapi/openapi.json title=agenthub, description 中文化(ensure_ascii=False 单行格式与原文件一致,非手改)",
+        "Step 6 总验证全过:./init.sh → ruff All checks passed! + 96 passed;cd frontend && npm run build → tsc -b + vite build 成功 0 类型错误;grep 代码/配置层 0 残留(ai-agent-platform + 权限控制台 均无);dist/index.html title 已刷新为「智能体云平台 · agenthub」",
+        "脏分支处理:发现本地 feat/global-rename 分支(fafd13d)从旧分叉点拉出,会回滚 validation-error-i18n 和 roles-crud 两个已 passing 功能(删 validation_errors.py/test_validation_errors.py/砍 test_rbac_api.py 139 行/roles-page.tsx 587 行),已 git branch -D 强删,基于最新 main 重建 feat/global-rename-fresh 重做"
+      ],
+      "notes": "aap 缩写(docker 容器名/POSTGRES_USER/CI 环境变量)按 plan 风险表建议未动——仅基础设施配置,用户不可见,且改 aap 需同步 DATABASE_URL 用户名否则连不上库。项目文件夹名仍为 ai-agent-platform,未改(不影响运行)。实现完全对齐 plan 6 步。"
     },
     {
       "id": "custom-business-module",

@@ -20,7 +20,7 @@ class Settings(BaseSettings):
     )
 
     # Application
-    app_name: str = "ai-agent-platform"
+    app_name: str = "agenthub"
     app_env: str = "development"
     app_debug: bool = True
     api_v1_prefix: str = "/api/v1"

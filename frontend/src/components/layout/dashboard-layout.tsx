@@ -61,7 +61,7 @@ export function DashboardLayout() {
       >
         <div className="flex h-16 items-center gap-2 border-b px-6">
           <Shield className="h-6 w-6 text-primary" />
-          <span className="text-lg font-semibold">权限控制台</span>
+          <span className="text-lg font-semibold">智能体云平台</span>
         </div>
         <nav className="flex flex-col gap-1 p-4">
           {NAV_ITEMS.filter(
