@@ -12,20 +12,26 @@ import {
   createTenant,
   createUser,
   deleteAgent,
+  deleteRole,
   deleteUser,
   fetchAgents,
   fetchMembers,
   fetchOrganizationTree,
   fetchRoleLabels,
+  fetchRolePermissions,
+  fetchRoles,
   fetchSessions,
   fetchTenants,
   fetchUserStatistics,
   fetchUsers,
+  grantRolePermission,
   removeMember,
   resetUserPassword,
+  revokeRolePermission,
   terminateSession,
   updateAgent,
   updateMember,
+  updateRole,
   updateUser,
 } from "@/api/endpoints";
 import type {
@@ -35,6 +41,8 @@ import type {
   MemberUpdate,
   OrganizationCreate,
   RoleCreate,
+  RolePermissionGrant,
+  RoleUpdate,
   UserFilters,
   UserFormData,
   UserStatus,
@@ -53,6 +61,7 @@ export const qk = {
   userStats: ["users", "statistics"] as const,
   roles: ["roles"] as const,
   roleLabels: ["roles", "labels"] as const,
+  rolePermissions: (id: string) => ["roles", id, "permissions"] as const,
   orgTree: ["organizations", "tree"] as const,
   sessions: ["auth", "sessions"] as const,
 };
@@ -186,9 +195,11 @@ export function useResetUserPassword() {
   });
 }
 
-// ---------- roles ----------
-// useRoleLabels powers the user-form role dropdown. useCreateRole + the full
-// role-management UI are scaffolded for a future Roles page.
+// ---------- roles (full CRUD + permission grants) ----------
+export function useRoles() {
+  return useQuery({ queryKey: qk.roles, queryFn: fetchRoles });
+}
+
 export function useRoleLabels() {
   return useQuery({ queryKey: qk.roleLabels, queryFn: fetchRoleLabels });
 }
@@ -198,6 +209,62 @@ export function useCreateRole() {
   return useMutation({
     mutationFn: (payload: RoleCreate) => createRole(payload),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["roles"] }),
+  });
+}
+
+export function useUpdateRole() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, payload }: { id: string; payload: RoleUpdate }) =>
+      updateRole(id, payload),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["roles"] }),
+  });
+}
+
+export function useDeleteRole() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => deleteRole(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["roles"] }),
+  });
+}
+
+// role ↔ permission grants
+export function useRolePermissions(roleId: string | null) {
+  return useQuery({
+    queryKey: qk.rolePermissions(roleId ?? ""),
+    queryFn: () => fetchRolePermissions(roleId as string),
+    enabled: !!roleId,
+  });
+}
+
+export function useGrantRolePermission() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      roleId,
+      payload,
+    }: {
+      roleId: string;
+      payload: RolePermissionGrant;
+    }) => grantRolePermission(roleId, payload),
+    onSuccess: (_data, { roleId }) =>
+      qc.invalidateQueries({ queryKey: qk.rolePermissions(roleId) }),
+  });
+}
+
+export function useRevokeRolePermission() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      roleId,
+      permissionId,
+    }: {
+      roleId: string;
+      permissionId: string;
+    }) => revokeRolePermission(roleId, permissionId),
+    onSuccess: (_data, { roleId }) =>
+      qc.invalidateQueries({ queryKey: qk.rolePermissions(roleId) }),
   });
 }
 

@@ -18,17 +18,21 @@ from app.schemas.rbac import (
     RoleRead,
     RoleUpdate,
 )
+from app.services.errors import NotFoundError
 from app.services.rbac_service import RbacService
 
 router = APIRouter(prefix="/roles", tags=["roles"])
 
 
-def _bad_request(e: ValueError) -> HTTPException:
+def _http_exc(e: ValueError) -> HTTPException:
+    """Map a service ValueError to the right HTTP status by exception type.
+
+    Uses the exception type (not a substring match on the message) so the
+    error text can be freely localized without breaking the 404/400 routing.
+    """
+    if isinstance(e, NotFoundError):
+        return HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
     return HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
-
-
-def _not_found(e: ValueError) -> HTTPException:
-    return HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
 
 
 @router.get(
@@ -70,7 +74,7 @@ async def create_role(
     try:
         return await RbacService(db).create(user.user_id, user.tenant_id, payload)
     except ValueError as e:
-        raise _bad_request(e) from e
+        raise _http_exc(e) from e
 
 
 @router.put(
@@ -89,10 +93,7 @@ async def update_role(
             user.user_id, user.tenant_id, role_id, payload
         )
     except ValueError as e:
-        msg = str(e)
-        if "not found" in msg:
-            raise _not_found(e) from e
-        raise _bad_request(e) from e
+        raise _http_exc(e) from e
 
 
 @router.delete(
@@ -108,10 +109,7 @@ async def delete_role(
     try:
         await RbacService(db).delete(user.user_id, user.tenant_id, role_id)
     except ValueError as e:
-        msg = str(e)
-        if "not found" in msg:
-            raise _not_found(e) from e
-        raise _bad_request(e) from e
+        raise _http_exc(e) from e
 
 
 # ----- role ↔ permission grants (SCD2 history source; resync casbin) -----
@@ -133,7 +131,7 @@ async def list_role_permissions(
             user.user_id, user.tenant_id, role_id
         )
     except ValueError as e:
-        raise _not_found(e) from e
+        raise _http_exc(e) from e
 
 
 @router.post(
@@ -154,10 +152,7 @@ async def grant_role_permission(
             user.user_id, user.tenant_id, role_id, payload
         )
     except ValueError as e:
-        msg = str(e)
-        if "not found" in msg:
-            raise _not_found(e) from e
-        raise _bad_request(e) from e
+        raise _http_exc(e) from e
 
 
 @router.delete(
@@ -177,7 +172,4 @@ async def revoke_role_permission(
             user.user_id, user.tenant_id, role_id, permission_id
         )
     except ValueError as e:
-        msg = str(e)
-        if "not found" in msg or "not currently granted" in msg:
-            raise _not_found(e) from e
-        raise _bad_request(e) from e
+        raise _http_exc(e) from e

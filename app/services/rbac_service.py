@@ -24,6 +24,7 @@ from app.schemas.rbac import (
     RoleRead,
     RoleUpdate,
 )
+from app.services.errors import BizError, NotFoundError
 from app.services.logging_service import LoggingService
 from app.services.permission_service import permission_service
 
@@ -64,7 +65,7 @@ class RbacService:
             await self.roles.add(role)
         except IntegrityError as e:
             await self.db.rollback()
-            raise ValueError("role code or name already exists in this tenant") from e
+            raise BizError("role code or name already exists in this tenant") from e
 
         await self.logs.record(
             action="role.create",
@@ -84,7 +85,7 @@ class RbacService:
         await permission_service.require(actor_id, tenant_id, self.OBJECT, "update")
         role = await self.roles.get_for_tenant(tenant_id, role_id)
         if role is None:
-            raise ValueError(f"role {role_id} not found")
+            raise NotFoundError(f"role {role_id} not found")
         for field in ("name", "description", "sort_order", "status"):
             v = getattr(payload, field)
             if v is not None:
@@ -106,9 +107,9 @@ class RbacService:
         await permission_service.require(actor_id, tenant_id, self.OBJECT, "delete")
         role = await self.roles.get_for_tenant(tenant_id, role_id)
         if role is None:
-            raise ValueError(f"role {role_id} not found")
+            raise NotFoundError(f"role {role_id} not found")
         if role.is_system:
-            raise ValueError("system roles cannot be deleted")
+            raise BizError("system roles cannot be deleted")
         role.is_deleted = True
         role.deleted_at = datetime.utcnow()
         await self.logs.record(
@@ -128,7 +129,7 @@ class RbacService:
     async def _require_role(self, tenant_id: str, role_id: str) -> Role:
         role = await self.roles.get_for_tenant(tenant_id, role_id)
         if role is None:
-            raise ValueError(f"role {role_id} not found")
+            raise NotFoundError(f"role {role_id} not found")
         return role
 
     async def list_permissions(
@@ -216,7 +217,7 @@ class RbacService:
         )
         removed = await self.role_perms.revoke(role.id, permission_id, tenant_id)
         if not removed:
-            raise ValueError("permission is not currently granted to this role")
+            raise NotFoundError("permission is not currently granted to this role")
         await permission_service.sync_role_permissions_to_casbin(
             self.db, role.id, tenant_id
         )
