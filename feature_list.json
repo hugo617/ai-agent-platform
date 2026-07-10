@@ -1,0 +1,188 @@
+{
+  "project": "ai-agent-platform",
+  "description": "多租户 AI 智能体 SaaS 平台脚手架(FastAPI + React + pycasbin + LangGraph)",
+  "last_updated": "2026-07-10",
+  "harness_version": "stage1-clean-state",
+  "rules": {
+    "single_active_feature": true,
+    "passing_requires_evidence": true,
+    "do_not_skip_verification": true,
+    "wip_limit": 1,
+    "standard_verify_command": "./init.sh",
+    "standard_start_command": "RUN_START_COMMAND=1 ./init.sh"
+  },
+  "status_legend": {
+    "not_started": "还没开始",
+    "in_progress": "当前唯一进行中(同时只能一个,WIP=1)",
+    "blocked": "因已记录阻塞无法推进",
+    "passing": "验证通过且证据已记录(不可逆)"
+  },
+  "features": [
+    {
+      "id": "auth-local",
+      "priority": 1,
+      "area": "认证",
+      "title": "本地密码登录(bcrypt + HS256 JWT)",
+      "user_visible_behavior": "用户能用邮箱+密码登录,拿到本地签发的 JWT,访问受保护接口",
+      "status": "passing",
+      "verification": [
+        "pytest tests/test_auth_local.py -v",
+        "覆盖:登录成功、密码错、账号禁用、token 签发与解析、会话管理"
+      ],
+      "evidence": [
+        "pytest tests/test_auth_local.py → 8 passed(2026-07-10)",
+        "CI backend job: pytest -ra --strict-markers 全绿"
+      ],
+      "notes": "详见 项目指南/02-后端架构/05-认证体系.md"
+    },
+    {
+      "id": "auth-logto",
+      "priority": 2,
+      "area": "认证",
+      "title": "Logto OIDC token 验证(RS256)",
+      "user_visible_behavior": "前端持有 Logto 签发的 token,能访问后端受保护接口",
+      "status": "passing",
+      "verification": [
+        "pytest tests/test_auth.py -v",
+        "覆盖:RS256 token 验证管线、双轨 token 统一过 get_current_user"
+      ],
+      "evidence": [
+        "pytest tests/test_auth.py → 4 passed(2026-07-10)",
+        "CI backend job: pytest -ra --strict-markers 全绿"
+      ],
+      "notes": "与 auth-local 共用同一条 get_current_user 管线"
+    },
+    {
+      "id": "rbac-permission",
+      "priority": 3,
+      "area": "权限",
+      "title": "RBAC 多租户权限模型(pycasbin)",
+      "user_visible_behavior": "不同角色(owner/admin/member)能做的操作不同,跨租户数据隔离",
+      "status": "passing",
+      "verification": [
+        "pytest tests/test_permission.py tests/test_permission_service.py tests/test_rbac_api.py tests/test_user_permissions.py -v",
+        "覆盖:casbin 策略、角色权限矩阵、跨租户隔离、平台级超管"
+      ],
+      "evidence": [
+        "pytest 上述 4 文件 → 7+4+5+13 = 29 passed(2026-07-10)",
+        "CI backend job: pytest -ra --strict-markers 全绿"
+      ],
+      "notes": "详见 项目指南/02-后端架构/06-权限模型RBAC.md"
+    },
+    {
+      "id": "users-crud",
+      "priority": 4,
+      "area": "用户管理",
+      "title": "用户管理 CRUD(全链路)",
+      "user_visible_behavior": "owner/admin 能创建、查询、修改、删除本租户内的用户",
+      "status": "passing",
+      "verification": [
+        "pytest tests/test_users_crud.py tests/test_users_api.py -v",
+        "覆盖:CRUD 各操作、权限边界(成员不能管用户、admin 不能删)、软删除、多租户隔离"
+      ],
+      "evidence": [
+        "pytest 上述 2 文件 → 21+6 = 27 passed(2026-07-10)",
+        "CI backend job: pytest -ra --strict-markers 全绿"
+      ],
+      "notes": "全链路走读见 项目指南/04-二开脚手架/04-实战走读-用户管理CRUD.md"
+    },
+    {
+      "id": "db-migrations",
+      "priority": 5,
+      "area": "数据库",
+      "title": "数据库迁移链(Alembic,Postgres)",
+      "user_visible_behavior": "(内部)从空库 alembic upgrade head 能建出完整 schema,无 model/migration 漂移",
+      "status": "passing",
+      "verification": [
+        "CI migrations job:在真实 Postgres 16 上 alembic upgrade head + alembic check",
+        "本地(需 docker):docker-compose up -d && alembic upgrade head && alembic check"
+      ],
+      "evidence": [
+        "CI migrations job 全绿(2026-07-10 最近 commit)",
+        "覆盖所有迁移版本,含 R9 JSONB 修复"
+      ],
+      "notes": "本地 init.sh 不跑此项(需真实 Postgres);详见 项目指南/02-后端架构/03-数据库与ORM.md"
+    },
+    {
+      "id": "scd2-history",
+      "priority": 6,
+      "area": "审计",
+      "title": "授权链 SCD2 历史维度(valid_from/valid_to)",
+      "user_visible_behavior": "(内部)权限变更留痕,支持任意时间点还原授权状态",
+      "status": "passing",
+      "verification": [
+        "pytest tests/test_scd2_history.py -v",
+        "覆盖:SCD2 时间区间切片、历史还原"
+      ],
+      "evidence": [
+        "pytest tests/test_scd2_history.py → 7 passed(2026-07-10)",
+        "CI backend job: pytest -ra --strict-markers 全绿"
+      ],
+      "notes": "SCD2 是按需项不是标配;见 docs/auth-history-scd2-plan.md"
+    },
+    {
+      "id": "validation-error-i18n",
+      "priority": 7,
+      "area": "后端",
+      "title": "Pydantic 422 校验错误中文化",
+      "user_visible_behavior": "前端表单输入不合法时(如用户名太短),返回的校验提示是中文友好文案,而非 Pydantic 内置英文",
+      "status": "not_started",
+      "plan": "harness/docs/validation-error-i18n-plan.md",
+      "verification": [
+        "pytest tests/test_validation_errors.py -v(新增测试:纯函数单测 + 端到端集成)",
+        "POST /api/v1/users body username='ab' → 422,detail[0].msg 含「用户名」「3」",
+        "pytest -q 全量回归全绿(现有断言英文 msg 的用例已更新)",
+        "./init.sh 全绿(ruff + pytest)"
+      ],
+      "evidence": [],
+      "notes": "技术方案见 plan 文档(方案 2:type 锚点 + 纯函数 + handler,422 形状不变前端零改)。TDD 5 步实施"
+    },
+    {
+      "id": "roles-crud",
+      "priority": 8,
+      "area": "权限",
+      "title": "角色管理 CRUD 全栈对齐(前后端 + 权限分配)",
+      "user_visible_behavior": "owner 能在角色页面创建/编辑/删除角色,并给角色分配权限;角色列表显示真实数据而非硬编码",
+      "status": "not_started",
+      "plan": "harness/docs/plan-roles-crud.md",
+      "verification": [
+        "./init.sh 全绿(ruff + pytest,含新增角色权限边界/授权端点测试)",
+        "cd frontend && npm run build 通过",
+        "后端错误映射用异常类型(isinstance),不再字符串匹配(if 'not found' in msg)",
+        "test_rbac_api.py 覆盖:权限边界(member 403)、系统角色保护、权限授权 CRUD、404",
+        "前端角色页接真实数据,能完成角色 CRUD + 权限分配全流程"
+      ],
+      "evidence": [],
+      "notes": "后端 CRUD 已完整(8 端点),本任务主要是:后端异常对齐 + 测试补全 + 前端重写(roles-page.tsx 当前是 122 行硬编码空壳)。实施步骤见 plan 文档(7 步,5 个阶段)"
+    },
+    {
+      "id": "global-rename",
+      "priority": 10,
+      "area": "二开",
+      "title": "全局改名为新产品(二开第 1 步)",
+      "user_visible_behavior": "脚手架的所有 'ai-agent-platform' / '权限控制台' 标识改为新产品名",
+      "status": "not_started",
+      "plan": "harness/docs/plan-global-rename.md",
+      "verification": [
+        "grep -rn 'ai-agent-platform\\|权限控制台' --include='*.py' --include='*.ts' --include='*.tsx' --include='*.html' --include='*.md' --include='*.toml' --include='*.env*' . (排除 .venv/.git/node_modules/.codegraph/.zcode) → 无残留旧名",
+        "./init.sh 全绿(ruff + pytest)",
+        "前端 cd frontend && npm run build 通过(标题/页头正确渲染)",
+        "docs/openapi/openapi.json 的 title 已更新(重导出产物,不手改)"
+      ],
+      "evidence": [],
+      "notes": "实施步骤见 plan 文档(6 步 + 可选 aap 批次,已核实精确文件:行号,2026-07-10)"
+    },
+    {
+      "id": "custom-business-module",
+      "priority": 11,
+      "area": "二开",
+      "title": "新增第一个业务模块(占位示例)",
+      "user_visible_behavior": "(占位)在地基上新增一个完整业务模块——需你定义具体产品需求后再启用",
+      "status": "not_started",
+      "plan": null,
+      "verification": [],
+      "evidence": [],
+      "notes": "⚠️ 占位示例,非真实任务。等你确定产品方向和具体模块后,替换 id/title/verification 并写 plan 文档(harness/docs/plan-<id>.md),或删掉本条。参考:新增后端模块看 项目指南/04-二开脚手架/02;前端看 03"
+    }
+  ]
+}
