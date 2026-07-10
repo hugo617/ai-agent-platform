@@ -8,8 +8,6 @@
 本模块是纯逻辑,不依赖 FastAPI,便于单测。
 """
 
-from string import Formatter
-
 # 错误 type → 中文模板。
 # {field} 取自 loc 末段(经 _FIELD_LABELS 翻译);
 # 其余占位(如 {min_length})取自 err["ctx"]。
@@ -46,7 +44,7 @@ class _SafeDict(dict):
     slot instead of raising KeyError.
     """
 
-    def __missing__(self, key):  # noqa: D401 - simple fallback
+    def __missing__(self, key: str) -> str:
         return ""
 
 
@@ -62,10 +60,9 @@ def localize_message(err: dict) -> str:
     if tmpl is None:
         return err.get("msg") or "参数校验失败"  # 兜底透传
     # 合并 field 与 ctx;_SafeDict 让缺失占位渲染为空串,永不抛 KeyError。
-    fmt_map = _SafeDict()
-    fmt_map.update(ctx)
+    fmt_map = _SafeDict(ctx)
     fmt_map["field"] = field
-    return Formatter().vformat(tmpl, (), fmt_map)
+    return tmpl.format_map(fmt_map)
 
 
 def _field_label(loc: tuple) -> str:
