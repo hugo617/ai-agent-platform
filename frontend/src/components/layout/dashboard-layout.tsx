@@ -5,6 +5,7 @@ import {
   LayoutDashboard,
   LogOut,
   Menu,
+  MessageSquare,
   Shield,
   ShieldCheck,
   Users,
@@ -28,6 +29,7 @@ interface NavItem {
 const NAV_ITEMS: NavItem[] = [
   { to: "/", label: "概览", icon: LayoutDashboard },
   { to: "/agents", label: "智能体", icon: Bot },
+  { to: "/chat", label: "对话", icon: MessageSquare },
   { to: "/users", label: "用户", icon: Users, needsUserManagement: true },
   { to: "/roles", label: "角色", icon: Shield, needsUserManagement: true },
   { to: "/permissions", label: "权限矩阵", icon: ShieldCheck, needsUserManagement: true },

@@ -12,10 +12,13 @@ import {
   createTenant,
   createUser,
   deleteAgent,
+  deleteConversation,
   deleteRole,
   deleteUser,
   fetchAgents,
+  fetchConversations,
   fetchMembers,
+  fetchMessages,
   fetchOrganizationTree,
   fetchRoleLabels,
   fetchRolePermissions,
@@ -64,6 +67,9 @@ export const qk = {
   rolePermissions: (id: string) => ["roles", id, "permissions"] as const,
   orgTree: ["organizations", "tree"] as const,
   sessions: ["auth", "sessions"] as const,
+  conversations: ["conversations"] as const,
+  messages: (conversationId: string) =>
+    ["conversations", conversationId, "messages"] as const,
 };
 
 // ---------- tenants ----------
@@ -298,5 +304,29 @@ export function useTerminateSession() {
   return useMutation({
     mutationFn: (sessionId: string) => terminateSession(sessionId),
     onSuccess: () => qc.invalidateQueries({ queryKey: qk.sessions }),
+  });
+}
+
+// ---------- conversations (chat history; streaming is NOT a query) ----------
+// sendChatStream is an async generator consumed imperatively in chat-page.tsx
+// (streaming deltas don't fit useMutation's one-shot success semantics), so
+// there is no useChatStream hook here by design.
+export function useConversations() {
+  return useQuery({ queryKey: qk.conversations, queryFn: fetchConversations });
+}
+
+export function useMessages(conversationId: string | null) {
+  return useQuery({
+    queryKey: qk.messages(conversationId ?? ""),
+    queryFn: () => fetchMessages(conversationId as string),
+    enabled: !!conversationId,
+  });
+}
+
+export function useDeleteConversation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (conversationId: string) => deleteConversation(conversationId),
+    onSuccess: () => qc.invalidateQueries({ queryKey: qk.conversations }),
   });
 }

@@ -252,7 +252,7 @@
       "area": "AI 内核",
       "title": "对话前端(聊天页面 + SSE 流式对接)",
       "user_visible_behavior": "用户在聊天页面选择 Agent、实时对话(打字机效果)、查看历史会话与消息",
-      "status": "not_started",
+      "status": "passing",
       "plan": "harness/docs/plan-chat-frontend.md",
       "verification": [
         "前端新增 chat 页面:左侧会话列表 + 右侧消息流 + 输入框,选 Agent 发起对话",
@@ -262,7 +262,16 @@
         "Conversation 类型补 updated_at 字段(对齐后端 chat-conversation-api 新增)",
         "cd frontend && npm run build 通过(tsc + vite)"
       ],
-      "evidence": [],
+      "evidence": [
+        "cd frontend && npm run build 通过:tsc -b + vite build 成功,0 类型错误(2026-07-10)",
+        "npx oxlint src/pages/chat-page.tsx → 0 warnings 0 errors;全仓库 4 warnings 均为既有的 only-export-components(button/badge/auth-context/toast),非本任务(2026-07-10)",
+        "SSE 实现:sendChatStream 为 async generator,用原生 fetch + ReadableStream(非 axios/EventSource);手动带 Authorization(getStoredToken);401 复刻 client.ts 逻辑 setStoredToken(null)+AUTH_EXPIRED_EVENT;帧解析 buffer.split('\\n\\n')+frames.pop() 留半帧;支持 AbortSignal 中途取消",
+        "types.ts:Conversation 补 updated_at;Message.role 收紧为 'user'|'assistant' 联合类型(对齐后端 MessageRead)",
+        "路由 /chat 在 App.tsx 注册于 ProtectedRoute 内、RequireUserManagement 外(与 /agents 同级,member 可见);dashboard-layout NAV_ITEMS 加「对话」项(MessageSquare 图标,不带 needsUserManagement)",
+        "质量修复:chat-page 滚动 useEffect 原依赖 messages 数组(每次渲染新引用),改为依赖 [messages.length, lastContent] 派生原语,消除 exhaustive-deps 警告",
+        "探勘修正:plan Step 2 写的 clearStoredToken() 实际不存在,改用 client.ts 真实导出 setStoredToken(null)",
+        "后端零改动:本任务纯前端;ruff + pytest 112 passed 基线不变(无回归)"
+      ],
       "depends_on": "chat-conversation-api",
       "notes": "前端当前零 chat 对接(SSE 是全新能力,无现成基建)。SSE 在浏览器侧用 fetch + ReadableStream(而非 EventSource——不支持自定义 header;而非 axios——会一次性 buffer 失去流式),手动带 Authorization header(从 client.ts 的 getStoredToken 取),手动复刻 401→AUTH_EXPIRED_EVENT。前置 chat-conversation-api ✅ 已合入(4 端点就绪:POST /chat/stream、GET/DELETE /conversations/)。"
     },
