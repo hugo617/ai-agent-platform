@@ -63,3 +63,30 @@ class RolePermissionRead(BaseModel):
     act: str
     valid_from: datetime
     valid_to: datetime | None = None
+
+
+# ----- permission catalogue + aggregated matrix (read-only views) -----
+
+
+class PermissionItem(BaseModel):
+    """A single permission catalogue entry (one ``<obj>:<act>`` unit)."""
+
+    model_config = ConfigDict(from_attributes=True)
+    id: str
+    code: str  # "<obj>:<act>"
+    name: str
+    obj: str  # resource part parsed from code
+    act: str  # action part parsed from code
+
+
+class PermissionMatrix(BaseModel):
+    """Aggregated role × permission matrix for a tenant.
+
+    ``matrix[role_code][permission_code]`` is True when the role currently holds
+    that permission (SCD2 current state), False otherwise. Drives the
+    permission-matrix UI; never written through this endpoint.
+    """
+
+    roles: list[RoleRead]  # all tenant roles
+    permissions: list[PermissionItem]  # all tenant permission items
+    matrix: dict[str, dict[str, bool]]  # {role_code: {permission_code: granted}}
