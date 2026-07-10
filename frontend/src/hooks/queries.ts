@@ -20,6 +20,7 @@ import {
   fetchMembers,
   fetchMessages,
   fetchOrganizationTree,
+  fetchPermissionMatrix,
   fetchRoleLabels,
   fetchRolePermissions,
   fetchRoles,
@@ -65,6 +66,7 @@ export const qk = {
   roles: ["roles"] as const,
   roleLabels: ["roles", "labels"] as const,
   rolePermissions: (id: string) => ["roles", id, "permissions"] as const,
+  permissionMatrix: ["permissions", "matrix"] as const,
   orgTree: ["organizations", "tree"] as const,
   sessions: ["auth", "sessions"] as const,
   conversations: ["conversations"] as const,
@@ -244,6 +246,14 @@ export function useRolePermissions(roleId: string | null) {
   });
 }
 
+// aggregated role × permission matrix (drives the permissions page)
+export function usePermissionMatrix() {
+  return useQuery({
+    queryKey: qk.permissionMatrix,
+    queryFn: fetchPermissionMatrix,
+  });
+}
+
 export function useGrantRolePermission() {
   const qc = useQueryClient();
   return useMutation({
@@ -254,8 +264,10 @@ export function useGrantRolePermission() {
       roleId: string;
       payload: RolePermissionGrant;
     }) => grantRolePermission(roleId, payload),
-    onSuccess: (_data, { roleId }) =>
-      qc.invalidateQueries({ queryKey: qk.rolePermissions(roleId) }),
+    onSuccess: (_data, { roleId }) => {
+      qc.invalidateQueries({ queryKey: qk.rolePermissions(roleId) });
+      qc.invalidateQueries({ queryKey: qk.permissionMatrix });
+    },
   });
 }
 
@@ -269,8 +281,10 @@ export function useRevokeRolePermission() {
       roleId: string;
       permissionId: string;
     }) => revokeRolePermission(roleId, permissionId),
-    onSuccess: (_data, { roleId }) =>
-      qc.invalidateQueries({ queryKey: qk.rolePermissions(roleId) }),
+    onSuccess: (_data, { roleId }) => {
+      qc.invalidateQueries({ queryKey: qk.rolePermissions(roleId) });
+      qc.invalidateQueries({ queryKey: qk.permissionMatrix });
+    },
   });
 }
 

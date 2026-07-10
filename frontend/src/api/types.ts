@@ -163,6 +163,23 @@ export interface RolePermissionRead {
   valid_to: string | null;
 }
 
+// permission catalogue + aggregated matrix (read-only views; aligns with
+// app/schemas/rbac.py PermissionItem / PermissionMatrix)
+export interface PermissionItem {
+  id: string;
+  code: string; // "<obj>:<act>"
+  name: string;
+  obj: string;
+  act: string;
+}
+
+export interface PermissionMatrix {
+  roles: Role[];
+  permissions: PermissionItem[];
+  // [role.code][permission.code] → granted (SCD2 current state)
+  matrix: Record<string, Record<string, boolean>>;
+}
+
 export interface Organization {
   id: string;
   tenant_id: string;

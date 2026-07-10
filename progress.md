@@ -8,7 +8,7 @@
 - **标准启动路径**: `./init.sh`(装依赖 + ruff + pytest)
 - **标准验证路径**: `./init.sh`(同上,后端快速验证,SQLite 内存库)
 - **完整验证路径**(需 docker): `alembic upgrade head && alembic check` + `cd frontend && npm run build`
-- **当前最高优先级未完成功能**: `permission-matrix-ui`(priority 15,方向2:权限矩阵前端——真实数据 + 可编辑矩阵,依赖已就绪的 permission-matrix-api)—— `permission-matrix-api` 已 passing
+- **当前最高优先级未完成功能**: `tenant-org-admin-ui`(priority 16,方向3:租户/组织/成员管理前端——后端端点齐全,纯前端补管理页)—— `permission-matrix-ui` 已 passing
 - **当前 blocker**: 无
 
 ## 后续任务规划(2026-07-10 制定,共 7 条,WIP=1 顺序执行)
@@ -19,7 +19,7 @@
 | 2 | `chat-conversation-api` | AI 内核 | DeepSeek 接入 + 会话历史 API(后端)✅ 已完成 | `harness/docs/plan-chat-conversation-api.md` |
 | 3 | `chat-frontend` | AI 内核 | 聊天页面 + SSE 流式(前端,依赖 2)✅ 已完成 | `harness/docs/plan-chat-frontend.md` |
 | 4 | `permission-matrix-api` | 权限 | 权限矩阵聚合端点(后端)✅ 已完成 | `harness/docs/plan-permission-matrix-api.md` |
-| 5 | `permission-matrix-ui` | 权限 | 可编辑权限矩阵(前端,依赖 4) | `harness/docs/plan-permission-matrix-ui.md` |
+| 5 | `permission-matrix-ui` | 权限 | 可编辑权限矩阵(前端,依赖 4)✅ 已完成 | `harness/docs/plan-permission-matrix-ui.md` |
 | 6 | `tenant-org-admin-ui` | 管理控制台 | 租户/组织/成员管理页(前端) | `harness/docs/plan-tenant-org-admin-ui.md` |
 | 7 | `e2e-and-coverage` | 工程化 | E2E + 覆盖率门槛 + lint(建议最后) | `harness/docs/plan-e2e-and-coverage.md` |
 
@@ -43,6 +43,7 @@
 | chat-conversation-api(对话后端) | passing | 9 tests + DeepSeek 配置 + 会话历史 API |
 | chat-frontend(对话前端) | passing | npm run build 通过 + SSE 打字机 + 会话 CRUD |
 | permission-matrix-api(权限矩阵后端) | passing | 118 tests(+6 矩阵/catalogue 端点) |
+| permission-matrix-ui(权限矩阵前端) | passing | npm build 通过 + 可编辑矩阵 + oxlint 0 warning |
 
 > ✅ AI 内核(agents + chat)已全部纳管并 passing:agents-api-hardening / chat-conversation-api / chat-frontend 三任务端到端完成。
 
@@ -298,6 +299,31 @@
 - **提交记录**: PR #16 已 squash 合并到 main,本地 commit `77a6bcc`(squash 后 `b1abb51`)
 - **已知风险**: 无
 - **下一步最佳动作**: 开始下一个 not_started 任务 `permission-matrix-ui`(priority 15,权限矩阵前端——真实数据 + 可编辑矩阵,本任务是其前置,现已合入 main 就绪)
+
+---
+### Session 012 — 2026-07-10
+- **本轮目标**: 执行 `permission-matrix-ui`(权限矩阵前端:真实数据 + 可编辑矩阵)—— 4 步,纯前端,前置 permission-matrix-api ✅ 已合入 main(PR #16)
+- **已完成**(对照 plan §实施步骤 Step 1-4):
+  - Step 0 基线确认:`pytest tests/test_permissions_api.py` → 6 passed(前置端点就绪);切 `feat/permission-matrix-ui` 分支
+  - Step 1 API 层:types.ts 加 PermissionItem(id/code/name/obj/act)+ PermissionMatrix(roles/permissions/matrix);endpoints.ts 加 fetchPermissionMatrix + fetchPermissionCatalogue
+  - Step 2 hooks 层:queries.ts 加 qk.permissionMatrix(['permissions','matrix'])+ usePermissionMatrix;**扩展 useGrantRolePermission/useRevokeRolePermission 的 onSuccess** 额外 invalidate qk.permissionMatrix(矩阵页编辑后自动刷新)
+  - Step 3 页面重写:permissions-page.tsx 从 108 行硬编码(2 资源×2 角色)重写为真实数据驱动;列按 obj 分组(智能体/对话/用户/角色/组织)+ 组内按 act 排序;系统角色 Badge 标记;可编辑格子(grant/revoke + spinner + toast)
+  - Step 4 验证:npm run build 通过(tsc + vite,0 类型错误);oxlint 4 改动文件 0 warning
+- **运行过的验证**(全过):
+  - `cd frontend && npm run build` → tsc -b + vite build 成功,0 类型错误
+  - `npx oxlint src/pages/permissions-page.tsx src/hooks/queries.ts src/api/endpoints.ts src/api/types.ts` → 0 warnings 0 errors
+  - 后端零改动(纯前端,基线 118 passed 不变)
+- **已记录证据**: `feature_list.json` 的 `permission-matrix-ui.evidence` 字段(8 条)
+- **技术要点**(与 plan 的实现差异):
+  - **关键简化**:无需 useRolePermissions 预取 permission_id——矩阵 PermissionItem.id 即是 revoke 所需 permissionId(推理:RolePermission.permission_id == Permission.id,grant 时 _upsert_permission 返回的 pid 存入 RolePermission;revoke 端点路径参数匹配 RolePermission.permission_id);一个矩阵查询覆盖 grant(obj/act)+ revoke(id)
+  - plan §Step1 的 GET /permissions/objects 实际后端叫 /catalogue(对齐 permission-matrix-api 实现),verification 行的 objects 是 plan 笔误
+  - 权限守卫:路由层 RequireUserManagement 已在 App.tsx 拦截 member(member 到不了此页);页面内 canManageUsers(me) 控制格子 editable(owner/admin/super_admin 可编辑,防御性只读提示)
+  - 系统角色不增加编辑保护(后端 grant/revoke 不拦,UI 仅 Badge 标记,对齐 plan 不做的事)
+- **提交记录**: `feat/permission-matrix-ui` 分支(待用户决定是否合并到 main)
+- **已知风险**: 无功能风险。手动浏览器验证未跑(需前后端启动 + 真实 token),build(tsc 类型检查)+ oxlint 已覆盖类型正确性与规范
+- **下一步最佳动作**:
+  - (a) 合并 feat/permission-matrix-ui 到 main + 发 PR;
+  - (b) 开始下一个任务 `tenant-org-admin-ui`(priority 16,租户/组织/成员管理前端,后端端点齐全,纯前端)
 
 ---
 
