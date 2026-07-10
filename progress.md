@@ -396,6 +396,25 @@
   - (a) 合并 feat/tenant-org-admin-ui 到 main + 发 PR;
   - (b) 执行 `real-chat-llm-config`(priority 18,真实对话 + LLM 配置管理 + 修 3 bug,现为最高优先级);
 
+### Session 016 — 2026-07-10
+- **本轮目标**: 清理废代码 + 代码质量审查 + PR + CI 守门 + 合并 feat/tenant-org-admin-ui 到 main
+- **已完成**:
+  - 废代码审查(10 改动文件,含 2 新页面):oxlint 0 warning;所有新符号(updateOrganization/deleteOrganization/useUpdateOrganization/useDeleteOrganization/qk.organizations/OrganizationUpdate/OrganizationsPage/MembersPage)均有引用,**无废代码**(与上一轮 permission-matrix-ui 有死代码不同,本次零废代码)
+  - 代码质量审查:组织页(树形扁平化 flatten + 缩进渲染、CRUD Dialog、canManageUsers 守卫);成员页(列表 + 改角色 + 移除 + 添加);dashboard 租户卡片(含 isError 处理 404);权限守卫双层(路由 RequireUserManagement + 页面 canManageUsers);后端零改动无越界
+  - 验证:`npm run build`(tsc+vite)0 类型错误 + oxlint 0 warning
+  - 推送 `feat/tenant-org-admin-ui` → 建 PR #18(base main)
+  - CI 守门:3/3 全绿(Frontend typecheck+build+lint 26s / Backend pytest+ruff 42s / Migrations alembic upgrade on Postgres 44s),无需修复
+  - **squash 合并 PR #18 → main**(commit `5a26355`),删除远程分支,本地 fast-forward 同步;`git remote prune` 清除残留的 remote-tracking 缓存引用;本地 feature 分支已删
+  - main 上再跑 `./init.sh` 确认 ruff + 118 passed,仓库仍可按标准路径工作
+- **运行过的验证**:
+  - `npm run build` + `npx oxlint`(8 文件)→ 0 类型错误 / 0 warning
+  - `./init.sh`(main)→ ruff All checks passed! + **118 passed**
+  - CI(PR #18)→ 3 jobs pass
+- **已记录证据**: 无新增(本任务是审查+发版,未改代码;feature_list 的 tenant-org-admin-ui.evidence 在 Session 015 已填)
+- **提交记录**: PR #18 已 squash 合并到 main(`5a26355`)
+- **已知风险**: 无
+- **下一步最佳动作**: 执行 `real-chat-llm-config`(priority 18,真实对话 + LLM 配置管理 + 修 3 bug,现为最高优先级 not_started 任务)
+
 ---
 
 <!--
