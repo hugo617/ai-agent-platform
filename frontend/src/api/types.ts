@@ -310,6 +310,34 @@ export interface Message {
   created_at: string;
 }
 
+// ============= API tokens (AtoA — agenthub CLI auth) =============
+
+/** Masked token row returned by GET /api-tokens — no plaintext, no ciphertext. */
+export interface ApiToken {
+  id: string;
+  name: string;
+  token_prefix: string; // e.g. "ahp_***wxyz"
+  token_type: string; // "pat" (personal access token); reserved for future OAuth
+  scopes: string[];
+  last_used_at: string | null;
+  expires_at: string | null;
+  is_active: boolean;
+  created_at: string;
+}
+
+/** Payload for POST /api-tokens (issue a new token). */
+export interface ApiTokenCreate {
+  name: string;
+  expires_at?: string | null; // ISO datetime; null/omitted = never expires
+  scopes?: string[];
+}
+
+/** One-time response to issuing a token — includes the plaintext token. */
+export interface ApiTokenCreated extends ApiToken {
+  token_id: string;
+  token: string; // plaintext; returned only here, never retrievable again
+}
+
 export interface ApiError {
   detail: string;
 }

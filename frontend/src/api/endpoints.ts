@@ -4,6 +4,9 @@ import type {
   Agent,
   AgentCreate,
   AgentUpdate,
+  ApiToken,
+  ApiTokenCreate,
+  ApiTokenCreated,
   Conversation,
   LlmConfig,
   LlmConfigUpdate,
@@ -338,6 +341,26 @@ export async function updateTenantLlmConfig(
 export async function fetchEffectiveModels(): Promise<string[]> {
   const { data } = await api.get<string[]>("/settings/models");
   return data;
+}
+
+// ---------- api tokens (AtoA) ----------
+// Issue/list/revoke tokens for external agents (agenthub CLI). The plaintext
+// token is returned ONLY by createApiToken — store it immediately, it can never
+// be fetched again.
+export async function fetchApiTokens(): Promise<ApiToken[]> {
+  const { data } = await api.get<ApiToken[]>("/api-tokens");
+  return data;
+}
+
+export async function createApiToken(
+  payload: ApiTokenCreate
+): Promise<ApiTokenCreated> {
+  const { data } = await api.post<ApiTokenCreated>("/api-tokens", payload);
+  return data;
+}
+
+export async function revokeApiToken(id: string): Promise<void> {
+  await api.delete(`/api-tokens/${id}`);
 }
 
 // ---------- auth (local login + sessions) ----------

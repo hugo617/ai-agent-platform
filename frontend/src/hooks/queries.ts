@@ -7,6 +7,7 @@ import {
   addMember,
   changeUserStatus,
   createAgent,
+  createApiToken,
   createOrganization,
   createRole,
   createTenant,
@@ -17,6 +18,7 @@ import {
   deleteRole,
   deleteUser,
   fetchAgents,
+  fetchApiTokens,
   fetchConversations,
   fetchEffectiveModels,
   fetchMembers,
@@ -35,6 +37,7 @@ import {
   grantRolePermission,
   removeMember,
   resetUserPassword,
+  revokeApiToken,
   revokeRolePermission,
   terminateSession,
   updateAgent,
@@ -48,6 +51,7 @@ import {
 import type {
   AgentCreate,
   AgentUpdate,
+  ApiTokenCreate,
   LlmConfigUpdate,
   MemberCreate,
   MemberUpdate,
@@ -85,6 +89,7 @@ export const qk = {
   llmConfigPlatform: ["settings", "llm", "platform"] as const,
   llmConfigTenant: ["settings", "llm", "tenant"] as const,
   effectiveModels: ["settings", "models"] as const,
+  apiTokens: ["api-tokens"] as const,
 };
 
 // ---------- tenants ----------
@@ -416,5 +421,26 @@ export function useDeleteConversation() {
   return useMutation({
     mutationFn: (conversationId: string) => deleteConversation(conversationId),
     onSuccess: () => qc.invalidateQueries({ queryKey: qk.conversations }),
+  });
+}
+
+// ---------- api tokens (AtoA) ----------
+export function useApiTokens() {
+  return useQuery({ queryKey: qk.apiTokens, queryFn: fetchApiTokens });
+}
+
+export function useCreateApiToken() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: ApiTokenCreate) => createApiToken(payload),
+    onSuccess: () => qc.invalidateQueries({ queryKey: qk.apiTokens }),
+  });
+}
+
+export function useRevokeApiToken() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => revokeApiToken(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: qk.apiTokens }),
   });
 }
