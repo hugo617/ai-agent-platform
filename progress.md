@@ -639,6 +639,29 @@
 
 ---
 
+### Session 025 — 2026-07-11
+- **本轮目标**: 清理废代码 + 代码质量审查 + PR + CI 守门(修复红的 Backend)+ 合并 feat/atoa-cli-core 到 main
+- **已完成**(端到端,含合并 + CI 修复):
+  - **废代码扫描**:ruff F-rules(cli/ 全包)全绿;发现 2 个预留符号(`clear_credentials()` / `Credentials.token_prefix`)无当前引用 → **加 reserved 注释**(为 logout 命令预留,对齐 Session 020 对称预留惯例,保留设计完整性)
+  - **代码质量审查 + 3 处质量修复**:
+    - **质量缺口修复**:`init.sh` 的 `VERIFY_CMD` 原本漏了 `cli/`(ruff 只查 app/tests/scripts/alembic),但 testpaths 已含 cli/tests → CLI 代码不在标准验证路径里。已补 `cli/` 进 ruff 命令
+    - **docstring 纠正**:`cli/main.py` + `cli/errors.py` 原说"CliError extends ClickException,click 自动映射 exit_code",但实际用的是 `@handle_errors` 装饰器(Session 024 改过来的)→ 文档纠正为真实机制,消除「文档撒谎」质量债
+  - 基线验证:`./init.sh` → ruff(含 cli/ 新范围)All checks passed! + **199 passed**
+  - commit `295e98b` → push → PR #22(base main)
+  - **CI 守门 + 修复红的 Backend**:首轮 Backend❌(pytest 收集 cli/tests/test_cli.py 时 `import typer` → ModuleNotFoundError)。根因:`requirements-dev.txt` 不含 typer/rich(在 requirements-cli.txt),但 CI 后端 job + init.sh 都只装 requirements-dev.txt;testpaths 含 cli/tests 故 pytest 收集即 ImportError。本地能过是因为 .venv 里 Session 024 手动装了 typer/rich,但 CI 干净环境没有 —— 「本地绿 CI 红」典型缺口。**修复**:`.github/workflows/ci.yml` Backend job + `init.sh` INSTALL_CMD 都加 `-r requirements-cli.txt`(commit `a6e2a68`)。另:CI ruff 命令也同步补 cli/(commit `d12d420`,与 init.sh 一致)。重推后 CI **4/4 全绿**(Backend 1m22s / Migrations 42s / Frontend 28s / E2E 1m57s)
+  - **squash 合并 PR #22 → main**(commit `756cc83`),删除远程分支,本地切回 main 同步;`git remote prune` 清除残留引用;本地 feature 分支已删
+- **运行过的验证**:
+  - `.venv/bin/ruff check app/ cli/ tests/ scripts/ alembic/`(新范围)→ All checks passed!
+  - `./init.sh`(feat 分支,含 cli/ ruff + requirements-cli.txt 安装)→ ruff + **199 passed**
+  - `pytest cli/tests/ -q` → 13 passed
+  - CI(PR #22)→ 首轮 Backend 红(typer ImportError)→ 修复后 4/4 job SUCCESS
+- **已记录证据**: 无新增(本任务是审查+发版+修 CI;feature_list 的 atoa-cli-core.evidence 在 Session 024 已填)
+- **提交记录**: PR #22 已 squash 合并到 main(`756cc83`);含 3 个 commit(1 功能 + 1 CI ruff 范围 + 1 CI typer 安装修复)
+- **已知风险**: 无。CI 在干净环境确认 typer/rich 安装到位,199 tests 含 cli/tests 全过
+- **下一步最佳动作**: 执行 `atoa-cli-chat-admin`(priority 21,CLI 对话 SSE 流式 + 会话历史 + Agent CRUD,核心卖点,前置已合入 main 就绪)
+
+---
+
 <!--
 会话记录模板(复制使用):
 ### Session 0XX — YYYY-MM-DD
