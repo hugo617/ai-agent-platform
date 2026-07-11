@@ -8,7 +8,7 @@
 - **标准启动路径**: `./init.sh`(装依赖 + ruff + pytest)
 - **标准验证路径**: `./init.sh`(同上,后端快速验证,SQLite 内存库)
 - **完整验证路径**(需 docker): `alembic upgrade head && alembic check` + `cd frontend && npm run build`
-- **当前最高优先级未完成功能**: AI 内核深化三任务全部完成 ✅ —— `context-engineering`(priority 25,Session 036)+ `chat-markdown-rendering`(priority 26,Session 038)+ `agent-config-depth`(priority 27,Session 040)。feature_list.json 中无 not_started 任务剩余(所有 27 条均 passing)。前置的系统性 bug `atoa-service-require-missing-platform-role`(priority 24)与工程化 bug `pyproject-missing-dependencies`(priority 28)已分别于 Session 032/033 修复并 passing
+- **当前最高优先级未完成功能**: AI 内核深化三任务全部完成 ✅ —— `context-engineering`(priority 25,Session 036)+ `chat-markdown-rendering`(priority 26,Session 038/039 发版)+ `agent-config-depth`(priority 27,Session 040/041 发版)。feature_list.json 中无 not_started 任务剩余(所有 27 条均 passing)。前置的系统性 bug `atoa-service-require-missing-platform-role`(priority 24)与工程化 bug `pyproject-missing-dependencies`(priority 28)已分别于 Session 032/033 修复并 passing
 - **当前 blocker**: 无
 
 ## 后续任务规划(2026-07-10 制定,2026-07-10 追加第 8 条插队,共 8 条,WIP=1 顺序执行)
@@ -1144,6 +1144,37 @@
 - **下一步最佳动作**:
   - (a) 清理废代码 + 代码质量审查 + PR + CI 守门 + 合并 feat/agent-config-depth 到 main
   - (b) **AI 内核深化三任务全部完成**:feature_list.json 中无 not_started 任务剩余(27 条均 passing);后续可由用户定新方向(如补 AtoA 架构文档 / 工具体系 / RAG / OAuth 等)
+
+### Session 041 — 2026-07-11
+- **本轮目标**: 清理废代码 + 代码质量审查 + PR + CI 守门 + 合并 Session 040 的 `agent-config-depth`(Agent 推理参数 temperature/max_tokens/top_p + description,最后一个 AI 内核深化任务)到 main
+- **已完成**(端到端,含合并):
+  - **废代码扫描**:ruff F-rules app/cli/tests/scripts/alembic 全绿 + oxlint 前端 0 warning + tsc 0 类型错误;新符号 `_build_llm_kwargs` 有 2 处引用(build_agent + stream_agent,非死代码)→ **无废代码,无需清理改动**
+  - **build_agent 既有死代码处理**:仅定义无调用方(与 real-chat-llm-config 任务一致,main 上就无调用方),本次同步加推理参数保持一致性,**未越界删除**(对齐 plan 风险表)
+  - **代码质量审查**(全过,无需修复):
+    - **分层合规**:Controller(chat.py)→ Service(agent_service)→ Repository → Model 单向;推理参数经 chat.py(controller)传给 graph.py(工具层),无反向依赖
+    - **迁移设计正确**:server_default 给现有行填默认值(temperature=0.7);nullable 字段(max_tokens/top_p)不留默认;env.py + conftest.py 已含 agent import(无需改,Session 018 教训未重演);alembic heads 单一 head 无分叉
+    - **Pydantic 校验**:temperature ge=0 le=2 / max_tokens ge=1 le=32768 / top_p ge=0 le=1;422 中文化已在 validation-error-i18n 任务完成
+    - **前端类型安全**:temperature 用 z.number() + valueAsNumber;max_tokens/top_p 用 string 表单 + parseNum 转换(空串→null,留空=用 provider 默认)
+    - **AgentUpdate 语义正确**:用 model_dump(exclude_unset=True) 只更新传入字段(None=不改,与 AgentBase 默认值 0.7 语义区分)
+  - **1 处 evidence 笔误修复**:功能 commit 的 feature_list.json evidence 中 `down_revision c4d4d5e6f7a8b9` 多了一个 4(实际是 `c4d5e6f7a8b9`,迁移代码本身正确),审查时已修正 → commit `17ff6f3`
+  - 基线验证:`./init.sh` → ruff All checks passed! + **250 passed**(244 基线 + 6 新增,无回归);`cd frontend && npm run build` → tsc + vite 0 类型错误;`npx oxlint src/` → 0 warnings 0 errors;alembic upgrade head c4d5e6f7a8b9 → 5dd68e90d6f0 + heads 单一
+  - push `feat/agent-config-depth`(2 commits:功能 + evidence 笔误修复)→ PR #30(base main)
+  - **CI 守门:4/4 全绿**(Backend pytest+ruff 1m47s / Migrations alembic upgrade on Postgres 49s / Frontend typecheck+build+lint 28s / E2E Playwright 1m52s),**无需修复**(一次过)
+  - **squash 合并 PR #30 → main**(commit `9a993e8`),`--delete-branch` 连带删本地分支,本地切回 main fast-forward 同步
+  - main 上跑 `./init.sh` 确认 ruff + 250 passed,仓库仍可按标准路径工作
+- **运行过的验证**:
+  - `.venv/bin/ruff check --select F app/ cli/ tests/ scripts/ alembic/` → All checks passed!
+  - `cd frontend && npm run build` → tsc + vite 0 类型错误;`npx oxlint src/` → 0 warnings 0 errors
+  - `APP_ENV=testing alembic heads` → 单一 head `5dd68e90d6f0`;`alembic history` → c4d5e6f7a8b9 → 5dd68e90d6f0 线性
+  - `./init.sh`(feat 分支 + main 两次)→ ruff + **250 passed**
+  - CI(PR #30)→ 4/4 job SUCCESS(一次过,无需修复)
+- **已记录证据**: 无新增(本任务是审查+发版+1 处 evidence 笔误修复;feature_list 的 agent-config-depth.evidence 在 Session 040 已填 10 条,本次仅修正其中 1 条笔误)
+- **提交记录**: PR #30 已 squash 合并到 main(`9a993e8`);2 个 commit(功能 + evidence 笔误修复,squash 为 1 个)
+- **已知风险**: 无。CI 4/4 干净环境全绿;本任务有 schema/migration 改动,CI Migrations job 在真实 Postgres 上确认无 drift(env.py/conftest.py 已含 agent import)
+- **下一步最佳动作**: **AI 内核深化三任务全部完成**(context-engineering + chat-markdown-rendering + agent-config-depth),feature_list.json 中无 not_started 任务剩余(27 条均 passing)。后续可由用户定新方向:
+  - (a) 补「09-外部Agent接入AtoA.md」架构文档(AtoA 系列 5 任务已全 passing,文档尚未补)
+  - (b) 工具体系(Agent.tools 可配置)、RAG(知识库关联)、OAuth 鉴权升级、prompt 变量模板等新功能方向
+  - (c) E2E 测试扩展(当前主线 login→agent→chat→history,可加权限矩阵/会话管理场景)
 
 <!-- 模板保留
 ### Session 0XX — YYYY-MM-DD
