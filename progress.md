@@ -8,7 +8,7 @@
 - **标准启动路径**: `./init.sh`(装依赖 + ruff + pytest)
 - **标准验证路径**: `./init.sh`(同上,后端快速验证,SQLite 内存库)
 - **完整验证路径**(需 docker): `alembic upgrade head && alembic check` + `cd frontend && npm run build`
-- **当前最高优先级未完成功能**: `real-chat-llm-config`(priority 18,AI 内核:真实对话 + LLM 配置管理 + 修 3 个 bug)—— `tenant-org-admin-ui` 已 passing
+- **当前最高优先级未完成功能**: 无(feature_list.json 全部任务已 passing,16 个 feature 全绿)
 - **当前 blocker**: 无
 
 ## 后续任务规划(2026-07-10 制定,2026-07-10 追加第 8 条插队,共 8 条,WIP=1 顺序执行)
@@ -21,7 +21,7 @@
 | 4 | `permission-matrix-api` | 权限 | 权限矩阵聚合端点(后端)✅ 已完成 | `harness/docs/plan-permission-matrix-api.md` |
 | 5 | `permission-matrix-ui` | 权限 | 可编辑权限矩阵(前端,依赖 4)✅ 已完成 | `harness/docs/plan-permission-matrix-ui.md` |
 | 6 | `tenant-org-admin-ui` | 管理控制台 | 租户/组织/成员管理页(前端)✅ 已完成 | `harness/docs/plan-tenant-org-admin-ui.md` |
-| 7 | `e2e-and-coverage` | 工程化 | E2E + 覆盖率门槛 + lint(建议最后) | `harness/docs/plan-e2e-and-coverage.md` |
+| 7 | `e2e-and-coverage` | 工程化 | E2E + 覆盖率门槛 + lint(建议最后)✅ 已完成 | `harness/docs/plan-e2e-and-coverage.md` |
 | **8** | **`real-chat-llm-config`** | **AI 内核** | **真实对话验证 + LLM 配置管理(超管+租户级)+ 修 3 bug(Agent.model 失效/前端模型脱节/无配置 UI)—— 用户插队,当前最高优先级** | **`harness/docs/plan-real-chat-llm-config.md`** |
 
 > 依赖链:1 → 2 → 3(对话主线);4 → 5(权限矩阵);6 独立(暂停中);7 最后;**8 插队**(前置 2+3 已完成)。
@@ -46,9 +46,12 @@
 | permission-matrix-api(权限矩阵后端) | passing | 118 tests(+6 矩阵/catalogue 端点) |
 | permission-matrix-ui(权限矩阵前端) | passing | npm build 通过 + 可编辑矩阵 + oxlint 0 warning |
 | tenant-org-admin-ui(租户/组织/成员前端) | passing | npm build 通过 + 组织树 CRUD + 成员管理 + dashboard 租户卡片 |
+| real-chat-llm-config(真实对话 + LLM 配置) | passing | 131 tests + 真实 DeepSeek SSE 端到端跑通 + 三级 fallback + 修 3 bug |
+| e2e-and-coverage(E2E + 覆盖率 + lint) | passing | 171 tests + 93% 覆盖率 + Playwright E2E + oxlint 0 warning |
 
 > ✅ AI 内核(agents + chat)已全部纳管并 passing:agents-api-hardening / chat-conversation-api / chat-frontend 三任务端到端完成。
-> ⚠️ **但真实对话从未跑通**:上述三任务的 evidence 均注明「手动 SSE 未跑(需真实 DeepSeek key + docker)」,`.env` 里 `OPENAI_API_KEY=sk-replace-me` 仍是占位符。`real-chat-llm-config`(priority 18)负责补真实验证 + 修 3 个 bug(Agent.model 被忽略 / 前端模型列表与后端脱节 / LLM 配置无 UI 管理)。
+> ✅ **真实对话已跑通**:real-chat-llm-config(Session 017)用真实 DeepSeek key 端到端验证 SSE 流式对话,修了 3 个 bug(Agent.model 失效 / 前端模型脱节 / 无 LLM 配置 UI)。
+> ✅ **质量护栏已建立**:e2e-and-coverage(Session 019)加了覆盖率门槛(93% ≥ 80%)+ Playwright E2E(主线 login→agent→chat→history)+ oxlint 0 warning。关键发现:coverage concurrency 配置让 ASGI service 代码被正确追踪(73% → 93%)。
 
 ## 会话记录
 
@@ -459,6 +462,36 @@
 - **提交记录**: PR #19 已 squash 合并到 main(`0efa4c9`);含 1 个功能 commit + 1 个 CI 修复 commit
 - **已知风险**: 无。真实 DeepSeek 对话已在 Session 017 端到端验证跑通
 - **下一步最佳动作**: 仅剩 `e2e-and-coverage`(priority 17,E2E + 覆盖率门槛 + lint)一个 not_started 任务;或由用户指定新方向
+
+---
+
+### Session 019 — 2026-07-11
+- **本轮目标**: 执行 `e2e-and-coverage`(E2E 测试 + 覆盖率门槛 + lint 修复)—— 全栈基建,三道质量护栏。用户确认三项决策:E2E 进 CI 全自动 / 补测试到 80% 设门槛 / oxlint 配置忽略 only-export-components
+- **已完成**(对照 plan §实施步骤 Step 0-14):
+  - Step 0-1:切 feat/e2e-and-coverage 分支;coverage 配置修正(pyproject omit dev_keys.py + security.py pragma 标注 Logto 难测分支)
+  - Step 2-5:补业务测试(test_tenants_api 8 tests / test_organizations_api 14 tests + 修 path bug / test_rbac_api +3 / test_users_crud +16)
+  - **Step 6 关键发现**:覆盖率追踪修复 —— ASGI 测试请求跑在 anyio task group 里,coverage 默认 sys.settrace 无法追踪经 HTTPX ASGITransport 调用的 service 层 → 加 concurrency=['thread','greenlet'] + COVERAGE_CORE=ctrace → 覆盖率从虚假的 73% 跃升到真实的 93%。CI backend job 加 --cov-fail-under=80
+  - Step 7:.oxlintrc.json 把 react/only-export-components 改为 off(shadcn 惯例)→ oxlint 0 warning
+  - Step 8-9:安装 Playwright + 补 data-testid(login/agents/chat 最小集)
+  - Step 10-11:写主线 E2E(main-flow.spec.ts)+ mock OpenAI server(ThreadingHTTPServer + HTTP/1.1 keep-alive + OpenAI SSE 格式,让对话环节离线跑通);本地验证 1 passed(15s)
+  - Step 12:CI 加 e2e job(Postgres + 后端 + mock server + 前端 + Playwright + 上传 report)
+  - Step 13-14:全栈验证全过 + 记录证据 + 更新 progress
+- **运行过的验证**(全过):
+  - `./init.sh` → ruff All checks passed! + **171 passed**(131 基线 + 40 新增)
+  - `pytest --cov=app --cov-report=term --cov-fail-under=80` → **93% 覆盖率**(2576 语句,184 缺)→ exit 0 无 CoverageFailure
+  - `cd frontend && npx oxlint src/` → 0 warnings 0 errors
+  - `cd frontend && npm run build` → tsc + vite 通过
+  - `cd frontend && npx playwright test` → 1 passed(login → create agent → chat SSE → view history)
+- **已记录证据**: `feature_list.json` 的 `e2e-and-coverage.evidence` 字段(10 条)
+- **技术要点**(与 plan 的实现差异):
+  - **覆盖率追踪 bug 是最大发现**:concurrency=['thread','greenlet'] 是让 ASGI service 代码被正确追踪的前提;不加它,所有经 HTTPX ASGITransport 调用的 service 方法(create/update/delete 等)都显示 0 覆盖,导致整体虚假偏低 20 个百分点
+  - **Bug 修复(补测时发现)**:organization_service.update 移动节点时漏更新节点自身 path(只重算子树)→ 导致 move-to-new-parent 后 path 残留旧值。窄范围修复:加 org.path = _compute_path(...) 后再 _recompute_subtree_paths
+  - **mock OpenAI server 三层坑**:① http.server 单线程 + keep-alive 会阻塞后续请求 → 改 ThreadingHTTPServer;② HTTP/1.0 关连接过早导致 ReadError → 改 HTTP/1.1 + Content-Length;③ ChatOpenAI 路径不含 /v1 → path 匹配改 "chat/completions" in self.path
+  - oxlint 用全局 off 而非 overrides(更简单,shadcn 模式全局适用)
+  - E2E 登录用密码表单(确定性,非 /dev/token);history 断言简化为"会话列表非空"(conversationLabel 需预加载首条消息,reload 后无选中会话时显示"新对话"而非消息片段)
+- **提交记录**: `feat/e2e-and-coverage` 分支(待审查 + PR + 合并)
+- **已知风险**: 无功能风险。CI e2e job 未实际在 GitHub Actions 上跑过(需推送后 CI 守门);E2E 本地已端到端验证通过。覆盖率 CI 时长:3.11 上用 ctrace 约 2 分钟(可接受)
+- **下一步最佳动作**: 清理废代码 + 代码质量审查 + PR + CI 守门 + 合并 feat/e2e-and-coverage 到 main
 
 ---
 

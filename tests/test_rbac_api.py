@@ -161,6 +161,64 @@ async def test_delete_nonexistent_role_returns_404(app_client):
     assert resp.status_code == 404
 
 
+# ----------------------------------------------------------- update fields
+
+
+@pytest.mark.asyncio
+async def test_update_role_description_and_status(app_client):
+    """PUT role can update description + status + sort_order in one call."""
+    role = (
+        await app_client.post(
+            "/api/v1/roles/",
+            json={"name": "Updater", "code": "updater"},
+            headers=AUTH,
+        )
+    ).json()
+    resp = await app_client.put(
+        f"/api/v1/roles/{role['id']}",
+        json={"description": "updated desc", "status": "inactive", "sort_order": 9},
+        headers=AUTH,
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["description"] == "updated desc"
+    assert body["status"] == "inactive"
+    assert body["sort_order"] == 9
+
+
+@pytest.mark.asyncio
+async def test_list_roles_excludes_soft_deleted(app_client):
+    """Soft-deleted roles don't appear in the list."""
+    role = (
+        await app_client.post(
+            "/api/v1/roles/",
+            json={"name": "Doomed", "code": "doomed"},
+            headers=AUTH,
+        )
+    ).json()
+    await app_client.delete(f"/api/v1/roles/{role['id']}", headers=AUTH)
+
+    resp = await app_client.get("/api/v1/roles/", headers=AUTH)
+    ids = [r["id"] for r in resp.json()]
+    assert role["id"] not in ids
+
+
+@pytest.mark.asyncio
+async def test_role_labels_after_create(app_client):
+    """The /roles/label endpoint returns {id, name, code} triples."""
+    await app_client.post(
+        "/api/v1/roles/",
+        json={"name": "Labeled", "code": "labeled"},
+        headers=AUTH,
+    )
+    resp = await app_client.get("/api/v1/roles/label", headers=AUTH)
+    assert resp.status_code == 200
+    labels = resp.json()
+    found = next(item for item in labels if item["code"] == "labeled")
+    assert "id" in found
+    assert found["name"] == "Labeled"
+
+
 # ----------------------------------------------- role ↔ permission grant CRUD
 
 

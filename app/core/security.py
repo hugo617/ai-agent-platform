@@ -27,7 +27,7 @@ _jwks_fetched_at: float = 0
 _JWKS_TTL = 600  # refresh keys at most every 10 minutes
 
 
-def _jwks_uri() -> str:
+def _jwks_uri() -> str:  # pragma: no cover — needs a live Logto/dev issuer
     """JWKS endpoint to fetch signing keys from.
 
     In production this is ``{LOGTO_ISSUER}/jwks``. In development, when the
@@ -38,7 +38,7 @@ def _jwks_uri() -> str:
     return f"{settings.logto_issuer}/jwks"
 
 
-def _get_jwks_client() -> PyJWKClient:
+def _get_jwks_client() -> PyJWKClient:  # pragma: no cover — needs a live JWKS endpoint
     global _jwks_client, _jwks_fetched_at
     now = time.time()
     if _jwks_client is None or now - _jwks_fetched_at > _JWKS_TTL:
@@ -73,10 +73,10 @@ async def decode_token(token: str) -> dict[str, Any]:
 
     # In dev mode the issuer points at our own backend; fetching JWKS over HTTP
     # would deadlock a single-worker uvicorn, so we use the in-memory dev key.
-    if settings.app_env == "development" and settings.logto_issuer.startswith("http://localhost:8000"):
+    if settings.app_env == "development" and settings.logto_issuer.startswith("http://localhost:8000"):  # pragma: no cover - dev env only
         return _verify_with_dev_key(token)
 
-    try:
+    try:  # pragma: no cover — RS256 path needs a live Logto JWKS endpoint
         signing_key = _get_jwks_client().get_signing_key_from_jwt(token).key
         payload = jwt.decode(
             token,
@@ -95,7 +95,7 @@ async def decode_token(token: str) -> dict[str, Any]:
         raise TokenError(f"cannot reach issuer: {e}") from e
 
 
-def _verify_with_dev_key(token: str) -> dict[str, Any]:
+def _verify_with_dev_key(token: str) -> dict[str, Any]:  # pragma: no cover - dev env only
     """Validate a dev token using the in-memory RSA key pair (no HTTP call)."""
     from app.core.dev_keys import get_dev_keys
 

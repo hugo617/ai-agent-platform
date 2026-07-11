@@ -108,6 +108,7 @@ export function LoginPage() {
               <Label htmlFor="identifier">用户名 / 邮箱</Label>
               <Input
                 id="identifier"
+                data-testid="login-identifier"
                 placeholder="admin 或 admin@example.com"
                 value={identifier}
                 onChange={(e) => setIdentifier(e.target.value)}
@@ -119,12 +120,18 @@ export function LoginPage() {
               <Input
                 id="password"
                 type="password"
+                data-testid="login-password"
                 placeholder="••••••••"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
               />
             </div>
-            <Button type="submit" className="w-full" disabled={pwLoading}>
+            <Button
+              type="submit"
+              className="w-full"
+              disabled={pwLoading}
+              data-testid="login-submit"
+            >
               {pwLoading ? "登录中…" : "登录"}
             </Button>
             <p className="text-xs text-muted-foreground">
