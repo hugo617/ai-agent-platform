@@ -66,9 +66,12 @@ class ApiTokenService:
         user_id: str,
         tenant_id: str,
         payload: ApiTokenCreate,
+        platform_role: str | None = None,
     ) -> ApiTokenCreateResponse:
         """Create a token and return its plaintext exactly once."""
-        await permission_service.require(user_id, tenant_id, OBJECT, ACT_MANAGE)
+        await permission_service.require(
+            user_id, tenant_id, OBJECT, ACT_MANAGE, platform_role=platform_role
+        )
         plaintext = API_TOKEN_PREFIX + secrets.token_urlsafe(32)
         prefix = _extract_prefix(plaintext)
         row = ApiToken(
@@ -128,17 +131,30 @@ class ApiTokenService:
         return None
 
     async def list_for_tenant(
-        self, db: AsyncSession, user_id: str, tenant_id: str
+        self,
+        db: AsyncSession,
+        user_id: str,
+        tenant_id: str,
+        platform_role: str | None = None,
     ) -> list[ApiTokenRead]:
-        await permission_service.require(user_id, tenant_id, OBJECT, ACT_MANAGE)
+        await permission_service.require(
+            user_id, tenant_id, OBJECT, ACT_MANAGE, platform_role=platform_role
+        )
         rows = await ApiTokenRepository(db).list_for_tenant(tenant_id)
         # Mask revoked/deleted tokens out of the default listing.
         return [_to_read(r) for r in rows if not r.is_deleted]
 
     async def revoke(
-        self, db: AsyncSession, user_id: str, tenant_id: str, token_id: str
+        self,
+        db: AsyncSession,
+        user_id: str,
+        tenant_id: str,
+        token_id: str,
+        platform_role: str | None = None,
     ) -> None:
-        await permission_service.require(user_id, tenant_id, OBJECT, ACT_MANAGE)
+        await permission_service.require(
+            user_id, tenant_id, OBJECT, ACT_MANAGE, platform_role=platform_role
+        )
         repo = ApiTokenRepository(db)
         row = await repo.get_for_tenant(token_id, tenant_id)
         if row is None or row.is_deleted:

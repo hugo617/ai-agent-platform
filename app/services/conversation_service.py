@@ -25,9 +25,12 @@ class ConversationService:
         agent_id: str,
         title: str | None = None,
         conversation_id: str | None = None,
+        platform_role: str | None = None,
     ) -> Conversation:
         """Return an existing conversation or create a new one (after permission check)."""
-        await permission_service.require(user_id, tenant_id, self.OBJECT, "create")
+        await permission_service.require(
+            user_id, tenant_id, self.OBJECT, "create", platform_role=platform_role
+        )
 
         if conversation_id:
             conv = await self.conversations.get_for_tenant(conversation_id, tenant_id)
@@ -48,16 +51,27 @@ class ConversationService:
         return conv
 
     async def list_for_user(
-        self, user_id: str, tenant_id: str
+        self,
+        user_id: str,
+        tenant_id: str,
+        platform_role: str | None = None,
     ) -> list[ConversationRead]:
-        await permission_service.require(user_id, tenant_id, self.OBJECT, "read")
+        await permission_service.require(
+            user_id, tenant_id, self.OBJECT, "read", platform_role=platform_role
+        )
         convs = await self.conversations.list_for_user(tenant_id, user_id)
         return [ConversationRead.model_validate(c) for c in convs]
 
     async def history(
-        self, user_id: str, tenant_id: str, conversation_id: str
+        self,
+        user_id: str,
+        tenant_id: str,
+        conversation_id: str,
+        platform_role: str | None = None,
     ) -> list[MessageRead]:
-        await permission_service.require(user_id, tenant_id, self.OBJECT, "read")
+        await permission_service.require(
+            user_id, tenant_id, self.OBJECT, "read", platform_role=platform_role
+        )
         msgs = await self.messages.list_for_conversation(conversation_id, tenant_id)
         return [MessageRead.model_validate(m) for m in msgs]
 
@@ -81,14 +95,20 @@ class ConversationService:
         return msg
 
     async def delete(
-        self, user_id: str, tenant_id: str, conversation_id: str
+        self,
+        user_id: str,
+        tenant_id: str,
+        conversation_id: str,
+        platform_role: str | None = None,
     ) -> None:
         """Hard-delete a conversation owned by the caller.
 
         Conversations are private per-user: even within the same tenant, only
         the owner may delete theirs. (Messages cascade via the FK ondelete.)
         """
-        await permission_service.require(user_id, tenant_id, self.OBJECT, "delete")
+        await permission_service.require(
+            user_id, tenant_id, self.OBJECT, "delete", platform_role=platform_role
+        )
         conv = await self.conversations.get_for_tenant(conversation_id, tenant_id)
         if conv is None or conv.user_id != user_id:
             raise NotFoundError(

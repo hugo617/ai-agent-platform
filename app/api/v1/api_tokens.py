@@ -42,7 +42,9 @@ async def issue_token(
     db: AsyncSession = Depends(get_db),
 ) -> ApiTokenCreateResponse:
     """Issue a new API token. The plaintext token is returned **only here**."""
-    return await api_token_service.issue(db, user.user_id, user.tenant_id, payload)
+    return await api_token_service.issue(
+        db, user.user_id, user.tenant_id, payload, platform_role=user.platform_role
+    )
 
 
 @router.get(
@@ -55,7 +57,9 @@ async def list_tokens(
     db: AsyncSession = Depends(get_db),
 ) -> list[ApiTokenRead]:
     """List the caller's tenant tokens (masked — no plaintext, no ciphertext)."""
-    return await api_token_service.list_for_tenant(db, user.user_id, user.tenant_id)
+    return await api_token_service.list_for_tenant(
+        db, user.user_id, user.tenant_id, platform_role=user.platform_role
+    )
 
 
 @router.delete(
@@ -70,7 +74,9 @@ async def revoke_token(
 ) -> None:
     """Revoke (soft-delete) an API token."""
     try:
-        await api_token_service.revoke(db, user.user_id, user.tenant_id, token_id)
+        await api_token_service.revoke(
+            db, user.user_id, user.tenant_id, token_id, platform_role=user.platform_role
+        )
     except ValueError as e:
         raise _http_exc(e) from e
 

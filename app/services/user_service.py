@@ -180,9 +180,15 @@ class UserService:
     # ----------------------------------------------------------------- create
 
     async def create(
-        self, actor_id: str, tenant_id: str, payload: UserCreate
+        self,
+        actor_id: str,
+        tenant_id: str,
+        payload: UserCreate,
+        platform_role: str | None = None,
     ) -> UserRead:
-        await permission_service.require(actor_id, tenant_id, self.OBJECT, "create")
+        await permission_service.require(
+            actor_id, tenant_id, self.OBJECT, "create", platform_role=platform_role
+        )
 
         if payload.status not in VALID_STATUSES:
             raise BizError(f"无效的状态: {payload.status}")

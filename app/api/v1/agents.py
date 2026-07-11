@@ -29,7 +29,9 @@ async def list_agents(
     db: AsyncSession = Depends(get_db),
 ) -> list[AgentRead]:
     service = AgentService(db)
-    return await service.list(user.user_id, user.tenant_id)
+    return await service.list(
+        user.user_id, user.tenant_id, platform_role=user.platform_role
+    )
 
 
 @router.post(
@@ -44,7 +46,9 @@ async def create_agent(
     db: AsyncSession = Depends(get_db),
 ) -> AgentRead:
     service = AgentService(db)
-    return await service.create(user.user_id, user.tenant_id, payload)
+    return await service.create(
+        user.user_id, user.tenant_id, payload, platform_role=user.platform_role
+    )
 
 
 @router.get(
@@ -59,7 +63,9 @@ async def get_agent(
 ) -> AgentRead:
     service = AgentService(db)
     try:
-        return await service.get(user.user_id, user.tenant_id, agent_id)
+        return await service.get(
+            user.user_id, user.tenant_id, agent_id, platform_role=user.platform_role
+        )
     except ValueError as e:
         raise _http_exc(e) from e
 
@@ -77,7 +83,13 @@ async def update_agent(
 ) -> AgentRead:
     service = AgentService(db)
     try:
-        return await service.update(user.user_id, user.tenant_id, agent_id, payload)
+        return await service.update(
+            user.user_id,
+            user.tenant_id,
+            agent_id,
+            payload,
+            platform_role=user.platform_role,
+        )
     except ValueError as e:
         raise _http_exc(e) from e
 
@@ -94,6 +106,8 @@ async def delete_agent(
 ) -> None:
     service = AgentService(db)
     try:
-        await service.delete(user.user_id, user.tenant_id, agent_id)
+        await service.delete(
+            user.user_id, user.tenant_id, agent_id, platform_role=user.platform_role
+        )
     except ValueError as e:
         raise _http_exc(e) from e

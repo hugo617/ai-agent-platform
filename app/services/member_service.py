@@ -33,16 +33,29 @@ class MemberService:
             joined_at=m.created_at,
         )
 
-    async def list(self, user_id: str, tenant_id: str) -> list[MemberRead]:
-        await permission_service.require(user_id, tenant_id, self.OBJECT, "read")
+    async def list(
+        self,
+        user_id: str,
+        tenant_id: str,
+        platform_role: str | None = None,
+    ) -> list[MemberRead]:
+        await permission_service.require(
+            user_id, tenant_id, self.OBJECT, "read", platform_role=platform_role
+        )
         rows = await self.memberships.list_for_tenant(tenant_id)
         return [self._to_read(m) for m in rows]
 
     async def add(
-        self, actor_id: str, tenant_id: str, payload: MemberCreate
+        self,
+        actor_id: str,
+        tenant_id: str,
+        payload: MemberCreate,
+        platform_role: str | None = None,
     ) -> MemberRead:
         """Add a user (by id) to the current tenant with a given role."""
-        await permission_service.require(actor_id, tenant_id, self.OBJECT, "create")
+        await permission_service.require(
+            actor_id, tenant_id, self.OBJECT, "create", platform_role=platform_role
+        )
 
         user = await self.users.get_or_create(payload.user_id, email=payload.email)
         if payload.display_name and not user.display_name:
@@ -69,9 +82,16 @@ class MemberService:
         return self._to_read(membership)
 
     async def update_role(
-        self, actor_id: str, tenant_id: str, target_user_id: str, payload: MemberUpdate
+        self,
+        actor_id: str,
+        tenant_id: str,
+        target_user_id: str,
+        payload: MemberUpdate,
+        platform_role: str | None = None,
     ) -> MemberRead:
-        await permission_service.require(actor_id, tenant_id, self.OBJECT, "update")
+        await permission_service.require(
+            actor_id, tenant_id, self.OBJECT, "update", platform_role=platform_role
+        )
 
         membership = await self.memberships.current_role(target_user_id, tenant_id)
         if membership is None:
@@ -90,8 +110,16 @@ class MemberService:
         await self.db.refresh(membership, attribute_names=["user"])
         return self._to_read(membership)
 
-    async def remove(self, actor_id: str, tenant_id: str, target_user_id: str) -> None:
-        await permission_service.require(actor_id, tenant_id, self.OBJECT, "delete")
+    async def remove(
+        self,
+        actor_id: str,
+        tenant_id: str,
+        target_user_id: str,
+        platform_role: str | None = None,
+    ) -> None:
+        await permission_service.require(
+            actor_id, tenant_id, self.OBJECT, "delete", platform_role=platform_role
+        )
 
         if actor_id == target_user_id:
             raise ValueError("cannot remove yourself")
