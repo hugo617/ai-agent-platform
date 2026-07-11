@@ -901,6 +901,31 @@
   - (a) 提交本次修复(14 文件)+ 发 PR;
   - (b) 执行 AI 内核深化三任务(priority 25 context-engineering → 26 chat-markdown-rendering → 27 agent-config-depth,plan 均已就绪)
 
+### Session 033 — 2026-07-11
+- **本轮目标**: 清理废代码 + 代码质量审查 + PR + CI 守门 + 合并 Session 032 的 `atoa-service-require-missing-platform-role` 修复(14 代码文件)到 main
+- **已完成**(端到端,含合并):
+  - **建分支**:改动在 main 工作区(未提交),`git checkout -b feat/atoa-service-platform-role-fix` 带到分支(无需 stash)
+  - **废代码扫描**:ruff F-rules(F401/F811/F841)app/cli/tests/scripts/alembic 全绿;grep 核查 controller→service 所有调用点均传 platform_role(列出的多行调用均确认在下一行,无遗漏);查询类方法 get_roles/get_matrix/get_catalogue/get_effective/list_user_tenants 本身不走 require 无需该参数 → **无废代码,无需清理改动**
+  - **代码质量审查**(全过,无需修复):
+    - **改动一致性**:14 文件改动高度统一 —— Service 层每个 require() 加 `platform_role: str | None = None` 形参并转发;Controller 层每个 call 传 `platform_role=user.platform_role`;默认 None 保证向后兼容(API token verify / graph.py internal tool 调用等零影响)
+    - **分层合规**:Controller→Service→permission_service 单向,无反向引用;user_service 其余 8 处 require 已在 `is_super_admin` 守卫内(黄金范本),仅 create 补 1 处
+    - **测试忠实性**:test_service_platform_role.py(12 个)三层覆盖 —— 权限层用 `anything:nuke` 合成权限真正区分"绕过"vs"casbin 允许"(E2E 无法区分因 super_admin_client 的 owner 角色已有大部分权限)+ Service 签名 + E2E + 非回归
+  - 基线验证:`./init.sh` → ruff All checks passed! + **229 passed**(217 基线 + 12 新增,无回归)
+  - commit `1181fa3` → push → PR #26(base main)
+  - **CI 守门:4/4 全绿**(Backend pytest+ruff 1m18s / Migrations / E2E Playwright / Frontend typecheck+build+lint 25s),**无需修复**(一次过)
+  - **squash 合并 PR #26 → main**(commit `85d5011`),`--delete-branch` 连带删本地分支,本地切回 main fast-forward 同步;`git remote prune` 清除残留引用
+  - main 上跑 init.sh 确认 ruff + 229 passed,仓库仍可按标准路径工作
+- **运行过的验证**:
+  - `.venv/bin/ruff check --select F app/ cli/ tests/ scripts/ alembic/` → All checks passed!
+  - `./init.sh`(feat 分支 + main 两次)→ ruff + **229 passed**
+  - CI(PR #26)→ 4/4 job SUCCESS(一次过,无需修复)
+- **已记录证据**: 无新增(本任务是审查+发版,未改代码;feature_list 的 atoa-service-require-missing-platform-role.evidence 在 Session 032 已填)
+- **提交记录**: PR #26 已 squash 合并到 main(`85d5011`);1 个功能 commit(零修复 commit)
+- **已知风险**: 无。CI 4/4 干净环境全绿,229 tests 含 12 个新回归测试全过;本任务无 schema/migration 改动故无需 alembic check
+- **下一步最佳动作**:
+  - (a) 执行 AI 内核深化三任务(priority 25 `context-engineering` → 26 `chat-markdown-rendering` → 27 `agent-config-depth`,plan 均已就绪,WIP=1 顺序执行)
+  - (b) 或先补「09-外部Agent接入AtoA.md」架构文档(AtoA 系列 5 任务已全 passing)
+
 <!-- 模板保留
 ### Session 0XX — YYYY-MM-DD
 - 本轮目标:
