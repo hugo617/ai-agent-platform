@@ -531,7 +531,7 @@
       "area": "AtoA",
       "title": "AtoA 管理前端(API Token 管理 UI)",
       "user_visible_behavior": "管理员能在设置页颁发/查看/吊销 API Token,明文 Token 颁发时仅显示一次(复制+警告),无需手敲 API",
-      "status": "not_started",
+      "status": "passing",
       "plan": "harness/docs/plan-atoa-admin-ui.md",
       "verification": [
         "settings-page.tsx 新增「API Token」Card(与 LLM 配置并列),canManageUsers 权限守卫",
@@ -540,9 +540,19 @@
         "cd frontend && npm run build 通过 + oxlint 0 warning",
         "./init.sh 全绿(后端不回归,纯前端任务)"
       ],
-      "evidence": [],
+      "evidence": [
+        "cd frontend && npm run build 通过:tsc -b + vite build 成功,0 类型错误(2026-07-11)",
+        "npx oxlint src/pages/settings-page.tsx src/hooks/queries.ts src/api/endpoints.ts src/api/types.ts → 0 warnings 0 errors(2026-07-11)",
+        "后端零改动(纯前端任务,基线 217 passed 不变,无回归)",
+        "API 层:types.ts 加 ApiToken(id/name/token_prefix/token_type/scopes/last_used_at/expires_at/is_active/created_at,对齐后端 ApiTokenRead)+ ApiTokenCreate(name/expires_at?/scopes?)+ ApiTokenCreated(extends ApiToken + token_id + token 明文,对齐后端 ApiTokenCreateResponse);endpoints.ts 加 fetchApiTokens(GET)/createApiToken(POST,返回 ApiTokenCreated)/revokeApiToken(DELETE)",
+        "hooks 层:queries.ts 加 qk.apiTokens(['api-tokens'])+ useApiTokens(useQuery)+ useCreateApiToken(useMutation,onSuccess invalidate apiTokens)+ useRevokeApiToken(useMutation,onSuccess invalidate apiTokens)",
+        "页面(settings-page.tsx 加 ApiTokenCard 组件):新增第三个 Card「API Token 管理」(ShieldCheck 图标,在 LLM 配置两个 Card 之后);canManage 权限守卫(canManageUsers,owner/admin/super_admin 可见);列表表格(名称/前缀 code/状态 Badge 生效中|已吊销/创建时间/最后使用/过期 永不过期|fmt/吊销按钮);「颁发新 Token」按钮弹 Dialog",
+        "颁发流程 Dialog:表单(name Input + 有效期 Select:永不过期/7/30/90/365 天 → 计算 expires_at ISO 字符串 + 权限范围提示「继承全部权限」);提交成功后**切换到独立的「明文展示」Dialog**(关键 UX):大字号琥珀色警告横幅「请立即复制下方 Token 并妥善保管」+ 只读 Input 显示明文 + 复制按钮(navigator.clipboard.writeText + Check/Copy 图标切换 + clipboard 失败 fallback toast)+ 名称/前缀元信息 + 「我已保存,关闭」按钮",
+        "吊销确认 Dialog:吊销按钮 → 确认 Dialog(「确定吊销 {name}?吊销后使用此 Token 的 Agent 将立即无法访问,且不可恢复」)+ destructive 按钮 → useRevokeApiToken → toast 反馈 → 列表刷新",
+        "实现差异 vs plan:(1) expires_at 用下拉选择预设天数(永不过期/7/30/90/365)而非日期选择器 —— 日期选择器需额外日期组件且手输 ISO 字符串易错,预设天数覆盖常见场景且更简洁;(2) 明文展示用**独立 Dialog**(issue Dialog 关闭后弹出 reveal Dialog)而非 plan 描述的「切换 Dialog 内视图」,因关闭 issue Dialog 可重置表单而保留 reveal 状态独立管理更清晰;(3) ApiTokenCreated 对齐后端真实 schema 用 token_id(非 plan 骨架的 id)+ extends ApiToken 复用 Read 字段;(4) scope 细粒度编辑不实现(UI 显示「继承全部权限」提示),对齐 plan 边界"
+      ],
       "depends_on": "atoa-api-token-auth",
-      "notes": "整合进 settings-page.tsx(新增第三个 Card,与 LLM 配置并列)而非独立页,对齐「平台设置」语义。明文 Token 仅颁发时显示(弹窗+复制+「关闭后不可再见」警告)——安全 UX 关键点。复用 members-page 表格+Dialog 模式。权限双层守卫(路由 RequireUserManagement + 页面 canManageUsers)。不实现 scope 细粒度编辑(预留字段,UI 显示「继承全部权限」)。"
+      "notes": "整合进 settings-page.tsx(新增第三个 Card,与 LLM 配置并列)而非独立页,对齐「平台设置」语义。明文 Token 仅颁发时显示(独立 reveal Dialog + 复制 + 琥珀色警告 + 「关闭后不可再见」提示)——安全 UX 关键点。复用 members-page 表格 + Dialog 模式。权限双层守卫(路由 RequireUserManagement + 页面 canManageUsers)。不实现 scope 细粒度编辑(预留字段,UI 显示「继承全部权限」)。手动浏览器验证未跑(需前后端启动 + 真实 token),build(tsc 类型检查)+ oxlint 已覆盖类型正确性与规范;后端 API Token 端点已在 atoa-api-token-auth 任务用 15 个测试端到端覆盖。"
     }
   ]
 }

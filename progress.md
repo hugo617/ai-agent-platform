@@ -8,7 +8,7 @@
 - **标准启动路径**: `./init.sh`(装依赖 + ruff + pytest)
 - **标准验证路径**: `./init.sh`(同上,后端快速验证,SQLite 内存库)
 - **完整验证路径**(需 docker): `alembic upgrade head && alembic check` + `cd frontend && npm run build`
-- **当前最高优先级未完成功能**: `atoa-admin-ui`(priority 23,AtoA 管理前端:settings-page 加 API Token 管理 Card,明文仅显示一次 + 复制 + 吊销)—— 前置 `atoa-api-token-auth` ✅ 已完成(后端 API Token 颁发/吊销/验证端点就绪)
+- **当前最高优先级未完成功能**: 无(feature_list 全部 passing;AtoA 系列 5 个任务 + atoa-admin-ui 均已完成)
 - **当前 blocker**: 无
 
 ## 后续任务规划(2026-07-10 制定,2026-07-10 追加第 8 条插队,共 8 条,WIP=1 顺序执行)
@@ -27,7 +27,7 @@
 | **10** | **`atoa-cli-core`** | **AtoA** | **agenthub CLI 骨架(typer):login/whoami/agents 只读 + Agent-Ready 6 准则。前置 9 ✅ 已完成** | **`harness/docs/plan-atoa-cli-core.md`** |
 | **11** | **`atoa-cli-chat-admin`** | **AtoA** | **CLI 对话(SSE 流式)+ 会话历史 + Agent CRUD。核心卖点,前置 10** | **`harness/docs/plan-atoa-cli-chat-admin.md`** |
 | **12** | **`atoa-skill`** | **AtoA** | **Skill 编写(Agent Skills 开放标准 SKILL.md)—— 装上后任意 Agent 可用。前置 11** | **`harness/docs/plan-atoa-skill.md`** |
-| **13** | **`atoa-admin-ui`** | **AtoA** | **前端 API Token 管理 UI(settings-page 加 Card)。前置 9,可与 10-12 并行(WIP=1 仍顺序)** | **`harness/docs/plan-atoa-admin-ui.md`** |
+| **13** | **`atoa-admin-ui`** | **AtoA** | **前端 API Token 管理 UI(settings-page 加 Card)。前置 9 ✅ 已完成** | **`harness/docs/plan-atoa-admin-ui.md`** |
 
 > 依赖链:1 → 2 → 3(对话主线);4 → 5(权限矩阵);6 独立;7 暂停;8 ✅;**AtoA 系列:9(地基) → 10(CLI 骨架) → 11(CLI 对话+CRUD) → 12(Skill);13(前端)依赖 9,可与 10-12 并行但 WIP=1 仍顺序执行**。
 > AtoA = Agent-to-Agent:让任意外部 AI Agent(Claude Code/Cursor/Codex)在授权后通过 CLI+Skill 使用本平台。对标 Apifox CLI+Skill 打法 + google/agents-cli。鉴权选 PAT 先做+OAuth 预留;CLI 选 Python typer;首发能力全选(对话+只读+历史读写+CRUD)。
@@ -57,6 +57,7 @@
 | atoa-cli-core(AtoA CLI 骨架 agenthub 命令行) | passing | 199 tests + typer CLI + login/whoami/agents + Agent-Ready 6 准则 |
 | atoa-cli-chat-admin(AtoA CLI 对话+CRUD) | passing | 217 tests + agents chat SSE 流式 + conversations list/messages/delete + agents create/update(PATCH)/delete |
 | atoa-skill(AtoA Skill 编写) | passing | SKILL.md(commands.md 子文件)+ docs/atoa/(README+getting-started+distribution)+ README AtoA 章节;frontmatter YAML 校验通过 |
+| atoa-admin-ui(AtoA 管理前端 API Token UI) | passing | npm build 通过 + oxlint 0 warning + settings-page 第三个 Card(列表表格 + 颁发 Dialog 明文展示 + 吊销确认) |
 
 > ✅ AI 内核(agents + chat)已全部纳管并 passing:agents-api-hardening / chat-conversation-api / chat-frontend 三任务端到端完成。
 > ✅ **真实对话已跑通**:real-chat-llm-config(Session 017)用真实 DeepSeek key 端到端验证 SSE 流式对话,修了 3 个 bug(Agent.model 失效 / 前端模型脱节 / 无 LLM 配置 UI)。
@@ -763,6 +764,31 @@
 - **提交记录**: PR #24 已 squash 合并到 main(`0325b9b`);1 个功能 commit(零修复)
 - **已知风险**: 无。CI 4/4 干净环境全绿;真实 Claude Code 实测未跑(需在 Agent 环境安装 Skill 后实测识别与执行,属 plan 验收的「真实」项,非代码任务范围),文档命令准确性已由脚本核查 + 前序 CLI 任务的 31 个单测保障
 - **下一步最佳动作**: 执行 `atoa-admin-ui`(priority 23,前端 API Token 管理 UI,最后一个 AtoA 任务,依赖 atoa-api-token-auth 已就绪);全部 AtoA 任务完成后补「09-外部Agent接入AtoA.md」架构文档到 `项目指南/02-后端架构/`
+
+---
+
+### Session 028 — 2026-07-11
+- **本轮目标**: 执行 `atoa-admin-ui`(AtoA 管理前端 —— API Token 管理 UI)—— 纯前端,5 步,前置 atoa-api-token-auth ✅ 已合入 main(PR #21)。最后一个 AtoA 任务
+- **已完成**(对照 plan §实施步骤 Step 1-6):
+  - Step 0 基线确认:`./init.sh` → 217 passed(起点干净);切 `feat/atoa-admin-ui` 分支
+  - Step 1 API 层:types.ts 加 ApiToken(id/name/token_prefix/token_type/scopes/last_used_at/expires_at/is_active/created_at,对齐后端 ApiTokenRead)+ ApiTokenCreate(name/expires_at?/scopes?)+ ApiTokenCreated(extends ApiToken + token_id + token 明文,对齐后端 ApiTokenCreateResponse);endpoints.ts 加 fetchApiTokens(GET)/createApiToken(POST,返回 ApiTokenCreated)/revokeApiToken(DELETE)
+  - Step 2 hooks 层:queries.ts 加 qk.apiTokens(['api-tokens'])+ useApiTokens(useQuery)+ useCreateApiToken(useMutation,onSuccess invalidate apiTokens)+ useRevokeApiToken(useMutation,onSuccess invalidate apiTokens)
+  - Step 3 settings-page.tsx 加 ApiTokenCard 组件:新增第三个 Card「API Token 管理」(ShieldCheck 图标,在 LLM 配置两个 Card 之后);canManage 权限守卫(canManageUsers,owner/admin/super_admin 可见);列表表格(名称/前缀 code/状态 Badge 生效中|已吊销/创建时间/最后使用/过期 永不过期|fmt/吊销按钮);「颁发新 Token」按钮弹 Dialog
+  - Step 4 颁发流程:表单(name Input + 有效期 Select:永不过期/7/30/90/365 天 → 计算 expires_at ISO 字符串 + 权限范围提示「继承全部权限」);提交成功后切换到独立的「明文展示」Dialog(关键 UX):琥珀色警告横幅 + 只读 Input 显示明文 + 复制按钮(navigator.clipboard.writeText + Check/Copy 图标切换 + clipboard 失败 fallback)+ 名称/前缀元信息 + 「我已保存,关闭」按钮
+  - Step 5 吊销确认 Dialog:吊销按钮 → 确认 Dialog + destructive 按钮 → useRevokeApiToken → toast 反馈 → 列表刷新
+  - Step 6 验证:全绿(见下)
+- **运行过的验证**(全过):
+  - `cd frontend && npm run build` → tsc -b + vite build 成功,0 类型错误
+  - `npx oxlint`(4 改动文件)→ 0 warnings 0 errors
+  - 后端零改动(纯前端任务,基线 217 passed 不变,无回归)
+- **已记录证据**: `feature_list.json` 的 `atoa-admin-ui.evidence` 字段(8 条,含 API 层结构 + 颁发流程独立 reveal Dialog + 吊销确认 + 与 plan 的差异)
+- **技术要点**(与 plan 的实现差异):
+  - **expires_at 用下拉选择预设天数**(永不过期/7/30/90/365)而非 plan §Step3 的日期选择器 —— 日期选择器需额外日期组件且手输 ISO 字符串易错,预设天数覆盖常见场景且更简洁
+  - **明文展示用独立 Dialog**(issue Dialog 关闭后弹出 reveal Dialog)而非 plan §Step3 描述的「切换 Dialog 内视图」—— 关闭 issue Dialog 可重置表单而保留 reveal 状态独立管理更清晰
+  - **ApiTokenCreated 对齐后端真实 schema** 用 token_id(非 plan 骨架的 id)+ extends ApiToken 复用 Read 字段;ApiToken 含 token_type 字段(plan 骨架漏了)
+- **提交记录**: `feat/atoa-admin-ui` 分支(待审查 + PR + 合并)
+- **已知风险**: 无功能风险。手动浏览器验证未跑(需前后端启动 + 真实 token),build(tsc 类型检查)+ oxlint 已覆盖类型正确性与规范;后端 API Token 端点已在 atoa-api-token-auth 任务用 15 个测试端到端覆盖
+- **下一步最佳动作**: 清理废代码 + 代码质量审查 + PR + CI 守门 + 合并 feat/atoa-admin-ui 到 main;**全部 AtoA 任务(9-13)完成后**,feature_list 全部 passing,可考虑补「09-外部Agent接入AtoA.md」架构文档到 `项目指南/02-后端架构/`,或由用户指定新方向
 
 ---
 
