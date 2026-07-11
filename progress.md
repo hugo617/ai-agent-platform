@@ -8,7 +8,7 @@
 - **标准启动路径**: `./init.sh`(装依赖 + ruff + pytest)
 - **标准验证路径**: `./init.sh`(同上,后端快速验证,SQLite 内存库)
 - **完整验证路径**(需 docker): `alembic upgrade head && alembic check` + `cd frontend && npm run build`
-- **当前最高优先级未完成功能**: 无(feature_list.json 全部任务已 passing,16 个 feature 全绿)
+- **当前最高优先级未完成功能**: `atoa-api-token-auth`(priority 19,AtoA 地基:API Token 鉴权机制)—— 用户开新方向「AtoA(Agent-to-Agent):让任意外部 Agent 通过 CLI+Skill 使用平台」,5 条任务已规划登记,e2e-and-coverage 暂停
 - **当前 blocker**: 无
 
 ## 后续任务规划(2026-07-10 制定,2026-07-10 追加第 8 条插队,共 8 条,WIP=1 顺序执行)
@@ -21,11 +21,16 @@
 | 4 | `permission-matrix-api` | 权限 | 权限矩阵聚合端点(后端)✅ 已完成 | `harness/docs/plan-permission-matrix-api.md` |
 | 5 | `permission-matrix-ui` | 权限 | 可编辑权限矩阵(前端,依赖 4)✅ 已完成 | `harness/docs/plan-permission-matrix-ui.md` |
 | 6 | `tenant-org-admin-ui` | 管理控制台 | 租户/组织/成员管理页(前端)✅ 已完成 | `harness/docs/plan-tenant-org-admin-ui.md` |
-| 7 | `e2e-and-coverage` | 工程化 | E2E + 覆盖率门槛 + lint(建议最后)✅ 已完成 | `harness/docs/plan-e2e-and-coverage.md` |
-| **8** | **`real-chat-llm-config`** | **AI 内核** | **真实对话验证 + LLM 配置管理(超管+租户级)+ 修 3 bug(Agent.model 失效/前端模型脱节/无配置 UI)—— 用户插队,当前最高优先级** | **`harness/docs/plan-real-chat-llm-config.md`** |
+| 7 | `e2e-and-coverage` | 工程化 | E2E + 覆盖率门槛 + lint(建议最后)⏸️ 暂停(AtoA 插队) | `harness/docs/plan-e2e-and-coverage.md` |
+| **8** | **`real-chat-llm-config`** | **AI 内核** | **真实对话验证 + LLM 配置管理(超管+租户级)+ 修 3 bug(Agent.model 失效/前端模型脱节/无配置 UI)—— 用户插队** ✅ 已完成 | **`harness/docs/plan-real-chat-llm-config.md`** |
+| **9** | **`atoa-api-token-auth`** | **AtoA** | **地基:API Token 鉴权机制(PAT 式)—— ApiToken 表 + deps.py 旁路 + 颁发/吊销端点。用户开新方向,当前最高优先级** | **`harness/docs/plan-atoa-api-token-auth.md`** |
+| **10** | **`atoa-cli-core`** | **AtoA** | **agenthub CLI 骨架(typer):login/whoami/agents 只读 + Agent-Ready 6 准则。前置 9** | **`harness/docs/plan-atoa-cli-core.md`** |
+| **11** | **`atoa-cli-chat-admin`** | **AtoA** | **CLI 对话(SSE 流式)+ 会话历史 + Agent CRUD。核心卖点,前置 10** | **`harness/docs/plan-atoa-cli-chat-admin.md`** |
+| **12** | **`atoa-skill`** | **AtoA** | **Skill 编写(Agent Skills 开放标准 SKILL.md)—— 装上后任意 Agent 可用。前置 11** | **`harness/docs/plan-atoa-skill.md`** |
+| **13** | **`atoa-admin-ui`** | **AtoA** | **前端 API Token 管理 UI(settings-page 加 Card)。前置 9,可与 10-12 并行(WIP=1 仍顺序)** | **`harness/docs/plan-atoa-admin-ui.md`** |
 
-> 依赖链:1 → 2 → 3(对话主线);4 → 5(权限矩阵);6 独立(暂停中);7 最后;**8 插队**(前置 2+3 已完成)。
-> LLM 用 DeepSeek API(OpenAI 兼容,任务 2 切换配置);任务 8 把对话从「离线测试 passing」推进到「真实可用」并补配置管理。
+> 依赖链:1 → 2 → 3(对话主线);4 → 5(权限矩阵);6 独立;7 暂停;8 ✅;**AtoA 系列:9(地基) → 10(CLI 骨架) → 11(CLI 对话+CRUD) → 12(Skill);13(前端)依赖 9,可与 10-12 并行但 WIP=1 仍顺序执行**。
+> AtoA = Agent-to-Agent:让任意外部 AI Agent(Claude Code/Cursor/Codex)在授权后通过 CLI+Skill 使用本平台。对标 Apifox CLI+Skill 打法 + google/agents-cli。鉴权选 PAT 先做+OAuth 预留;CLI 选 Python typer;首发能力全选(对话+只读+历史读写+CRUD)。
 
 ## 已 passing 的地基能力(详见 feature_list.json)
 
@@ -516,6 +521,37 @@
 - **下一步最佳动作**: 无排期任务。可考虑:① datetime UTC 化是否需要同步更新文档(见下方文档影响评估);② 后续新功能开发按 feature_list.json 规划。
 
 ---
+
+### Session 021 — 2026-07-11
+- **本轮目标**: 规划新功能方向「AtoA(Agent-to-Agent):让任意外部 AI Agent 在授权后通过 CLI+Skill 使用本平台」—— 调研 Apifox CLI+Skill 文章 + 找 GitHub 参考项目 + 规划落地到 Harness 文档体系(纯文档登记,0 代码改动)
+- **前置调研**(为规划提供依据):
+  - 读 Apifox 文章:核心理念是「四件套组合」—— CLI(平台能力命令行入口)+ Skill(教 Agent 何时用/怎么用)+ 授权机制(API key/token)+ AI 友好约定(--json/--no-interactive/幂等/exit code)。对标项目:[google/agents-cli](https://github.com/google/agents-cli)(最贴近)、[ComposioHQ/awesome-agent-clis](https://github.com/ComposioHQ/awesome-agent-clis)(Agent-Ready CLI 6 准则)、Apifox 官方 GitHub org 的 AI Agent Skills
+  - 派 Explore agent 调研项目现状:后端在 `app/`(非 `backend/app/`),分层清晰;`get_current_user`(`app/api/deps.py:57`)只认用户态 JWT(本地 HS256/Logto RS256/开发 RS256),**无任何 API Token/机器身份机制**;CLI 完全不存在(无 click/typer/fire);`crypto.py` Fernet 加密 + `llm_config_service` 掩码模式可复用;`require_permission(obj,act)` 是通用权限工厂可复用;`graph.py:_build_tenant_tools` 有「每个 tool 自己调 permission_service.check」的现成范式
+  - Agent Skills 是 2025 年 VS Code Copilot/Claude Code/Cursor/Codex 共同采纳的事实标准(渐进式加载:先扫 frontmatter ~100 token 建索引→命中后加载正文→按需读子文件)
+- **与用户对齐 3 个方向性决策**(AskUserQuestion):
+  - ① 鉴权模型:**PAT 先做 + OAuth 预留**(ApiToken 表预留 token_type 字段)
+  - ② CLI 技术栈:**Python typer**(对齐后端,复用 app/schemas;与 google/agents-cli 同款)
+  - ③ 首发能力:**全选**(对话核心卖点 + Agent 配置只读 + 会话历史读写 + 管理 CRUD)
+- **已完成**(5 份 plan 文档 + feature_list 登记 + progress 更新,0 功能代码):
+  - **5 份 plan 文档**(新建,对齐 harness/docs/plan-*.md 模板,含背景/状态速查/目标/决策表/分阶段步骤/验收标准/风险表/参考文件):
+    - `harness/docs/plan-atoa-api-token-auth.md` — 地基:ApiToken 表 + deps.py 旁路(ahp_ 前缀分流)+ 颁发/吊销端点 + Fernet hash 存储 + 多租户隔离天然继承
+    - `harness/docs/plan-atoa-cli-core.md` — CLI 骨架:cli/ 顶层目录 + typer + login/whoami/agents 只读 + Agent-Ready 6 准则(--json/--no-interactive/exit code/管道检测)
+    - `harness/docs/plan-atoa-cli-chat-admin.md` — CLI 对话(SSE 流式 stderr 输出)+ 会话历史 + Agent CRUD(--confirm/--yes)
+    - `harness/docs/plan-atoa-skill.md` — Skill 编写(.agents/skills/agenthub/SKILL.md 开放标准)+ docs/atoa/ 使用文档 + Claude Code 实测
+    - `harness/docs/plan-atoa-admin-ui.md` — 前端 Token 管理(settings-page 加 Card,明文仅显示一次+复制+警告)
+  - **feature_list.json**:在 real-chat-llm-config 之后插入 5 条任务(priority 19-23, area AtoA, status not_started),JSON 校验合法(共 22 features)
+  - **progress.md**:任务规划表加 5 行(9-13)+ 依赖链说明 + 当前最高优先级改为 atoa-api-token-auth;e2e-and-coverage 标注暂停(AtoA 插队);本 Session 记录
+- **AtoA 核心架构设计**(5 份 plan 共同基础):
+  - **鉴权旁路是技术核心**:`get_current_user` 检测 `ahp_` 前缀 → 查 ApiToken 表 → 构造 `CurrentUser(user_id=token.created_by_user_id)`。`require_permission` **完全不用改**(user_id 真实,casbin 查询正常),所有现有 API 自动获得对外部 Agent 开放的能力
+  - **多租户隔离天然继承**:token tenant_id 固定,Repository 层过滤照常生效
+  - **任务依赖链**:9(地基)→ 10(CLI 骨架)→ 11(CLI 对话+CRUD)→ 12(Skill);13(前端)依赖 9 可与 10-12 并行但 WIP=1 仍顺序
+- **运行过的验证**: `python3 -c "import json; json.load(open('feature_list.json'))"` → JSON 合法,共 22 features(16 原有 + ... 实际原 17 + 新增 5),AtoA 系列 5 条全 not_started ✅(无代码改动,无需 init.sh)
+- **已记录证据**: 无(本任务是规划登记,5 条任务的 evidence 字段待各自执行时填)
+- **提交记录**: 待用户决定是否提交(本会话只改文档:5 plan + feature_list.json + progress.md,0 功能代码)
+- **已知风险**: 无。plan 文档中的文件路径/符号名(deps.py:57 / crypto.py / require_permission:151 / env.py:17-26 / conftest.py:87-96 / 迁移链 head=b3c4d5e6f7a8)基于 Session 021 代码探勘核实,执行前建议快速 grep 确认无漂移
+- **下一步最佳动作**:
+  - (a) 提交本次文档改动(5 plan + feature_list.json + progress.md);
+  - (b) 执行 `atoa-api-token-auth`(priority 19,plan 已就绪,AtoA 地基,新会话可直接开干)
 
 ---
 

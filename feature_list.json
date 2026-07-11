@@ -412,6 +412,102 @@
         "权限边界:平台级端点 require_super_admin()(新增 deps.py,非超管 403);租户级 require_permission('settings','manage')(owner/admin,member 403);conftest casbin seed + permission_service DEFAULT_OWNER/ADMIN_PERMS 加 ('settings','manage')"
       ],
       "notes": "背景:agents-api-hardening/chat-conversation-api/chat-frontend 三任务虽标 passing,但 progress.md 多处承认「手动 SSE 验证从未跑通」(.env 里 OPENAI_API_KEY=sk-replace-me 是占位符)。探勘发现 3 个 bug:(1) stream_agent(graph.py) 硬用全局 settings.openai_model,chat.py 调用时未传 agent.model,导致用户选什么模型对话永远用全局那个;(2) agents-page.tsx:43 硬编码 MODELS=['gpt-4o-mini','gpt-4o','gpt-4-turbo','claude-3-5-sonnet'] 与后端 DeepSeek 完全脱节,选 gpt-4o-mini 调 DeepSeek 会 model not found;(3) LLM 配置只能改 .env 无 UI 管理。已确认决策:配置粒度=超管平台级+租户级两层;取值优先级=租户>平台>env;API key 掩码不回显(GET 返 sk-***abcd,PUT 留空=不改);本任务插队 tenant-org-admin-ui(priority 16 暂停,WIP=1 转此)。加密用 cryptography==44.0.0(已装,Fernet 可用),新增 config.py field_encryption_key 字段。迁移链 head=a2b3c4d5e6f7。权限 seed 真源在 permission_service.py DEFAULT_*_PERMS + conftest.py _make_casbin,需加 ('settings','manage')。"
+    },
+    {
+      "id": "atoa-api-token-auth",
+      "priority": 19,
+      "area": "AtoA",
+      "title": "AtoA 地基 —— API Token 鉴权机制(PAT 式)",
+      "user_visible_behavior": "(内部)平台支持长效 API Token 鉴权:管理端可颁发/吊销 token,外部 Agent 持 token 即可访问平台全部 API(继承颁发者权限,固定租户)",
+      "status": "not_started",
+      "plan": "harness/docs/plan-atoa-api-token-auth.md",
+      "verification": [
+        "新增 ApiToken 表(绑租户+颁发者 user_id,Fernet 加密存 hash,软删除,预留 OAuth token_type 字段)+ Alembic 迁移",
+        "改造 get_current_user(deps.py)加旁路:识别 ahp_ 前缀 token → 查表 → 构造 CurrentUser,require_permission 完全不改",
+        "新增端点:POST/GET/DELETE /api-tokens(颁发/列表/吊销)+ GET /api-tokens/verify",
+        "用颁发的 API Token 能访问现有 /agents 端点(验证整个鉴权链路端到端)",
+        "./init.sh 全绿(ruff + pytest,含新测试 test_api_tokens.py)",
+        "alembic check 无 drift(env.py + conftest.py 两处 model import 同步)"
+      ],
+      "evidence": [],
+      "notes": "AtoA 系列地基任务。核心设计:get_current_user 旁路用 ahp_ 前缀分流(非 ahp_ 走原 JWT 零回归),token 绑定 created_by_user_id 构造 CurrentUser 后 casbin 查询正常工作,所有现有 API 自动获得对外部 Agent 开放的能力。token 存 hash(crypto.encrypt)不存明文,颁发时明文仅返回一次。多租户隔离天然继承(token tenant_id 固定)。行业对标 GitHub PAT / Composio API key / Apifox 访问令牌。预留 OAuth Client Credentials(token_type 字段)作后续独立任务。⚠️ 新增表必同步 alembic/env.py:17-26 + tests/conftest.py:87-96 两处 import(Session 018 血泪教训)。迁移链 head=b3c4d5e6f7a8。"
+    },
+    {
+      "id": "atoa-cli-core",
+      "priority": 20,
+      "area": "AtoA",
+      "title": "AtoA CLI 骨架(agenthub 命令行:登录 + 只读命令)",
+      "user_visible_behavior": "用户/Agent 装上 agenthub CLI 后,能用 token 登录并执行只读命令(whoami/agents list/agents get),支持 --json 结构化输出",
+      "status": "not_started",
+      "plan": "harness/docs/plan-atoa-cli-core.md",
+      "verification": [
+        "新建 cli/ 顶层目录(typer 框架)+ pyproject.toml 加 [project.scripts] agenthub = cli.main:app",
+        "命令:agenthub login <token> / whoami / agents list / agents get,支持 --json/--no-interactive",
+        "Agent-Ready 6 准则全满足:--json 结构化输出、--no-interactive、有意义 exit code、管道检测自动切 JSON",
+        "凭证存储 ~/.agenthub/credentials(权限 0600),支持 AGENTHUB_TOKEN 环境变量覆盖",
+        "pipx install -e . 后 agenthub 命令可用;login + whoami + agents list --json 跑通",
+        "CLI 测试通过(cli/tests/)+ ./init.sh 全绿(后端不回归)"
+      ],
+      "evidence": [],
+      "depends_on": "atoa-api-token-auth",
+      "notes": "CLI 技术栈选 Python typer(对齐后端技术栈,与 google/agents-cli 同款)。CLI 代码放 cli/ 顶层目录(与 app/ 平级,独立包不污染后端)。行业对标 google/agents-cli(uvx 安装+skills 分发)与 ComposioHQ/awesome-agent-clis 总结的 Agent-Ready CLI 6 准则(--json/--no-interactive/api key 认证/幂等/管道检测/exit code)。HTTP client 复用 httpx(后端已依赖)。凭证文件权限 0600 + env var 覆盖(CI/容器场景)。"
+    },
+    {
+      "id": "atoa-cli-chat-admin",
+      "priority": 21,
+      "area": "AtoA",
+      "title": "AtoA CLI 对话 + CRUD(核心卖点与完整能力)",
+      "user_visible_behavior": "Agent 能通过 CLI 与平台智能体流式对话(终端打字机输出)、读写会话历史、创建/修改/删除 Agent 配置",
+      "status": "not_started",
+      "plan": "harness/docs/plan-atoa-cli-chat-admin.md",
+      "verification": [
+        "agenthub agents chat --agent <id> 'msg':对接 POST /chat/stream SSE,终端流式输出(打字机)",
+        "agenthub conversations list/messages/delete:对接会话历史 API",
+        "agenthub agents create/update/delete:对接 Agent CRUD,带 --confirm/--yes 确认机制",
+        "--json 模式:对话收完整回复后一次输出;CRUD 输出操作结果 JSON",
+        "(真实)端到端对话跑通(需 LLM key);CLI 测试通过(cli/tests/);./init.sh 全绿"
+      ],
+      "evidence": [],
+      "depends_on": "atoa-cli-core",
+      "notes": "核心卖点:外部 Agent 用你平台最大诉求是调 LLM+Agent 能力(对话)。对话涉及 SSE 流式(技术难点,流式 chunk 输出到 stderr 不污染 stdout),CRUD 涉及写操作(风险点,默认确认 --yes 跳过)。会话续接靠 --conversation-id 指定历史会话。首发能力范围(用户决策全选):对话+只读+历史读写+CRUD,本任务覆盖除只读(上个任务)外的三项。不改后端任何端点(只对接现有 API)。"
+    },
+    {
+      "id": "atoa-skill",
+      "priority": 22,
+      "area": "AtoA",
+      "title": "AtoA Skill 编写(让任意 Agent 装上就能用,开放标准)",
+      "user_visible_behavior": "任意支持 Agent Skills 开放标准的 AI Agent(Claude Code/Cursor/Codex/VS Code Copilot)装上 agenthub skill 后,自动学会用 CLI 操作平台",
+      "status": "not_started",
+      "plan": "harness/docs/plan-atoa-skill.md",
+      "verification": [
+        "新建 .agents/skills/agenthub/SKILL.md(符合 Agent Skills 开放标准:YAML frontmatter name+description + 正文指令)",
+        "SKILL.md 内容:何时用/安装(pipx install)/认证(agenthub login)/常用命令速查/常见任务示例",
+        "新建 docs/atoa/ 使用文档(README + getting-started + distribution)",
+        "(真实)Claude Code 实测:装上 Skill 后能被识别并执行 agenthub 命令",
+        "./init.sh 全绿(纯文档任务,不影响后端)"
+      ],
+      "evidence": [],
+      "depends_on": "atoa-cli-chat-admin",
+      "notes": "Apifox 打法四件套(CLI+Skill+授权+agentHints)的 Skill 层。Agent Skills 是 2025 年 VS Code Copilot/Claude Code/Cursor/Codex 共同采纳的事实标准:渐进式加载(先扫 frontmatter ~100 token 建索引→命中后加载正文→按需读子文件)。目录约定 .agents/skills/。行业对标 Apifox 官方 GitHub org 的 AI Agent Skills、google/agents-cli 的 skills 分发。description 精准度决定 Agent 命中率(写清做什么+何时用+前置条件)。本仓库 ~/.agents/skills/ 下已有大量 Skill 范本(lark-*/obsidian-* 等)可参照格式。"
+    },
+    {
+      "id": "atoa-admin-ui",
+      "priority": 23,
+      "area": "AtoA",
+      "title": "AtoA 管理前端(API Token 管理 UI)",
+      "user_visible_behavior": "管理员能在设置页颁发/查看/吊销 API Token,明文 Token 颁发时仅显示一次(复制+警告),无需手敲 API",
+      "status": "not_started",
+      "plan": "harness/docs/plan-atoa-admin-ui.md",
+      "verification": [
+        "settings-page.tsx 新增「API Token」Card(与 LLM 配置并列),canManageUsers 权限守卫",
+        "颁发流程:表单(name+expires_at) → 明文 Token 仅显示一次 → 复制按钮 + 警告横幅",
+        "Token 列表表格(名称/掩码前缀/创建时间/最后使用/过期/吊销)+ 吊销确认 Dialog",
+        "cd frontend && npm run build 通过 + oxlint 0 warning",
+        "./init.sh 全绿(后端不回归,纯前端任务)"
+      ],
+      "evidence": [],
+      "depends_on": "atoa-api-token-auth",
+      "notes": "整合进 settings-page.tsx(新增第三个 Card,与 LLM 配置并列)而非独立页,对齐「平台设置」语义。明文 Token 仅颁发时显示(弹窗+复制+「关闭后不可再见」警告)——安全 UX 关键点。复用 members-page 表格+Dialog 模式。权限双层守卫(路由 RequireUserManagement + 页面 canManageUsers)。不实现 scope 细粒度编辑(预留字段,UI 显示「继承全部权限」)。"
     }
   ]
 }
