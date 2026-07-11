@@ -26,7 +26,7 @@ git clone <仓库地址> && cd ai-agent-platform
 pip install -e .          # 注册 agenthub 命令
 ```
 
-依赖见 `requirements-cli.txt`(typer / rich / httpx),`init.sh` 会自动安装。
+依赖见 `requirements.txt` 的 CLI 段(typer / rich / click),由 `pyproject.toml` 的 `dynamic dependencies` 声明,`pip install -e .` 自动装齐。
 
 #### pipx 安装(推荐,隔离环境)
 

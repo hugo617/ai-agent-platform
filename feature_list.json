@@ -638,6 +638,33 @@
       "evidence": [],
       "depends_on": "real-chat-llm-config",
       "notes": "根因:app/models/agent.py:16-33 只有 4 有效字段(name/system_prompt/model/时间戳);temperature 硬编码 graph.py:76,109 两处写死 0.3;无 max_tokens/top_p;前端 agents-page.tsx:44-48 表单只有 3 字段。决策:加 4 字段(temperature/max_tokens/top_p/description);默认 temperature=0.7(原硬编码 0.3 改进为更通用默认);max_tokens/top_p 为 None 时不传给 LLM(用 provider 默认);前端高级参数折叠(新手不被吓到)。不做:工具配置(属工具体系任务)、知识库关联(属 RAG 任务)、prompt 变量模板、Agent 分类标签系统、per-model 动态上限。"
+    },
+    {
+      "id": "pyproject-missing-dependencies",
+      "priority": 28,
+      "area": "工程化",
+      "title": "pyproject.toml 缺 dependencies 声明(CLI pipx 全局装失败)",
+      "user_visible_behavior": "(内部)pipx install -e . 全局装 agenthub CLI 后,运行报 ModuleNotFoundError: No module named 'typer'",
+      "status": "passing",
+      "verification": [
+        "pyproject.toml [project] 加 dependencies(至少 CLI 运行所需 typer/httpx/click;建议补全后端依赖 fastapi/sqlalchemy/pycasbin 等)",
+        "pipx install -e . 后 ~/.local/bin/agenthub whoami 直接可用,无需 pipx inject",
+        "干净虚拟环境 pip install -e . 能装齐依赖",
+        "./init.sh 全绿"
+      ],
+      "evidence": [
+        "发现于 Session 030 AtoA 接入配置收尾(2026-07-11):为让新终端可用 agenthub,跑 pipx install -e . 成功,但 ~/.local/bin/agenthub whoami 报 ModuleNotFoundError: No module named 'typer'",
+        "root cause:pyproject.toml [project] 段完全没有 dependencies 字段(grep dependencies 零命中)——CLI 运行依赖 typer/httpx/click 未声明,后端依赖(fastapi/sqlalchemy/pycasbin/langgraph 等)也未声明",
+        "本地 .venv 能跑是因为依赖被手动 pip install 装入,不依赖 pyproject dependencies 字段;pipx 创建独立虚拟环境时不会装未声明的依赖",
+        "临时绕过(已执行,不改代码):pipx inject agenthub typer httpx click → ~/.local/bin/agenthub whoami 返回 {valid:true,...} 全局可用",
+        "CLI 第三方运行依赖(grep cli/ import 排除测试文件):typer、httpx、click(pytest 仅测试用,非运行依赖)",
+        "Session 033 修复(2026-07-11):方案 = requirements.txt 作唯一来源 + CLI 依赖合并进主 dependencies(用户 3 项决策确认)。pyproject.toml 加 dynamic=[\"dependencies\"] + [tool.setuptools.dynamic] dependencies={file=[\"requirements.txt\"]},不在 pyproject 重复版本号 → 零漂移",
+        "requirements.txt 改动:① 合并 CLI 依赖段(typer>=0.12,<1 / rich>=13,<14 / click>=8.1,<9;httpx 已存在不重复);② 第17行内联注释重排(setuptools dynamic 读取走 packaging.Requirements 解析,不支持内联 #,必须拆成独立注释行);③ click 显式声明(cli/errors.py:18 直接 import,typer 0.12+ 依赖树不再传递 click)",
+        "requirements-cli.txt 删除(内容已合并进 requirements.txt,避免双轨);init.sh INSTALL_CMD 从 'pip install -r requirements-dev.txt -r requirements-cli.txt' 简化为 'pip install -r requirements-dev.txt'(requirements-dev.txt 的 -r requirements.txt 自动含 CLI 依赖);.github/workflows/ci.yml Backend job 同步删 -r requirements-cli.txt;docs/atoa/distribution.md:29 引用更新",
+        "验证(全过):① pyproject.toml tomllib 解析 OK(dynamic + [tool.setuptools.dynamic] 段就位);② pip install -e . 成功(editable build done,无 PEP 508 解析错误,证明内联注释重排生效);③ importlib.metadata.requires('agenthub') 从修复前的 0 项变为 26 项(含 typer/rich/click/httpx 四个 CLI 依赖全 ✅,pydantic-settings 两条条件标记各自独立);④ ./init.sh 全绿 ruff All checks passed! + 229 passed(简化装依赖路径不回归);⑤ import typer,click,rich,httpx + agenthub --help 正常",
+        "架构决策理由:pyproject 把 app+cli 打成一个项目(packages.find include app*,cli*),故 pip install -e . 必须装齐两者依赖。CLI 依赖(typer/rich/click)原在 requirements-cli.txt 独立分层,但作 dynamic 单一来源时必须合并进 requirements.txt,否则 pipx/pip install -e . 读不到 CLI 依赖(原 bug 复现)。合并后 requirements-cli.txt 冗余故删"
+      ],
+      "notes": "关联 atoa-cli-core(priority 20),其 plan 假设 pipx install -e . 可直接全局分发,实际因 dependencies 缺失受阻。根因修复:pyproject.toml [project] 加 dependencies=[typer,httpx,click, ...](CLI 运行最小集)——建议同时补全后端依赖让 pip install -e . 在干净环境可用。本任务在 AtoA 接入配置中用 pipx inject 临时绕过,治本修复留作独立任务。不影响后端运行(后端用 .venv 已装齐),仅影响 CLI 全局分发与干净环境安装。 Session 033 根治:采用 dynamic dependencies 从 requirements.txt 读取(单一事实来源,零版本漂移),CLI 依赖合并进 requirements.txt 后 requirements-cli.txt 删除。死依赖(pgvector/python-dateutil)本次不清理(独立任务)。pipx reinstall 实测留作可选证据(本会话用 pip install -e . + metadata 检查已等价证明 dependencies 声明正确)。"
     }
   ]
 }

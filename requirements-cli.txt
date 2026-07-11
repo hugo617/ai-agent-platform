@@ -1,9 +1,0 @@
-# CLI dependencies for the ``agenthub`` command (AtoA surface).
-# Install on top of requirements.txt:
-#   pip install -r requirements.txt -r requirements-cli.txt
-# Or via the project scripts entry after ``pipx install -e .``.
-typer>=0.12,<1
-rich>=13,<14
-# httpx is already in requirements.txt (backend uses it); listed here so a
-# CLI-only install path can be constructed if needed.
-httpx>=0.27,<1
