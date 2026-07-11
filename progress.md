@@ -584,6 +584,28 @@
 - **已知风险**: 无功能风险。手动 curl 验证未单独执行(纯后端 pytest 已覆盖 API 行为 + 鉴权链路端到端);真实 LLM 对话未跑(本任务不涉及 LLM,后续 atoa-cli-chat-admin 任务做);前端管理 UI 未做(atoa-admin-ui 任务,priority 23)
 - **下一步最佳动作**: 清理废代码 + 代码质量审查 + PR + CI 守门 + 合并 feat/atoa-api-token-auth 到 main;之后开始 `atoa-cli-core`(priority 20,CLI 骨架,前置已就绪)
 
+### Session 023 — 2026-07-11
+- **本轮目标**: 清理废代码 + 代码质量审查 + PR + CI 守门 + 合并 feat/atoa-api-token-auth 到 main
+- **已完成**(端到端,含合并):
+  - **废代码扫描**:ruff F-rules(F401/F811/F841)13 文件全绿 + 符号引用核查(所有新符号 `ApiToken`/`ApiTokenRepository`/`ApiTokenService`/`ResolvedToken`/schema ×3/`_http_exc`/`_resolve_api_token`/`API_TOKEN_PREFIX` 均有引用)→ **无废代码,无需清理改动**
+  - **代码质量审查 + 1 处小修复**:分层合规(Controller→Service→Repository→Model 单向;租户过滤在 Repository 层 `TenantScopedRepository`);软删除(is_active + is_deleted);加密边界严谨(明文仅 issue 返回一次,Read schema 永不携带密文);鉴权旁路 `_resolve_api_token` 镜像 JWT 路径(membership/active/status 重新校验)。修 1 处小瑕疵:`api_token_service.verify` 内的 inline `from datetime import UTC, datetime` 提到模块顶部(对齐仓库 datetime 规范)
+  - 基线验证:`./init.sh` → ruff All checks passed! + **186 passed**
+  - 迁移链:`alembic upgrade head`(b3c4d5e6f7a8 → c4d5e6f7a8b9)+ `alembic check` → No new upgrade operations detected(无 drift,Session 018 教训未重演 —— env.py + conftest.py 两处 import 同步)
+  - commit `438e81a` → push → PR #21(base main)
+  - **CI 守门:4/4 全绿**(Backend pytest+ruff 1m39s / Migrations alembic upgrade on Postgres 44s / Frontend typecheck+build+lint 25s / E2E Playwright 1m59s),**无需修复**
+  - **squash 合并 PR #21 → main**(commit `063abf4`),删除远程分支,本地切回 main 同步;`git remote prune` 清除残留引用;本地 feature 分支已删
+  - main 上跑 ruff + pytest tests/test_api_tokens.py 确认 15 passed,仓库仍可按标准路径工作
+- **运行过的验证**:
+  - `.venv/bin/ruff check --select F`(13 文件)→ All checks passed!
+  - `./init.sh`(feat 分支)→ ruff All checks passed! + **186 passed**
+  - `APP_ENV=testing alembic upgrade head` + `alembic check` → 迁移成功 + No new upgrade operations detected
+  - `./init.sh`(main)→ ruff + 186 passed;`pytest tests/test_api_tokens.py -q` → 15 passed
+  - CI(PR #21)→ 4/4 job SUCCESS
+- **已记录证据**: 无新增(本任务是审查+发版;feature_list 的 atoa-api-token-auth.evidence 在 Session 022 已填)
+- **提交记录**: PR #21 已 squash 合并到 main(`063abf4`);含 1 个功能 commit(含 1 处 inline-import 质量修复)
+- **已知风险**: 无。CI Migrations job 在真实 Postgres 上确认无 drift(env.py/conftest.py 两处 import 同步)
+- **下一步最佳动作**: 执行 `atoa-cli-core`(priority 20,CLI 骨架 login/whoami/agents 只读,前置已合入 main 就绪)
+
 ---
 
 <!--
