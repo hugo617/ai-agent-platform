@@ -45,7 +45,9 @@ async def list_role_labels(
     db: AsyncSession = Depends(get_db),
 ) -> list[RoleLabel]:
     """Lightweight list for dropdown population."""
-    return await RbacService(db).labels(user.user_id, user.tenant_id)
+    return await RbacService(db).labels(
+        user.user_id, user.tenant_id, platform_role=user.platform_role
+    )
 
 
 @router.get(
@@ -57,7 +59,9 @@ async def list_roles(
     user: CurrentUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> list[RoleRead]:
-    return await RbacService(db).list(user.user_id, user.tenant_id)
+    return await RbacService(db).list(
+        user.user_id, user.tenant_id, platform_role=user.platform_role
+    )
 
 
 @router.post(
@@ -72,7 +76,9 @@ async def create_role(
     db: AsyncSession = Depends(get_db),
 ) -> RoleRead:
     try:
-        return await RbacService(db).create(user.user_id, user.tenant_id, payload)
+        return await RbacService(db).create(
+            user.user_id, user.tenant_id, payload, platform_role=user.platform_role
+        )
     except ValueError as e:
         raise _http_exc(e) from e
 
@@ -90,7 +96,11 @@ async def update_role(
 ) -> RoleRead:
     try:
         return await RbacService(db).update(
-            user.user_id, user.tenant_id, role_id, payload
+            user.user_id,
+            user.tenant_id,
+            role_id,
+            payload,
+            platform_role=user.platform_role,
         )
     except ValueError as e:
         raise _http_exc(e) from e
@@ -107,7 +117,9 @@ async def delete_role(
     db: AsyncSession = Depends(get_db),
 ) -> None:
     try:
-        await RbacService(db).delete(user.user_id, user.tenant_id, role_id)
+        await RbacService(db).delete(
+            user.user_id, user.tenant_id, role_id, platform_role=user.platform_role
+        )
     except ValueError as e:
         raise _http_exc(e) from e
 
@@ -128,7 +140,7 @@ async def list_role_permissions(
     """Active ``(obj, act)`` grants for a role (current SCD2 state)."""
     try:
         return await RbacService(db).list_permissions(
-            user.user_id, user.tenant_id, role_id
+            user.user_id, user.tenant_id, role_id, platform_role=user.platform_role
         )
     except ValueError as e:
         raise _http_exc(e) from e
@@ -149,7 +161,11 @@ async def grant_role_permission(
     """Grant ``(obj, act)`` to a role — writes SCD2 + resyncs casbin + audits."""
     try:
         return await RbacService(db).grant_permission(
-            user.user_id, user.tenant_id, role_id, payload
+            user.user_id,
+            user.tenant_id,
+            role_id,
+            payload,
+            platform_role=user.platform_role,
         )
     except ValueError as e:
         raise _http_exc(e) from e
@@ -169,7 +185,11 @@ async def revoke_role_permission(
     """Revoke a permission from a role — closes SCD2 row + resyncs casbin."""
     try:
         await RbacService(db).revoke_permission(
-            user.user_id, user.tenant_id, role_id, permission_id
+            user.user_id,
+            user.tenant_id,
+            role_id,
+            permission_id,
+            platform_role=user.platform_role,
         )
     except ValueError as e:
         raise _http_exc(e) from e

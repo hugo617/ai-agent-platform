@@ -25,7 +25,9 @@ async def list_members(
     db: AsyncSession = Depends(get_db),
 ) -> list[MemberRead]:
     """List all members of the current tenant with their roles."""
-    return await MemberService(db).list(user.user_id, user.tenant_id)
+    return await MemberService(db).list(
+        user.user_id, user.tenant_id, platform_role=user.platform_role
+    )
 
 
 @router.post(
@@ -40,7 +42,9 @@ async def add_member(
     db: AsyncSession = Depends(get_db),
 ) -> MemberRead:
     """Add a user (by id) to the current tenant with a role."""
-    return await MemberService(db).add(user.user_id, user.tenant_id, payload)
+    return await MemberService(db).add(
+        user.user_id, user.tenant_id, payload, platform_role=user.platform_role
+    )
 
 
 @router.patch(
@@ -57,7 +61,8 @@ async def update_member_role(
     """Change a member's role within the current tenant."""
     try:
         return await MemberService(db).update_role(
-            user.user_id, user.tenant_id, user_id, payload
+            user.user_id, user.tenant_id, user_id, payload,
+            platform_role=user.platform_role,
         )
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e)) from e
@@ -75,6 +80,8 @@ async def remove_member(
 ) -> None:
     """Remove a member from the current tenant."""
     try:
-        await MemberService(db).remove(user.user_id, user.tenant_id, user_id)
+        await MemberService(db).remove(
+            user.user_id, user.tenant_id, user_id, platform_role=user.platform_role
+        )
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e

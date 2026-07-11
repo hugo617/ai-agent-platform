@@ -22,15 +22,25 @@ class AgentService:
             raise NotFoundError(f"agent {agent_id} not found in tenant {tenant_id}")
         return agent
 
-    async def list(self, user_id: str, tenant_id: str) -> list[AgentRead]:
-        await permission_service.require(user_id, tenant_id, self.OBJECT, "read")
+    async def list(
+        self, user_id: str, tenant_id: str, platform_role: str | None = None
+    ) -> list[AgentRead]:
+        await permission_service.require(
+            user_id, tenant_id, self.OBJECT, "read", platform_role=platform_role
+        )
         agents = await self.repo.list_for_tenant(tenant_id)
         return [AgentRead.model_validate(a) for a in agents]
 
     async def create(
-        self, user_id: str, tenant_id: str, payload: AgentCreate
+        self,
+        user_id: str,
+        tenant_id: str,
+        payload: AgentCreate,
+        platform_role: str | None = None,
     ) -> AgentRead:
-        await permission_service.require(user_id, tenant_id, self.OBJECT, "create")
+        await permission_service.require(
+            user_id, tenant_id, self.OBJECT, "create", platform_role=platform_role
+        )
         agent = Agent(
             tenant_id=tenant_id,
             name=payload.name,
@@ -41,15 +51,30 @@ class AgentService:
         await self.db.commit()
         return AgentRead.model_validate(agent)
 
-    async def get(self, user_id: str, tenant_id: str, agent_id: str) -> AgentRead:
-        await permission_service.require(user_id, tenant_id, self.OBJECT, "read")
+    async def get(
+        self,
+        user_id: str,
+        tenant_id: str,
+        agent_id: str,
+        platform_role: str | None = None,
+    ) -> AgentRead:
+        await permission_service.require(
+            user_id, tenant_id, self.OBJECT, "read", platform_role=platform_role
+        )
         agent = await self._owned(agent_id, tenant_id)
         return AgentRead.model_validate(agent)
 
     async def update(
-        self, user_id: str, tenant_id: str, agent_id: str, payload: AgentUpdate
+        self,
+        user_id: str,
+        tenant_id: str,
+        agent_id: str,
+        payload: AgentUpdate,
+        platform_role: str | None = None,
     ) -> AgentRead:
-        await permission_service.require(user_id, tenant_id, self.OBJECT, "update")
+        await permission_service.require(
+            user_id, tenant_id, self.OBJECT, "update", platform_role=platform_role
+        )
         agent = await self._owned(agent_id, tenant_id)
         data = payload.model_dump(exclude_unset=True)
         for key, value in data.items():
@@ -58,8 +83,16 @@ class AgentService:
         await self.db.commit()
         return AgentRead.model_validate(agent)
 
-    async def delete(self, user_id: str, tenant_id: str, agent_id: str) -> None:
-        await permission_service.require(user_id, tenant_id, self.OBJECT, "delete")
+    async def delete(
+        self,
+        user_id: str,
+        tenant_id: str,
+        agent_id: str,
+        platform_role: str | None = None,
+    ) -> None:
+        await permission_service.require(
+            user_id, tenant_id, self.OBJECT, "delete", platform_role=platform_role
+        )
         agent = await self._owned(agent_id, tenant_id)
         await self.repo.delete(agent)
         await self.db.commit()

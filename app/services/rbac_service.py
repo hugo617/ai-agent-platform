@@ -38,20 +38,40 @@ class RbacService:
         self.role_perms = RolePermissionRepository(db)
         self.logs = LoggingService(db)
 
-    async def list(self, user_id: str, tenant_id: str) -> list[RoleRead]:
-        await permission_service.require(user_id, tenant_id, self.OBJECT, "read")
+    async def list(
+        self,
+        user_id: str,
+        tenant_id: str,
+        platform_role: str | None = None,
+    ) -> list[RoleRead]:
+        await permission_service.require(
+            user_id, tenant_id, self.OBJECT, "read", platform_role=platform_role
+        )
         rows = await self.roles.list_for_tenant(tenant_id)
         return [RoleRead.model_validate(r) for r in rows]
 
-    async def labels(self, user_id: str, tenant_id: str) -> list[RoleLabel]:
-        await permission_service.require(user_id, tenant_id, self.OBJECT, "read")
+    async def labels(
+        self,
+        user_id: str,
+        tenant_id: str,
+        platform_role: str | None = None,
+    ) -> list[RoleLabel]:
+        await permission_service.require(
+            user_id, tenant_id, self.OBJECT, "read", platform_role=platform_role
+        )
         rows = await self.roles.list_for_tenant(tenant_id)
         return [RoleLabel(id=r.id, name=r.name, code=r.code) for r in rows]
 
     async def create(
-        self, actor_id: str, tenant_id: str, payload: RoleCreate
+        self,
+        actor_id: str,
+        tenant_id: str,
+        payload: RoleCreate,
+        platform_role: str | None = None,
     ) -> RoleRead:
-        await permission_service.require(actor_id, tenant_id, self.OBJECT, "create")
+        await permission_service.require(
+            actor_id, tenant_id, self.OBJECT, "create", platform_role=platform_role
+        )
         role = Role(
             tenant_id=tenant_id,
             name=payload.name,
@@ -80,9 +100,16 @@ class RbacService:
         return RoleRead.model_validate(role)
 
     async def update(
-        self, actor_id: str, tenant_id: str, role_id: str, payload: RoleUpdate
+        self,
+        actor_id: str,
+        tenant_id: str,
+        role_id: str,
+        payload: RoleUpdate,
+        platform_role: str | None = None,
     ) -> RoleRead:
-        await permission_service.require(actor_id, tenant_id, self.OBJECT, "update")
+        await permission_service.require(
+            actor_id, tenant_id, self.OBJECT, "update", platform_role=platform_role
+        )
         role = await self.roles.get_for_tenant(tenant_id, role_id)
         if role is None:
             raise NotFoundError(f"role {role_id} not found")
@@ -103,8 +130,16 @@ class RbacService:
         await self.db.commit()
         return RoleRead.model_validate(role)
 
-    async def delete(self, actor_id: str, tenant_id: str, role_id: str) -> None:
-        await permission_service.require(actor_id, tenant_id, self.OBJECT, "delete")
+    async def delete(
+        self,
+        actor_id: str,
+        tenant_id: str,
+        role_id: str,
+        platform_role: str | None = None,
+    ) -> None:
+        await permission_service.require(
+            actor_id, tenant_id, self.OBJECT, "delete", platform_role=platform_role
+        )
         role = await self.roles.get_for_tenant(tenant_id, role_id)
         if role is None:
             raise NotFoundError(f"role {role_id} not found")
@@ -133,10 +168,16 @@ class RbacService:
         return role
 
     async def list_permissions(
-        self, actor_id: str, tenant_id: str, role_id: str
+        self,
+        actor_id: str,
+        tenant_id: str,
+        role_id: str,
+        platform_role: str | None = None,
     ) -> list[RolePermissionRead]:
         """Active ``(obj, act)`` grants for a role (current SCD2 state)."""
-        await permission_service.require(actor_id, tenant_id, self.OBJECT, "read")
+        await permission_service.require(
+            actor_id, tenant_id, self.OBJECT, "read", platform_role=platform_role
+        )
         await self._require_role(tenant_id, role_id)
         active = await self.role_perms.current_permissions(role_id, tenant_id)
         out: list[RolePermissionRead] = []
@@ -163,12 +204,15 @@ class RbacService:
         tenant_id: str,
         role_id: str,
         payload: RolePermissionGrant,
+        platform_role: str | None = None,
     ) -> RolePermissionRead:
         """Grant ``(obj, act)`` to a role: write SCD2 + resync casbin + audit.
 
         Constitution write path: SCD2 current row → casbin sync → system_logs.
         """
-        await permission_service.require(actor_id, tenant_id, self.OBJECT, "update")
+        await permission_service.require(
+            actor_id, tenant_id, self.OBJECT, "update", platform_role=platform_role
+        )
         role = await self._require_role(tenant_id, role_id)
 
         pid = await permission_service._upsert_permission(
@@ -208,9 +252,12 @@ class RbacService:
         tenant_id: str,
         role_id: str,
         permission_id: str,
+        platform_role: str | None = None,
     ) -> None:
         """Revoke a permission from a role: close SCD2 row + resync casbin + audit."""
-        await permission_service.require(actor_id, tenant_id, self.OBJECT, "update")
+        await permission_service.require(
+            actor_id, tenant_id, self.OBJECT, "update", platform_role=platform_role
+        )
         role = await self._require_role(tenant_id, role_id)
         obj, act = await permission_service._permission_obj_act(
             self.db, permission_id

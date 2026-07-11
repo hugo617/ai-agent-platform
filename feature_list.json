@@ -560,7 +560,7 @@
       "area": "AtoA",
       "title": "所有 Service 层 permission_service.require() 缺 platform_role（系统性模式缺陷）",
       "user_visible_behavior": "(内部) super_admin 通过路由层 require_permission() 鉴权后进入 Service 层时可能被二次 require() 拦截报 403",
-      "status": "in_progress",
+      "status": "passing",
       "verification": [
         "super_admin 能 POST /api/v1/api-tokens/ 返回 201 而非 403（当前卡住）",
         "Agent CRUD / 对话 / 用户管理 / 组织管理 / 成员管理 / 角色管理 各 endpoint 对 super_admin 返回 200 而非 403",
@@ -573,9 +573,13 @@
         "路由层 require_permission 传了 platform_role=user.platform_role 能过,但服务层 require() 早一步抛 PermissionError→被 main.py _permission_handler 捕获 render 403",
         "init_admin.py 重跑已补 api_tokens:manage 到 DB(casbin_rule 表已验证),但代码层传参缺失才是根本问题",
         "排查发现影响面远大于 api_tokens:全仓库 7 个 Service 共 ~38 处 require() 都缺 platform_role:agent_service(5)、api_token_service(3)、conversation_service(4)、member_service(4)、organization_service(5)、rbac_service(8)、user_service(9)",
-        "现有 API(agent CRUD / users / roles 等)不受影响,因为 Casbin 在服务器启动时已加载了这些政策。但任何新增权限(如 api_tokens:manage)都会暴露此 bug"
+        "现有 API(agent CRUD / users / roles 等)不受影响,因为 Casbin 在服务器启动时已加载了这些政策。但任何新增权限(如 api_tokens:manage)都会暴露此 bug",
+        "Session 032 修复(根治路径 B,2026-07-11):./init.sh 全绿 → ruff All checks passed! + pytest 229 passed(基线 217 + 新增 12 test_service_platform_role)",
+        "修复范围(7 Service × 38 处 require + 对应 controller 转发):agent_service(5 require + agents.py 5 call)、api_token_service(3 + api_tokens.py 3)、conversation_service(4 + chat.py create_or_get + conversations.py 3)、member_service(4 + members.py 4)、organization_service(5 + organizations.py 5)、rbac_service(8 + roles.py 8)、user_service(create 补 1 处 + users.py 1 call);user_service 其余 8 处 require 在 if not is_super_admin 守卫内(无需转发,已是黄金范本)",
+        "回归测试 tests/test_service_platform_role.py(12 个):① require() 忠实复现 test_permission_require_forwards_platform_role —— 用 no-role 拥有的 'anything:nuke' policy,断言 require(...,platform_role='super_admin') 不抛、require(...) 无 platform_role 抛 PermissionError(注入破坏 require 丢 platform_role 后此测试 FAIL,证明忠实);② Service 层 test_agent_service/api_token_service_require_forwards 验证签名接受并转发;③ E2E super_admin_client 覆盖 7 个 endpoint(issue/list/revoke api-token + create agent + list members/roles/organizations/conversations);④ 非回归 owner 能颁发 / member 403",
+        "修复机制:permission_service.require()/check() 本身签名已支持 platform_role(require:73-89 转发给 check);bug 在 6 个 Service 调用方未传 + user_service.create 漏传。修复 = 每个调用方加 platform_role 形参 + controller 传 user.platform_role。向后兼容(platform_role 默认 None)"
       ],
-      "notes": "系统性模式缺陷,非 api_tokens 独有。require() 方法签名支持 platform_role 参数(默认为 None),但所有调用方都没传。修复范围:7 个 Service 所有 require() 调用增加 platform_role 形参 + 路由层传 user.platform_role。两条修复路径:(A)仅修 api_token_service 让配置走通(局部) (B)全修所有 Service(根治)。"
+      "notes": "系统性模式缺陷,非 api_tokens 独有。require() 方法签名支持 platform_role 参数(默认为 None),但所有调用方都没传。修复范围:7 个 Service 所有 require() 调用增加 platform_role 形参 + 路由层传 user.platform_role。两条修复路径:(A)仅修 api_token_service 让配置走通(局部) (B)全修所有 Service(根治)——Session 032 采用路径 B 根治。黄金范本:user_service.py 的 list/get/update/delete/change_status/reset_password 已有 is_super_admin 守卫 + platform_role 参数;本次将其余 6 Service 对齐同一模式(转发 platform_role 给 require,require/check 的 super_admin 短路负责绕过)。"
     },
     {
       "id": "context-engineering",

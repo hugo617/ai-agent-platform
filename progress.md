@@ -8,7 +8,7 @@
 - **标准启动路径**: `./init.sh`(装依赖 + ruff + pytest)
 - **标准验证路径**: `./init.sh`(同上,后端快速验证,SQLite 内存库)
 - **完整验证路径**(需 docker): `alembic upgrade head && alembic check` + `cd frontend && npm run build`
-- **当前最高优先级未完成功能**: `atoa-service-require-missing-platform-role`(priority 24,in_progress,系统性 bug:7 个 Service 共 ~38 处 require() 缺 platform_role);其后为 AI 内核深化三任务 `context-engineering`(priority 25)→ `chat-markdown-rendering`(priority 26)→ `agent-config-depth`(priority 27)
+- **当前最高优先级未完成功能**: AI 内核深化三任务 `context-engineering`(priority 25)→ `chat-markdown-rendering`(priority 26)→ `agent-config-depth`(priority 27)(均 not_started,plan 已就绪)。前置的系统性 bug `atoa-service-require-missing-platform-role`(priority 24)已于 Session 032 修复并 passing
 - **当前 blocker**: 无
 
 ## 后续任务规划(2026-07-10 制定,2026-07-10 追加第 8 条插队,共 8 条,WIP=1 顺序执行)
@@ -865,6 +865,41 @@
   - (a) 先修 in_progress 的 `atoa-service-require-missing-platform-role`(priority 24,系统性 bug),再开始 AI 内核三任务;
   - (b) 或直接执行 `context-engineering`(priority 25,纯后端,解决长对话必崩的确定性 bug,plan 已就绪);
   - (c) 或提交本次文档改动(3 plan + feature_list.json + progress.md)
+
+### Session 032 — 2026-07-11
+- **本轮目标**: 修复系统性 bug `atoa-service-require-missing-platform-role`(priority 24)—— 7 个 Service 共 ~38 处 `permission_service.require()` 缺 `platform_role`,导致 super_admin 在路由层 `require_permission()` 通过后被 Service 层二次 `require()` 拦截报 403。采用根治路径 B(全修所有 Service)
+- **已完成**(对照 feature_list verification 4 条):
+  - **Step 0 基线确认**:`./init.sh` → 217 passed(起点干净)
+  - **根因精确定位**:`permission_service.require()`/`check()` 本身签名已支持 `platform_role`(require:73-89 转发给 check,check:63 `if platform_role=='super_admin': return True` 短路);**bug 在 6 个 Service 调用方未传** + user_service.create 漏传 1 处。user_service 其余 8 处 require 在 `if not is_super_admin:` 守卫内(无需转发,已是黄金范本)
+  - **修复 7 个 Service + 7 个 controller**(精确对照):
+    - `agent_service.py`:5 处 require 加 `platform_role` 形参 + 转发;`agents.py` controller 5 处 call 传 `platform_role=user.platform_role`
+    - `api_token_service.py`:3 处 + `api_tokens.py` 3 处(Session 030 的原发 bug 点)
+    - `conversation_service.py`:4 处(create_or_get/list_for_user/history/delete)+ `chat.py` create_or_get call + `conversations.py` 3 处
+    - `member_service.py`:4 处 + `members.py` 4 处
+    - `organization_service.py`:5 处 + `organizations.py` 5 处
+    - `rbac_service.py`:8 处(list/labels/create/update/delete/list_permissions/grant_permission/revoke_permission)+ `roles.py` 8 处
+    - `user_service.py`:create 补 `platform_role` 形参 + 转发(其余 8 处已在 is_super_admin 守卫内无需动)+ `users.py` create call
+  - **回归测试** `tests/test_service_platform_role.py`(12 个):
+    - **忠实复现** `test_permission_require_forwards_platform_role`:用 no-role 拥有的 `'anything:nuke'` policy,断言 `require(...,platform_role='super_admin')` 不抛 + `require(...)` 无 platform_role 抛 PermissionError。**注入破坏验证**:临时把 require 改为 `platform_role=None`(丢转发)→ 此测试 FAIL(PermissionError)→ 恢复 → PASS,证明忠实捕获 bug
+    - **Service 层** `test_agent_service_require_forwards` / `test_api_token_service_require_forwards`:验证签名接受并转发 platform_role
+    - **E2E** `super_admin_client` 覆盖 7 个 endpoint(issue api-token / list+revoke api-token / create agent / list members / list roles / list organizations / list conversations)
+    - **非回归**:owner(无 platform_role,casbin 有 api_tokens:manage)→ 201;member(无 manage 无 platform_role)→ 403
+  - **总验证**:`./init.sh` → ruff All checks passed! + **229 passed**(217 基线 + 12 新增,无回归)
+- **运行过的验证**(全过):
+  - `./init.sh` → ruff `All checks passed!` + **229 passed**(217 + 12)
+  - `pytest tests/test_service_platform_role.py -v` → 12 passed
+  - **忠实性验证**:注入破坏 require(丢 platform_role)→ `test_permission_require_forwards_platform_role` FAIL → 恢复 → PASS
+- **已记录证据**: `feature_list.json` 的 `atoa-service-require-missing-platform-role.evidence` 字段(10 条,补 Session 032 修复 + 范围 + 回归测试 + 机制 + 忠实性验证);status → passing
+- **技术要点**(与 plan/notes 的实现差异):
+  - **bug 本质**:不是 require() 签名缺失(它有 platform_role 形参),而是**调用方不传**。permission_service.py 的 require/check 是正确的;6 个 Service + user_service.create 是错的。修复 = 对齐调用方
+  - **黄金范本对齐**:user_service.py 的 list/get/update/delete/change_status/reset_password 早已有 `is_super_admin = platform_role=='super_admin'; if not is_super_admin: require(...)` 模式(因 super_admin 跨租户查询需不同路径)。本次将其余 6 Service 对齐「转发 platform_role 给 require」模式(更简洁,因这些 Service 无跨租户查询需求,只需 require 的 super_admin 短路负责绕过)
+  - **E2E 测试的忠实性陷阱**:`super_admin_client` fixture 的 owner 角色在 conftest casbin seed 里已有 api_tokens:manage 等绝大多数权限,故 E2E 层无法区分「platform_role 绕过」vs「casbin policy 允许」。真正的忠实复现在 Service/permission 层用 no-role 拥有的 synthetic policy(anything:nuke),`test_permission_require_forwards_platform_role` 才是根因回归测试
+  - **向后兼容**:platform_role 默认 None,所有现有调用(API token verify、internal graph.py tool 调用等)零影响
+- **提交记录**: 待用户决定是否提交(本会话改 14 文件:7 service + 7 controller + 1 新测试 + feature_list.json + progress.md)
+- **已知风险**: 无功能风险。手动 curl 真实后端验证未跑(Session 030 已用 curl 复现 403,本次修复的是同一传参缺失,pytest 已忠实覆盖);user_service.create 补 platform_role 是顺带一致性修复(super_admin 建 user 现在也能过 Service 层)
+- **下一步最佳动作**:
+  - (a) 提交本次修复(14 文件)+ 发 PR;
+  - (b) 执行 AI 内核深化三任务(priority 25 context-engineering → 26 chat-markdown-rendering → 27 agent-config-depth,plan 均已就绪)
 
 <!-- 模板保留
 ### Session 0XX — YYYY-MM-DD

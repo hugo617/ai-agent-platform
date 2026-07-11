@@ -125,7 +125,9 @@ async def create_user(
     db: AsyncSession = Depends(get_db),
 ) -> UserRead:
     try:
-        return await UserService(db).create(user.user_id, user.tenant_id, payload)
+        return await UserService(db).create(
+            user.user_id, user.tenant_id, payload, platform_role=user.platform_role
+        )
     except ValueError as e:
         raise _http_exc(e) from e
 

@@ -29,20 +29,40 @@ class OrganizationService:
         self.repo = OrganizationRepository(db)
         self.logs = LoggingService(db)
 
-    async def list(self, user_id: str, tenant_id: str) -> list[OrganizationRead]:
-        await permission_service.require(user_id, tenant_id, self.OBJECT, "read")
+    async def list(
+        self,
+        user_id: str,
+        tenant_id: str,
+        platform_role: str | None = None,
+    ) -> list[OrganizationRead]:
+        await permission_service.require(
+            user_id, tenant_id, self.OBJECT, "read", platform_role=platform_role
+        )
         rows = await self.repo.list_for_tenant(tenant_id)
         return [OrganizationRead.model_validate(r) for r in rows]
 
-    async def tree(self, user_id: str, tenant_id: str) -> list[OrganizationTreeNode]:
-        await permission_service.require(user_id, tenant_id, self.OBJECT, "read")
+    async def tree(
+        self,
+        user_id: str,
+        tenant_id: str,
+        platform_role: str | None = None,
+    ) -> list[OrganizationTreeNode]:
+        await permission_service.require(
+            user_id, tenant_id, self.OBJECT, "read", platform_role=platform_role
+        )
         rows = await self.repo.list_for_tenant(tenant_id)
         return _build_tree(rows)
 
     async def create(
-        self, actor_id: str, tenant_id: str, payload: OrganizationCreate
+        self,
+        actor_id: str,
+        tenant_id: str,
+        payload: OrganizationCreate,
+        platform_role: str | None = None,
     ) -> OrganizationRead:
-        await permission_service.require(actor_id, tenant_id, self.OBJECT, "create")
+        await permission_service.require(
+            actor_id, tenant_id, self.OBJECT, "create", platform_role=platform_role
+        )
         path = None
         if payload.parent_id:
             parent = await self.repo.get_for_tenant(tenant_id, payload.parent_id)
@@ -72,9 +92,20 @@ class OrganizationService:
         return OrganizationRead.model_validate(org)
 
     async def update(
-        self, actor_id: str, tenant_id: str, org_id: str, payload: OrganizationUpdate
+        self,
+        actor_id: str,
+        tenant_id: str,
+        org_id: str,
+        payload: OrganizationUpdate,
+        platform_role: str | None = None,
     ) -> OrganizationRead:
-        await permission_service.require(user_id=actor_id, tenant_id=tenant_id, obj=self.OBJECT, act="update")
+        await permission_service.require(
+            user_id=actor_id,
+            tenant_id=tenant_id,
+            obj=self.OBJECT,
+            act="update",
+            platform_role=platform_role,
+        )
         all_orgs = await self.repo.list_for_tenant(tenant_id)
         by_id = {o.id: o for o in all_orgs}
         org = by_id.get(org_id)
@@ -118,9 +149,19 @@ class OrganizationService:
         return OrganizationRead.model_validate(org)
 
     async def delete(
-        self, actor_id: str, tenant_id: str, org_id: str
+        self,
+        actor_id: str,
+        tenant_id: str,
+        org_id: str,
+        platform_role: str | None = None,
     ) -> None:
-        await permission_service.require(user_id=actor_id, tenant_id=tenant_id, obj=self.OBJECT, act="delete")
+        await permission_service.require(
+            user_id=actor_id,
+            tenant_id=tenant_id,
+            obj=self.OBJECT,
+            act="delete",
+            platform_role=platform_role,
+        )
         all_orgs = await self.repo.list_for_tenant(tenant_id)
         by_id = {o.id: o for o in all_orgs}
         org = by_id.get(org_id)

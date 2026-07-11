@@ -37,7 +37,9 @@ async def list_conversations(
 ) -> list[ConversationRead]:
     """List the caller's conversations, most-recently-active first."""
     service = ConversationService(db)
-    return await service.list_for_user(user.user_id, user.tenant_id)
+    return await service.list_for_user(
+        user.user_id, user.tenant_id, platform_role=user.platform_role
+    )
 
 
 @router.get(
@@ -52,7 +54,9 @@ async def list_messages(
 ) -> list[MessageRead]:
     """List the messages in a conversation (oldest first)."""
     service = ConversationService(db)
-    return await service.history(user.user_id, user.tenant_id, conversation_id)
+    return await service.history(
+        user.user_id, user.tenant_id, conversation_id, platform_role=user.platform_role
+    )
 
 
 @router.delete(
@@ -68,6 +72,11 @@ async def delete_conversation(
     """Delete a conversation (hard delete; messages cascade)."""
     service = ConversationService(db)
     try:
-        await service.delete(user.user_id, user.tenant_id, conversation_id)
+        await service.delete(
+            user.user_id,
+            user.tenant_id,
+            conversation_id,
+            platform_role=user.platform_role,
+        )
     except ValueError as e:
         raise _http_exc(e) from e

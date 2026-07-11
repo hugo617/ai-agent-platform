@@ -33,7 +33,9 @@ async def org_tree(
     user: CurrentUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> list[OrganizationTreeNode]:
-    return await OrganizationService(db).tree(user.user_id, user.tenant_id)
+    return await OrganizationService(db).tree(
+        user.user_id, user.tenant_id, platform_role=user.platform_role
+    )
 
 
 @router.get(
@@ -45,7 +47,9 @@ async def list_orgs(
     user: CurrentUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> list[OrganizationRead]:
-    return await OrganizationService(db).list(user.user_id, user.tenant_id)
+    return await OrganizationService(db).list(
+        user.user_id, user.tenant_id, platform_role=user.platform_role
+    )
 
 
 @router.post(
@@ -61,7 +65,7 @@ async def create_org(
 ) -> OrganizationRead:
     try:
         return await OrganizationService(db).create(
-            user.user_id, user.tenant_id, payload
+            user.user_id, user.tenant_id, payload, platform_role=user.platform_role
         )
     except ValueError as e:
         raise _bad_request(e) from e
@@ -80,7 +84,11 @@ async def update_org(
 ) -> OrganizationRead:
     try:
         return await OrganizationService(db).update(
-            user.user_id, user.tenant_id, org_id, payload
+            user.user_id,
+            user.tenant_id,
+            org_id,
+            payload,
+            platform_role=user.platform_role,
         )
     except ValueError as e:
         msg = str(e)
@@ -101,7 +109,10 @@ async def delete_org(
 ) -> None:
     try:
         await OrganizationService(db).delete(
-            user.user_id, user.tenant_id, org_id
+            user.user_id,
+            user.tenant_id,
+            org_id,
+            platform_role=user.platform_role,
         )
     except ValueError as e:
         msg = str(e)
