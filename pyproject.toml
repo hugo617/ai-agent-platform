@@ -5,6 +5,23 @@ description = "多租户智能体云平台(FastAPI + pycasbin + LangGraph)"
 requires-python = ">=3.11"
 license = { text = "Apache-2.0" }
 
+# ``agenthub`` CLI entry point (AtoA surface). Installed via
+# ``pipx install -e .`` (dev) or ``pipx install agenthub`` (post-release).
+# The CLI lives in the top-level ``cli/`` package, separate from the backend
+# ``app/`` package so backend tests/coverage are unaffected.
+# Points at ``run`` (not the typer ``app``) so CliError maps to exit codes.
+[project.scripts]
+agenthub = "cli.main:run"
+
+# Explicit package discovery: the repo root is a flat layout with many
+# top-level dirs (app/, cli/, 项目指南/, harness/, alembic/, frontend/), so
+# setuptools' auto-discovery refuses to proceed. Ship only the Python packages
+# that should be importable once installed — the backend ``app`` and the
+# ``cli``. Tests (tests/, cli/tests/) are excluded via find exclude.
+[tool.setuptools.packages.find]
+include = ["app*", "cli*"]
+exclude = ["tests*", "cli.tests*"]
+
 [tool.black]
 line-length = 100
 target-version = ["py311"]
@@ -22,7 +39,7 @@ ignore = ["B008", "E501"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
-testpaths = ["tests"]
+testpaths = ["tests", "cli/tests"]
 addopts = "-ra --strict-markers"
 
 [tool.coverage.run]

@@ -447,17 +447,25 @@
       "area": "AtoA",
       "title": "AtoA CLI 骨架(agenthub 命令行:登录 + 只读命令)",
       "user_visible_behavior": "用户/Agent 装上 agenthub CLI 后,能用 token 登录并执行只读命令(whoami/agents list/agents get),支持 --json 结构化输出",
-      "status": "not_started",
+      "status": "passing",
       "plan": "harness/docs/plan-atoa-cli-core.md",
       "verification": [
-        "新建 cli/ 顶层目录(typer 框架)+ pyproject.toml 加 [project.scripts] agenthub = cli.main:app",
+        "新建 cli/ 顶层目录(typer 框架)+ pyproject.toml 加 [project.scripts] agenthub = cli.main:run",
         "命令:agenthub login <token> / whoami / agents list / agents get,支持 --json/--no-interactive",
         "Agent-Ready 6 准则全满足:--json 结构化输出、--no-interactive、有意义 exit code、管道检测自动切 JSON",
         "凭证存储 ~/.agenthub/credentials(权限 0600),支持 AGENTHUB_TOKEN 环境变量覆盖",
-        "pipx install -e . 后 agenthub 命令可用;login + whoami + agents list --json 跑通",
+        "pip install -e . 后 agenthub 命令可用;login + whoami + agents list --json 跑通",
         "CLI 测试通过(cli/tests/)+ ./init.sh 全绿(后端不回归)"
       ],
-      "evidence": [],
+      "evidence": [
+        "./init.sh 全绿:ruff check(app+cli+tests+alembic)→ All checks passed!;pytest → 199 passed(基线 186 后端 + 新增 13 cli/tests)(2026-07-11)",
+        "pytest cli/tests/ -v → 13 passed(login 存凭证 0600 + 网络错 exit1、login 拒绝 exit2、env var 覆盖、未登录返回 None、whoami --json/未登录 exit2/401 exit2、agents list/get --json、403 exit3、网络错 exit1、管道检测默认 JSON)(2026-07-11)",
+        "CLI 工程结构:cli/ 顶层包(main.py 入口 + client.py HTTP + config.py 凭证 + errors.py 异常 + context.py GlobalOptions + handlers.py @handle_errors 装饰器 + commands/{login,whoami,agents}.py);pyproject.toml 加 [project.scripts] agenthub=cli.main:run + [tool.setuptools.packages.find] include=app*,cli*",
+        "pip install -e . 成功:.venv/bin/agenthub --help 正常,3 命令(login/whoami/agents)注册,--json/--no-interactive 全局选项可见;setuptools flat-layout 多包发现问题需显式 packages.find(include=['app*','cli*'])",
+        "Agent-Ready 6 准则验证:① --json 结构化输出(test_agents_list_json 等)② --no-interactive 全局 flag ③ api key 认证(login 存 token)④ 幂等(只读命令)⑤ 管道检测 not sys.stdout.isatty() 自动切 JSON(test_pipe_detection_defaults_to_json)⑥ exit code 0/1/2/3 映射(@handle_errors 装饰器 catch CliError→typer.Exit(code=e.exit_code))",
+        "凭证安全:save_credentials 写入后 os.chmod(path, 0o600);AGENTHUB_TOKEN/AGENTHUB_BASE_URL 环境变量优先于文件(test_env_var_overrides_file 验证)",
+        "循环依赖处理:GlobalOptions 从 cli/main.py 提到独立 cli/context.py(main import commands→commands import context,无环);exit code 用 cli/handlers.py 的 @handle_errors 装饰器(非 click ClickException 继承,因 typer CliRunner 对 ClickException 的 exit_code 传播不一致)"
+      ],
       "depends_on": "atoa-api-token-auth",
       "notes": "CLI 技术栈选 Python typer(对齐后端技术栈,与 google/agents-cli 同款)。CLI 代码放 cli/ 顶层目录(与 app/ 平级,独立包不污染后端)。行业对标 google/agents-cli(uvx 安装+skills 分发)与 ComposioHQ/awesome-agent-clis 总结的 Agent-Ready CLI 6 准则(--json/--no-interactive/api key 认证/幂等/管道检测/exit code)。HTTP client 复用 httpx(后端已依赖)。凭证文件权限 0600 + env var 覆盖(CI/容器场景)。"
     },

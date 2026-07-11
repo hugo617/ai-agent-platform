@@ -21,7 +21,7 @@ cd "$ROOT_DIR"
 # INSTALL_CMD 用 bash 数组(单条命令,安全处理参数)。
 # 验证是两条命令用 && 串联,数组无法承载 shell 控制操作符,所以 VERIFY 用字符串 + bash -c。
 INSTALL_CMD=(pip install -r requirements-dev.txt)
-VERIFY_CMD="ruff check app/ tests/ scripts/ alembic/ && pytest -ra --strict-markers"
+VERIFY_CMD="ruff check app/ cli/ tests/ scripts/ alembic/ && pytest -ra --strict-markers"
 
 echo "==> 当前目录: $PWD"
 

@@ -8,7 +8,7 @@
 - **标准启动路径**: `./init.sh`(装依赖 + ruff + pytest)
 - **标准验证路径**: `./init.sh`(同上,后端快速验证,SQLite 内存库)
 - **完整验证路径**(需 docker): `alembic upgrade head && alembic check` + `cd frontend && npm run build`
-- **当前最高优先级未完成功能**: `atoa-cli-core`(priority 20,AtoA CLI 骨架:agenthub 命令行 login/whoami/agents 只读 + Agent-Ready 6 准则)—— 前置 `atoa-api-token-auth` ✅ 已完成(API Token 鉴权地基已就绪,外部 Agent 持 ahp_ token 即可访问全部 API)
+- **当前最高优先级未完成功能**: `atoa-cli-chat-admin`(priority 21,AtoA CLI 对话 + CRUD:agenthub chat 流式 + 会话历史 + Agent CRUD)—— 前置 `atoa-cli-core` ✅ 已完成(CLI 骨架就绪:login/whoami/agents 只读 + Agent-Ready 6 准则)
 - **当前 blocker**: 无
 
 ## 后续任务规划(2026-07-10 制定,2026-07-10 追加第 8 条插队,共 8 条,WIP=1 顺序执行)
@@ -24,7 +24,7 @@
 | 7 | `e2e-and-coverage` | 工程化 | E2E + 覆盖率门槛 + lint(建议最后)⏸️ 暂停(AtoA 插队) | `harness/docs/plan-e2e-and-coverage.md` |
 | **8** | **`real-chat-llm-config`** | **AI 内核** | **真实对话验证 + LLM 配置管理(超管+租户级)+ 修 3 bug(Agent.model 失效/前端模型脱节/无配置 UI)—— 用户插队** ✅ 已完成 | **`harness/docs/plan-real-chat-llm-config.md`** |
 | **9** | **`atoa-api-token-auth`** | **AtoA** | **地基:API Token 鉴权机制(PAT 式)—— ApiToken 表 + deps.py 旁路 + 颁发/吊销端点。✅ 已完成** | **`harness/docs/plan-atoa-api-token-auth.md`** |
-| **10** | **`atoa-cli-core`** | **AtoA** | **agenthub CLI 骨架(typer):login/whoami/agents 只读 + Agent-Ready 6 准则。前置 9** | **`harness/docs/plan-atoa-cli-core.md`** |
+| **10** | **`atoa-cli-core`** | **AtoA** | **agenthub CLI 骨架(typer):login/whoami/agents 只读 + Agent-Ready 6 准则。前置 9 ✅ 已完成** | **`harness/docs/plan-atoa-cli-core.md`** |
 | **11** | **`atoa-cli-chat-admin`** | **AtoA** | **CLI 对话(SSE 流式)+ 会话历史 + Agent CRUD。核心卖点,前置 10** | **`harness/docs/plan-atoa-cli-chat-admin.md`** |
 | **12** | **`atoa-skill`** | **AtoA** | **Skill 编写(Agent Skills 开放标准 SKILL.md)—— 装上后任意 Agent 可用。前置 11** | **`harness/docs/plan-atoa-skill.md`** |
 | **13** | **`atoa-admin-ui`** | **AtoA** | **前端 API Token 管理 UI(settings-page 加 Card)。前置 9,可与 10-12 并行(WIP=1 仍顺序)** | **`harness/docs/plan-atoa-admin-ui.md`** |
@@ -54,6 +54,7 @@
 | real-chat-llm-config(真实对话 + LLM 配置) | passing | 131 tests + 真实 DeepSeek SSE 端到端跑通 + 三级 fallback + 修 3 bug |
 | e2e-and-coverage(E2E + 覆盖率 + lint) | passing | 171 tests + 93% 覆盖率 + Playwright E2E + oxlint 0 warning |
 | atoa-api-token-auth(AtoA 地基 API Token 鉴权) | passing | 186 tests + ahp_ 旁路 + 颁发/吊销/验证 + 多租户隔离 |
+| atoa-cli-core(AtoA CLI 骨架 agenthub 命令行) | passing | 199 tests + typer CLI + login/whoami/agents + Agent-Ready 6 准则 |
 
 > ✅ AI 内核(agents + chat)已全部纳管并 passing:agents-api-hardening / chat-conversation-api / chat-frontend 三任务端到端完成。
 > ✅ **真实对话已跑通**:real-chat-llm-config(Session 017)用真实 DeepSeek key 端到端验证 SSE 流式对话,修了 3 个 bug(Agent.model 失效 / 前端模型脱节 / 无 LLM 配置 UI)。
@@ -605,6 +606,36 @@
 - **提交记录**: PR #21 已 squash 合并到 main(`063abf4`);含 1 个功能 commit(含 1 处 inline-import 质量修复)
 - **已知风险**: 无。CI Migrations job 在真实 Postgres 上确认无 drift(env.py/conftest.py 两处 import 同步)
 - **下一步最佳动作**: 执行 `atoa-cli-core`(priority 20,CLI 骨架 login/whoami/agents 只读,前置已合入 main 就绪)
+
+---
+
+### Session 024 — 2026-07-11
+- **本轮目标**: 执行 `atoa-cli-core`(AtoA CLI 骨架:agenthub 命令行 login/whoami/agents 只读 + Agent-Ready 6 准则)—— 纯新建任务,全新 cli/ 顶层包,前置 atoa-api-token-auth ✅ 已合入 main
+- **已完成**(对照 plan §实施步骤 Step 1-10):
+  - Step 0 基线确认:main 干净(PR #21 已合);切 `feat/atoa-cli-core` 分支;装 typer>=0.12 + rich>=13
+  - Step 1 工程结构:pyproject.toml 加 [project.scripts] agenthub=cli.main:run + [tool.setuptools.packages.find] include=app*,cli*(解决 flat-layout 多包发现问题);新建 requirements-cli.txt(typer/rich/httpx);testpaths 加 cli/tests
+  - Step 2-5 核心模块:cli/{main,client,config,errors,context,handlers}.py + commands/__init__.py
+    - main.py:typer app + 全局选项 --json/--no-interactive + 管道检测(not sys.stdout.isatty()→自动 JSON)+ run() 入口
+    - client.py:httpx.Client 封装,401→AuthError/403→ForbiddenError/网络→ApiError 错误映射
+    - config.py:~/.agenthub/credentials 存储(0600)+ AGENTHUB_TOKEN/AGENTHUB_BASE_URL 环境变量覆盖
+    - errors.py:CliError(0/1/2/3 exit code)+ AuthError/ForbiddenError/NotLoggedInError/ApiError
+    - context.py:GlobalOptions(独立模块避免循环依赖)+ handlers.py:@handle_errors 装饰器
+  - Step 6-8 命令:login.py(验证+存凭证 0600)/whoami.py(调 /api-tokens/verify)/agents.py(list/get 只读,rich 表格)
+  - Step 9 测试(cli/tests/test_cli.py 13 个):login 存凭证 0600/拒绝 exit2/网络 exit1、env var 覆盖、whoami --json/未登录 exit2/401 exit2、agents list/get --json、403 exit3、网络 exit1、管道检测默认 JSON
+  - Step 10 总验证:全绿(见下)
+- **运行过的验证**(全过):
+  - `./init.sh` → ruff(app+cli+tests+alembic)All checks passed! + **199 passed**(186 后端 + 13 CLI,无回归)
+  - `pytest cli/tests/ -v` → 13 passed
+  - `pip install -e . --no-deps` → 成功;`.venv/bin/agenthub --help` → 3 命令(login/whoami/agents)注册正常
+- **已记录证据**: `feature_list.json` 的 `atoa-cli-core.evidence` 字段(7 条,含工程结构 + Agent-Ready 6 准则验证 + 两个关键问题的解决)
+- **技术要点**(与 plan 的实现差异,两个关键问题):
+  - **循环依赖**:初版 cli/main.py 既定义 GlobalOptions 又 import commands,而 commands 反向 import main.GlobalOptions → ImportError。解决:GlobalOptions 提到独立 cli/context.py(main→commands→context,无环)
+  - **typer exit code 传播不一致**:初版让 CliError 继承 click.ClickException 期望 click 自动映射 exit_code,但 typer 的 CliRunner 对 ClickException 的 exit_code 传播不一致(原生 click 正确返回 2,但 typer app+callback 返回 1)。解决:改用 cli/handlers.py 的 @handle_errors 装饰器,每个命令显式 catch CliError→typer.Exit(code=e.exit_code),行为可预测(test + 生产一致)
+  - **setuptools flat-layout 多包发现**:pip install -e . 失败(发现 app/cli/项目指南/harness/alembic/frontend 多个顶级包)。解决:pyproject.toml 加 [tool.setuptools.packages.find] include=["app*","cli*"] exclude=["tests*","cli.tests*"]
+  - **--json 位置**:typer 全局选项(callback 定义)必须放子命令前(`agenthub --json agents list` 非 `agenthub agents list --json`),对齐 click/typer 惯例,文档化在 test 文件头注释
+- **提交记录**: `feat/atoa-cli-core` 分支(待审查 + PR + 合并)
+- **已知风险**: 无功能风险。端到端真实后端验证未跑(需起后端+颁发真实 token,测试已用 mock httpx 覆盖命令逻辑 + exit code + 凭证安全);手动 CLI 实测未跑(--help 已验证,命令逻辑由 13 个单测覆盖)
+- **下一步最佳动作**: 清理废代码 + 代码质量审查 + PR + CI 守门 + 合并 feat/atoa-cli-core 到 main;之后开始 `atoa-cli-chat-admin`(priority 21,CLI 对话+CRUD,核心卖点)
 
 ---
 
