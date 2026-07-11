@@ -792,6 +792,35 @@
 
 ---
 
+### Session 029 — 2026-07-11
+- **本轮目标**: 清理废代码 + 代码质量审查 + PR + CI 守门 + 合并 feat/atoa-admin-ui 到 main(纯前端任务收尾,AtoA 系列最后一个任务)
+- **已完成**(端到端,含合并):
+  - **废代码扫描**:ruff F-rules(app/cli/tests/scripts/alembic)全绿 + oxlint(4 改动文件)0 warning + tsc `noUnusedLocals`/`noUnusedParameters` 严格开启且 build 通过;所有新符号(`ApiToken`/`ApiTokenCreate`/`ApiTokenCreated`/`fetchApiTokens`/`createApiToken`/`revokeApiToken`/`qk.apiTokens`/`useApiTokens`/`useCreateApiToken`/`useRevokeApiToken`/`ApiTokenCard`)均有引用 → **无废代码,无需清理改动**
+  - **代码质量审查**(全过,无需修复):
+    - **类型对齐**:前端 3 个 interface(`ApiToken`/`ApiTokenCreate`/`ApiTokenCreated`)与后端 3 个 Pydantic schema(`ApiTokenRead`/`ApiTokenCreate`/`ApiTokenCreateResponse`)字段逐一对照完全一致;`ApiTokenCreated extends ApiToken` + `token_id` + `token` 是合理的 TS 组合
+    - **分层合规**:API 层(endpoints.ts)→ hooks 层(queries.ts)→ 组件层(settings-page.tsx)依赖单向,无反向引用
+    - **权限守卫双层**:路由 `RequireUserManagement` 拦 member + 页面 `canManageUsers(me)` 守卫(与既有两个 LLM Card 同模式)
+    - **UX 安全**:明文 token 仅 issue 后独立 reveal Dialog 展示一次(琥珀警告 + 只读 Input + 复制按钮 + clipboard fallback + 「关闭后永远无法查看」提示)
+    - **缓存失效**:create/revoke onSuccess 均 invalidate `qk.apiTokens`
+    - **无越界**:纯前端,后端零改动
+  - 基线验证:`./init.sh` → ruff All checks passed! + **217 passed**(不回归)
+  - commit `ad261fb` → push → PR #25(base main)
+  - **CI 守门:4/4 全绿**(Backend pytest+ruff 1m46s / Migrations 42s / Frontend typecheck+build+lint 26s / E2E Playwright 1m40s),**无需修复**(PR #22 的 requirements-cli.txt 修复已在 main,本轮一次过)
+  - **squash 合并 PR #25 → main**(commit `6ce5bae`),删除远程分支,本地切回 main fast-forward 同步;`git remote prune` 清除残留引用;本地 feature 分支已自动清理(只剩 main)
+  - main 上跑 `./init.sh` 确认 ruff + **217 passed**,仓库仍可按标准路径工作
+- **运行过的验证**:
+  - `.venv/bin/ruff check --select F app/ cli/ tests/ scripts/ alembic/` → All checks passed!
+  - `npx oxlint`(4 改动文件)→ 0 warnings 0 errors
+  - `cd frontend && npm run build` → tsc -b + vite build 0 类型错误
+  - `./init.sh`(feat 分支 + main 两次)→ ruff + **217 passed**
+  - CI(PR #25)→ 4/4 job SUCCESS
+- **已记录证据**: 无新增(本任务是审查+发版,未改代码;feature_list 的 atoa-admin-ui.evidence 在 Session 028 已填)
+- **提交记录**: PR #25 已 squash 合并到 main(`6ce5bae`);1 个功能 commit(零修复 commit)
+- **已知风险**: 无。CI 4/4 干净环境全绿;手动浏览器验证未跑(需前后端启动 + 真实 token),build(tsc 类型检查)+ oxlint 已覆盖类型正确性与规范;后端 API Token 端点已在 atoa-api-token-auth 用 15 个测试端到端覆盖
+- **下一步最佳动作**: **feature_list 全部 passing**(AtoA 系列 5 任务 + atoa-admin-ui 全完成)。可考虑:① 补「09-外部Agent接入AtoA.md」架构文档到 `项目指南/02-后端架构/`;② 定新功能方向;③ 或由用户指定。无排期的 not_started 任务
+
+---
+
 <!--
 会话记录模板(复制使用):
 ### Session 0XX — YYYY-MM-DD
