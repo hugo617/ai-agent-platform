@@ -741,6 +741,31 @@
 
 ---
 
+### Session 027 — 2026-07-11
+- **本轮目标**: 清理废代码 + 代码质量审查 + PR + CI 守门 + 合并 feat/atoa-skill 到 main(纯文档任务)
+- **已完成**(端到端,含合并):
+  - **废代码扫描**:纯文档任务(689 行 markdown,0 代码改动),无代码层废代码可清
+  - **文档质量审查**(审查焦点从「代码」转向「文档准确性」,全过,无需修复):
+    - **命令一致性核查**:文档覆盖的 13 个命令(login/whoami/agents list·get·create·update·delete·chat/conversations list·messages·delete)与 CLI 实际注册命令**完全一致**(脚本核查 `cli.main.app` registered_commands)
+    - **SKILL.md frontmatter**:符合 Agent Skills 开放标准(`name` + `description` 必填,description 含触发词)
+    - **内部链接有效**:所有 `[...](path)` 链接目标文件均存在(SKILL→commands.md、docs/atoa/README→getting-started/distribution/SKILL、getting-started→../../README.md)
+    - **exit code 0/1/2/3** 与 cli/errors.py 映射一致;权限矩阵(owner/admin/member)合理
+  - 基线验证:`./init.sh` → ruff(含 cli/)All checks passed! + **217 passed**(纯文档,基线不变)
+  - push → PR #24(base main)
+  - **CI 守门:4/4 全绿**(Backend pytest+ruff 1m22s / Migrations 45s / Frontend 24s / E2E Playwright 2m07s),**无需修复**
+  - **squash 合并 PR #24 → main**(commit `0325b9b`),删除远程分支,本地切回 main 同步;`git remote prune` 清除残留引用;本地 feature 分支已删
+- **运行过的验证**:
+  - `.venv/bin/ruff check app/ cli/ tests/ scripts/ alembic/` → All checks passed!
+  - `pytest --co -q` → 217 tests collected(纯文档,不变)
+  - 命令一致性核查脚本 → 文档 13 命令 == CLI 注册命令
+  - CI(PR #24)→ 4/4 job SUCCESS
+- **已记录证据**: 无新增(本任务是审查+发版,未改代码;feature_list 的 atoa-skill.evidence 在 Session 027 实现轮已填)
+- **提交记录**: PR #24 已 squash 合并到 main(`0325b9b`);1 个功能 commit(零修复)
+- **已知风险**: 无。CI 4/4 干净环境全绿;真实 Claude Code 实测未跑(需在 Agent 环境安装 Skill 后实测识别与执行,属 plan 验收的「真实」项,非代码任务范围),文档命令准确性已由脚本核查 + 前序 CLI 任务的 31 个单测保障
+- **下一步最佳动作**: 执行 `atoa-admin-ui`(priority 23,前端 API Token 管理 UI,最后一个 AtoA 任务,依赖 atoa-api-token-auth 已就绪);全部 AtoA 任务完成后补「09-外部Agent接入AtoA.md」架构文档到 `项目指南/02-后端架构/`
+
+---
+
 <!--
 会话记录模板(复制使用):
 ### Session 0XX — YYYY-MM-DD
