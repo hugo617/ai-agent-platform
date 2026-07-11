@@ -63,12 +63,44 @@ def _build_tenant_tools(user_id: str, tenant_id: str, db: AsyncSession) -> list[
     return [get_my_agents]
 
 
+def _build_llm_kwargs(
+    *,
+    api_key: str,
+    base_url: str,
+    model: str,
+    temperature: float = 0.7,
+    max_tokens: int | None = None,
+    top_p: float | None = None,
+) -> dict[str, Any]:
+    """Build kwargs for ``ChatOpenAI`` from resolved inference parameters.
+
+    ``temperature`` is always forwarded (it has a default). ``max_tokens`` and
+    ``top_p`` are only included when explicitly set (not None) so an unset
+    value means "use the provider default" rather than overriding it.
+    """
+    kwargs: dict[str, Any] = {
+        "model": model,
+        "api_key": api_key,
+        "base_url": base_url,
+        "streaming": True,
+        "temperature": temperature,
+    }
+    if max_tokens is not None:
+        kwargs["max_tokens"] = max_tokens
+    if top_p is not None:
+        kwargs["top_p"] = top_p
+    return kwargs
+
+
 def build_agent(
     *,
     api_key: str,
     base_url: str,
     model: str,
     system_prompt: str = "",
+    temperature: float = 0.7,
+    max_tokens: int | None = None,
+    top_p: float | None = None,
 ) -> Any:
     """Build the LangGraph ReAct agent with the given chat model.
 
@@ -76,13 +108,14 @@ def build_agent(
     passes them in — this function never touches global settings, so which
     model actually serves a chat is decided by the caller, not by config.
     """
-    llm = ChatOpenAI(
-        model=model,
+    llm = ChatOpenAI(**_build_llm_kwargs(
         api_key=api_key,
         base_url=base_url,
-        streaming=True,
-        temperature=0.3,
-    )
+        model=model,
+        temperature=temperature,
+        max_tokens=max_tokens,
+        top_p=top_p,
+    ))
     # langgraph 0.2.x takes the system prompt via ``messages_modifier`` (a
     # SystemMessage prepended to the state); the ``prompt`` kwarg arrived in a
     # later version.
@@ -100,22 +133,28 @@ async def stream_agent(
     system_prompt: str,
     history: list[BaseMessage],
     user_message: str,
+    temperature: float = 0.7,
+    max_tokens: int | None = None,
+    top_p: float | None = None,
 ) -> AsyncIterator[str]:
     """Run the agent and yield text chunks for SSE streaming.
 
     Tool calls are awaited; only ``AIMessageChunk`` text content is forwarded
     to the client. The LLM (key/base_url/model) is resolved by the caller and
     passed in — this is what makes ``Agent.model`` actually take effect.
+    Inference parameters (temperature/max_tokens/top_p) come from the Agent
+    config; ``max_tokens``/``top_p`` of None mean "use provider default".
     """
     from langchain_core.messages import HumanMessage
 
-    llm = ChatOpenAI(
-        model=model,
+    llm = ChatOpenAI(**_build_llm_kwargs(
         api_key=api_key,
         base_url=base_url,
-        streaming=True,
-        temperature=0.3,
-    )
+        model=model,
+        temperature=temperature,
+        max_tokens=max_tokens,
+        top_p=top_p,
+    ))
     tools = _build_tenant_tools(user_id, tenant_id, db)
     agent = create_react_agent(
         llm, tools=tools, messages_modifier=_system_msg(system_prompt)

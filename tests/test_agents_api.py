@@ -195,3 +195,96 @@ async def test_update_nonexistent_agent_returns_404(app_client):
 async def test_delete_nonexistent_agent_returns_404(app_client):
     resp = await app_client.delete("/api/v1/agents/nonexistent-id", headers=AUTH)
     assert resp.status_code == 404
+
+
+# ------------------------------------------------------- inference params
+
+
+@pytest.mark.asyncio
+async def test_create_agent_with_inference_params(app_client):
+    """POST with temperature/max_tokens/top_p/description persists and returns them."""
+    payload = {
+        "name": "Creative Writer",
+        "description": "高温度创意写作",
+        "temperature": 0.9,
+        "max_tokens": 2048,
+        "top_p": 0.95,
+    }
+    resp = await app_client.post("/api/v1/agents/", json=payload, headers=AUTH)
+    assert resp.status_code == 201
+    body = resp.json()
+    assert body["temperature"] == 0.9
+    assert body["max_tokens"] == 2048
+    assert body["top_p"] == 0.95
+    assert body["description"] == "高温度创意写作"
+
+
+@pytest.mark.asyncio
+async def test_create_agent_default_inference_params(app_client):
+    """Omitting inference params yields the defaults: temperature=0.7, rest None."""
+    resp = await app_client.post(
+        "/api/v1/agents/", json={"name": "Defaults Bot"}, headers=AUTH
+    )
+    assert resp.status_code == 201
+    body = resp.json()
+    assert body["temperature"] == 0.7
+    assert body["max_tokens"] is None
+    assert body["top_p"] is None
+    assert body["description"] == ""
+
+
+@pytest.mark.asyncio
+async def test_create_agent_invalid_temperature_returns_422(app_client):
+    """temperature outside [0, 2] is rejected by Pydantic ge/le validation."""
+    resp = await app_client.post(
+        "/api/v1/agents/",
+        json={"name": "Bad Temp", "temperature": 3.0},
+        headers=AUTH,
+    )
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_update_agent_inference_params(app_client):
+    """PATCH can update temperature/max_tokens/top_p/description."""
+    create = await app_client.post(
+        "/api/v1/agents/", json={"name": "Tunable"}, headers=AUTH
+    )
+    agent_id = create.json()["id"]
+
+    resp = await app_client.patch(
+        f"/api/v1/agents/{agent_id}",
+        json={
+            "temperature": 0.1,
+            "max_tokens": 512,
+            "description": "确定性输出",
+        },
+        headers=AUTH,
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["temperature"] == 0.1
+    assert body["max_tokens"] == 512
+    assert body["description"] == "确定性输出"
+    # top_p was not in the PATCH → unchanged (still None from create).
+    assert body["top_p"] is None
+
+
+@pytest.mark.asyncio
+async def test_update_agent_clears_max_tokens_to_null(app_client):
+    """PATCH max_tokens=null clears it (back to provider default)."""
+    create = await app_client.post(
+        "/api/v1/agents/",
+        json={"name": "Clearable", "max_tokens": 1000},
+        headers=AUTH,
+    )
+    agent_id = create.json()["id"]
+    assert create.json()["max_tokens"] == 1000
+
+    resp = await app_client.patch(
+        f"/api/v1/agents/{agent_id}",
+        json={"max_tokens": None},
+        headers=AUTH,
+    )
+    assert resp.status_code == 200
+    assert resp.json()["max_tokens"] is None

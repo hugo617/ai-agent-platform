@@ -46,6 +46,10 @@ class AgentService:
             name=payload.name,
             system_prompt=payload.system_prompt,
             model=payload.model,
+            description=payload.description,
+            temperature=payload.temperature,
+            max_tokens=payload.max_tokens,
+            top_p=payload.top_p,
         )
         await self.repo.add(agent)
         await self.db.commit()
