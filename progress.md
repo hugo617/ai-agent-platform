@@ -974,6 +974,34 @@
   - (a) 提交本次修复 + 发 PR(CI 守门验证简化装依赖路径);
   - (b) 执行 AI 内核深化三任务(priority 25 `context-engineering` → 26 `chat-markdown-rendering` → 27 `agent-config-depth`,plan 均已就绪,WIP=1 顺序执行)
 
+### Session 035 — 2026-07-11
+- **本轮目标**: 清理废代码 + 代码质量审查 + PR + CI 守门 + 合并 Session 034 的 `pyproject-missing-dependencies` 修复(依赖声明工程化 bug)到 main
+- **已完成**(端到端,含合并 + rebase 分叉处理):
+  - **建分支**:改动在 main 工作区(未提交)+ 1 个未推送的文档 commit `d8c5a05`,`git checkout -b fix/pyproject-missing-dependencies` 带到分支
+  - **废代码扫描**:ruff F-rules app/cli/tests/scripts/alembic 全绿;grep 核查 `requirements-cli.txt` 残留引用 —— 代码/配置/文档层**零残留**(仅 `.zcode/plans/` 工具工件 + progress.md/plan 历史记录保留,合理) → **无废代码,无需清理改动**
+  - **代码质量审查**(全过,无需修复):
+    - **依赖声明逻辑自洽**:pyproject.toml `dynamic = ["dependencies"]` + `[tool.setuptools.dynamic]` 从 requirements.txt 单一来源读取(零版本漂移);requirements-dev.txt 第 1 行 `-r requirements.txt` 自动含 CLI 依赖,故删 `-r requirements-cli.txt` 后 init.sh + ci.yml 仍装齐后端+CLI+测试工具
+    - **内联注释陷阱处理正确**:requirements.txt 第 17 行 psycopg2 内联注释重排为独立注释行(setuptools dynamic PEP 508 解析必需),pyproject.toml 带注释记录此约束
+    - **click 显式声明**:cli/errors.py 直接 import click,typer 0.12+ 不再传递,显式 `click>=8.1,<9` 消除隐藏依赖
+    - **双轨消除**:requirements-cli.txt 内容已合并进 requirements.txt,删除合理
+  - 基线验证:`./init.sh` → ruff All checks passed! + **229 passed**(简化装依赖路径不回归)
+  - commit `2a22bfe` → push → PR #27(base main)
+  - **CI 守门:4/4 全绿**(Backend pytest+ruff / Migrations / E2E Playwright / Frontend typecheck+build+lint),**无需修复**(一次过)。**关键验证**:Backend job 在干净环境用简化后的 `pip install -r requirements-dev.txt` 成功装齐 CLI 依赖并跑 229 tests —— 证明简化装依赖路径正确(本 PR 核心风险点)
+  - **squash 合并 PR #27 → main**(远程 commit `3abe679`)。合并后处理本地 main 与 origin/main 分叉(本地 main 领先未推送的 `d8c5a05` 文档 commit,与 squash 后的 origin/main 分叉):rebase origin/main,feature_list.json 有 2 处冲突(status passing vs in_progress + evidence/notes 完整 vs 初始)均保留 PR #27 的完整版本(d8c5a05 内容已被覆盖);progress.md Session 030 补记自动合并无冲突。rebase 成功后推送(origin/main 已是最终态,本地完全同步)
+  - `git remote prune` 清除残留引用;本地分支已自动清理(只剩 main)
+  - main 上跑 init.sh 确认 ruff + 229 passed,仓库仍可按标准路径工作
+- **运行过的验证**:
+  - `.venv/bin/ruff check --select F app/ cli/ tests/ scripts/ alembic/` → All checks passed!
+  - `./init.sh`(feat 分支 + main 两次)→ ruff + **229 passed**
+  - CI(PR #27)→ 4/4 job SUCCESS(一次过,无需修复;干净环境验证简化装依赖路径正确)
+  - `python3 -c "import json; json.load(open('feature_list.json'))"` → JSON 合法,27 features(rebase 冲突解决后)
+- **已记录证据**: 无新增(本任务是审查+发版;feature_list 的 pyproject-missing-dependencies.evidence 在 Session 034 已填)
+- **提交记录**: PR #27 已 squash 合并到 main(`3abe679`);1 个功能 commit(零修复 commit);另处理 1 个遗留文档 commit(`d8c5a05`)rebase 融入
+- **已知风险**: 无。CI 4/4 干净环境全绿,核心风险点(简化装依赖路径)在 Backend job 干净环境验证通过
+- **下一步最佳动作**:
+  - (a) 执行 AI 内核深化三任务(priority 25 `context-engineering` → 26 `chat-markdown-rendering` → 27 `agent-config-depth`,plan 均已就绪,WIP=1 顺序执行)
+  - (b) 或先补「09-外部Agent接入AtoA.md」架构文档(AtoA 系列 5 任务已全 passing)
+
 <!-- 模板保留
 ### Session 0XX — YYYY-MM-DD
 - 本轮目标:
