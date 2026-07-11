@@ -1,13 +1,15 @@
 """HTTP client for the agenthub CLI.
 
 A thin wrapper over ``httpx.Client`` that injects the Bearer token and maps
-non-2xx responses to the CLI's typed exceptions (and thus exit codes). SSE
-responses are NOT handled here — the chat command (next task) consumes the raw
-stream directly.
+non-2xx responses to the CLI's typed exceptions (and thus exit codes). The
+``stream_sse`` helper opens a streaming POST (used by the chat command) and
+yields SSE ``data:`` payloads so the caller can parse ``delta`` / ``[DONE]`` /
+``error`` frames.
 """
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from typing import Any
 
 import httpx
@@ -64,6 +66,41 @@ class Client:
     def get_json(self, path: str, **kwargs: Any) -> Any:
         """GET a JSON path and return the parsed body."""
         return self.request("GET", path, **kwargs).json()
+
+    def stream_sse(self, path: str, json_body: dict[str, Any]) -> Iterator[str]:
+        """POST ``json_body`` and stream the SSE response one payload at a time.
+
+        Opens a streaming request and yields each SSE ``data:`` payload (with
+        the ``data: `` prefix stripped). The caller decides how to parse each
+        payload — ``[DONE]`` / ``{"delta": ...}`` / ``{"error": ...}``.
+
+        Non-2xx responses are mapped to the same typed exceptions as
+        ``request()`` (401 → AuthError, 403 → ForbiddenError, etc.) before any
+        frame is yielded, so error handling is uniform across commands.
+        """
+        try:
+            with self._client.stream(
+                "POST", path, json=json_body
+            ) as resp:
+                if resp.status_code == 401:
+                    raise AuthError("token 无效或已过期,请重新 `agenthub login`。")
+                if resp.status_code == 403:
+                    raise ForbiddenError("权限不足:当前 token 的角色无权执行此操作。")
+                if resp.status_code >= 400:
+                    # Read the body so we can surface the detail to the user.
+                    resp.read()
+                    raise ApiError(
+                        f"API 错误 ({resp.status_code}):{_safe_detail(resp)}",
+                        exit_code=1,
+                    )
+                for raw in resp.iter_lines():
+                    if not raw:
+                        continue
+                    if raw.startswith("data:"):
+                        yield raw[len("data:") :].strip()
+        except httpx.HTTPError as e:
+            # ConnectError/ReadTimeout/etc. — surface as a generic API error.
+            raise ApiError(f"网络错误:{e}") from e
 
 
 def _safe_detail(resp: httpx.Response) -> str:

@@ -8,7 +8,7 @@
 - **标准启动路径**: `./init.sh`(装依赖 + ruff + pytest)
 - **标准验证路径**: `./init.sh`(同上,后端快速验证,SQLite 内存库)
 - **完整验证路径**(需 docker): `alembic upgrade head && alembic check` + `cd frontend && npm run build`
-- **当前最高优先级未完成功能**: `atoa-cli-chat-admin`(priority 21,AtoA CLI 对话 + CRUD:agenthub chat 流式 + 会话历史 + Agent CRUD)—— 前置 `atoa-cli-core` ✅ 已完成(CLI 骨架就绪:login/whoami/agents 只读 + Agent-Ready 6 准则)
+- **当前最高优先级未完成功能**: `atoa-skill`(priority 22,AtoA Skill 编写:Agent Skills 开放标准 SKILL.md,让任意 Agent 装上就能用)—— 前置 `atoa-cli-chat-admin` ✅ 已完成(CLI 对话 SSE 流式 + 会话历史 + Agent CRUD 全能力就绪)
 - **当前 blocker**: 无
 
 ## 后续任务规划(2026-07-10 制定,2026-07-10 追加第 8 条插队,共 8 条,WIP=1 顺序执行)
@@ -55,6 +55,7 @@
 | e2e-and-coverage(E2E + 覆盖率 + lint) | passing | 171 tests + 93% 覆盖率 + Playwright E2E + oxlint 0 warning |
 | atoa-api-token-auth(AtoA 地基 API Token 鉴权) | passing | 186 tests + ahp_ 旁路 + 颁发/吊销/验证 + 多租户隔离 |
 | atoa-cli-core(AtoA CLI 骨架 agenthub 命令行) | passing | 199 tests + typer CLI + login/whoami/agents + Agent-Ready 6 准则 |
+| atoa-cli-chat-admin(AtoA CLI 对话+CRUD) | passing | 217 tests + agents chat SSE 流式 + conversations list/messages/delete + agents create/update(PATCH)/delete |
 
 > ✅ AI 内核(agents + chat)已全部纳管并 passing:agents-api-hardening / chat-conversation-api / chat-frontend 三任务端到端完成。
 > ✅ **真实对话已跑通**:real-chat-llm-config(Session 017)用真实 DeepSeek key 端到端验证 SSE 流式对话,修了 3 个 bug(Agent.model 失效 / 前端模型脱节 / 无 LLM 配置 UI)。
@@ -659,6 +660,32 @@
 - **提交记录**: PR #22 已 squash 合并到 main(`756cc83`);含 3 个 commit(1 功能 + 1 CI ruff 范围 + 1 CI typer 安装修复)
 - **已知风险**: 无。CI 在干净环境确认 typer/rich 安装到位,199 tests 含 cli/tests 全过
 - **下一步最佳动作**: 执行 `atoa-cli-chat-admin`(priority 21,CLI 对话 SSE 流式 + 会话历史 + Agent CRUD,核心卖点,前置已合入 main 就绪)
+
+---
+
+### Session 026 — 2026-07-11
+- **本轮目标**: 执行 `atoa-cli-chat-admin`(AtoA CLI 对话 + CRUD —— 核心卖点与完整能力)—— 纯 CLI 新建 + 扩展,前置 atoa-cli-core ✅ 已合入 main(PR #22)
+- **已完成**(对照 plan §实施步骤 Step 1-8):
+  - Step 0 基线确认:`./init.sh` → 199 passed(起点干净);切 `feat/atoa-cli-chat-admin` 分支
+  - Step 1 Client.stream_sse(cli/client.py):用 httpx.Client.stream("POST", ...) + iter_lines();yield 去掉 "data:" 前缀的 payload;401→AuthError/403→ForbiddenError/≥400→ApiError/网络→ApiError 错误映射复用 request() 逻辑;现有 request()/get_json() 零改动
+  - Step 2 对话命令(cli/commands/chat.py 新建):agenthub agents chat --agent <id> "msg" [--conversation-id <id>];SSE 帧解析 {delta}/{error}/[DONE];默认模式 delta 输出到 stderr(打字机,不污染 stdout),--json 模式累积后输出 {reply, agent_id, conversation_id} 到 stdout;error 帧抛 CliError exit 1
+  - Step 4 会话历史命令(cli/commands/conversations.py 新建 sub-app):conversations list(表格)/ messages <id>(时间线 [user]/[assistant])/ delete <id> [--yes](默认 confirm,declined exit 0)
+  - Step 6 Agent CRUD(cli/commands/agents.py 扩展):create --name [--model --prompt](非破坏性不确认,POST)/ update <id> [--name --model --prompt] [--yes](PATCH,默认 confirm)/ delete <id> [--yes](DELETE);_should_skip_confirm(opts, yes) 统一确认逻辑
+  - 注册:main.py 加 conversations sub-app + chat.register(agents.app);commands/__init__.py import chat/conversations
+  - Step 3+5+7 测试(cli/tests/test_cli.py 补 18 个,共 31 个):chat(JSON 累积/conversation_id 转发/error 帧 exit1/default 模式)、conversations(list JSON/messages JSON/timeline 渲染器直接调用/empty timeline/delete --yes/declined)、agents CRUD(create JSON/create minimal/update PATCH/update 无字段报错/update declined/delete --yes/delete --no-interactive/404 exit1)
+  - Step 8 总验证:全绿(见下)
+- **运行过的验证**(全过):
+  - `./init.sh` → ruff(app+cli+tests+alembic)All checks passed! + **217 passed**(199 基线 + 18 新增,无回归)
+  - `pytest cli/tests/test_cli.py -v` → 31 passed(原 13 + 新增 18)
+  - `agenthub --help` / `agents --help` / `conversations --help` → 11 命令全注册可见(chat/create/update/delete/list/get/messages/login/whoami + 2 sub-app)
+- **已记录证据**: `feature_list.json` 的 `atoa-cli-chat-admin.evidence` 字段(8 条,含 SSE 解析 + 确认机制 + PATCH 修正 + 测试发现 + 与 plan 的差异)
+- **技术要点**(与 plan 的实现差异,3 个关键点):
+  - **Agent update 是 PATCH 非 PUT**:plan §Step5 写「后端是 PUT 但接受 partial」是错的,实际 app/api/v1/agents.py:67 是 @router.patch;对接 PATCH(非 PUT)
+  - **typer CliRunner 的 isatty 陷阱**:CliRunner 的 stdout 非真实 TTY,cli/main.py 的 pipe-detection(not sys.stdout.isatty())在测试中恒触发 JSON 模式;patch cli.main.sys.stdout.isatty 无效(click 8.4 callback 解析路径不同)。解决:timeline 渲染(_print_messages_timeline)改用直接函数调用单元测试覆盖;default chat 模式测试接受 JSON 输出(注明人类可读分支由生产代码 sys.stderr.write 保证)
+  - **测试驱动真实帧解析器**:用 _FakeStreamResponse 类(__enter__/__exit__/iter_lines/read)模拟 httpx 流式响应,驱动真实 Client.stream_sse 帧解析器端到端跑通(非 mock stream_sse 方法),覆盖 data: 前缀剥离 + [DONE] + {delta}/{error} 解析 —— 比纯方法 mock 覆盖更真实
+- **提交记录**: `feat/atoa-cli-chat-admin` 分支(待审查 + PR + 合并)
+- **已知风险**: 无功能风险。真实端到端对话验证(需 LLM key + 起后端 + 颁发 token)未跑,参照 real-chat-llm-config 模式留给收尾/用户决定;离线测试用 mock SSE 流覆盖帧解析 + 18 个命令逻辑测试覆盖参数构造 + 确认逻辑 + exit code + 错误映射
+- **下一步最佳动作**: 清理废代码 + 代码质量审查 + PR + CI 守门 + 合并 feat/atoa-cli-chat-admin 到 main;之后开始 `atoa-skill`(priority 22,Skill 编写,前置已就绪)
 
 ---
 
