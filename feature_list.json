@@ -1,7 +1,7 @@
 {
   "project": "ai-agent-platform",
   "description": "多租户 AI 智能体 SaaS 平台脚手架(FastAPI + React + pycasbin + LangGraph)",
-  "last_updated": "2026-07-10",
+  "last_updated": "2026-07-11",
   "harness_version": "stage1-clean-state",
   "rules": {
     "single_active_feature": true,
@@ -475,7 +475,7 @@
       "area": "AtoA",
       "title": "AtoA CLI 对话 + CRUD(核心卖点与完整能力)",
       "user_visible_behavior": "Agent 能通过 CLI 与平台智能体流式对话(终端打字机输出)、读写会话历史、创建/修改/删除 Agent 配置",
-      "status": "not_started",
+      "status": "passing",
       "plan": "harness/docs/plan-atoa-cli-chat-admin.md",
       "verification": [
         "agenthub agents chat --agent <id> 'msg':对接 POST /chat/stream SSE,终端流式输出(打字机)",
@@ -484,9 +484,18 @@
         "--json 模式:对话收完整回复后一次输出;CRUD 输出操作结果 JSON",
         "(真实)端到端对话跑通(需 LLM key);CLI 测试通过(cli/tests/);./init.sh 全绿"
       ],
-      "evidence": [],
+      "evidence": [
+        "./init.sh 全绿:ruff check(app+cli+tests+alembic)→ All checks passed!;pytest → 217 passed(基线 199 后端+cli + 新增 18 cli/tests)(2026-07-11)",
+        "pytest cli/tests/test_cli.py -v → 31 passed(原 13 login/whoami/agents 只读 + 新增 18:chat JSON 累积/conversation_id 转发/error 帧 exit1/default 模式、conversations list/messages JSON/messages 时间线渲染器/empty timeline/delete --yes/declined、agents create JSON/create minimal body/update PATCH/update 无字段报错/update declined/delete --yes/delete --no-interactive/404 exit1)(2026-07-11)",
+        "对话命令(cli/commands/chat.py):agenthub agents chat --agent <id> 'msg' [--conversation-id <id>];对接 POST /api/v1/chat/stream SSE;Client.stream_sse() 逐帧解析 data:{delta}/data:{error}/data:[DONE];默认模式 delta 输出到 stderr(打字机,不污染 stdout),--json 模式累积后输出 {reply, agent_id, conversation_id} 到 stdout;error 帧抛 CliError exit 1",
+        "会话历史命令(cli/commands/conversations.py sub-app):conversations list(表格 id/agent/title/updated_at)/ conversations messages <id>(时间线 [user]/[assistant])/ conversations delete <id> [--yes](默认 typer.confirm,--no-interactive 自动 --yes,declined 则 exit 0 非错误)",
+        "Agent CRUD(cli/commands/agents.py 扩展):agents create --name [--model --prompt](非破坏性不确认,POST);agents update <id> [--name --model --prompt] [--yes](PATCH 语义,默认 confirm);agents delete <id> [--yes](DELETE,默认 confirm);_should_skip_confirm(opts, yes) 统一逻辑:yes 或 no_interactive 跳过",
+        "Client.stream_sse(cli/client.py 新增):用 httpx.Client.stream('POST', ...) + iter_lines();yield 去掉 'data:' 前缀的 payload;401→AuthError/403→ForbiddenError/≥400→ApiError/网络→ApiError 错误映射复用 request() 逻辑;现有 request()/get_json() 零改动",
+        "实现差异 vs plan:(1) Agent update 后端是 PATCH 非 PUT(plan §Step5 写「后端是 PUT 但接受 partial」是错的,实际 app/api/v1/agents.py:67 是 @router.patch),对接 PATCH;(2) 测试发现 typer CliRunner 的 stdout 非真实 TTY,pipe-detection(cli/main.py not sys.stdout.isatty())在测试中恒触发 JSON 模式,patch cli.main.sys.stdout.isatty 无效(click 8.4 callback 解析路径不同)——timeline 渲染改用直接调用 _print_messages_timeline 单元测试覆盖;(3) SSE 帧不含 conversation_id(不改后端),--json 输出 conversation_id 为调用方传入值或 null,续聊需先 conversations list 拿 id",
+        "测试用 _FakeStreamResponse 类模拟 httpx 流式响应(__enter__/__exit__/iter_lines/read),驱动真实 Client.stream_sse 帧解析器端到端跑通(非 mock stream_sse 方法),覆盖 data: 前缀剥离 + [DONE] + {delta}/{error} 解析"
+      ],
       "depends_on": "atoa-cli-core",
-      "notes": "核心卖点:外部 Agent 用你平台最大诉求是调 LLM+Agent 能力(对话)。对话涉及 SSE 流式(技术难点,流式 chunk 输出到 stderr 不污染 stdout),CRUD 涉及写操作(风险点,默认确认 --yes 跳过)。会话续接靠 --conversation-id 指定历史会话。首发能力范围(用户决策全选):对话+只读+历史读写+CRUD,本任务覆盖除只读(上个任务)外的三项。不改后端任何端点(只对接现有 API)。"
+      "notes": "核心卖点:外部 Agent 用你平台最大诉求是调 LLM+Agent 能力(对话)。对话涉及 SSE 流式(技术难点,流式 chunk 输出到 stderr 不污染 stdout),CRUD 涉及写操作(风险点,默认确认 --yes 跳过)。会话续接靠 --conversation-id 指定历史会话。首发能力范围(用户决策全选):对话+只读+历史读写+CRUD,本任务覆盖除只读(上个任务)外的三项。不改后端任何端点(只对接现有 API)。真实端到端对话验证(需 LLM key)留给收尾阶段:参照 real-chat-llm-config 模式,有真实 DeepSeek key 时起后端 + 颁发 token + agenthub login + agenthub agents chat 跑通流式。"
     },
     {
       "id": "atoa-skill",

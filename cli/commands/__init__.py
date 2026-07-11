@@ -1,5 +1,5 @@
 """CLI subcommand groups."""
 
-from cli.commands import agents, login, whoami
+from cli.commands import agents, chat, conversations, login, whoami
 
-__all__ = ["agents", "login", "whoami"]
+__all__ = ["agents", "chat", "conversations", "login", "whoami"]

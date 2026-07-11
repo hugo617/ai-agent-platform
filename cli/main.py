@@ -2,8 +2,8 @@
 
 Builds the top-level ``typer`` app, wires global options (``--json``,
 ``--no-interactive``), and registers the subcommand groups (``login``,
-``whoami``, ``agents``). Installed as the ``agenthub`` console script via
-``[project.scripts]`` in pyproject.toml.
+``whoami``, ``agents`` incl. ``chat``, ``conversations``). Installed as the
+``agenthub`` console script via ``[project.scripts]`` in pyproject.toml.
 
 Agent-Ready traits implemented here:
   - ``--json``      structured output (Agent trait #1)
@@ -54,9 +54,12 @@ def main(
 
 # Register subcommand groups.
 app.add_typer(commands.agents.app, name="agents", help="智能体管理。")
+app.add_typer(commands.conversations.app, name="conversations", help="会话历史。")
 # Single-command modules expose a ``register`` helper to add their command.
 commands.login.register(app)
 commands.whoami.register(app)
+# ``chat`` is registered under the ``agents`` sub-app (``agenthub agents chat``).
+commands.chat.register(commands.agents.app)
 
 
 def run() -> None:
