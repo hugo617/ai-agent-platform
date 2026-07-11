@@ -646,7 +646,7 @@
       "area": "AI 内核",
       "title": "Agent 配置深度(推理参数 temperature/max_tokens/top_p + description)",
       "user_visible_behavior": "用户创建智能体时能配置推理参数(温度/最大输出 token/top_p)和描述;不同 Agent 可有不同行为(创意写作高温度 vs 代码生成低温度);列表显示描述便于区分",
-      "status": "not_started",
+      "status": "passing",
       "plan": "harness/docs/plan-agent-config-depth.md",
       "verification": [
         "Agent model 加字段:temperature(Float,0-2,default 0.7)+ max_tokens(Integer nullable)+ top_p(Float nullable)+ description(Text default '')",
@@ -655,7 +655,18 @@
         "前端 types.ts + agents-page.tsx 表单加推理参数(temperature Slider/max_tokens+top_p 高级折叠区)+ description;列表显示 description",
         "./init.sh 全绿 + alembic upgrade head/check 无 drift + cd frontend && npm run build 通过"
       ],
-      "evidence": [],
+      "evidence": [
+        "./init.sh 全绿:ruff check → All checks passed!;pytest → 250 passed(基线 244 + 新增 6:5 test_agents_api + 1 test_chat)(2026-07-11)",
+        "APP_ENV=testing alembic upgrade head → c4d5e6f7a8b9 → 5dd68e90d6f0 迁移成功;alembic check → No new upgrade operations detected(无 drift,env.py + conftest.py 已含 agent import 无需改)(2026-07-11)",
+        "cd frontend && npm run build 通过:tsc -b + vite build 成功,0 类型错误;npx oxlint src/ 全仓库 → 0 warnings 0 errors(2026-07-11)",
+        "Agent model(app/models/agent.py)加 4 字段:description(Text default='' server_default='')+ temperature(Float default=0.7 server_default='0.7')+ max_tokens(Integer nullable)+ top_p(Float nullable);import 补 Float, Integer",
+        "迁移 5dd68e90d6f0(down_revision c4d5e6f7a8b9):add_column agents.description/temperature/max_tokens/top_p;description+temperature 带 server_default 给现有行填默认值;downgrade 对称 drop 4 列",
+        "Schema(app/schemas/agent.py):AgentBase 加 description(str='')+ temperature(Field(0.7, ge=0, le=2))+ max_tokens(int|None, ge=1, le=32768)+ top_p(float|None, ge=0, le=1);AgentUpdate 对应 Optional 版(None=不改);AgentService.create 传 4 新字段;update 用 model_dump(exclude_unset=True) 只更新传入字段(对齐 users/roles 模式)",
+        "graph.py 移除硬编码 temperature=0.3:新建 _build_llm_kwargs helper 统一构造 ChatOpenAI kwargs(temperature 必传,max_tokens/top_p 非 None 才传);build_agent + stream_agent 签名加 temperature/max_tokens/top_p 参数;chat.py event_source 调 stream_agent 传 agent.temperature/max_tokens/top_p",
+        "测试 test_agents_api.py +5:test_create_agent_with_inference_params(temperature=0.9/max_tokens=2048/top_p=0.95/description 断言)+ test_create_agent_default_inference_params(不传→temperature=0.7/max_tokens=None/top_p=None/description='')+ test_create_agent_invalid_temperature_returns_422(temperature=3.0→422)+ test_update_agent_inference_params(PATCH temperature/max_tokens/description,top_p 未传保持 None)+ test_update_agent_clears_max_tokens_to_null(PATCH max_tokens=null 清空)",
+        "测试 test_chat.py +1:test_agent_inference_params_passed_to_stream_agent(建 agent temperature=0.1/max_tokens=1024→对话→断言 capturing_stream 收到 temperature=0.1/max_tokens=1024/top_p=None,验证 Agent→chat.py→stream_agent 完整传递链)",
+        "前端 types.ts:Agent 加 description/temperature/max_tokens/top_p;AgentCreate/AgentUpdate 对应加(optional);agents-page.tsx:zod schema 加 4 字段(temperature z.number()+valueAsNumber,max_tokens/top_p 用 string 空串=不设);表单加 description Input + temperature range slider(0-2 step 0.1 + 实时数值显示)+ 高级折叠区 details(原生,max_tokens/top_p Input number 留空=不限制);onSubmit 用 parseNum 空串→null;列表名称列下加 description 小字"
+      ],
       "depends_on": "real-chat-llm-config",
       "notes": "根因:app/models/agent.py:16-33 只有 4 有效字段(name/system_prompt/model/时间戳);temperature 硬编码 graph.py:76,109 两处写死 0.3;无 max_tokens/top_p;前端 agents-page.tsx:44-48 表单只有 3 字段。决策:加 4 字段(temperature/max_tokens/top_p/description);默认 temperature=0.7(原硬编码 0.3 改进为更通用默认);max_tokens/top_p 为 None 时不传给 LLM(用 provider 默认);前端高级参数折叠(新手不被吓到)。不做:工具配置(属工具体系任务)、知识库关联(属 RAG 任务)、prompt 变量模板、Agent 分类标签系统、per-model 动态上限。"
     },

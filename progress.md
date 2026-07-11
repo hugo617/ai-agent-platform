@@ -8,7 +8,7 @@
 - **标准启动路径**: `./init.sh`(装依赖 + ruff + pytest)
 - **标准验证路径**: `./init.sh`(同上,后端快速验证,SQLite 内存库)
 - **完整验证路径**(需 docker): `alembic upgrade head && alembic check` + `cd frontend && npm run build`
-- **当前最高优先级未完成功能**: AI 内核深化三任务 `context-engineering`(priority 25)✅ 已完成(Session 036)→ `chat-markdown-rendering`(priority 26)✅ 已完成(Session 038,Session 039 合并发版)→ `agent-config-depth`(priority 27)(not_started,plan 已就绪,最后一个 AI 内核深化任务)。前置的系统性 bug `atoa-service-require-missing-platform-role`(priority 24)与工程化 bug `pyproject-missing-dependencies`(priority 28)已分别于 Session 032/033 修复并 passing
+- **当前最高优先级未完成功能**: AI 内核深化三任务全部完成 ✅ —— `context-engineering`(priority 25,Session 036)+ `chat-markdown-rendering`(priority 26,Session 038)+ `agent-config-depth`(priority 27,Session 040)。feature_list.json 中无 not_started 任务剩余(所有 27 条均 passing)。前置的系统性 bug `atoa-service-require-missing-platform-role`(priority 24)与工程化 bug `pyproject-missing-dependencies`(priority 28)已分别于 Session 032/033 修复并 passing
 - **当前 blocker**: 无
 
 ## 后续任务规划(2026-07-10 制定,2026-07-10 追加第 8 条插队,共 8 条,WIP=1 顺序执行)
@@ -30,7 +30,7 @@
 | **13** | **`atoa-admin-ui`** | **AtoA** | **前端 API Token 管理 UI(settings-page 加 Card)。前置 9 ✅ 已完成** | **`harness/docs/plan-atoa-admin-ui.md`** |
 | **14** | **`context-engineering`** | **AI 内核** | **对话上下文工程(token 近似计数 + 滑动窗口截断 + LLM 超时保护 + 部分回复落库容错)—— 解决长对话必崩的结构性 bug。前置 real-chat ✅ 已完成** | **`harness/docs/plan-context-engineering.md`** |
 | **15** | **`chat-markdown-rendering`** | **AI 内核** | **聊天页 Markdown 渲染(react-markdown + GFM + 代码高亮)+ 停止/复制/重新生成交互。前置 chat-frontend ✅ 已完成** | **`harness/docs/plan-chat-markdown-rendering.md`** |
-| **16** | **`agent-config-depth`** | **AI 内核** | **Agent 配置加推理参数(temperature/max_tokens/top_p)+ description,移除硬编码 temperature=0.3。前置 real-chat ✅** | **`harness/docs/plan-agent-config-depth.md`** |
+| **16** | **`agent-config-depth`** | **AI 内核** | **Agent 配置加推理参数(temperature/max_tokens/top_p)+ description,移除硬编码 temperature=0.3。前置 real-chat ✅ 已完成** | **`harness/docs/plan-agent-config-depth.md`** |
 
 > 依赖链:1 → 2 → 3(对话主线);4 → 5(权限矩阵);6 独立;7 暂停;8 ✅;**AtoA 系列:9(地基) → 10(CLI 骨架) → 11(CLI 对话+CRUD) → 12(Skill);13(前端)依赖 9,可与 10-12 并行但 WIP=1 仍顺序执行**。
 > **AI 内核深化(2026-07-11 规划,Session 031):14(context-engineering,长对话截断/超时,纯后端)→ 15(chat-markdown-rendering,Markdown+交互,纯前端)→ 16(agent-config-depth,推理参数,全栈)。三者独立可任意顺序,但 WIP=1 仍顺序执行。**
@@ -64,6 +64,7 @@
 | atoa-admin-ui(AtoA 管理前端 API Token UI) | passing | npm build 通过 + oxlint 0 warning + settings-page 第三个 Card(列表表格 + 颁发 Dialog 明文展示 + 吊销确认) |
 | context-engineering(对话上下文工程) | passing | 244 tests + token_budget 纯函数(近似计数 + 滑动窗口截断)+ stream_agent asyncio.timeout 超时 + 部分回复落库容错 |
 | chat-markdown-rendering(聊天页 Markdown 渲染) | passing | npm build 通过 + oxlint 0 warning + react-markdown+GFM+代码高亮 + 停止/复制/重新生成交互 |
+| agent-config-depth(Agent 推理参数配置) | passing | 250 tests + alembic 迁移 + graph.py 移除硬编码 temperature=0.3 + 前端 slider/高级折叠区 |
 
 > ✅ AI 内核(agents + chat)已全部纳管并 passing:agents-api-hardening / chat-conversation-api / chat-frontend 三任务端到端完成。
 > ✅ **真实对话已跑通**:real-chat-llm-config(Session 017)用真实 DeepSeek key 端到端验证 SSE 流式对话,修了 3 个 bug(Agent.model 失效 / 前端模型脱节 / 无 LLM 配置 UI)。
@@ -1113,6 +1114,36 @@
 - **下一步最佳动作**:
   - (a) 执行 `agent-config-depth`(priority 27,Agent 推理参数 temperature/max_tokens/top_p + description,全栈,**最后一个 AI 内核深化任务**,plan 已就绪)
   - (b) 或补「09-外部Agent接入AtoA.md」架构文档(AtoA 系列 5 任务已全 passing,文档尚未补)
+
+### Session 040 — 2026-07-11
+- **本轮目标**: 执行 `agent-config-depth`(Agent 配置加推理参数 temperature/max_tokens/top_p + description,移除硬编码 temperature=0.3)—— 全栈,4 阶段 11 步,最后一个 AI 内核深化任务。前置 real-chat-llm-config ✅ 已合入 main
+- **已完成**(对照 plan §实施步骤 Step 1-11):
+  - Step 0 基线确认:`./init.sh` → 244 passed(起点干净);切 `feat/agent-config-depth` 分支;探勘确认 plan 行号无漂移(agent.py model L16-33 / graph.py temperature=0.3 在 build_agent L84 + stream_agent L117 / chat.py stream_agent 调用 L106-116 / schema L8-22 / 迁移链 head=c4d5e6f7a8b9);env.py + conftest.py 均已 import agent(plan 已说明无需改)
+  - Step 1 Agent model 加字段(app/models/agent.py):description(Text default='' server_default='')+ temperature(Float default=0.7 server_default='0.7')+ max_tokens(Integer nullable)+ top_p(Float nullable);import 补 Float, Integer
+  - Step 2 Alembic 迁移(5dd68e90d6f0,down_revision c4d5e6f7a8b9):autogenerate 检测到 4 新列;description+temperature 带 server_default 给现有行填默认值;upgrade head + check 无 drift
+  - Step 3 Schema(app/schemas/agent.py):AgentBase 加 4 字段(temperature Field(0.7, ge=0, le=2) / max_tokens int|None ge=1 le=32768 / top_p float|None ge=0 le=1 / description str='');AgentUpdate 对应 Optional 版;AgentService.create 传 4 新字段;update 用 model_dump(exclude_unset=True) 只更新传入字段
+  - Step 4 graph.py 移除硬编码 temperature=0.3:新建 `_build_llm_kwargs` helper 统一构造 ChatOpenAI kwargs(temperature 必传,max_tokens/top_p 非 None 才传,避免覆盖 provider 默认);build_agent + stream_agent 签名加 temperature/max_tokens/top_p 参数
+  - Step 5 chat.py 传参:event_source 调 stream_agent 加 temperature=agent.temperature / max_tokens=agent.max_tokens / top_p=agent.top_p
+  - Step 6-8 前端:types.ts Agent/AgentCreate/AgentUpdate 加 4 字段;agents-page.tsx zod schema 加字段(temperature z.number()+valueAsNumber,max_tokens/top_p 用 string 空串=不设);表单加 description Input + temperature range slider(0-2 step 0.1 + 实时数值显示)+ 高级折叠区 details(原生,max_tokens/top_p Input number 留空=不限制);onSubmit 用 parseNum 空串→null;列表名称列下加 description 小字
+  - Step 9 测试 test_agents_api.py +5:create with inference params 断言返回值 / default params(不传→0.7/None/None/'') / invalid temperature 422 / PATCH update params(top_p 未传保持 None) / PATCH max_tokens=null 清空
+  - Step 10 测试 test_chat.py +1:test_agent_inference_params_passed_to_stream_agent(建 agent temperature=0.1/max_tokens=1024→对话→断言 capturing_stream 收到 temperature=0.1/max_tokens=1024/top_p=None,验证 Agent→chat.py→stream_agent 完整传递链)
+  - Step 11 总验证:全绿(见下)
+- **运行过的验证**(全过):
+  - `./init.sh` → ruff All checks passed! + **250 passed**(244 基线 + 6 新增,无回归)
+  - `APP_ENV=testing alembic upgrade head` → c4d5e6f7a8b9 → 5dd68e90d6f0 迁移成功;`alembic check` → No new upgrade operations detected
+  - `cd frontend && npm run build` → tsc + vite 0 类型错误;`npx oxlint src/` → 0 warnings 0 errors(40 文件)
+- **已记录证据**: `feature_list.json` 的 `agent-config-depth.evidence` 字段(10 条);status → passing
+- **技术要点**(与 plan 的实现差异):
+  - **_build_llm_kwargs helper**:plan 直接在 build_agent/stream_agent 各写一遍 kwargs 构造,实际提取为独立 helper 避免重复(两处 ChatOpenAI 实例化共享同一逻辑);max_tokens/top_p 非 None 才加入 kwargs(避免覆盖 provider 默认)
+  - **前端 max_tokens/top_p 用 string 而非 number**:plan 建议 z.union([z.number(), z.literal("")]),实际 zod 的 union + z.coerce 让 z.input 推断成 unknown(TS 报错)。改用 z.string() 存(空串=不设),onSubmit 用 parseNum 手动转 number|null —— 更简单且类型安全。temperature 用 z.number()+valueAsNumber(slider 永远有值不可能空)
+  - **openEdit 赋值类型**:`agent.max_tokens ?? ""` 产生 `number | string` 不匹配 `string | undefined`,改用 `agent.max_tokens != null ? String(agent.max_tokens) : ""`
+  - **parseNum 参数类型**:z.string().default("") 的 z.input 是 `string | undefined`(有 default),parseNum 参数用 `string | undefined` + `(s ?? "").trim()`
+  - **build_agent 同步改**:虽然 build_agent 是既有死代码(real-chat 任务标注),但保持参数一致性(plan 风险表说明),PR 标注
+- **提交记录**: `feat/agent-config-depth` 分支(待审查 + PR + 合并)
+- **已知风险**: 无功能风险。真实 LLM 对话验证(plan Step 11 可选)未跑(需 DeepSeek key + docker),离线测试用 capturing_stream mock 已覆盖参数传递链;前端手动浏览器验证未跑(需前后端启动),build(tsc)+ oxlint 已覆盖类型正确性与规范
+- **下一步最佳动作**:
+  - (a) 清理废代码 + 代码质量审查 + PR + CI 守门 + 合并 feat/agent-config-depth 到 main
+  - (b) **AI 内核深化三任务全部完成**:feature_list.json 中无 not_started 任务剩余(27 条均 passing);后续可由用户定新方向(如补 AtoA 架构文档 / 工具体系 / RAG / OAuth 等)
 
 <!-- 模板保留
 ### Session 0XX — YYYY-MM-DD

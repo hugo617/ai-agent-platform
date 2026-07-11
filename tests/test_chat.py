@@ -306,6 +306,52 @@ async def test_agent_model_is_passed_to_stream_agent(app_client, monkeypatch):
     assert captured.get("base_url") == "https://api.deepseek.com"
 
 
+@pytest.mark.asyncio
+async def test_agent_inference_params_passed_to_stream_agent(app_client, monkeypatch):
+    """Agent inference config (temperature/max_tokens/top_p) reaches stream_agent.
+
+    Verifies the full chain: Agent.temperature/max_tokens/top_p → chat.py →
+    stream_agent kwargs. A None value (top_p here) is forwarded as None so the
+    LLM layer knows to skip it (use provider default).
+    """
+    from app.api.v1 import chat as chat_route
+
+    captured: dict = {}
+
+    async def capturing_stream(**kwargs):
+        captured.update(kwargs)
+        yield "ok"
+
+    monkeypatch.setattr(chat_route, "stream_agent", capturing_stream)
+    monkeypatch.setattr(
+        chat_route.llm_config_service,
+        "get_effective",
+        _async_effective(["deepseek-chat"]),
+    )
+
+    create = await app_client.post(
+        "/api/v1/agents/",
+        json={
+            "name": "Tuned Agent",
+            "temperature": 0.1,
+            "max_tokens": 1024,
+            # top_p omitted → None → forwarded as None
+        },
+        headers=AUTH,
+    )
+    agent_id = create.json()["id"]
+
+    resp = await app_client.post(
+        "/api/v1/chat/stream",
+        json={"agent_id": agent_id, "message": "Hi"},
+        headers=AUTH,
+    )
+    assert resp.status_code == 200
+    assert captured.get("temperature") == 0.1
+    assert captured.get("max_tokens") == 1024
+    assert captured.get("top_p") is None
+
+
 # --------------------------------------- context engineering: truncation
 
 

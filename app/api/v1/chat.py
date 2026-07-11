@@ -113,6 +113,9 @@ async def chat_stream(
                 system_prompt=agent.system_prompt,
                 history=history,
                 user_message=payload.message,
+                temperature=agent.temperature,
+                max_tokens=agent.max_tokens,
+                top_p=agent.top_p,
             ):
                 full_reply.append(chunk)
                 yield f"data: {json.dumps({'delta': chunk}, ensure_ascii=False)}\n\n"

@@ -270,6 +270,10 @@ export interface Agent {
   name: string;
   system_prompt: string;
   model: string;
+  description: string;
+  temperature: number;
+  max_tokens: number | null;
+  top_p: number | null;
   created_at: string;
 }
 
@@ -277,12 +281,20 @@ export interface AgentCreate {
   name: string;
   system_prompt?: string;
   model?: string;
+  description?: string;
+  temperature?: number;
+  max_tokens?: number | null;
+  top_p?: number | null;
 }
 
 export interface AgentUpdate {
   name?: string;
   system_prompt?: string;
   model?: string;
+  description?: string;
+  temperature?: number;
+  max_tokens?: number | null;
+  top_p?: number | null;
 }
 
 export interface MeResponse {

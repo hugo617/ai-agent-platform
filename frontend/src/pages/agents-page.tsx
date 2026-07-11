@@ -41,10 +41,17 @@ import {
 import { apiErrorMessage } from "@/api/client";
 import type { Agent } from "@/api/types";
 
+// max_tokens / top_p are kept as strings in the form (empty = "not set") and
+// normalized to number|null on submit. temperature always has a numeric value
+// (slider), so it uses z.number() + valueAsNumber.
 const agentSchema = z.object({
   name: z.string().min(1, "名称不能为空").max(128),
   system_prompt: z.string().default(""),
   model: z.string().default("deepseek-chat"),
+  description: z.string().default(""),
+  temperature: z.number().min(0).max(2).default(0.7),
+  max_tokens: z.string().default(""),
+  top_p: z.string().default(""),
 });
 
 type AgentFormValues = z.input<typeof agentSchema>;
@@ -68,12 +75,28 @@ export function AgentsPage() {
 
   const form = useForm<AgentFormValues>({
     resolver: zodResolver(agentSchema),
-    defaultValues: { name: "", system_prompt: "", model: defaultModel },
+    defaultValues: {
+      name: "",
+      system_prompt: "",
+      model: defaultModel,
+      description: "",
+      temperature: 0.7,
+      max_tokens: "",
+      top_p: "",
+    },
   });
 
   const openCreate = () => {
     setEditing(null);
-    form.reset({ name: "", system_prompt: "", model: defaultModel });
+    form.reset({
+      name: "",
+      system_prompt: "",
+      model: defaultModel,
+      description: "",
+      temperature: 0.7,
+      max_tokens: "",
+      top_p: "",
+    });
     setDialogOpen(true);
   };
 
@@ -83,17 +106,34 @@ export function AgentsPage() {
       name: agent.name,
       system_prompt: agent.system_prompt,
       model: agent.model,
+      description: agent.description,
+      temperature: agent.temperature,
+      max_tokens: agent.max_tokens != null ? String(agent.max_tokens) : "",
+      top_p: agent.top_p != null ? String(agent.top_p) : "",
     });
     setDialogOpen(true);
   };
 
   const onSubmit = async (values: AgentFormValues) => {
+    // Parse optional numeric fields: empty string → null (don't forward to the
+    // LLM, use provider default). A non-empty string is parsed to a number.
+    const parseNum = (s: string | undefined): number | null => {
+      const trimmed = (s ?? "").trim();
+      if (trimmed === "") return null;
+      const n = Number(trimmed);
+      return Number.isNaN(n) ? null : n;
+    };
+    const payload = {
+      ...values,
+      max_tokens: parseNum(values.max_tokens),
+      top_p: parseNum(values.top_p),
+    };
     try {
       if (editing) {
-        await updateMut.mutateAsync({ id: editing.id, payload: values });
+        await updateMut.mutateAsync({ id: editing.id, payload });
         toast.success("已更新", `智能体「${values.name}」`);
       } else {
-        await createMut.mutateAsync(values);
+        await createMut.mutateAsync(payload);
         toast.success("已创建", `智能体「${values.name}」`);
       }
       setDialogOpen(false);
@@ -156,7 +196,14 @@ export function AgentsPage() {
               <TableBody>
                 {agents.map((agent) => (
                   <TableRow key={agent.id}>
-                    <TableCell className="font-medium">{agent.name}</TableCell>
+                    <TableCell className="font-medium">
+                      {agent.name}
+                      {agent.description && (
+                        <p className="text-xs font-normal text-muted-foreground">
+                          {agent.description}
+                        </p>
+                      )}
+                    </TableCell>
                     <TableCell>
                       <Badge variant="outline">{agent.model}</Badge>
                     </TableCell>
@@ -234,6 +281,73 @@ export function AgentsPage() {
                 {...form.register("system_prompt")}
               />
             </div>
+            <div className="space-y-2">
+              <Label htmlFor="description">描述</Label>
+              <Input
+                id="description"
+                placeholder="用于区分智能体用途，如「客服助手」「代码生成」"
+                {...form.register("description")}
+              />
+            </div>
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <Label htmlFor="temperature">温度（temperature）</Label>
+                <span className="text-sm text-muted-foreground">
+                  {form.watch("temperature")?.toFixed(1)}
+                </span>
+              </div>
+              <input
+                id="temperature"
+                type="range"
+                min={0}
+                max={2}
+                step={0.1}
+                className="h-2 w-full cursor-pointer appearance-none rounded-lg bg-input"
+                {...form.register("temperature", { valueAsNumber: true })}
+              />
+              <p className="text-xs text-muted-foreground">
+                0 = 确定性输出，2 = 高随机性。代码生成建议低温度，创意写作建议高温度。
+              </p>
+            </div>
+            {/* Advanced parameters — collapsed by default so new users aren't
+                overwhelmed. max_tokens/top_p are optional; leave blank to use
+                the provider default. */}
+            <details className="group rounded-md border p-3">
+              <summary className="cursor-pointer select-none text-sm font-medium text-muted-foreground">
+                高级设置（max_tokens / top_p）
+              </summary>
+              <div className="mt-3 space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="max_tokens">最大输出 token（max_tokens）</Label>
+                  <Input
+                    id="max_tokens"
+                    type="number"
+                    min={1}
+                    max={32768}
+                    placeholder="留空 = 不限制"
+                    {...form.register("max_tokens")}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    限制单次回复的最大 token 数。留空使用模型默认值。
+                  </p>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="top_p">top_p（核采样）</Label>
+                  <Input
+                    id="top_p"
+                    type="number"
+                    min={0}
+                    max={1}
+                    step={0.1}
+                    placeholder="留空 = 不设置"
+                    {...form.register("top_p")}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    0-1 之间。与 temperature 二选一调节，留空使用模型默认值。
+                  </p>
+                </div>
+              </div>
+            </details>
             <DialogFooter>
               <Button
                 type="button"
