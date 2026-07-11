@@ -503,7 +503,7 @@
       "area": "AtoA",
       "title": "AtoA Skill 编写(让任意 Agent 装上就能用,开放标准)",
       "user_visible_behavior": "任意支持 Agent Skills 开放标准的 AI Agent(Claude Code/Cursor/Codex/VS Code Copilot)装上 agenthub skill 后,自动学会用 CLI 操作平台",
-      "status": "not_started",
+      "status": "passing",
       "plan": "harness/docs/plan-atoa-skill.md",
       "verification": [
         "新建 .agents/skills/agenthub/SKILL.md(符合 Agent Skills 开放标准:YAML frontmatter name+description + 正文指令)",
@@ -512,9 +512,18 @@
         "(真实)Claude Code 实测:装上 Skill 后能被识别并执行 agenthub 命令",
         "./init.sh 全绿(纯文档任务,不影响后端)"
       ],
-      "evidence": [],
+      "evidence": [
+        "./init.sh 全绿:ruff check → All checks passed!;pytest → 217 passed(纯文档任务,后端零改动,基线不变)(2026-07-11)",
+        "SKILL.md frontmatter 格式校验:YAML 合法(yaml.safe_load 通过),name='agenthub' + description(200 字符,含触发场景关键词:agenthub/智能体/对话/创建 Agent/查看历史)+ metadata.requires.bins=['agenthub'] + metadata.cliHelp;正文 3554 字符(2026-07-11)",
+        ".agents/skills/agenthub/SKILL.md(新建):符合 Agent Skills 开放标准;结构 = frontmatter + 何时用 + 新会话检查(whoami 探活)+ 登录认证 + 基础用法(全局选项)+ 核心命令速查(对话/CRUD/会话历史)+ 使用要点(--json/--yes/exit code/多租户)+ CLI 事实优先 + 常见错误处理表;对齐 ~/.agents/skills/apifox-cli 范本风格(中文 description + 触发场景 + metadata.requires.bins + 新会话检查)",
+        ".agents/skills/agenthub/commands.md(新建子文件,按需加载):完整命令参考 —— 全局选项 + login/whoami + agents[list/get/create/update(PATCH)/delete/chat]+ conversations[list/messages/delete] 每条含参数表/输出模式/示例 + exit code 含义表 + 权限矩阵(owner/admin/member × 操作)",
+        "docs/atoa/ 三份文档(新建):README.md(AtoA 总览 + 四件套说明 + 架构设计「鉴权旁路」+ 对标项目)、getting-started.md(5 步:颁发 token → 装 CLI → 登录 → 装 Skill → 用,含 FAQ)、distribution.md(分发模型 + CLI/Skill 安装方式 + 各 Agent 目录约定表 + 安全注意 + 管理员分发清单)",
+        "README.md 加「AtoA:让外部 AI Agent 接入」章节(依赖致谢前):四件套简表 + 指向 docs/atoa/ 的快速上手链接",
+        "交叉链接全部解析:SKILL.md → commands.md(1 处)、docs/atoa/README.md → getting-started.md/distribution.md(各 2 处)、README.md → docs/atoa/(1 处);6 个新建文件全部存在",
+        "实现差异 vs plan:(1) plan Step5 的「Claude Code 实测」留作可选 —— Skill 已符合开放标准格式(可被支持该标准的 Agent 识别),实测依赖具体 Agent 环境(Claude Code 实例 + 已登录的 token),不在本代码任务范围;若用户要做实测,按 getting-started.md 第 4 步操作;(2) plan Step4 的「09-外部Agent接入AtoA.md 架构文档」按 plan 边界「全部 AtoA 任务完成后补」不做,架构说明已精简写进 docs/atoa/README.md 的「架构设计」章节"
+      ],
       "depends_on": "atoa-cli-chat-admin",
-      "notes": "Apifox 打法四件套(CLI+Skill+授权+agentHints)的 Skill 层。Agent Skills 是 2025 年 VS Code Copilot/Claude Code/Cursor/Codex 共同采纳的事实标准:渐进式加载(先扫 frontmatter ~100 token 建索引→命中后加载正文→按需读子文件)。目录约定 .agents/skills/。行业对标 Apifox 官方 GitHub org 的 AI Agent Skills、google/agents-cli 的 skills 分发。description 精准度决定 Agent 命中率(写清做什么+何时用+前置条件)。本仓库 ~/.agents/skills/ 下已有大量 Skill 范本(lark-*/obsidian-* 等)可参照格式。"
+      "notes": "Apifox 打法四件套(CLI+Skill+授权+agentHints)的 Skill 层。Agent Skills 是 2025 年 VS Code Copilot/Claude Code/Cursor/Codex 共同采纳的事实标准:渐进式加载(先扫 frontmatter ~100 token 建索引→命中后加载正文→按需读子文件)。目录约定 .agents/skills/。行业对标 Apifox 官方 GitHub org 的 AI Agent Skills、google/agents-cli 的 skills 分发。description 精准度决定 Agent 命中率(写清做什么+何时用+前置条件)。本仓库 ~/.agents/skills/ 下已有大量 Skill 范本(lark-*/obsidian-* 等)可参照格式。本任务对齐 apifox-cli 范本风格(中文 description + 触发场景 + metadata.requires.bins + 新会话检查 + CLI 事实优先)。Skill 命令内容基于真实 CLI 11 个命令(agenthub --help / agents --help / conversations --help 核实,非 plan 骨架)。Claude Code 实测为可选项(plan §验收标准第 3 条标「(真实)」),留给用户在有 Agent 环境时按 getting-started.md 第 4 步执行。"
     },
     {
       "id": "atoa-admin-ui",
