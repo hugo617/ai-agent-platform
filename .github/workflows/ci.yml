@@ -83,7 +83,7 @@ jobs:
           pip install -r requirements-dev.txt
 
       - name: Ruff
-        run: ruff check app/ tests/ scripts/ alembic/
+        run: ruff check app/ cli/ tests/ scripts/ alembic/
 
       - name: Pytest
         # The suite builds the full schema from the ORM models on in-memory
