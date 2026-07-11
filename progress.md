@@ -689,6 +689,32 @@
 
 ---
 
+### Session 026 — 2026-07-11
+- **本轮目标**: 清理废代码 + 代码质量审查 + PR + CI 守门 + 合并 feat/atoa-cli-chat-admin 到 main
+- **已完成**(端到端,含合并):
+  - **废代码扫描**:ruff F-rules(cli/ 全包)全绿 + 所有新符号(`stream_sse`/`_should_skip_confirm`×2/`create_agent`/`update_agent`/`delete_agent`/chat.register/conversations.app)均有引用 → **无废代码,无需清理改动**
+  - **代码质量审查**(全过,无需修复):
+    - **PATCH 方法正确性核查**:CLI `update_agent` 用 `PATCH /api/v1/agents/{id}`,后端 `agents.py:67` 是 `@router.patch` —— 一致,无 405 bug(plan 文档与 tenant-org-admin-ui 任务记录里提的 PUT 是另一端点,此处对齐真实后端)
+    - **SSE 输出分流**:delta→stderr(打字机,stdout 干净便于管道)/ `--json` 完整 reply→stdout —— 设计正确
+    - **确认机制**:`_should_skip_confirm = yes or no_interactive`;拒绝确认 → exit 0(非错误)
+    - **错误映射**:`stream_sse` 内 401/403/其他与 `request()` 一致(yield 前映射)
+    - **不改后端**:只对接现有 SSE/会话/CRUD 端点(零越界)
+  - 基线验证:`./init.sh` → ruff(含 cli/)All checks passed! + **217 passed**(基线 199 + 新增 18)
+  - push → PR #23(base main)
+  - **CI 守门:4/4 全绿**(Backend pytest+ruff 1m33s / Migrations 47s / Frontend 27s / E2E Playwright 2m01s),**无需修复**(PR #22 的 requirements-cli.txt 修复已在 main,本轮一次过)
+  - **squash 合并 PR #23 → main**(commit `d480f71`),删除远程分支,本地切回 main 同步;`git remote prune` 清除残留引用;本地 feature 分支已删
+- **运行过的验证**:
+  - `.venv/bin/ruff check --select F cli/` → All checks passed!
+  - `./init.sh`(feat 分支)→ ruff(含 cli/)+ **217 passed**
+  - `pytest cli/tests/ -q` → 31 passed(13 原有 + 18 新增)
+  - CI(PR #23)→ 4/4 job SUCCESS
+- **已记录证据**: 无新增(本任务是审查+发版,未改代码;feature_list 的 atoa-cli-chat-admin.evidence 在 Session 026 实现轮已填)
+- **提交记录**: PR #23 已 squash 合并到 main(`d480f71`);1 个功能 commit(零修复 commit)
+- **已知风险**: 无。CI 4/4 干净环境全绿,217 tests 含 cli/tests 全过
+- **下一步最佳动作**: 执行 `atoa-skill`(priority 22,Skill 编写 SKILL.md 开放标准,前置 CLI 全能力已合入 main 就绪);或 `atoa-admin-ui`(priority 23,前端 API Token 管理 UI,依赖 atoa-api-token-auth 已就绪)
+
+---
+
 <!--
 会话记录模板(复制使用):
 ### Session 0XX — YYYY-MM-DD
