@@ -838,6 +838,17 @@
 - **已知风险**: 所有 Service 层 require() 缺 platform_role。临时解决(重启服务器让 Casbin 重加载)或正解(修代码传参)
 - **下一步最佳动作**: 用户决策修复策略(局部修 api_token_service 还是全修 7 个 Service)
 
+**Session 030 后续进展(同日续)— AtoA 配置全部完成 + 发现新 bug**:
+- **platform_role bug 已由用户修复**: PR #26(commit `85d5011`) Service 层 require() 补 platform_role 转发,Session 033 已记录、feature_list p24 已标 passing。验证: curl POST /api/v1/api-tokens/ → 201(此前 403)
+- **AtoA 接入 6 步全部走通**:
+  - Step 3 颁发 API Token → 201, token_prefix `ahp_uoTAVADkBLlm`(name=claude-code,永不过期)
+  - Step 4 agenthub login + whoami → user_id 811599b7…/tenant 046fede3… valid:true
+  - Step 5 agents list --json(10 个)+ agents get → 正常
+  - Step 6 agents chat → 真实 DeepSeek 流式回复跑通(conversation_id=null 为已知限制,续聊需先 conversations list)
+- **发现新 bug `pyproject-missing-dependencies`(feature_list p28,in_progress)**: 为让新终端可用 agenthub 跑 `pipx install -e .`,装完 ~/.local/bin/agenthub whoami 报 ModuleNotFoundError: No module named 'typer'。root cause: pyproject.toml [project] 完全无 dependencies 字段(CLI 的 typer/httpx/click + 后端 fastapi 等都未声明),.venv 能跑是因手动装过。**临时绕过(已执行)**: `pipx inject agenthub typer httpx click` → 全局 agenthub 可用。治本(加 dependencies 字段)留独立任务
+- **新终端使用方式已就绪**: ~/.local/bin 在 PATH,凭证 ~/.agenthub/credentials 全局共享,新终端(不激活 venv)可直接 `agenthub whoami/agents list/agents chat`
+- **下一步最佳动作**: ① 修 pyproject-missing-dependencies(p28)补 dependencies 字段;② 或推进 p25-27 AI 内核深化任务
+
 ---
 
 ### Session 031 — 2026-07-11
