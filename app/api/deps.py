@@ -20,6 +20,14 @@ from app.core.security import (
 from app.repositories.tenant import UserRepository, UserTenantRepository
 from app.services.permission_service import permission_service
 
+# AtoA API tokens use this prefix so get_current_user can route them to the
+# token bypass without touching the JWT path. ``ahp_`` = agenthub platform.
+API_TOKEN_PREFIX = "ahp_"
+# How many chars after the prefix form the indexed lookup key. Long enough that
+# the prefix is effectively unique per token (narrows auth to ~1 row), short
+# enough to stay human-readable in the masked display.
+API_TOKEN_PREFIX_LEN = 12
+
 # Standard "Authorization: Bearer <token>" security scheme.
 #
 # Using HTTPBearer (instead of a raw ``Header`` parameter) makes FastAPI expose
@@ -83,6 +91,15 @@ async def get_current_user(
             headers={"WWW-Authenticate": "Bearer"},
         )
     token = credentials.credentials
+
+    # AtoA bypass: long-lived API tokens carry an ``ahp_`` prefix. They never
+    # reach the JWT path — resolving one constructs a CurrentUser bound to the
+    # token's issuer + tenant, so every existing route + permission guard works
+    # unchanged. Anything without the prefix falls through to the JWT path
+    # (zero regression for the three existing token kinds).
+    if token.startswith(API_TOKEN_PREFIX):
+        return await _resolve_api_token(token, db)
+
     try:
         claims = await decode_token(token)
     except TokenError as e:
@@ -145,6 +162,62 @@ async def get_current_user(
     )
     return CurrentUser(
         user_id=user_id, tenant_id=tenant_id, email=email, jti=jti_str, platform_role=platform_role
+    )
+
+
+async def _resolve_api_token(token: str, db: AsyncSession) -> CurrentUser:
+    """Resolve an ``ahp_`` API token to its issuer's CurrentUser.
+
+    This is the AtoA auth path: the presented token is looked up by prefix
+    (indexed), each candidate is decrypted and compared, and on a hit we build a
+    CurrentUser bound to the token's ``created_by_user_id`` + fixed
+    ``tenant_id``. From there ``require_permission`` / tenant-scoped repos work
+    unchanged — the token inherits the issuer's casbin role and cannot escape
+    its tenant.
+
+    Re-validates the issuer account (exists, active, still a member) so a token
+    is voided the moment its user is disabled or removed from the tenant, even
+    though the token itself has no expiry. ``last_used_at`` is refreshed.
+    """
+    # Lazy import avoids a circular dependency at module load time: the service
+    # imports repos which import models, and deps is imported very early.
+    from app.services.api_token_service import api_token_service
+
+    resolved = await api_token_service.verify(db, token)
+    if resolved is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="invalid or expired API token",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    user_id = resolved.user_id
+    tenant_id = resolved.tenant_id
+
+    # Re-validate membership + account state, mirroring the JWT path, so token
+    # revocation takes effect through the user account too.
+    membership = await UserTenantRepository(db).get_membership(user_id, tenant_id)
+    if membership is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="token issuer is no longer a member of this tenant",
+        )
+    user = await UserRepository(db).get(user_id)
+    if user is None or user.is_deleted:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="token issuer account no longer exists"
+        )
+    if user.status != "active":
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=f"token issuer account is {user.status}; access denied",
+        )
+
+    return CurrentUser(
+        user_id=user_id,
+        tenant_id=tenant_id,
+        email=user.email,
+        platform_role=getattr(user, "platform_role", None),
     )
 
 

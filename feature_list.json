@@ -419,7 +419,7 @@
       "area": "AtoA",
       "title": "AtoA 地基 —— API Token 鉴权机制(PAT 式)",
       "user_visible_behavior": "(内部)平台支持长效 API Token 鉴权:管理端可颁发/吊销 token,外部 Agent 持 token 即可访问平台全部 API(继承颁发者权限,固定租户)",
-      "status": "not_started",
+      "status": "passing",
       "plan": "harness/docs/plan-atoa-api-token-auth.md",
       "verification": [
         "新增 ApiToken 表(绑租户+颁发者 user_id,Fernet 加密存 hash,软删除,预留 OAuth token_type 字段)+ Alembic 迁移",
@@ -429,7 +429,16 @@
         "./init.sh 全绿(ruff + pytest,含新测试 test_api_tokens.py)",
         "alembic check 无 drift(env.py + conftest.py 两处 model import 同步)"
       ],
-      "evidence": [],
+      "evidence": [
+        "./init.sh 全绿:ruff check → All checks passed!;pytest → 186 passed(基线 171 + 新增 15 test_api_tokens)(2026-07-11)",
+        "pytest tests/test_api_tokens.py -v → 15 passed(颁发明文仅一次+掩码、列表无明文/hash、颁发的 token 访问 /agents 旁路生效、旁路不触 decode_token、JWT 路径回归、verify 回显身份、吊销后 401、吊销不存在 404、吊销后列表消失、过期 401、member 颁发/列表 403、token 继承 owner 权限建 agent、token 固定租户隔离、用户禁用 token 失效)(2026-07-11)",
+        "ApiToken 表(app/models/api_token.py):id/tenant_id FK/created_by_user_id FK/name/token_type(默认 pat)/token_hash(Fernet 密文)/token_prefix(索引)/scopes(JSONB+JSON 双库)/last_used_at/expires_at/is_active/is_deleted/created_at/updated_at;遵循软删除+双库兼容惯例",
+        "迁移 c4d5e6f7a8b9(down_revision b3c4d5e6f7a8):create_table api_tokens + 4 索引(tenant_id/created_by_user_id/token_prefix/is_deleted);APP_ENV=testing alembic upgrade head 成功(b3c4d5e6f7a8 → c4d5e6f7a8b9);alembic check → No new upgrade operations detected(env.py + conftest.py 两处 import 同步成功,Session 018 教训未重演)",
+        "deps.py 鉴权旁路(核心技术):get_current_user 开头加 API_TOKEN_PREFIX='ahp_' 前缀分流 → _resolve_api_token 调 api_token_service.verify(按 token_prefix 索引缩小范围→解密比对→验证 active/未过期→刷新 last_used_at→返回 ResolvedToken)→ 构造 CurrentUser(user_id=token.created_by_user_id, tenant_id=token.tenant_id);require_permission/require_super_admin/permission_service.check 全部零改动",
+        "权限继承验证:test_token_inherits_issuer_role 用颁发的 token(agenthub owner 颁发)POST /agents/ 成功 201(需 agents:create,证明 token 继承颁发者 casbin 角色);test_token_isolated_to_its_tenant 在另一租户建 agent,token 列表不含(证明 tenant_id 固定隔离)",
+        "权限 seed:permission_service DEFAULT_OWNER_PERMS/DEFAULT_ADMIN_PERMS 加 ('api_tokens','manage');conftest _make_casbin owner/admin policy 同步;member 无此权限 → test_member_cannot_issue/list 403",
+        "SQLite 时区处理:verify 中 expires_at 比较前判断 tzinfo(naive 则 replace tzinfo=UTC),因 SQLite 读回 strip tzinfo(Session 020 同款问题);生产 Postgres DateTime(timezone=True) 返回 aware 不受影响"
+      ],
       "notes": "AtoA 系列地基任务。核心设计:get_current_user 旁路用 ahp_ 前缀分流(非 ahp_ 走原 JWT 零回归),token 绑定 created_by_user_id 构造 CurrentUser 后 casbin 查询正常工作,所有现有 API 自动获得对外部 Agent 开放的能力。token 存 hash(crypto.encrypt)不存明文,颁发时明文仅返回一次。多租户隔离天然继承(token tenant_id 固定)。行业对标 GitHub PAT / Composio API key / Apifox 访问令牌。预留 OAuth Client Credentials(token_type 字段)作后续独立任务。⚠️ 新增表必同步 alembic/env.py:17-26 + tests/conftest.py:87-96 两处 import(Session 018 血泪教训)。迁移链 head=b3c4d5e6f7a8。"
     },
     {
