@@ -5,6 +5,7 @@ tenant — proving that the agent's tool calls are themselves subject to the
 multi-tenant permission model (no cross-tenant data leakage).
 """
 
+import asyncio
 from collections.abc import AsyncIterator
 from typing import Any
 
@@ -16,6 +17,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.repositories.agent import AgentRepository
 from app.services.permission_service import permission_service
+
+# Wall-clock cap on a single LLM streaming call. Prevents the SSE endpoint
+# from hanging indefinitely when the upstream provider stalls (e.g. it rejects
+# an over-long prompt but never closes the connection). The timeout covers the
+# whole ``astream_events`` loop, so a stuck provider surfaces as
+# ``TimeoutError`` to the caller rather than an infinite spinner.
+LLM_STREAM_TIMEOUT_SECONDS = 60
 
 
 def _system_msg(system_prompt: str) -> SystemMessage:
@@ -116,9 +124,15 @@ async def stream_agent(
     # ReAct agent expects a state dict (``{"messages": [...]}``), not a bare
     # list — passing the list directly raises INVALID_GRAPH_NODE_RETURN_VALUE.
     inputs = {"messages": [*history, HumanMessage(content=user_message)]}
-    async for event in agent.astream_events(inputs, version="v2"):
-        kind = event["event"]
-        if kind == "on_chat_model_stream":
-            chunk = event["data"].get("chunk")
-            if isinstance(chunk, AIMessageChunk) and chunk.content:
-                yield chunk.content
+    # Guard the whole stream against a stalled upstream: if the provider
+    # hangs (network black-hole, over-long prompt rejected silently, etc.)
+    # ``asyncio.timeout`` cancels the generator and raises ``TimeoutError``,
+    # which the chat endpoint surfaces as an error frame instead of spinning
+    # forever. Python 3.11+ provides ``asyncio.timeout`` as a context manager.
+    async with asyncio.timeout(LLM_STREAM_TIMEOUT_SECONDS):
+        async for event in agent.astream_events(inputs, version="v2"):
+            kind = event["event"]
+            if kind == "on_chat_model_stream":
+                chunk = event["data"].get("chunk")
+                if isinstance(chunk, AIMessageChunk) and chunk.content:
+                    yield chunk.content

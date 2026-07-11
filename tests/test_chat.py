@@ -304,3 +304,176 @@ async def test_agent_model_is_passed_to_stream_agent(app_client, monkeypatch):
     assert captured.get("model") == "deepseek-reasoner"
     assert captured.get("api_key") == "test-key"
     assert captured.get("base_url") == "https://api.deepseek.com"
+
+
+# --------------------------------------- context engineering: truncation
+
+
+@pytest.mark.asyncio
+async def test_truncate_history_called_on_long_conversation(
+    app_client, db_session, tenant_owner, monkeypatch
+):
+    """Long conversations are truncated before reaching ``stream_agent``.
+
+    We pre-seed a conversation with many heavy messages, then chat and capture
+    the ``history`` kwarg the (stubbed) ``stream_agent`` received. The captured
+    history must be smaller than the stored message count — proving the
+    sliding-window truncation fired.
+    """
+    from app.api.v1 import chat as chat_route
+
+    create = await app_client.post(
+        "/api/v1/agents/", json={"name": "Long Bot"}, headers=AUTH
+    )
+    agent_id = create.json()["id"]
+
+    # Establish a conversation by sending one (mocked) message.
+    await _mock_chat(app_client, monkeypatch, agent_id, message="seed")
+
+    # Find the conversation id.
+    conv_id = (
+        (await app_client.get("/api/v1/conversations/", headers=AUTH)).json()[0]["id"]
+    )
+
+    # Inject a large number of heavy messages directly into the DB so the
+    # next chat has a very long history that exceeds the token budget.
+    from app.models.message import Message
+
+    heavy = "你好世界测试" * 200  # ~1000 CJK chars ≈ 1000+ tokens per message
+    msgs = [
+        Message(
+            conversation_id=conv_id,
+            tenant_id=tenant_owner["tenant_id"],
+            role="user" if i % 2 == 0 else "assistant",
+            content=f"{heavy} #{i}",
+        )
+        for i in range(40)
+    ]
+    db_session.add_all(msgs)
+    await db_session.commit()
+
+    captured: dict = {}
+
+    async def capturing_stream(**kwargs):
+        captured.update(kwargs)
+        yield "ok"
+
+    monkeypatch.setattr(chat_route, "stream_agent", capturing_stream)
+    monkeypatch.setattr(
+        chat_route.llm_config_service,
+        "get_effective",
+        _async_effective(["deepseek-chat"]),
+    )
+
+    resp = await app_client.post(
+        "/api/v1/chat/stream",
+        json={"agent_id": agent_id, "message": "next", "conversation_id": conv_id},
+        headers=AUTH,
+    )
+    assert resp.status_code == 200
+    # The history passed to the LLM was truncated (well below 40 stored + seed).
+    assert len(captured["history"]) < 40
+    # The minimum floor is respected.
+    assert len(captured["history"]) >= 6
+
+
+# --------------------------- context engineering: partial reply persistence
+
+
+@pytest.mark.asyncio
+async def test_assistant_partial_reply_persisted_on_error(app_client, db_session, monkeypatch):
+    """A partial reply is persisted when the stream fails mid-way.
+
+    Without this, a mid-stream failure leaves the user's message in history
+    with no assistant counterpart — a "断档" (gap). The fix stores whatever was
+    generated, tagged ``[生成中断]``.
+    """
+    from app.api.v1 import chat as chat_route
+
+    async def failing_stream(**kwargs):
+        yield "partial "
+        yield "reply"
+        raise RuntimeError("LLM boom")
+
+    monkeypatch.setattr(chat_route, "stream_agent", failing_stream)
+    monkeypatch.setattr(
+        chat_route.llm_config_service,
+        "get_effective",
+        _async_effective(["deepseek-chat"]),
+    )
+
+    create = await app_client.post(
+        "/api/v1/agents/", json={"name": "Failing Bot"}, headers=AUTH
+    )
+    agent_id = create.json()["id"]
+
+    resp = await app_client.post(
+        "/api/v1/chat/stream",
+        json={"agent_id": agent_id, "message": "Hi"},
+        headers=AUTH,
+    )
+    assert resp.status_code == 200
+    assert "[DONE]" not in resp.text  # stream aborted, no completion frame
+    assert "error" in resp.text
+
+    # The partial assistant reply was persisted with the interruption marker.
+    from sqlalchemy import select
+
+    from app.models.message import Message
+
+    result = await db_session.execute(select(Message))
+    all_msgs = list(result.scalars().all())
+    assistant_msgs = [m for m in all_msgs if m.role == "assistant"]
+    assert len(assistant_msgs) == 1
+    assert "partial reply" in assistant_msgs[0].content
+    assert "[生成中断]" in assistant_msgs[0].content
+
+
+# ------------------------------- context engineering: LLM timeout protection
+
+
+@pytest.mark.asyncio
+async def test_llm_timeout_yields_error_frame(app_client, monkeypatch):
+    """A stalled LLM stream is cancelled by the timeout and surfaces as an error.
+
+    We stub ``ChatOpenAI`` + ``create_react_agent`` so the *real* ``stream_agent``
+    runs (including its ``asyncio.timeout`` guard), but the fake agent never
+    yields an event — it hangs. With the timeout shortened to 0.1s the guard
+    fires, ``stream_agent`` raises ``TimeoutError``, and the chat endpoint
+    returns an error frame instead of hanging forever.
+    """
+    import asyncio
+
+    from app.agents import graph as graph_module
+    from app.api.v1 import chat as chat_route
+
+    class _HangingAgent:
+        async def astream_events(self, *_args, **_kwargs):
+            # Never yields an event → simulates a stalled upstream provider.
+            await asyncio.sleep(30)
+            yield {}  # pragma: no cover - unreachable
+
+    monkeypatch.setattr(graph_module, "LLM_STREAM_TIMEOUT_SECONDS", 0.1)
+    monkeypatch.setattr(graph_module, "ChatOpenAI", lambda **_kw: object())
+    monkeypatch.setattr(
+        graph_module, "create_react_agent", lambda *_a, **_kw: _HangingAgent()
+    )
+    monkeypatch.setattr(
+        chat_route.llm_config_service,
+        "get_effective",
+        _async_effective(["deepseek-chat"]),
+    )
+
+    create = await app_client.post(
+        "/api/v1/agents/", json={"name": "Slow Bot"}, headers=AUTH
+    )
+    agent_id = create.json()["id"]
+
+    resp = await app_client.post(
+        "/api/v1/chat/stream",
+        json={"agent_id": agent_id, "message": "Hi"},
+        headers=AUTH,
+    )
+    assert resp.status_code == 200
+    assert "error" in resp.text
+    assert "[DONE]" not in resp.text

@@ -8,7 +8,7 @@
 - **标准启动路径**: `./init.sh`(装依赖 + ruff + pytest)
 - **标准验证路径**: `./init.sh`(同上,后端快速验证,SQLite 内存库)
 - **完整验证路径**(需 docker): `alembic upgrade head && alembic check` + `cd frontend && npm run build`
-- **当前最高优先级未完成功能**: AI 内核深化三任务 `context-engineering`(priority 25)→ `chat-markdown-rendering`(priority 26)→ `agent-config-depth`(priority 27)(均 not_started,plan 已就绪)。前置的系统性 bug `atoa-service-require-missing-platform-role`(priority 24)与工程化 bug `pyproject-missing-dependencies`(priority 28)已分别于 Session 032/033 修复并 passing
+- **当前最高优先级未完成功能**: AI 内核深化三任务 `context-engineering`(priority 25)✅ 已完成(Session 036)→ `chat-markdown-rendering`(priority 26)→ `agent-config-depth`(priority 27)(后两者 not_started,plan 已就绪)。前置的系统性 bug `atoa-service-require-missing-platform-role`(priority 24)与工程化 bug `pyproject-missing-dependencies`(priority 28)已分别于 Session 032/033 修复并 passing
 - **当前 blocker**: 无
 
 ## 后续任务规划(2026-07-10 制定,2026-07-10 追加第 8 条插队,共 8 条,WIP=1 顺序执行)
@@ -28,7 +28,7 @@
 | **11** | **`atoa-cli-chat-admin`** | **AtoA** | **CLI 对话(SSE 流式)+ 会话历史 + Agent CRUD。核心卖点,前置 10** | **`harness/docs/plan-atoa-cli-chat-admin.md`** |
 | **12** | **`atoa-skill`** | **AtoA** | **Skill 编写(Agent Skills 开放标准 SKILL.md)—— 装上后任意 Agent 可用。前置 11** | **`harness/docs/plan-atoa-skill.md`** |
 | **13** | **`atoa-admin-ui`** | **AtoA** | **前端 API Token 管理 UI(settings-page 加 Card)。前置 9 ✅ 已完成** | **`harness/docs/plan-atoa-admin-ui.md`** |
-| **14** | **`context-engineering`** | **AI 内核** | **对话上下文工程(token 近似计数 + 滑动窗口截断 + LLM 超时保护 + 部分回复落库容错)—— 解决长对话必崩的结构性 bug。前置 real-chat ✅** | **`harness/docs/plan-context-engineering.md`** |
+| **14** | **`context-engineering`** | **AI 内核** | **对话上下文工程(token 近似计数 + 滑动窗口截断 + LLM 超时保护 + 部分回复落库容错)—— 解决长对话必崩的结构性 bug。前置 real-chat ✅ 已完成** | **`harness/docs/plan-context-engineering.md`** |
 | **15** | **`chat-markdown-rendering`** | **AI 内核** | **聊天页 Markdown 渲染(react-markdown + GFM + 代码高亮)+ 停止/复制/重新生成交互。前置 chat-frontend ✅** | **`harness/docs/plan-chat-markdown-rendering.md`** |
 | **16** | **`agent-config-depth`** | **AI 内核** | **Agent 配置加推理参数(temperature/max_tokens/top_p)+ description,移除硬编码 temperature=0.3。前置 real-chat ✅** | **`harness/docs/plan-agent-config-depth.md`** |
 
@@ -62,6 +62,7 @@
 | atoa-cli-chat-admin(AtoA CLI 对话+CRUD) | passing | 217 tests + agents chat SSE 流式 + conversations list/messages/delete + agents create/update(PATCH)/delete |
 | atoa-skill(AtoA Skill 编写) | passing | SKILL.md(commands.md 子文件)+ docs/atoa/(README+getting-started+distribution)+ README AtoA 章节;frontmatter YAML 校验通过 |
 | atoa-admin-ui(AtoA 管理前端 API Token UI) | passing | npm build 通过 + oxlint 0 warning + settings-page 第三个 Card(列表表格 + 颁发 Dialog 明文展示 + 吊销确认) |
+| context-engineering(对话上下文工程) | passing | 244 tests + token_budget 纯函数(近似计数 + 滑动窗口截断)+ stream_agent asyncio.timeout 超时 + 部分回复落库容错 |
 
 > ✅ AI 内核(agents + chat)已全部纳管并 passing:agents-api-hardening / chat-conversation-api / chat-frontend 三任务端到端完成。
 > ✅ **真实对话已跑通**:real-chat-llm-config(Session 017)用真实 DeepSeek key 端到端验证 SSE 流式对话,修了 3 个 bug(Agent.model 失效 / 前端模型脱节 / 无 LLM 配置 UI)。
@@ -1001,6 +1002,33 @@
 - **下一步最佳动作**:
   - (a) 执行 AI 内核深化三任务(priority 25 `context-engineering` → 26 `chat-markdown-rendering` → 27 `agent-config-depth`,plan 均已就绪,WIP=1 顺序执行)
   - (b) 或先补「09-外部Agent接入AtoA.md」架构文档(AtoA 系列 5 任务已全 passing)
+
+### Session 036 — 2026-07-11
+- **本轮目标**: 执行 `context-engineering`(对话上下文工程:token 近似计数 + 滑动窗口截断 + LLM 超时保护 + 部分回复落库容错)—— 4 阶段 7 步,纯后端,解决"长对话必崩"的结构性 bug。前置 real-chat-llm-config ✅ 已合入 main
+- **已完成**(对照 plan §实施步骤 Step 1-7):
+  - Step 0 基线确认:`./init.sh` → 229 passed(起点干净);切 `feat/context-engineering` 分支
+  - Step 1 token_budget.py(新建 `app/agents/token_budget.py`):`estimate_tokens`(CJK≈1 token/字 + ASCII≈1 token/4 字符 + 保守 +1 偏高,覆盖中日韩 Hangul 范围)+ `estimate_messages_tokens`(每条 +4 overhead,对齐 OpenAI 官方)+ `truncate_history`(滑动窗口丢弃最旧消息,MIN_HISTORY_MESSAGES=6 兜底保证≥3 轮);常量 CONTEXT_TOKEN_BUDGET=24000 / RESERVE_FOR_REPLY=4096 / MIN_HISTORY_MESSAGES=6
+  - Step 2 graph.py 超时:`stream_agent` 的 `astream_events` 循环外包 `async with asyncio.timeout(LLM_STREAM_TIMEOUT_SECONDS=60)`(Python 3.11+ 上下文管理器,非 plan 的 wait_for —— 3.11+ 推荐写法,项目 Python 3.13);超时抛 TimeoutError 由 chat.py except 捕获;新增常量 `LLM_STREAM_TIMEOUT_SECONDS=60`
+  - Step 3 chat.py 截断:历史拼接后加 `history = truncate_history(history)`;Repository `list_for_conversation` 加 `limit: int = 200` 防御性参数(非截断逻辑,截断靠 token_budget;limit=200 足够大不影响正常使用 + history 端点 API 契约不变)
+  - Step 4 部分回复落库容错:event_source 异常分支加 `partial = "".join(full_reply); if partial.strip(): append_message("assistant", partial + "\n\n[生成中断]")` —— 空回复不落库(避免空 assistant 消息),非空部分回复标 `[生成中断]` 落库保证历史连续无断档
+  - Step 5 test_token_budget.py(新建,12 纯函数单测):estimate_tokens 空/中文/英文/混合 + estimate_messages_tokens 求和/空 + truncate_history 正常不截断/丢弃最旧/最小保留/空/保留近期 + 常量合理性
+  - Step 6 test_chat.py +3 集成测试:`test_truncate_history_called_on_long_conversation`(注入 40 条重消息→断言 captured history<40 且≥6)+ `test_assistant_partial_reply_persisted_on_error`(stream 中途抛异常→断言 assistant 消息含 partial reply + [生成中断])+ `test_llm_timeout_yields_error_frame`(mock create_react_agent 返回 hanging agent + LLM_STREAM_TIMEOUT_SECONDS=0.1→断言 error frame 无 [DONE])
+  - Step 7 总验证:`./init.sh` → ruff All checks passed! + **244 passed**(229 基线 + 12 token_budget + 3 chat 集成,无回归)
+- **运行过的验证**(全过):
+  - `pytest tests/test_token_budget.py -v` → 12 passed
+  - `pytest tests/test_chat.py -v` → 13 passed(10 原有 + 3 新增)
+  - `./init.sh` → ruff `All checks passed!` + **244 passed**
+- **已记录证据**: `feature_list.json` 的 `context-engineering.evidence` 字段(7 条,含 token_budget 设计 + asyncio.timeout 选型 + 截断接入 + 容错逻辑 + 测试覆盖 + 总验证);status → passing
+- **技术要点**(与 plan 的实现差异):
+  - **asyncio.timeout 而非 wait_for**:plan 写 `asyncio.wait_for`,实际用 `async with asyncio.timeout(60)`(Python 3.11+ 上下文管理器)。理由:① wait_for 包 async generator 需先 collect 再 yield,破坏流式语义;② timeout 上下文管理器直接包 for 循环,在每次 await 点检查截止时间,流式语义不破;③ 项目 Python 3.13,3.11+ 推荐 timeout。plan 风险表已预见此点("用 asyncio.timeout 上下文管理器更优,Python 3.11+")
+  - **超时测试的真实性**:test_llm_timeout_yields_error_frame 不 mock stream_agent(那样跳过了真实超时代码),而是 mock `create_react_agent` 返回 hanging agent(`astream_events` 内 `await asyncio.sleep(30)` 永不 yield)+ mock `ChatOpenAI` + monkeypatch `LLM_STREAM_TIMEOUT_SECONDS=0.1`,让真实 stream_agent 函数体(含 asyncio.timeout)跑通 → 0.1s 后 TimeoutError 触发 → chat.py except 捕获 → error frame。这忠实测试了超时保护代码路径
+  - **truncate_history 不含 system_prompt**:system_prompt 由 graph.py 的 `messages_modifier=_system_msg(system_prompt)` 注入,不在 history 列表里,故 truncate_history 只处理 history 参数;plan Step 3 写 `truncate_history(history, CONTEXT_TOKEN_BUDGET, agent.system_prompt)` 的第三参数实际未用(预算已含 reserve),实现简化为 `truncate_history(history)` 用默认常量
+  - **token 估算保守偏高**:estimate_tokens 末尾 `+1` bias 让计数偏高,宁早截断不晚截断(安全方向);MIN_HISTORY_MESSAGES=6 兜底保证即使严重超预算也保留最近 3 轮对话连续性
+- **提交记录**: `feat/context-engineering` 分支(待审查 + PR + 合并)
+- **已知风险**: 无功能风险。真实长对话验证(plan Step 8 可选)未跑(需 DeepSeek key + docker),离线测试用 mock + 真实 stream_agent 超时代码路径已覆盖;无 schema/migration 改动故无需 CI migrations 守门(Repository limit 参数不改 schema)
+- **下一步最佳动作**:
+  - (a) 清理废代码 + 代码质量审查 + PR + CI 守门 + 合并 feat/context-engineering 到 main
+  - (b) 之后执行 `chat-markdown-rendering`(priority 26,聊天页 Markdown 渲染 + 交互,纯前端)或 `agent-config-depth`(priority 27,推理参数,全栈)
 
 <!-- 模板保留
 ### Session 0XX — YYYY-MM-DD

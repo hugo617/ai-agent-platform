@@ -14,6 +14,7 @@ from langchain_core.messages import AIMessage, HumanMessage
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents.graph import stream_agent
+from app.agents.token_budget import truncate_history
 from app.api.deps import CurrentUser, get_current_user, require_permission
 from app.core.database import get_db
 from app.models.agent import Agent
@@ -82,6 +83,12 @@ async def chat_stream(
         elif m.role == "assistant":
             history.append(AIMessage(content=m.content))
 
+    # Sliding-window truncation: keep the conversation within the model's token
+    # budget so a long chat doesn't overflow the context window and crash. The
+    # oldest messages are dropped first; a minimum floor guarantees recent
+    # context always survives. See ``token_budget`` for the heuristic.
+    history = truncate_history(history)
+
     async def event_source():
         full_reply: list[str] = []
         try:
@@ -111,6 +118,19 @@ async def chat_stream(
                 yield f"data: {json.dumps({'delta': chunk}, ensure_ascii=False)}\n\n"
         except Exception as e:  # noqa: BLE001 - surface to client then close
             yield f"data: {json.dumps({'error': str(e)}, ensure_ascii=False)}\n\n"
+            # Fault tolerance: if the stream produced a partial reply before
+            # failing, persist what we have (marked interrupted) so the
+            # conversation history stays continuous — otherwise the user sees
+            # their question with no answer on reload. An empty reply is
+            # skipped to avoid storing a blank assistant message.
+            partial = "".join(full_reply)
+            if partial.strip():
+                await conv_service.append_message(
+                    conv.tenant_id,
+                    conv.id,
+                    "assistant",
+                    partial + "\n\n[生成中断]",
+                )
             return
 
         # Persist the assistant reply once streaming completes.

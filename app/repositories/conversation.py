@@ -29,7 +29,13 @@ class ConversationRepository(TenantScopedRepository[Conversation]):
 class MessageRepository(TenantScopedRepository[Message]):
     model = Message
 
-    async def list_for_conversation(self, conversation_id: str, tenant_id: str) -> list[Message]:
+    async def list_for_conversation(
+        self, conversation_id: str, tenant_id: str, limit: int = 200
+    ) -> list[Message]:
+        # ``limit`` is a defensive cap (not the truncation logic — token-based
+        # truncation happens in ``token_budget.truncate_history`` before the
+        # messages reach the LLM). 200 is well above any realistic single chat
+        # yet stops a pathological conversation from pulling thousands of rows.
         stmt = (
             select(Message)
             .where(
@@ -37,6 +43,7 @@ class MessageRepository(TenantScopedRepository[Message]):
                 Message.tenant_id == tenant_id,
             )
             .order_by(Message.created_at)
+            .limit(limit)
         )
         result = await self.db.execute(stmt)
         return list(result.scalars().all())

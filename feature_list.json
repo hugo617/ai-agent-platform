@@ -587,7 +587,7 @@
       "area": "AI 内核",
       "title": "对话上下文工程(token 计数 + 滑动窗口 + 历史截断 + 超时保护)",
       "user_visible_behavior": "用户长对话不再崩溃(超过模型上下文窗口时自动截断早期消息,保留近期对话);LLM 卡住时显示超时错误而非无限等待;对话出错时已生成的部分回复保留在历史中(无断档)",
-      "status": "not_started",
+      "status": "passing",
       "plan": "harness/docs/plan-context-engineering.md",
       "verification": [
         "新建 app/agents/token_budget.py(estimate_tokens 近似计数 + truncate_history 滑动窗口截断),纯函数",
@@ -597,7 +597,15 @@
         "pytest tests/test_token_budget.py(纯函数单测:正常/截断/最小保留) + 更新 test_chat.py(截断调用/部分落库/超时)",
         "./init.sh 全绿(无 schema 改动,无需 CI migrations 守门)"
       ],
-      "evidence": [],
+      "evidence": [
+        "2026-07-11: 新建 app/agents/token_budget.py —— estimate_tokens(CJK≈1 token/字 + ASCII≈1/4 token + 保守 +1 偏高)+ estimate_messages_tokens(每条 +4 overhead)+ truncate_history(滑动窗口丢弃最旧,MIN_HISTORY_MESSAGES=6 兜底);常量 CONTEXT_TOKEN_BUDGET=24000 / RESERVE_FOR_REPLY=4096",
+        "2026-07-11: graph.py stream_agent 的 astream_events 循环外包 asyncio.timeout(LLM_STREAM_TIMEOUT_SECONDS=60) —— Python 3.11+ 上下文管理器,超时抛 TimeoutError 由 chat.py except 捕获;非 plan 的 wait_for(asyncio.timeout 是 3.11+ 推荐写法,项目 Python 3.13)",
+        "2026-07-11: chat.py 历史拼接后加 history = truncate_history(history);Repository list_for_conversation 加 limit=200 防御性参数(非截断逻辑,截断靠 token_budget)",
+        "2026-07-11: chat.py event_source 异常分支加部分回复容错 —— partial = ''.join(full_reply);if partial.strip(): append_message('assistant', partial + '\\n\\n[生成中断]');空回复不落库",
+        "2026-07-11: tests/test_token_budget.py 12 纯函数单测全过(estimate_tokens 空/中文/英文/混合 + estimate_messages_tokens 求和/空 + truncate_history 正常不截断/丢弃最旧/最小保留/空/保留近期 + 常量合理性)",
+        "2026-07-11: tests/test_chat.py +3 集成测试全过 —— test_truncate_history_called_on_long_conversation(注入 40 条重消息断言 history<40 且≥6)+ test_assistant_partial_reply_persisted_on_error(stream 中途抛异常断言 assistant 消息含 partial reply + [生成中断])+ test_llm_timeout_yields_error_frame(mock create_react_agent 返回 hanging agent + LLM_STREAM_TIMEOUT_SECONDS=0.1 断言 error frame 无 [DONE])",
+        "2026-07-11: ./init.sh → ruff All checks passed! + 244 passed(229 基线 + 12 token_budget + 3 chat 集成,无回归);无 schema/migration 改动故无需 alembic check"
+      ],
       "depends_on": "real-chat-llm-config",
       "notes": "根因:conversation.py:32 list_for_conversation 无 limit 全量拉取;chat.py:76-82 全量拼接;graph.py:118 全量喂 agent;零 token 计数(grep 全仓零命中)。后果:长对话 100% 撞 context window 崩溃(DeepSeek 32K),第 N 轮发 N 条历史 token 成本平方级增长。决策:token 近似估算(不引入 tiktoken,DeepSeek 无官方 tokenizer);滑动窗口截断(不做对话摘要,那是后续增强);固定预算常量 24000(不查 per-model context_length);超时用 asyncio.wait_for 整体 60s。不动 Message 表结构(token_count 字段属用量计量任务范围)。"
     },
