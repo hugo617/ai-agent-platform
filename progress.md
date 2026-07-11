@@ -8,7 +8,7 @@
 - **标准启动路径**: `./init.sh`(装依赖 + ruff + pytest)
 - **标准验证路径**: `./init.sh`(同上,后端快速验证,SQLite 内存库)
 - **完整验证路径**(需 docker): `alembic upgrade head && alembic check` + `cd frontend && npm run build`
-- **当前最高优先级未完成功能**: AI 内核深化三任务 `context-engineering`(priority 25)✅ 已完成(Session 036)→ `chat-markdown-rendering`(priority 26)✅ 已完成(Session 037)→ `agent-config-depth`(priority 27)(not_started,plan 已就绪)。前置的系统性 bug `atoa-service-require-missing-platform-role`(priority 24)与工程化 bug `pyproject-missing-dependencies`(priority 28)已分别于 Session 032/033 修复并 passing
+- **当前最高优先级未完成功能**: AI 内核深化三任务 `context-engineering`(priority 25)✅ 已完成(Session 036)→ `chat-markdown-rendering`(priority 26)✅ 已完成(Session 038,Session 039 合并发版)→ `agent-config-depth`(priority 27)(not_started,plan 已就绪,最后一个 AI 内核深化任务)。前置的系统性 bug `atoa-service-require-missing-platform-role`(priority 24)与工程化 bug `pyproject-missing-dependencies`(priority 28)已分别于 Session 032/033 修复并 passing
 - **当前 blocker**: 无
 
 ## 后续任务规划(2026-07-10 制定,2026-07-10 追加第 8 条插队,共 8 条,WIP=1 顺序执行)
@@ -1084,6 +1084,35 @@
 - **下一步最佳动作**:
   - (a) 清理废代码 + 代码质量审查 + PR + CI 守门 + 合并 feat/chat-markdown-rendering 到 main
   - (b) 之后执行 `agent-config-depth`(priority 27,Agent 推理参数 temperature/max_tokens/top_p + description,全栈,最后一个 AI 内核深化任务)
+
+### Session 039 — 2026-07-11
+- **本轮目标**: 清理废代码 + 代码质量审查 + PR + CI 守门 + 合并 Session 038 的 `chat-markdown-rendering`(聊天页 Markdown 渲染 + 代码高亮 + 停止/复制/重新生成交互)到 main
+- **已完成**(端到端,含合并):
+  - **废代码扫描**:ruff F-rules app/cli/tests/scripts/alembic 全绿 + oxlint 前端 0 warning + tsc 0 类型错误;新符号引用核查(`MarkdownView`/`CodeBlockCopy`/`extractText`/`handleStop`/`handleCopyMessage`/`handleRegenerate`/`tailwindcssTypography` 均有引用,非死代码);改动文件无 TODO/FIXME/HACK/console.log → **无废代码,无需清理改动**
+  - **代码质量审查**(全过,无需修复):
+    - **纯前端任务,后端零改动**:git diff 确认无 app/ 文件;无分层/租户隔离/软删除问题(本任务不触及)
+    - **安全性**:react-markdown 默认不渲染原始 HTML(无 rehype-raw),assistant 输出中 `<script>` 被转义为文本;链接加 `target=_blank rel=noopener noreferrer`;用户消息保持纯文本 `whitespace-pre-wrap`(防注入)
+    - **AbortError 处理正确**:catch 识别 `err.name === 'AbortError'` 跳过 toast(用户主动停止非错误),finally 仍执行 `setStreaming(false)` + invalidate conversations
+    - **复制失败静默**:clipboard 不可用时(insecure context)catch 不报错,合理
+    - **E2E 兼容**:`send-btn` data-testid 保留(发送/停止按钮条件渲染不冲突,E2E 在非 streaming 状态点击安全)
+    - **重新生成简化版**:移除尾部 assistant + 填回输入框(规避后端重复存 user 消息,对齐 plan 边界)
+  - 基线验证:`./init.sh` → ruff All checks passed! + **244 passed**(后端零改动,基线不变无回归);`cd frontend && npm run build` → tsc + vite 0 类型错误(CSS 47.38KB / JS 951.85KB);`npx oxlint src/` → 0 warnings 0 errors
+  - push `feat/chat-markdown-rendering` → PR #29(base main)
+  - **CI 守门:4/4 全绿**(Backend pytest+ruff 1m35s / Migrations alembic upgrade on Postgres 42s / Frontend typecheck+build+lint 32s / E2E Playwright 2m8s),**无需修复**(一次过)
+  - **squash 合并 PR #29 → main**(commit `90f3460`),`--delete-branch` 连带删本地分支,本地切回 main fast-forward 同步;`git remote prune` 无残留引用(分支已 --delete-branch 干净删除)
+  - main 上跑 `./init.sh` 确认 ruff + 244 passed,仓库仍可按标准路径工作
+- **运行过的验证**:
+  - `.venv/bin/ruff check --select F app/ cli/ tests/ scripts/ alembic/` → All checks passed!
+  - `cd frontend && npm run build` → tsc + vite 0 类型错误
+  - `cd frontend && npx oxlint src/` → 0 warnings 0 errors(40 文件)
+  - `./init.sh`(feat 分支 + main 两次)→ ruff + **244 passed**
+  - CI(PR #29)→ 4/4 job SUCCESS(一次过,无需修复)
+- **已记录证据**: 无新增(本任务是审查+发版;feature_list 的 chat-markdown-rendering.evidence 在 Session 038 已填 11 条)
+- **提交记录**: PR #29 已 squash 合并到 main(`90f3460`);1 个功能 commit(零修复 commit,无废代码清理改动)
+- **已知风险**: 无。CI 4/4 干净环境全绿;本任务无 schema/migration 改动故无需 alembic check(但 CI Migrations job 仍全绿);纯前端任务后端基线 244 passed 不变
+- **下一步最佳动作**:
+  - (a) 执行 `agent-config-depth`(priority 27,Agent 推理参数 temperature/max_tokens/top_p + description,全栈,**最后一个 AI 内核深化任务**,plan 已就绪)
+  - (b) 或补「09-外部Agent接入AtoA.md」架构文档(AtoA 系列 5 任务已全 passing,文档尚未补)
 
 <!-- 模板保留
 ### Session 0XX — YYYY-MM-DD
