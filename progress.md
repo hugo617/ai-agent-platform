@@ -8,7 +8,7 @@
 - **标准启动路径**: `./init.sh`(装依赖 + ruff + pytest)
 - **标准验证路径**: `./init.sh`(同上,后端快速验证,SQLite 内存库)
 - **完整验证路径**(需 docker): `alembic upgrade head && alembic check` + `cd frontend && npm run build`
-- **当前最高优先级未完成功能**: 无(feature_list 全部 passing;AtoA 系列 5 个任务 + atoa-admin-ui 均已完成)
+- **当前最高优先级未完成功能**: `atoa-service-require-missing-platform-role`(priority 24,in_progress,系统性 bug:7 个 Service 共 ~38 处 require() 缺 platform_role);其后为 AI 内核深化三任务 `context-engineering`(priority 25)→ `chat-markdown-rendering`(priority 26)→ `agent-config-depth`(priority 27)
 - **当前 blocker**: 无
 
 ## 后续任务规划(2026-07-10 制定,2026-07-10 追加第 8 条插队,共 8 条,WIP=1 顺序执行)
@@ -28,8 +28,12 @@
 | **11** | **`atoa-cli-chat-admin`** | **AtoA** | **CLI 对话(SSE 流式)+ 会话历史 + Agent CRUD。核心卖点,前置 10** | **`harness/docs/plan-atoa-cli-chat-admin.md`** |
 | **12** | **`atoa-skill`** | **AtoA** | **Skill 编写(Agent Skills 开放标准 SKILL.md)—— 装上后任意 Agent 可用。前置 11** | **`harness/docs/plan-atoa-skill.md`** |
 | **13** | **`atoa-admin-ui`** | **AtoA** | **前端 API Token 管理 UI(settings-page 加 Card)。前置 9 ✅ 已完成** | **`harness/docs/plan-atoa-admin-ui.md`** |
+| **14** | **`context-engineering`** | **AI 内核** | **对话上下文工程(token 近似计数 + 滑动窗口截断 + LLM 超时保护 + 部分回复落库容错)—— 解决长对话必崩的结构性 bug。前置 real-chat ✅** | **`harness/docs/plan-context-engineering.md`** |
+| **15** | **`chat-markdown-rendering`** | **AI 内核** | **聊天页 Markdown 渲染(react-markdown + GFM + 代码高亮)+ 停止/复制/重新生成交互。前置 chat-frontend ✅** | **`harness/docs/plan-chat-markdown-rendering.md`** |
+| **16** | **`agent-config-depth`** | **AI 内核** | **Agent 配置加推理参数(temperature/max_tokens/top_p)+ description,移除硬编码 temperature=0.3。前置 real-chat ✅** | **`harness/docs/plan-agent-config-depth.md`** |
 
 > 依赖链:1 → 2 → 3(对话主线);4 → 5(权限矩阵);6 独立;7 暂停;8 ✅;**AtoA 系列:9(地基) → 10(CLI 骨架) → 11(CLI 对话+CRUD) → 12(Skill);13(前端)依赖 9,可与 10-12 并行但 WIP=1 仍顺序执行**。
+> **AI 内核深化(2026-07-11 规划,Session 031):14(context-engineering,长对话截断/超时,纯后端)→ 15(chat-markdown-rendering,Markdown+交互,纯前端)→ 16(agent-config-depth,推理参数,全栈)。三者独立可任意顺序,但 WIP=1 仍顺序执行。**
 > AtoA = Agent-to-Agent:让任意外部 AI Agent(Claude Code/Cursor/Codex)在授权后通过 CLI+Skill 使用本平台。对标 Apifox CLI+Skill 打法 + google/agents-cli。鉴权选 PAT 先做+OAuth 预留;CLI 选 Python typer;首发能力全选(对话+只读+历史读写+CRUD)。
 
 ## 已 passing 的地基能力(详见 feature_list.json)
@@ -836,8 +840,33 @@
 
 ---
 
-<!--
-会话记录模板(复制使用):
+### Session 031 — 2026-07-11
+- **本轮目标**: 深度评估 MVP 完成度 → 规划 AI 内核深化三任务(context-engineering / chat-markdown-rendering / agent-config-depth)并登记进 Harness 文档体系(只改文档,不写代码)
+- **前置评估**(派 4 个 Explore agent 并行深度调研):
+  - **AI 内核深度**:Agent 模型仅 4 有效字段(name/system_prompt/model/时间戳);temperature 硬编码 graph.py 两处写死 0.3;无 max_tokens/top_p;pgvector 是死依赖(RAG 零实现);对话历史全量拼接无截断(长对话必崩);SSE 无超时/无中断恢复/无并发控制;工具硬编码 1 个示范工具
+  - **前端体验**:管理后台 80 分(权限三层守卫/防双击/只读降级打磨细);聊天页 40 分(纯文本无 Markdown/abortRef 声明了没接停止按钮/无复制/无重新生成);登录缺注册/忘密码/Logto OIDC 是 TODO;无 Error Boundary/无 i18n/暗色模式无 toggle
+  - **后端工程化**:应用代码接近生产(多租户/鉴权/审计扎实);运维零分(无 Dockerfile/无 Rate limiting/health 是假的/连接池裸/无 metrics/Sentry);LLM 长任务同步阻塞无超时
+  - **SaaS 商业化**:自助开通死循环(建租户需登录,登录需已入租户);成员加入靠填 user_id 非邀请;零 token 用量计量(chat.py 丢弃 usage_metadata);无配额/套餐/计费(项目在 docs/auth-history-scd2-plan.md 主动声明为非目标)
+- **已完成**(3 份 plan 文档 + feature_list.json 登记 3 条 + progress.md 更新,0 代码改动):
+  - **`harness/docs/plan-context-engineering.md`**(新建):对话上下文工程 —— token 近似估算(不引入 tiktoken)+ 滑动窗口截断(truncate_history 纯函数)+ stream_agent 加 asyncio.wait_for 超时(60s)+ assistant 部分回复落库容错(避免历史断档);4 阶段 8 步;不做对话摘要(后续增强)
+  - **`harness/docs/plan-chat-markdown-rendering.md`**(新建):聊天页 Markdown 渲染 + 核心交互 —— react-markdown + remark-gfm + rehype-highlight;assistant 消息 Markdown 渲染(user 消息保持纯文本防注入);停止按钮接 abortRef;复制(navigator.clipboard 消息级+代码块级);重新生成(简化版填回输入框);3 阶段 8 步;纯前端
+  - **`harness/docs/plan-agent-config-depth.md`**(新建):Agent 配置深度 —— Agent model 加 4 字段(temperature Float 0-2 default 0.7 / max_tokens Integer nullable / top_p Float nullable / description Text);graph.py 移除硬编码 temperature=0.3 改用传入参数;chat.py 传推理参数;前端表单加 Slider + 高级折叠区;迁移 down_revision=c4d5e6f7a8b9;4 阶段 11 步;全栈
+  - **feature_list.json**:在 atoa-service-require-missing-platform-role(priority 24)之后追加 3 条 not_started 任务(priority 25 context-engineering / 26 chat-markdown-rendering / 27 agent-config-depth),JSON 校验合法(26 features)
+  - **progress.md**:任务规划表加第 14-16 行(AI 内核深化三任务)+ 更新当前最高优先级未完成功能描述 + 本 Session 记录
+- **运行过的验证**: `python3 -c "import json; json.load(open('feature_list.json'))"` → JSON 合法,26 features ✅(无代码改动,无需 init.sh)
+- **已记录证据**: 无(本任务是规划,3 条任务的 evidence 字段待各自执行时填)
+- **技术要点**:
+  - **3 份 plan 基于真实代码探勘**而非凭空写:每份都标注了根因文件+行号(conversation.py:32 无 limit / chat-page.tsx:318 纯文本 / graph.py:76,109 硬编码 temperature)+ 决策表 + 不做的事边界 + 参考文件表,执行时可直接开干
+  - **priority 编号修正**:初稿用 19/20/21,发现 feature_list 已有 AtoA 系列(19-23)+ bug 修复(24)占用,改为 25/26/27 避免冲突;同步更新了 3 份 plan 文档的"优先级"行
+  - **plan 风格对齐**:三份 plan 完全参照 plan-real-chat-llm-config.md 的模板(背景+根因+状态速查表+目标+决策表+前置条件+分阶段步骤+验收标准+风险表+不做的事+参考文件表)
+- **提交记录**: 待用户决定是否提交(本会话不改 git 状态)
+- **已知风险**: 无。plan 文档中的文件路径/符号名/行号基于 2026-07-11 代码探勘核实,执行前建议快速 grep 确认无漂移(尤其 agent.py 模型字段、graph.py 行号可能因 AtoA 系列改动)
+- **下一步最佳动作**:
+  - (a) 先修 in_progress 的 `atoa-service-require-missing-platform-role`(priority 24,系统性 bug),再开始 AI 内核三任务;
+  - (b) 或直接执行 `context-engineering`(priority 25,纯后端,解决长对话必崩的确定性 bug,plan 已就绪);
+  - (c) 或提交本次文档改动(3 plan + feature_list.json + progress.md)
+
+<!-- 模板保留
 ### Session 0XX — YYYY-MM-DD
 - 本轮目标:
 - 已完成:(含通过标准)

@@ -576,6 +576,64 @@
         "现有 API(agent CRUD / users / roles 等)不受影响,因为 Casbin 在服务器启动时已加载了这些政策。但任何新增权限(如 api_tokens:manage)都会暴露此 bug"
       ],
       "notes": "系统性模式缺陷,非 api_tokens 独有。require() 方法签名支持 platform_role 参数(默认为 None),但所有调用方都没传。修复范围:7 个 Service 所有 require() 调用增加 platform_role 形参 + 路由层传 user.platform_role。两条修复路径:(A)仅修 api_token_service 让配置走通(局部) (B)全修所有 Service(根治)。"
+    },
+    {
+      "id": "context-engineering",
+      "priority": 25,
+      "area": "AI 内核",
+      "title": "对话上下文工程(token 计数 + 滑动窗口 + 历史截断 + 超时保护)",
+      "user_visible_behavior": "用户长对话不再崩溃(超过模型上下文窗口时自动截断早期消息,保留近期对话);LLM 卡住时显示超时错误而非无限等待;对话出错时已生成的部分回复保留在历史中(无断档)",
+      "status": "not_started",
+      "plan": "harness/docs/plan-context-engineering.md",
+      "verification": [
+        "新建 app/agents/token_budget.py(estimate_tokens 近似计数 + truncate_history 滑动窗口截断),纯函数",
+        "graph.py stream_agent 加 asyncio.wait_for 超时保护(默认 60s),防 LLM 挂死",
+        "chat.py 历史拼接段用 truncate_history 截断 + Repository list_for_conversation 加 limit=200 防御性",
+        "chat.py event_source 容错:流式中途失败时若已有部分回复,落库部分内容(避免历史断档)",
+        "pytest tests/test_token_budget.py(纯函数单测:正常/截断/最小保留) + 更新 test_chat.py(截断调用/部分落库/超时)",
+        "./init.sh 全绿(无 schema 改动,无需 CI migrations 守门)"
+      ],
+      "evidence": [],
+      "depends_on": "real-chat-llm-config",
+      "notes": "根因:conversation.py:32 list_for_conversation 无 limit 全量拉取;chat.py:76-82 全量拼接;graph.py:118 全量喂 agent;零 token 计数(grep 全仓零命中)。后果:长对话 100% 撞 context window 崩溃(DeepSeek 32K),第 N 轮发 N 条历史 token 成本平方级增长。决策:token 近似估算(不引入 tiktoken,DeepSeek 无官方 tokenizer);滑动窗口截断(不做对话摘要,那是后续增强);固定预算常量 24000(不查 per-model context_length);超时用 asyncio.wait_for 整体 60s。不动 Message 表结构(token_count 字段属用量计量任务范围)。"
+    },
+    {
+      "id": "chat-markdown-rendering",
+      "priority": 26,
+      "area": "AI 内核",
+      "title": "聊天页 Markdown 渲染 + 核心交互(代码高亮/复制/停止/重新生成)",
+      "user_visible_behavior": "AI 回复的标题/列表/表格/代码块正确渲染并语法高亮;用户能中途停止生成、一键复制消息或代码块、重新生成最后一条回复",
+      "status": "not_started",
+      "plan": "harness/docs/plan-chat-markdown-rendering.md",
+      "verification": [
+        "安装依赖 react-markdown + remark-gfm + rehype-highlight + highlight.js",
+        "新建 frontend/src/components/chat/markdown-view.tsx(react-markdown + GFM + 代码高亮 + prose 样式)",
+        "chat-page.tsx:assistant 消息用 MarkdownView 渲染(user 消息保持纯文本);停止按钮接 abortRef;复制按钮(navigator.clipboard);重新生成(简化版=填回输入框)",
+        "cd frontend && npm run build 通过 + oxlint 0 warning",
+        "手动浏览器验证:Markdown 渲染 + 代码高亮 + 停止/复制/重新生成(需前后端启动)"
+      ],
+      "evidence": [],
+      "depends_on": "chat-frontend",
+      "notes": "根因:chat-page.tsx:318 用 whitespace-pre-wrap 纯文本渲染(无 Markdown 解析);package.json 无 react-markdown;abortRef(chat-page.tsx:72,155) 声明了却没接停止按钮;无复制(grep clipboard 零命中)/无重新生成。决策:react-markdown + remark-gfm + rehype-highlight(highlight.js 轻量,非 shiki);用户消息保持纯文本(防注入);流式边流边渲染;重新生成简化版(填回输入框,避免后端重复存 user 消息)。不做:消息编辑/删除、文件上传、KaTeX/Mermaid、对话搜索/重命名(均属另一任务)。纯前端任务,后端零改动。"
+    },
+    {
+      "id": "agent-config-depth",
+      "priority": 27,
+      "area": "AI 内核",
+      "title": "Agent 配置深度(推理参数 temperature/max_tokens/top_p + description)",
+      "user_visible_behavior": "用户创建智能体时能配置推理参数(温度/最大输出 token/top_p)和描述;不同 Agent 可有不同行为(创意写作高温度 vs 代码生成低温度);列表显示描述便于区分",
+      "status": "not_started",
+      "plan": "harness/docs/plan-agent-config-depth.md",
+      "verification": [
+        "Agent model 加字段:temperature(Float,0-2,default 0.7)+ max_tokens(Integer nullable)+ top_p(Float nullable)+ description(Text default '')",
+        "Alembic 迁移(server_default 给现有行填默认值),down_revision=c4d5e6f7a8b9",
+        "schema 加字段 + Pydantic ge/le 校验;graph.py stream_agent/build_agent 用传入推理参数(移除硬编码 temperature=0.3);chat.py 传 agent.temperature/max_tokens/top_p",
+        "前端 types.ts + agents-page.tsx 表单加推理参数(temperature Slider/max_tokens+top_p 高级折叠区)+ description;列表显示 description",
+        "./init.sh 全绿 + alembic upgrade head/check 无 drift + cd frontend && npm run build 通过"
+      ],
+      "evidence": [],
+      "depends_on": "real-chat-llm-config",
+      "notes": "根因:app/models/agent.py:16-33 只有 4 有效字段(name/system_prompt/model/时间戳);temperature 硬编码 graph.py:76,109 两处写死 0.3;无 max_tokens/top_p;前端 agents-page.tsx:44-48 表单只有 3 字段。决策:加 4 字段(temperature/max_tokens/top_p/description);默认 temperature=0.7(原硬编码 0.3 改进为更通用默认);max_tokens/top_p 为 None 时不传给 LLM(用 provider 默认);前端高级参数折叠(新手不被吓到)。不做:工具配置(属工具体系任务)、知识库关联(属 RAG 任务)、prompt 变量模板、Agent 分类标签系统、per-model 动态上限。"
     }
   ]
 }
