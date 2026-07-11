@@ -8,7 +8,7 @@
 - **标准启动路径**: `./init.sh`(装依赖 + ruff + pytest)
 - **标准验证路径**: `./init.sh`(同上,后端快速验证,SQLite 内存库)
 - **完整验证路径**(需 docker): `alembic upgrade head && alembic check` + `cd frontend && npm run build`
-- **当前最高优先级未完成功能**: `atoa-api-token-auth`(priority 19,AtoA 地基:API Token 鉴权机制)—— 用户开新方向「AtoA(Agent-to-Agent):让任意外部 Agent 通过 CLI+Skill 使用平台」,5 条任务已规划登记,e2e-and-coverage 暂停
+- **当前最高优先级未完成功能**: `atoa-cli-core`(priority 20,AtoA CLI 骨架:agenthub 命令行 login/whoami/agents 只读 + Agent-Ready 6 准则)—— 前置 `atoa-api-token-auth` ✅ 已完成(API Token 鉴权地基已就绪,外部 Agent 持 ahp_ token 即可访问全部 API)
 - **当前 blocker**: 无
 
 ## 后续任务规划(2026-07-10 制定,2026-07-10 追加第 8 条插队,共 8 条,WIP=1 顺序执行)
@@ -23,7 +23,7 @@
 | 6 | `tenant-org-admin-ui` | 管理控制台 | 租户/组织/成员管理页(前端)✅ 已完成 | `harness/docs/plan-tenant-org-admin-ui.md` |
 | 7 | `e2e-and-coverage` | 工程化 | E2E + 覆盖率门槛 + lint(建议最后)⏸️ 暂停(AtoA 插队) | `harness/docs/plan-e2e-and-coverage.md` |
 | **8** | **`real-chat-llm-config`** | **AI 内核** | **真实对话验证 + LLM 配置管理(超管+租户级)+ 修 3 bug(Agent.model 失效/前端模型脱节/无配置 UI)—— 用户插队** ✅ 已完成 | **`harness/docs/plan-real-chat-llm-config.md`** |
-| **9** | **`atoa-api-token-auth`** | **AtoA** | **地基:API Token 鉴权机制(PAT 式)—— ApiToken 表 + deps.py 旁路 + 颁发/吊销端点。用户开新方向,当前最高优先级** | **`harness/docs/plan-atoa-api-token-auth.md`** |
+| **9** | **`atoa-api-token-auth`** | **AtoA** | **地基:API Token 鉴权机制(PAT 式)—— ApiToken 表 + deps.py 旁路 + 颁发/吊销端点。✅ 已完成** | **`harness/docs/plan-atoa-api-token-auth.md`** |
 | **10** | **`atoa-cli-core`** | **AtoA** | **agenthub CLI 骨架(typer):login/whoami/agents 只读 + Agent-Ready 6 准则。前置 9** | **`harness/docs/plan-atoa-cli-core.md`** |
 | **11** | **`atoa-cli-chat-admin`** | **AtoA** | **CLI 对话(SSE 流式)+ 会话历史 + Agent CRUD。核心卖点,前置 10** | **`harness/docs/plan-atoa-cli-chat-admin.md`** |
 | **12** | **`atoa-skill`** | **AtoA** | **Skill 编写(Agent Skills 开放标准 SKILL.md)—— 装上后任意 Agent 可用。前置 11** | **`harness/docs/plan-atoa-skill.md`** |
@@ -53,6 +53,7 @@
 | tenant-org-admin-ui(租户/组织/成员前端) | passing | npm build 通过 + 组织树 CRUD + 成员管理 + dashboard 租户卡片 |
 | real-chat-llm-config(真实对话 + LLM 配置) | passing | 131 tests + 真实 DeepSeek SSE 端到端跑通 + 三级 fallback + 修 3 bug |
 | e2e-and-coverage(E2E + 覆盖率 + lint) | passing | 171 tests + 93% 覆盖率 + Playwright E2E + oxlint 0 warning |
+| atoa-api-token-auth(AtoA 地基 API Token 鉴权) | passing | 186 tests + ahp_ 旁路 + 颁发/吊销/验证 + 多租户隔离 |
 
 > ✅ AI 内核(agents + chat)已全部纳管并 passing:agents-api-hardening / chat-conversation-api / chat-frontend 三任务端到端完成。
 > ✅ **真实对话已跑通**:real-chat-llm-config(Session 017)用真实 DeepSeek key 端到端验证 SSE 流式对话,修了 3 个 bug(Agent.model 失效 / 前端模型脱节 / 无 LLM 配置 UI)。
@@ -552,6 +553,36 @@
 - **下一步最佳动作**:
   - (a) 提交本次文档改动(5 plan + feature_list.json + progress.md);
   - (b) 执行 `atoa-api-token-auth`(priority 19,plan 已就绪,AtoA 地基,新会话可直接开干)
+
+---
+
+### Session 022 — 2026-07-11
+- **本轮目标**: 执行 `atoa-api-token-auth`(AtoA 地基:API Token 鉴权机制 PAT 式)—— 10 步,纯后端。AtoA 系列第 1 个任务,所有后续 CLI/Skill/管理前端依赖它
+- **已完成**(对照 plan §实施步骤 Step 1-10):
+  - Step 0 基线确认:`./init.sh` → 171 passed(起点干净);切 `feat/atoa-api-token-auth` 分支
+  - Step 1 ApiToken model(`app/models/api_token.py` 新建):id/tenant_id FK/created_by_user_id FK/name/token_type(默认 pat)/token_hash(Fernet 密文)/token_prefix(索引)/scopes(JSONB+JSON 双库)/last_used_at/expires_at/is_active/is_deleted/created_at/updated_at;遵循 tenant.py 范式 + 软删除 + 双库兼容
+  - Step 2 Alembic 迁移(`c4d5e6f7a8b9`,down_revision b3c4d5e6f7a8)+ env.py/conftest.py 两处 model import 同步(Session 018 血泪教训未重演)
+  - Step 3 Schema(`app/schemas/api_token.py`:Create/CreateResponse 含明文仅一次/Read 掩码)+ Repository(`app/repositories/api_token.py`:find_by_prefix 用 token_prefix 索引缩小范围 + update_last_used)
+  - Step 4 deps.py 鉴权旁路(核心技术):get_current_user 开头加 `ahp_` 前缀分流 → `_resolve_api_token` → api_token_service.verify → 构造 CurrentUser;require_permission 全部零改动
+  - Step 6 ApiTokenService(`app/services/api_token_service.py`):issue(生成 ahp_<token_urlsafe(32)> + encrypt 存 hash + 返回明文仅一次)/verify(prefix 索引→解密比对→active/过期校验→刷新 last_used)/list_for_tenant(掩码)/revoke(软删除)
+  - Step 7 API 端点(`app/api/v1/api_tokens.py`):POST/GET/DELETE /api-tokens(api_tokens:manage 守卫)+ GET /api-tokens/verify(登录即可,CLI whoami 用);main.py 注册(字母序 api_tokens 在 agents 前)
+  - Step 8 权限 seed:permission_service DEFAULT_OWNER/ADMIN_PERMS + conftest casbin owner/admin policy 加 `('api_tokens','manage')`
+  - Step 9 测试(`tests/test_api_tokens.py` 15 个):颁发/掩码列表/旁路访问 /agents/端到端/旁路不触 decode_token(JWT 回归)/verify 回显/吊销 401/404/列表消失/过期 401/member 403×2/继承 owner 权限建 agent/固定租户隔离/用户禁用 token 失效
+  - Step 10 总验证:全绿(见下)
+- **运行过的验证**(全过):
+  - `./init.sh` → ruff `All checks passed!` + **186 passed**(171 基线 + 15 新增,无回归)
+  - `pytest tests/test_api_tokens.py -v` → 15 passed
+  - `APP_ENV=testing alembic upgrade head` → b3c4d5e6f7a8 → c4d5e6f7a8b9 迁移成功
+  - `APP_ENV=testing alembic check` → No new upgrade operations detected(无 drift)
+- **已记录证据**: `feature_list.json` 的 `atoa-api-token-auth.evidence` 字段(8 条,含旁路设计 + 权限继承 + 租户隔离 + SQLite 时区处理)
+- **技术要点**(与 plan 的实现差异):
+  - **SQLite 时区 bug**(Session 020 同款):verify 中 expires_at 比较时 SQLite 读回 strip 了 tzinfo(naive),与 aware 的 `datetime.now(UTC)` 比较抛 TypeError → 加 `tzinfo` 判断(naive 则 replace tzinfo=UTC)。生产 Postgres DateTime(timezone=True) 返回 aware 不受影响。这是「SQLite 测试环境限制」,test_expired_token_rejected 首跑失败暴露
+  - **旁路测试巧用 conftest mock**:conftest 的 app_client mock 了 decode_token,但 ahp_ 前缀在 decode_token 之前拦截,所以旁路真实跑通(非 mock 偶然通过)。test_bypass_does_not_touch_jwt_path 用 `decode_token=AsyncMock(side_effect=AssertionError)` 反证:ahp_ token 不会触发 AssertionError,证明旁路与 JWT 路径隔离
+  - **token_prefix 索引优化**:token 结构 `ahp_<secrets.token_urlsafe(32)>`,取前 16 字符(`ahp_` + 12)作 prefix 索引,verify 用 `find_by_prefix` 缩小到极少数行再解密比对,避免全表遍历
+  - **权限继承是自动的**:token 绑定 created_by_user_id 构造 CurrentUser,casbin 查询用真实 user_id,角色权限天然继承 —— 无需任何额外代码,test_token_inherits_issuer_role 验证(用 token 成功 POST /agents/ 需 agents:create)
+- **提交记录**: `feat/atoa-api-token-auth` 分支(待审查 + PR + 合并)
+- **已知风险**: 无功能风险。手动 curl 验证未单独执行(纯后端 pytest 已覆盖 API 行为 + 鉴权链路端到端);真实 LLM 对话未跑(本任务不涉及 LLM,后续 atoa-cli-chat-admin 任务做);前端管理 UI 未做(atoa-admin-ui 任务,priority 23)
+- **下一步最佳动作**: 清理废代码 + 代码质量审查 + PR + CI 守门 + 合并 feat/atoa-api-token-auth 到 main;之后开始 `atoa-cli-core`(priority 20,CLI 骨架,前置已就绪)
 
 ---
 

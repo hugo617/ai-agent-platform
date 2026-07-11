@@ -11,6 +11,7 @@ from fastapi.responses import JSONResponse, Response
 
 from app.api.v1 import (
     agents,
+    api_tokens,
     auth,
     chat,
     conversations,
@@ -61,6 +62,7 @@ def create_app() -> FastAPI:
     prefix = settings.api_v1_prefix
     app.include_router(auth.router, prefix=prefix)
     app.include_router(tenants.router, prefix=prefix)
+    app.include_router(api_tokens.router, prefix=prefix)
     app.include_router(agents.router, prefix=prefix)
     app.include_router(users.router, prefix=prefix)
     app.include_router(members.router, prefix=prefix)

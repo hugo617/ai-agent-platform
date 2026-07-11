@@ -378,6 +378,7 @@ DEFAULT_OWNER_PERMS: list[tuple[str, str]] = [
     ("organizations", "read"), ("organizations", "create"),
     ("organizations", "update"), ("organizations", "delete"),
     ("settings", "manage"),
+    ("api_tokens", "manage"),
 ]
 DEFAULT_ADMIN_PERMS: list[tuple[str, str]] = [
     ("agents", "read"), ("agents", "create"), ("agents", "update"),
@@ -385,6 +386,7 @@ DEFAULT_ADMIN_PERMS: list[tuple[str, str]] = [
     ("users", "read"), ("users", "create"), ("users", "update"),
     ("roles", "read"), ("organizations", "read"),
     ("settings", "manage"),
+    ("api_tokens", "manage"),
 ]
 DEFAULT_MEMBER_PERMS: list[tuple[str, str]] = [
     ("agents", "read"),
