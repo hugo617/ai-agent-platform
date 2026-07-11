@@ -491,7 +491,31 @@
   - E2E 登录用密码表单(确定性,非 /dev/token);history 断言简化为"会话列表非空"(conversationLabel 需预加载首条消息,reload 后无选中会话时显示"新对话"而非消息片段)
 - **提交记录**: `feat/e2e-and-coverage` 分支(待审查 + PR + 合并)
 - **已知风险**: 无功能风险。CI e2e job 未实际在 GitHub Actions 上跑过(需推送后 CI 守门);E2E 本地已端到端验证通过。覆盖率 CI 时长:3.11 上用 ctrace 约 2 分钟(可接受)
-- **下一步最佳动作**: 清理废代码 + 代码质量审查 + PR + CI 守门 + 合并 feat/e2e-and-coverage 到 main
+- **下一步最佳动作**: ~~清理废代码 + 代码质量审查 + PR + CI 守门 + 合并 feat/e2e-and-coverage 到 main~~ → **已在 Session 020 完成**
+
+### Session 020 — 2026-07-11
+- **本轮目标**: 执行 Session 019 收尾遗留的「清理废代码 + 代码质量审查 + PR + CI 守门 + 合并 feat/e2e-and-coverage 到 main」
+- **已完成**(端到端,含合并):
+  - **废代码扫描**:ruff F401/F811/F841/ARG + oxlint + tsc + grep(TODO/console.log/注释代码/临时文件)。结论:**仓库本身极干净**——无注释死代码、无 console.log、无 FIXME/HACK、无临时文件。扫描到的「未引用代码」全部是**作者有意预留的对称 API 客户端/后端能力**(前端 sessions hooks 对应已存在的后端 `GET/DELETE /auth/sessions` 端点;`PermissionRepository`/`get_implicit_permissions_for_user` 有 `TODO: reserved` 注释)。用户决策:**预留代码全部保留**,只修真实技术债。
+  - **修复 datetime.utcnow() DeprecationWarning**:全仓库 15 处(12 app + 3 tests)`datetime.utcnow()` → `datetime.now(UTC)`(Python 3.11+ 推荐写法)。`utcnow()` 返回 naive datetime,3.12+ 已 deprecate;改用 aware UTC 与模型层 `DateTime(timezone=True)` 语义一致。ruff UP017 自动收敛为 `from datetime import UTC, datetime`。
+  - **安全性分析**:确认所有 datetime 与列的比较均在 SQL 层(`.where()`),无 Python 层 naive/aware 混用 TypeError 风险;SQLite 读回 strip tzinfo 不影响 SQL 层比较。用最小脚本实测 SQLite 下 aware 参数 vs naive 列比较正常工作。
+  - **commit + push + PR #20**:分支 `feat/e2e-and-coverage`(2 commits:`1f7efc1` + `393ebd0`)push 到 origin,开 PR #20。
+  - **CI 守门**:4 个 job **全绿**(Backend pytest+ruff 1m30s / Frontend 29s / Migrations 53s / E2E Playwright 1m56s)——Session 019 担心的「CI e2e 未实际跑过」风险消除。
+  - **合并**:PR #20 squash merge 进 main(`785578f`),分支删除,本地切回 main 同步。
+- **运行过的验证**(全过):
+  - `ruff check app/ tests/ scripts/ alembic/` → All checks passed!(改前改后均绿)
+  - `pytest` → **171 passed**(与基线完全一致)+ warnings summary 中不再有 `datetime.utcnow` 警告(仅余 pydantic v1 第三方库警告)
+  - `cd frontend && npx oxlint .` → 0 warnings 0 errors
+  - `cd frontend && npx tsc -b` → 通过
+  - GitHub Actions CI(PR #20)→ 4/4 job SUCCESS
+- **技术要点**:
+  - **datetime 修复的语义风险**:`utcnow()`→`now(UTC)` 改变了 naive→aware,但因本项目所有 datetime 与 DB 列的比较都在 SQL 层(无 Python 层 `db_value < datetime` 比较),且 SQLite 方言读回时 strip tzinfo,故安全。关键前置验证:grep 确认无 Python 层 datetime 比较。
+  - **「死代码」判断标准**:区分「真死代码」与「对称预留」。前者删除有益,后者(对应已存在后端端点的前端 hook、有 reserved 注释的仓库类)删除破坏设计完整性。本项目属后者。
+- **提交记录**: `393ebd0`(datetime 修复)→ 合并入 main 为 `785578f (#20)`
+- **已知风险**: 无。datetime 改为 aware 后,若未来新增 Python 层 `db_datetime_value < now` 比较需注意 naive/aware 一致性(当前无此用法)。
+- **下一步最佳动作**: 无排期任务。可考虑:① datetime UTC 化是否需要同步更新文档(见下方文档影响评估);② 后续新功能开发按 feature_list.json 规划。
+
+---
 
 ---
 
