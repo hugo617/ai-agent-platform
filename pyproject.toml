@@ -4,6 +4,10 @@ version = "0.1.0"
 description = "多租户智能体云平台(FastAPI + pycasbin + LangGraph)"
 requires-python = ">=3.11"
 license = { text = "Apache-2.0" }
+# Runtime deps are read from requirements.txt (single source of truth) so
+# `pip install -e .` / `pipx install -e .` install the exact set the backend
+# and CLI need, with no version drift between pyproject and requirements.
+dynamic = ["dependencies"]
 
 # ``agenthub`` CLI entry point (AtoA surface). Installed via
 # ``pipx install -e .`` (dev) or ``pipx install agenthub`` (post-release).
@@ -21,6 +25,13 @@ agenthub = "cli.main:run"
 [tool.setuptools.packages.find]
 include = ["app*", "cli*"]
 exclude = ["tests*", "cli.tests*"]
+
+# Read runtime dependencies from requirements.txt (the pinned source of truth).
+# NOTE: requirements.txt must avoid inline `#` comments on requirement lines —
+# setuptools parses each line as a PEP 508 requirement and inline comments
+# break that parsing. Full-line comments and blank lines are fine.
+[tool.setuptools.dynamic]
+dependencies = { file = ["requirements.txt"] }
 
 [tool.black]
 line-length = 100

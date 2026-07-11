@@ -4,7 +4,7 @@
 # agent 每轮会话开工和收尾都跑它。设计目标:在裸环境也能跑起来、快、失败可见。
 #
 # 它做三件事:
-#   1. 装后端依赖(requirements-dev.txt + requirements-cli.txt,含 pytest/ruff + typer/rich)
+#   1. 装后端依赖(requirements-dev.txt,含 pytest/ruff + typer/rich/click)
 #   2. 跑基础验证(ruff check + pytest,SQLite 内存库,不依赖 docker/postgres)
 #   3. 打印启动指引(不自动启动,除非 RUN_START_COMMAND=1)
 #
@@ -20,7 +20,7 @@ cd "$ROOT_DIR"
 # 标准化命令
 # INSTALL_CMD 用 bash 数组(单条命令,安全处理参数)。
 # 验证是两条命令用 && 串联,数组无法承载 shell 控制操作符,所以 VERIFY 用字符串 + bash -c。
-INSTALL_CMD=(pip install -r requirements-dev.txt -r requirements-cli.txt)
+INSTALL_CMD=(pip install -r requirements-dev.txt)
 VERIFY_CMD="ruff check app/ cli/ tests/ scripts/ alembic/ && pytest -ra --strict-markers"
 
 echo "==> 当前目录: $PWD"

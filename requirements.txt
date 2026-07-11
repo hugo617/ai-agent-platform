@@ -14,7 +14,8 @@ SQLAlchemy==2.0.36
 greenlet==3.1.1
 alembic==1.14.0
 psycopg[binary]==3.2.3
-psycopg2-binary==2.9.10  # casbin-sqlalchemy-adapter uses the sync psycopg2 driver
+# casbin-sqlalchemy-adapter uses the sync psycopg2 driver
+psycopg2-binary==2.9.10
 pgvector==0.3.6
 
 # Auth (verify Logto-issued JWT + local password login)
@@ -34,3 +35,11 @@ langchain-core==0.3.28
 
 # Utilities
 python-dateutil==2.9.0.post0
+
+# CLI (agenthub command — AtoA surface). The backend and CLI are packaged
+# together in pyproject.toml (app* + cli*), so these runtime deps belong in the
+# single source of truth that pip install -e . / pipx install -e . reads.
+# click is imported directly by cli/errors.py (typer 0.12+ no longer vendors it).
+typer>=0.12,<1
+rich>=13,<14
+click>=8.1,<9

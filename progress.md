@@ -8,7 +8,7 @@
 - **标准启动路径**: `./init.sh`(装依赖 + ruff + pytest)
 - **标准验证路径**: `./init.sh`(同上,后端快速验证,SQLite 内存库)
 - **完整验证路径**(需 docker): `alembic upgrade head && alembic check` + `cd frontend && npm run build`
-- **当前最高优先级未完成功能**: AI 内核深化三任务 `context-engineering`(priority 25)→ `chat-markdown-rendering`(priority 26)→ `agent-config-depth`(priority 27)(均 not_started,plan 已就绪)。前置的系统性 bug `atoa-service-require-missing-platform-role`(priority 24)已于 Session 032 修复并 passing
+- **当前最高优先级未完成功能**: AI 内核深化三任务 `context-engineering`(priority 25)→ `chat-markdown-rendering`(priority 26)→ `agent-config-depth`(priority 27)(均 not_started,plan 已就绪)。前置的系统性 bug `atoa-service-require-missing-platform-role`(priority 24)与工程化 bug `pyproject-missing-dependencies`(priority 28)已分别于 Session 032/033 修复并 passing
 - **当前 blocker**: 无
 
 ## 后续任务规划(2026-07-10 制定,2026-07-10 追加第 8 条插队,共 8 条,WIP=1 顺序执行)
@@ -936,6 +936,43 @@
 - **下一步最佳动作**:
   - (a) 执行 AI 内核深化三任务(priority 25 `context-engineering` → 26 `chat-markdown-rendering` → 27 `agent-config-depth`,plan 均已就绪,WIP=1 顺序执行)
   - (b) 或先补「09-外部Agent接入AtoA.md」架构文档(AtoA 系列 5 任务已全 passing)
+
+### Session 034 — 2026-07-11
+- **本轮目标**: 修复工程化 bug `pyproject-missing-dependencies`(priority 28)—— `pyproject.toml` `[project]` 完全无 `dependencies` 字段,导致 `pipx install -e .` / 干净环境 `pip install -e .` 装不出 CLI 运行依赖(typer/click),报 ModuleNotFoundError。本地 .venv 能跑是因手动装过 requirements*.txt
+- **前置探勘**(派 Explore agent 完整审计):
+  - 第三方 import 审计:app/ 13 个第三方包全在 requirements.txt;cli/ 4 个(typer/rich/httpx/click),其中 **click 不在任何 requirements 文件**(cli/errors.py:18 直接 import,typer 0.12+ 依赖树不再传递 click,当前靠 .venv 偶然装了)
+  - 死依赖确认:pgvector / python-dateutil 在 app/cli/alembic 零引用(Session 031 已知 pgvector 是死依赖),本次不清理(独立任务)
+  - 打包配置:无 setup.py/setup.cfg/MANIFEST.ini,仅 pyproject.toml,无冲突
+  - requirements.txt 第 17 行内联注释(`psycopg2-binary==2.9.10  # casbin...`)会破坏 setuptools dynamic 读取(走 packaging.Requirements 解析,不支持内联 #)
+- **用户 3 项决策**(AskUserQuestion):
+  - ① 版本约束:requirements.txt 作唯一来源(dynamic dependencies,不在 pyproject 重复版本号 → 零漂移)
+  - ② CLI 依赖:全部合并进主 dependencies(因 pyproject 把 app+cli 打成一个项目)
+  - ③ 死依赖:不删(本次只加 dependencies,不清理)
+- **已完成**(对照 plan 改动清单 5 文件 + 1 文档):
+  - **requirements.txt**:① 合并 CLI 依赖段(typer>=0.12,<1 / rich>=13,<14 / click>=8.1,<9;httpx 已存在不重复);② 第17行内联注释重排为独立注释行(setuptools dynamic 读取必需);③ 注释说明 click 为何显式声明
+  - **pyproject.toml**:`[project]` 加 `dynamic = ["dependencies"]`;新增 `[tool.setuptools.dynamic] dependencies = {file = ["requirements.txt"]}` + 注释说明内联注释禁忌
+  - **requirements-cli.txt 删除**(内容已合并进 requirements.txt,避免双轨)
+  - **init.sh**:INSTALL_CMD 从 `pip install -r requirements-dev.txt -r requirements-cli.txt` 简化为 `pip install -r requirements-dev.txt`(requirements-dev → -r requirements.txt 自动含 CLI 依赖);注释更新
+  - **.github/workflows/ci.yml**:Backend job 第 83 行同步删 `-r requirements-cli.txt`(其余 job 本就只用 requirements-dev.txt)
+  - **docs/atoa/distribution.md:29**:引用从 `requirements-cli.txt` 改为 `requirements.txt 的 CLI 段`
+  - (progress.md / plan 文档里的 requirements-cli.txt 历史引用保留 —— 是历史事实记录,不追溯改)
+- **运行过的验证**(全过):
+  - `python -c "import tomllib; ..."` → pyproject.toml 解析 OK(dynamic + [tool.setuptools.dynamic] 段就位)
+  - `pip install -e .` → editable build done,无 PEP 508 解析错误(证明内联注释重排生效 + dynamic 读取成功)
+  - `importlib.metadata.requires('agenthub')` → **从修复前的 0 项变为 26 项**(含 typer/rich/click/httpx 四个 CLI 依赖全 ✅;pydantic-settings 两条条件标记各自独立保留)
+  - `./init.sh` → ruff All checks passed! + **229 passed**(简化装依赖路径不回归)
+  - `import typer,click,rich,httpx` + `agenthub --help` → 正常
+- **已记录证据**: `feature_list.json` 的 `pyproject-missing-dependencies.evidence` 字段(+5 条:方案 + requirements.txt 改动 + 文件删除链 + 5 项验证 + 架构决策理由);status → passing
+- **技术要点**(与 plan/notes 的实现差异):
+  - **核心矛盾与解法**:pyproject 把 app+cli 打成一个项目(packages.find include app*,cli*),故 pip install -e . 必须装齐两者依赖。CLI 依赖原在 requirements-cli.txt 独立分层(历史:CLI 设计为可选装),但作 dynamic 单一来源时必须合并进 requirements.txt,否则 pipx/pip install -e . 读不到 CLI 依赖(原 bug 复现)。合并后 requirements-cli.txt 冗余故删 —— 这是对「dynamic 单一来源」决策的逻辑必然
+  - **内联注释陷阱**:setuptools `[tool.setuptools.dynamic] file=` 读取每行作 PEP 508 requirement 解析,不支持内联 `#`(会整行解析失败)。requirements.txt 第 17 行原 `psycopg2-binary==2.9.10  # casbin...` 必须重排为独立注释行。pyproject.toml 加注释记录此约束防后人再踩
+  - **click 显式声明**:cli/errors.py:18 直接 import click,但 typer 0.12 的依赖树(requires 只有 shellingham/rich/annotated-doc/colorama)不再含 click。当前能跑靠 .venv 偶然装了 click(pip 装其他包时顺带)。显式声明 `click>=8.1,<9` 消除隐藏依赖
+  - **Session 025 教训不重演**:那次是 CI 漏装 CLI 依赖导致 import typer 失败;本次 CLI 依赖进 requirements.txt → requirements-dev.txt 的 -r 自动拉取 → init.sh + ci.yml 都覆盖,且装依赖路径更简洁(单源)
+- **提交记录**: 待用户决定是否提交(本会话改 5 文件:requirements.txt / pyproject.toml / init.sh / .github/workflows/ci.yml / docs/atoa/distribution.md + 删 requirements-cli.txt + feature_list.json + progress.md)
+- **已知风险**: 无功能风险。pipx reinstall 实测未跑(本会话用 pip install -e . + importlib.metadata.requires 检查已等价证明 dependencies 声明正确);CI 实际跑留待 PR 守门(简化后的 install 路径逻辑正确:requirements-dev → requirements.txt 含 CLI 依赖)
+- **下一步最佳动作**:
+  - (a) 提交本次修复 + 发 PR(CI 守门验证简化装依赖路径);
+  - (b) 执行 AI 内核深化三任务(priority 25 `context-engineering` → 26 `chat-markdown-rendering` → 27 `agent-config-depth`,plan 均已就绪,WIP=1 顺序执行)
 
 <!-- 模板保留
 ### Session 0XX — YYYY-MM-DD
