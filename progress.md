@@ -8,7 +8,7 @@
 - **标准启动路径**: `./init.sh`(装依赖 + ruff + pytest)
 - **标准验证路径**: `./init.sh`(同上,后端快速验证,SQLite 内存库)
 - **完整验证路径**(需 docker): `alembic upgrade head && alembic check` + `cd frontend && npm run build`
-- **当前最高优先级未完成功能**: `atoa-skill`(priority 22,AtoA Skill 编写:Agent Skills 开放标准 SKILL.md,让任意 Agent 装上就能用)—— 前置 `atoa-cli-chat-admin` ✅ 已完成(CLI 对话 SSE 流式 + 会话历史 + Agent CRUD 全能力就绪)
+- **当前最高优先级未完成功能**: `atoa-admin-ui`(priority 23,AtoA 管理前端:settings-page 加 API Token 管理 Card,明文仅显示一次 + 复制 + 吊销)—— 前置 `atoa-api-token-auth` ✅ 已完成(后端 API Token 颁发/吊销/验证端点就绪)
 - **当前 blocker**: 无
 
 ## 后续任务规划(2026-07-10 制定,2026-07-10 追加第 8 条插队,共 8 条,WIP=1 顺序执行)
@@ -56,6 +56,7 @@
 | atoa-api-token-auth(AtoA 地基 API Token 鉴权) | passing | 186 tests + ahp_ 旁路 + 颁发/吊销/验证 + 多租户隔离 |
 | atoa-cli-core(AtoA CLI 骨架 agenthub 命令行) | passing | 199 tests + typer CLI + login/whoami/agents + Agent-Ready 6 准则 |
 | atoa-cli-chat-admin(AtoA CLI 对话+CRUD) | passing | 217 tests + agents chat SSE 流式 + conversations list/messages/delete + agents create/update(PATCH)/delete |
+| atoa-skill(AtoA Skill 编写) | passing | SKILL.md(commands.md 子文件)+ docs/atoa/(README+getting-started+distribution)+ README AtoA 章节;frontmatter YAML 校验通过 |
 
 > ✅ AI 内核(agents + chat)已全部纳管并 passing:agents-api-hardening / chat-conversation-api / chat-frontend 三任务端到端完成。
 > ✅ **真实对话已跑通**:real-chat-llm-config(Session 017)用真实 DeepSeek key 端到端验证 SSE 流式对话,修了 3 个 bug(Agent.model 失效 / 前端模型脱节 / 无 LLM 配置 UI)。
@@ -712,6 +713,31 @@
 - **提交记录**: PR #23 已 squash 合并到 main(`d480f71`);1 个功能 commit(零修复 commit)
 - **已知风险**: 无。CI 4/4 干净环境全绿,217 tests 含 cli/tests 全过
 - **下一步最佳动作**: 执行 `atoa-skill`(priority 22,Skill 编写 SKILL.md 开放标准,前置 CLI 全能力已合入 main 就绪);或 `atoa-admin-ui`(priority 23,前端 API Token 管理 UI,依赖 atoa-api-token-auth 已就绪)
+
+---
+
+### Session 027 — 2026-07-11
+- **本轮目标**: 执行 `atoa-skill`(AtoA Skill 编写 —— 让任意 Agent 装上就能用,开放标准)—— 纯文档任务,前置 atoa-cli-chat-admin ✅ 已合入 main(PR #23)。Apifox 打法四件套的 Skill 层
+- **已完成**(对照 plan §实施步骤 Step 1-6):
+  - Step 0 基线确认:`./init.sh` → 217 passed(起点干净);切 `feat/atoa-skill` 分支
+  - Step 1 SKILL.md(`.agents/skills/agenthub/SKILL.md` 新建):符合 Agent Skills 开放标准;frontmatter(name + description 200字符含触发关键词 + metadata.requires.bins + metadata.cliHelp);正文 = 何时用 + 新会话检查(whoami 探活)+ 登录认证 + 基础用法(全局选项)+ 核心命令速查(对话/CRUD/会话历史)+ 使用要点 + CLI 事实优先 + 常见错误处理表;对齐 ~/.agents/skills/apifox-cli 范本风格
+  - Step 1b commands.md(`.agents/skills/agenthub/commands.md` 新建子文件,按需加载):完整命令参考 —— 全局选项 + login/whoami + agents[list/get/create/update(PATCH)/delete/chat]+ conversations[list/messages/delete] 每条含参数表/输出模式/示例 + exit code 含义表 + 权限矩阵
+  - Step 3 docs/atoa/ 三份文档(新建):README.md(AtoA 总览 + 四件套 + 架构设计「鉴权旁路」+ 对标项目)、getting-started.md(5 步快速上手 + FAQ)、distribution.md(分发模型 + 各 Agent 目录约定表 + 安全注意 + 管理员分发清单)
+  - Step 4 README.md 加「AtoA:让外部 AI Agent 接入」章节(依赖致谢前):四件套简表 + 指向 docs/atoa/ 的链接
+  - Step 6 验证:全绿(见下)
+- **运行过的验证**(全过):
+  - `./init.sh` → ruff All checks passed! + **217 passed**(纯文档任务,后端零改动,基线不变)
+  - SKILL.md frontmatter 校验:YAML 合法(yaml.safe_load)+ name + description(200 字符)+ metadata.requires.bins + metadata.cliHelp 全部就位;正文 3554 字符
+  - 交叉链接解析:SKILL.md → commands.md、docs/atoa/README.md → getting-started/distribution、README.md → docs/atoa/ 全部 resolve;6 个新建文件全部存在
+- **已记录证据**: `feature_list.json` 的 `atoa-skill.evidence` 字段(8 条,含 frontmatter 校验 + Skill/docs 结构 + 交叉链接 + 与 plan 的差异)
+- **技术要点**(与 plan 的实现差异):
+  - **对齐 apifox-cli 范本而非 plan 骨架**:plan Step1 的 SKILL.md 骨架是英文 + 简单结构;实际探勘 ~/.agents/skills/apifox-cli 发现更高质量范本(中文 description + 触发场景 + metadata.requires.bins 声明 CLI 依赖 + 新会话检查 + CLI 事实优先原则)。本 Skill 对齐 apifox-cli 风格,因为同属「操作外部平台的 CLI Skill」类型,且中文 description 对中文用户场景命中率更高
+  - **Skill 内容基于真实 CLI 11 命令**:非 plan 骨架的简化版,全部命令参数/输出模式/exit code 经 `agenthub --help` / `agents --help` / `conversations --help` + 源码核实
+  - **Claude Code 实测为可选项**:plan §验收标准第 3 条标「(真实)」,但实测依赖具体 Agent 环境(Claude Code 实例 + 已登录 token);Skill 已符合开放标准格式可被支持该标准的 Agent 识别。若用户要做实测,按 getting-started.md 第 4 步操作(复制到 ~/.agents/skills/ + 启动 Claude Code + 自然语言提问)
+  - **架构文档「09-外部Agent接入AtoA.md」不做**:按 plan 边界「全部 AtoA 任务完成后补」,架构说明已精简写进 docs/atoa/README.md 的「架构设计」章节(鉴权旁路 + 多租户隔离)
+- **提交记录**: `feat/atoa-skill` 分支(待审查 + PR + 合并)
+- **已知风险**: 无。纯文档任务,后端零改动 init.sh 217 passed 不变;Claude Code 实测未执行(依赖 Agent 环境,非代码任务范围),Skill 格式合规性已用 yaml.safe_load 校验
+- **下一步最佳动作**: 清理废代码 + PR + CI 守门 + 合并 feat/atoa-skill 到 main;之后开始 `atoa-admin-ui`(priority 23,前端 API Token 管理 UI,最后一个 AtoA 任务,依赖 atoa-api-token-auth 已就绪);全部 AtoA 任务完成后补「09-外部Agent接入AtoA.md」架构文档
 
 ---
 

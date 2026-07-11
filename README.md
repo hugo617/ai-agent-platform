@@ -152,6 +152,21 @@ pytest --cov=app              # 带覆盖率
 | GET | `/api/v1/organizations/tree` | 组织架构树 | organizations:read |
 | POST | `/api/v1/chat/stream` | SSE 流式对话 | conversations:chat |
 
+## AtoA:让外部 AI Agent 接入
+
+**AtoA(Agent-to-Agent)** 让任意外部 AI Agent(Claude Code / Cursor / Codex / VS Code Copilot)在授权后,通过 **CLI + Skill** 使用本平台的全部能力 —— 对标 Apifox CLI + Skill 打法。
+
+四件套:
+
+| 件 | 说明 |
+|----|------|
+| **CLI** | `agenthub` 命令(typer),对话/智能体 CRUD/会话历史全覆盖,Agent-Ready(--json / exit code / 管道检测) |
+| **Skill** | `.agents/skills/agenthub/SKILL.md`,符合 Agent Skills 开放标准,装上后 Agent 自动学会用 |
+| **授权** | API Token(PAT 式 `ahp_` 前缀),继承颁发者权限,多租户隔离天然继承 |
+| **约定** | `--json` / `--no-interactive` / 0-1-2-3 exit code,输出对 Agent 友好 |
+
+快速上手:颁发 token → 装 CLI → 装 Skill → 用。详见 [`docs/atoa/`](docs/atoa/)。
+
 ## 依赖致谢
 
 本项目使用但不包含以下开源项目的源码（通过 pip 引入，各自保留其许可证）：
