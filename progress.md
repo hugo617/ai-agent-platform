@@ -1030,6 +1030,31 @@
   - (a) 清理废代码 + 代码质量审查 + PR + CI 守门 + 合并 feat/context-engineering 到 main
   - (b) 之后执行 `chat-markdown-rendering`(priority 26,聊天页 Markdown 渲染 + 交互,纯前端)或 `agent-config-depth`(priority 27,推理参数,全栈)
 
+### Session 037 — 2026-07-11
+- **本轮目标**: 清理废代码 + 代码质量审查 + PR + CI 守门 + 合并 Session 036 的 `context-engineering`(对话上下文工程)到 main
+- **已完成**(端到端,含合并):
+  - **废代码扫描**:ruff F-rules app/cli/tests/scripts/alembic 全绿 + 新符号引用核查(`estimate_tokens`/`estimate_messages_tokens`/`truncate_history`/3 常量/`LLM_STREAM_TIMEOUT_SECONDS` 均有引用,非死代码);token_budget 模块只在 chat.py import + conversation.py 注释引用,无残留 → **无废代码,无需清理改动**
+  - **代码质量审查**(全过,无需修复):
+    - **超时保护设计正确**:`async with asyncio.timeout(60)` 包整个 astream_events 循环(Python 3.11+ 上下文管理器,非 wait_for —— 后者包 async generator 破坏流式语义);stalled provider → TimeoutError → chat.py except 捕获
+    - **截断 + 容错分层清晰**:token_budget 纯函数无依赖;chat.py(controller)→ token_budget(工具)单向;except 分支 `partial.strip()` 非空才落库(避免空 assistant 消息)+ 标 [生成中断] 保证历史连续
+    - **Repository limit 是防御性 cap**(非截断逻辑,截断在 token_budget),注释明确,不改 schema/API 契约
+    - **测试忠实性**:超时测试不 mock stream_agent(跳过超时代码),而是 mock create_react_agent 返回 hanging agent + monkeypatch 超时 0.1s,让真实 asyncio.timeout 代码路径跑通
+  - 基线验证:`./init.sh` → ruff All checks passed! + **244 passed**(229 基线 + 15 新增,无回归)
+  - commit `d0f55bf` → push → PR #28(base main)
+  - **CI 守门:4/4 全绿**(Backend pytest+ruff 1m15s / Migrations / E2E Playwright / Frontend typecheck+build+lint),**无需修复**(一次过)
+  - **squash 合并 PR #28 → main**(commit `ecd4659`),`--delete-branch` 连带删本地分支,本地切回 main fast-forward 同步;`git remote prune` 清除残留引用
+  - main 上跑 init.sh 确认 ruff + 244 passed,仓库仍可按标准路径工作
+- **运行过的验证**:
+  - `.venv/bin/ruff check --select F app/ cli/ tests/ scripts/ alembic/` → All checks passed!
+  - `./init.sh`(feat 分支 + main 两次)→ ruff + **244 passed**
+  - CI(PR #28)→ 4/4 job SUCCESS(一次过,无需修复)
+- **已记录证据**: 无新增(本任务是审查+发版;feature_list 的 context-engineering.evidence 在 Session 036 已填)
+- **提交记录**: PR #28 已 squash 合并到 main(`ecd4659`);1 个功能 commit(零修复 commit)
+- **已知风险**: 无。CI 4/4 干净环境全绿,244 tests 含 15 个新测试全过;本任务无 schema/migration 改动故无需 alembic check
+- **下一步最佳动作**:
+  - (a) 执行 `chat-markdown-rendering`(priority 26,聊天页 Markdown 渲染 + 停止/复制/重新生成交互,纯前端)
+  - (b) 或执行 `agent-config-depth`(priority 27,推理参数 temperature/max_tokens/top_p,全栈)
+
 <!-- 模板保留
 ### Session 0XX — YYYY-MM-DD
 - 本轮目标:
