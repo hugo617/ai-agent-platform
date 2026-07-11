@@ -12,7 +12,7 @@ Plus the cross-cutting guarantees:
 """
 
 import uuid
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from sqlalchemy import select
@@ -102,7 +102,7 @@ async def test_assign_role_creates_history(db_session, file_enforcer):
     await _seed_tenant_with_roles(db_session, tenant_id, user_id)
     repo = UserTenantRepository(db_session)
 
-    t0 = datetime.utcnow() - timedelta(hours=3)
+    t0 = datetime.now(UTC) - timedelta(hours=3)
     t1 = t0 + timedelta(hours=1)
     t2 = t1 + timedelta(hours=1)
 
@@ -142,7 +142,7 @@ async def test_member_role_at_point_in_time(db_session, file_enforcer):
     await _seed_tenant_with_roles(db_session, tenant_id, user_id)
     repo = UserTenantRepository(db_session)
 
-    base = datetime.utcnow() - timedelta(hours=3)
+    base = datetime.now(UTC) - timedelta(hours=3)
     t0 = base
     t1 = base + timedelta(hours=1)
     t2 = base + timedelta(hours=2)
@@ -258,7 +258,7 @@ async def test_permissions_at_point_in_time(db_session, file_enforcer):
     member_role_id = role_ids["member"]
     repo = RolePermissionRepository(db_session)
 
-    t0 = datetime.utcnow() - timedelta(hours=2)
+    t0 = datetime.now(UTC) - timedelta(hours=2)
     t1 = t0 + timedelta(hours=1)
 
     pid_before = await permission_service._upsert_permission(

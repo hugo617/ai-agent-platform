@@ -7,7 +7,7 @@ and the user↔organization link sync — operations specific to user management
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from sqlalchemy import func, or_, select
@@ -175,8 +175,8 @@ class UserListRepository:
                 stmt = stmt.where(extra)
             return select(func.count()).select_from(stmt.subquery()).order_by(None)
 
-        thirty_days_ago = datetime.utcnow() - timedelta(days=30)
-        month_start = datetime.utcnow().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        thirty_days_ago = datetime.now(UTC) - timedelta(days=30)
+        month_start = datetime.now(UTC).replace(day=1, hour=0, minute=0, second=0, microsecond=0)
 
         total = (await self.db.execute(_count(None))).scalar_one()
         active = (await self.db.execute(_count(User.status == "active"))).scalar_one()

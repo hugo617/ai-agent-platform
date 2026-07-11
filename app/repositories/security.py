@@ -1,6 +1,6 @@
 """Repositories for sessions and login methods."""
 
-from datetime import datetime
+from datetime import UTC, datetime
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -21,7 +21,7 @@ class SessionRepository(BaseRepository[UserSession]):
             .where(
                 UserSession.user_id == user_id,
                 UserSession.is_active.is_(True),
-                UserSession.expires_at > datetime.utcnow(),
+                UserSession.expires_at > datetime.now(UTC),
             )
             .order_by(UserSession.created_at.desc())
         )

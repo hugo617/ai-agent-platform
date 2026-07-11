@@ -9,7 +9,7 @@ when a tenant is created (see ``tenant_service``) and protected from deletion.
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -111,7 +111,7 @@ class RbacService:
         if role.is_system:
             raise BizError("system roles cannot be deleted")
         role.is_deleted = True
-        role.deleted_at = datetime.utcnow()
+        role.deleted_at = datetime.now(UTC)
         await self.logs.record(
             action="role.delete",
             module="roles",

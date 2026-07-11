@@ -1,6 +1,6 @@
 """Repositories for roles and permissions."""
 
-from datetime import datetime
+from datetime import UTC, datetime
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -86,7 +86,7 @@ class RolePermissionRepository(BaseRepository[RolePermission]):
         active row is inserted. Returns the active row, or None when no change
         was needed (already granted).
         """
-        ts = at or datetime.utcnow()
+        ts = at or datetime.now(UTC)
         current = await self._current(role_id, permission_id, tenant_id)
         if current is not None:
             return current  # already granted → idempotent no-op
@@ -113,7 +113,7 @@ class RolePermissionRepository(BaseRepository[RolePermission]):
 
         Returns True if a row was closed, False if the grant was not active.
         """
-        ts = at or datetime.utcnow()
+        ts = at or datetime.now(UTC)
         current = await self._current(role_id, permission_id, tenant_id)
         if current is None:
             return False
