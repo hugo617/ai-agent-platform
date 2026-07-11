@@ -819,6 +819,21 @@
 - **已知风险**: 无。CI 4/4 干净环境全绿;手动浏览器验证未跑(需前后端启动 + 真实 token),build(tsc 类型检查)+ oxlint 已覆盖类型正确性与规范;后端 API Token 端点已在 atoa-api-token-auth 用 15 个测试端到端覆盖
 - **下一步最佳动作**: **feature_list 全部 passing**(AtoA 系列 5 任务 + atoa-admin-ui 全完成)。可考虑:① 补「09-外部Agent接入AtoA.md」架构文档到 `项目指南/02-后端架构/`;② 定新功能方向;③ 或由用户指定。无排期的 not_started 任务
 
+### Session 030 — 2026-07-11 (AtoA 接入配置,发现 bug)
+- **本轮目标**: 完成 AtoA 接入最后几步配置(建超管/颁 Token/CLI login/端到端验证)
+- **已完成**:
+  - Step 1: 环境就绪确认(CLI/后端/Skill 均可用)✅
+  - Step 2: 超管 admin 已存在,登录成功(access_token 签发)✅
+  - Step 3: 发现 `api_token_service.require()` 缺 `platform_role` 参数 → super_admin 绕过不生效 → 403
+  - 已记录 bug 为 `atoa-service-require-missing-platform-role`(feature_list priority 24,in_progress)
+  - root cause 定位: service 层 `permission_service.require()` 无 `platform_role` 参数,路由层 `require_permission` 有传但服务层先抛 PermissionError
+  - 补种 seed 数据已执行(`init_admin.py` 幂等重跑,补了 api_tokens:manage 到 DB+角色绑定,但仍需修代码传参)
+  - **排查发现系统性模式缺陷**: 全仓库 7 个 Service 共 ~38 处 `require()` 调用都缺 `platform_role`(agent/ api_token/ conversation/ member/ organization/ rbac/ user)。只是已有权限在 Casbin enforcer 启动时加载了所以没暴露,新增权限(api_tokens:manage)才会触发
+- **运行过的验证**: `.venv/bin/agenthub --help` → CLI 可用; curl OpenAPI → agenthub; curl login → 200 + token; curl POST api-tokens → 403; curl POST agents → 201(已有权限不受影响); curl GET users → 200; curl GET roles → 200; docker exec psql casbin_rule → api_tokens:manage 已写入 DB
+- **已记录证据**: feature_list `atoa-service-require-missing-platform-role` entry
+- **已知风险**: 所有 Service 层 require() 缺 platform_role。临时解决(重启服务器让 Casbin 重加载)或正解(修代码传参)
+- **下一步最佳动作**: 用户决策修复策略(局部修 api_token_service 还是全修 7 个 Service)
+
 ---
 
 <!--

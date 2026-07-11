@@ -553,6 +553,29 @@
       ],
       "depends_on": "atoa-api-token-auth",
       "notes": "整合进 settings-page.tsx(新增第三个 Card,与 LLM 配置并列)而非独立页,对齐「平台设置」语义。明文 Token 仅颁发时显示(独立 reveal Dialog + 复制 + 琥珀色警告 + 「关闭后不可再见」提示)——安全 UX 关键点。复用 members-page 表格 + Dialog 模式。权限双层守卫(路由 RequireUserManagement + 页面 canManageUsers)。不实现 scope 细粒度编辑(预留字段,UI 显示「继承全部权限」)。手动浏览器验证未跑(需前后端启动 + 真实 token),build(tsc 类型检查)+ oxlint 已覆盖类型正确性与规范;后端 API Token 端点已在 atoa-api-token-auth 任务用 15 个测试端到端覆盖。"
+    },
+    {
+      "id": "atoa-service-require-missing-platform-role",
+      "priority": 24,
+      "area": "AtoA",
+      "title": "所有 Service 层 permission_service.require() 缺 platform_role（系统性模式缺陷）",
+      "user_visible_behavior": "(内部) super_admin 通过路由层 require_permission() 鉴权后进入 Service 层时可能被二次 require() 拦截报 403",
+      "status": "in_progress",
+      "verification": [
+        "super_admin 能 POST /api/v1/api-tokens/ 返回 201 而非 403（当前卡住）",
+        "Agent CRUD / 对话 / 用户管理 / 组织管理 / 成员管理 / 角色管理 各 endpoint 对 super_admin 返回 200 而非 403",
+        "pytest 全绿",
+        "./init.sh 全绿"
+      ],
+      "evidence": [
+        "发现于 Session 030 AtoA 接入配置(2026-07-11):Step 3 选 curl 颁发 Token,curl -L 返回 307→403",
+        "root cause:api_token_service.py 3 处 permission_service.require(user_id, tenant_id, OBJECT, ACT_MANAGE) — require() 缺 platform_role 参数(默认 None),check() 的 super_admin 绕过(platform_role=='super_admin'→True)不触发",
+        "路由层 require_permission 传了 platform_role=user.platform_role 能过,但服务层 require() 早一步抛 PermissionError→被 main.py _permission_handler 捕获 render 403",
+        "init_admin.py 重跑已补 api_tokens:manage 到 DB(casbin_rule 表已验证),但代码层传参缺失才是根本问题",
+        "排查发现影响面远大于 api_tokens:全仓库 7 个 Service 共 ~38 处 require() 都缺 platform_role:agent_service(5)、api_token_service(3)、conversation_service(4)、member_service(4)、organization_service(5)、rbac_service(8)、user_service(9)",
+        "现有 API(agent CRUD / users / roles 等)不受影响,因为 Casbin 在服务器启动时已加载了这些政策。但任何新增权限(如 api_tokens:manage)都会暴露此 bug"
+      ],
+      "notes": "系统性模式缺陷,非 api_tokens 独有。require() 方法签名支持 platform_role 参数(默认为 None),但所有调用方都没传。修复范围:7 个 Service 所有 require() 调用增加 platform_role 形参 + 路由层传 user.platform_role。两条修复路径:(A)仅修 api_token_service 让配置走通(局部) (B)全修所有 Service(根治)。"
     }
   ]
 }
