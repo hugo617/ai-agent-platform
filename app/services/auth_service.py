@@ -15,7 +15,7 @@ explicitly so the user understands *why* they cannot log in.
 from __future__ import annotations
 
 import hashlib
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -123,7 +123,7 @@ class AuthService:
         user_agent: str | None,
     ) -> None:
         """Persist a UserSession row keyed by the token's ``jti``."""
-        expires_at = datetime.utcnow() + timedelta(
+        expires_at = datetime.now(UTC) + timedelta(
             hours=settings.session_ttl_hours
         )
         self.db.add(

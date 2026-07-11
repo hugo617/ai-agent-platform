@@ -101,8 +101,9 @@ class OrganizationService:
             else:
                 parent = None
             org.parent_id = payload.parent_id or None
-            # Recompute ``path`` for the moved node and its entire subtree —
-            # otherwise descendants keep stale materialised paths.
+            # Update the moved node's own path from its new parent, then
+            # cascade the new path to its entire subtree.
+            org.path = _compute_path(parent.path if parent else None, parent.id if parent else None)
             _recompute_subtree_paths(org, by_id)
         await self.logs.record(
             action="organization.update",

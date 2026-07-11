@@ -1,6 +1,6 @@
 """Tenant / user repositories."""
 
-from datetime import datetime
+from datetime import UTC, datetime
 
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -65,7 +65,7 @@ class UserRepository(BaseRepository[User]):
     async def update_last_login(self, user_id: str) -> None:
         user = await self.db.get(User, user_id)
         if user is not None:
-            user.last_login_at = datetime.utcnow()
+            user.last_login_at = datetime.now(UTC)
             await self.db.flush()
 
 
@@ -101,7 +101,7 @@ class UserTenantRepository(BaseRepository[UserTenant]):
         ``at`` defaults to ``utcnow()``; tests pass an explicit value so
         time-point assertions are deterministic.
         """
-        ts = at or datetime.utcnow()
+        ts = at or datetime.now(UTC)
         current = await self.current_role(user_id, tenant_id)
         if current is not None and current.role == role:
             return current  # no change → no history churn
@@ -130,7 +130,7 @@ class UserTenantRepository(BaseRepository[UserTenant]):
 
         Returns True if a row was closed, False if there was no active member.
         """
-        ts = at or datetime.utcnow()
+        ts = at or datetime.now(UTC)
         current = await self.current_role(user_id, tenant_id)
         if current is None:
             return False

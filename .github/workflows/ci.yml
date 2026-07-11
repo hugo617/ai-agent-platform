@@ -89,7 +89,19 @@ jobs:
         # The suite builds the full schema from the ORM models on in-memory
         # SQLite (see tests/conftest.py), so this also exercises every model
         # column the migrations create.
-        run: pytest -ra --strict-markers
+        #
+        # Coverage: ASGI test requests run inside an anyio task group, so the
+        # coverage tracer must support concurrency (see pyproject.toml
+        # ``concurrency = ["thread", "greenlet"]``). Without it, service-layer
+        # code reached only via the HTTPX ASGITransport is invisible to
+        # coverage. ``COVERAGE_CORE=ctrace`` keeps the C tracer fast on 3.11.
+        env:
+          COVERAGE_CORE: ctrace
+        run: |
+          pytest -ra --strict-markers \
+            --cov=app \
+            --cov-report=term-missing \
+            --cov-fail-under=80
 
   frontend:
     name: Frontend (typecheck + build + lint)
@@ -115,3 +127,99 @@ jobs:
 
       - name: Typecheck & build
         run: npm run build
+
+  e2e:
+    name: E2E (Playwright)
+    runs-on: ubuntu-latest
+    # Full-stack E2E: spin up Postgres + backend + mock LLM + frontend, then
+    # run the Playwright main-flow suite. Slower than the other jobs (~2 min)
+    # because every layer is real, but it guards the "login → agent → chat →
+    # history" mainline that unit/integration tests can't cover end to end.
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: aap
+          POSTGRES_PASSWORD: aap_secret
+          POSTGRES_DB: aap
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U aap"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      APP_ENV: development
+      DATABASE_URL: "postgresql+psycopg://aap:aap_secret@localhost:5432/aap"
+      OPENAI_BASE_URL: "http://localhost:8088"
+      OPENAI_API_KEY: "mock-key"
+      JWT_SECRET: "e2e-test-secret"
+      SALT_ROUNDS: "4"
+      CORS_ORIGINS: "http://localhost:3000"
+    steps:
+      - uses: actions/checkout@v4
+
+      # ---- backend + mock LLM ----
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-dev.txt
+
+      - name: Install backend dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+
+      - name: Apply migrations
+        run: alembic upgrade head
+
+      - name: Seed super-admin
+        run: python scripts/init_admin.py
+
+      - name: Start mock OpenAI server (background)
+        run: |
+          python frontend/e2e/mock-openai-server.py &
+          # Wait for it to be ready.
+          for i in $(seq 1 10); do
+            curl -sf http://localhost:8088/ && break || sleep 0.5
+          done
+
+      - name: Start backend (background)
+        run: |
+          uvicorn app.main:app --port 8000 &
+          # Wait for it to be ready.
+          for i in $(seq 1 30); do
+            curl -sf http://localhost:8000/health && break || sleep 1
+          done
+
+      # ---- frontend + Playwright ----
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Install Playwright browsers
+        working-directory: frontend
+        run: npx playwright install --with-deps chromium
+
+      - name: Run E2E tests
+        working-directory: frontend
+        run: npx playwright test
+
+      - name: Upload Playwright report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: frontend/playwright-report/
+          retention-days: 7

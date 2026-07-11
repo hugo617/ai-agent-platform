@@ -27,7 +27,12 @@ addopts = "-ra --strict-markers"
 
 [tool.coverage.run]
 source = ["app"]
-omit = ["app/main.py", "alembic/*"]
+concurrency = ["thread", "greenlet"]
+omit = [
+    "app/main.py",
+    "app/core/dev_keys.py",
+    "alembic/*",
+]
 
 [tool.coverage.report]
 exclude_lines = [

@@ -119,7 +119,7 @@ export function AgentsPage() {
           <h1 className="text-3xl font-bold tracking-tight">智能体</h1>
           <p className="text-muted-foreground">管理你租户下的 AI 智能体</p>
         </div>
-        <Button onClick={openCreate}>
+        <Button onClick={openCreate} data-testid="create-agent-btn">
           <Plus className="mr-2 h-4 w-4" /> 新建智能体
         </Button>
       </div>
@@ -201,7 +201,7 @@ export function AgentsPage() {
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="name">名称</Label>
-              <Input id="name" {...form.register("name")} />
+              <Input id="name" data-testid="agent-name-input" {...form.register("name")} />
               {form.formState.errors.name && (
                 <p className="text-xs text-destructive">
                   {form.formState.errors.name.message}
@@ -245,6 +245,7 @@ export function AgentsPage() {
               <Button
                 type="submit"
                 disabled={createMut.isPending || updateMut.isPending}
+                data-testid="agent-submit"
               >
                 {editing ? "保存" : "创建"}
               </Button>

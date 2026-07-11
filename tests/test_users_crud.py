@@ -376,3 +376,211 @@ async def test_super_admin_statistics_match_list(super_admin_client):
     assert stats["total"] == lst["total"]
     # status breakdowns should sum to the total (active + inactive + locked).
     assert stats["active"] + stats["inactive"] + stats["locked"] == stats["total"]
+
+
+# ----------------------------------------------------------- update branches
+
+
+@pytest.mark.asyncio
+async def test_update_user_email(app_client):
+    """PUT can change a user's email (unique-check branch)."""
+    created = (
+        await app_client.post("/api/v1/users/", json=_create_payload("emailupd"), headers=AUTH)
+    ).json()
+    resp = await app_client.put(
+        f"/api/v1/users/{created['id']}",
+        json={"email": "new_email@example.com"},
+        headers=AUTH,
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["email"] == "new_email@example.com"
+
+
+@pytest.mark.asyncio
+async def test_update_user_duplicate_email_rejected(app_client):
+    """Updating to an email that already exists → 400."""
+    await app_client.post("/api/v1/users/", json=_create_payload("emailA"), headers=AUTH)
+    created_b = (
+        await app_client.post("/api/v1/users/", json=_create_payload("emailB"), headers=AUTH)
+    ).json()
+    resp = await app_client.put(
+        f"/api/v1/users/{created_b['id']}",
+        json={"email": "user_emailA@example.com"},
+        headers=AUTH,
+    )
+    assert resp.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_update_user_username(app_client):
+    """PUT can change a user's username (unique-check branch)."""
+    created = (
+        await app_client.post("/api/v1/users/", json=_create_payload("unameupd"), headers=AUTH)
+    ).json()
+    resp = await app_client.put(
+        f"/api/v1/users/{created['id']}",
+        json={"username": "user_renamed"},
+        headers=AUTH,
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["username"] == "user_renamed"
+
+
+@pytest.mark.asyncio
+async def test_update_user_not_found_404(app_client):
+    """Updating a nonexistent user → 404."""
+    resp = await app_client.put(
+        "/api/v1/users/nonexistent-id",
+        json={"real_name": "X"},
+        headers=AUTH,
+    )
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_update_user_invalid_status_400(app_client):
+    """Updating status to an invalid value → 400 (BizError)."""
+    created = (
+        await app_client.post("/api/v1/users/", json=_create_payload("badstatus"), headers=AUTH)
+    ).json()
+    resp = await app_client.put(
+        f"/api/v1/users/{created['id']}",
+        json={"status": "bogus"},
+        headers=AUTH,
+    )
+    assert resp.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_update_user_display_name_and_phone(app_client):
+    """PUT can update display_name + phone + avatar fields."""
+    created = (
+        await app_client.post("/api/v1/users/", json=_create_payload("fields"), headers=AUTH)
+    ).json()
+    resp = await app_client.put(
+        f"/api/v1/users/{created['id']}",
+        json={"display_name": "Display X", "phone": "13900001111", "avatar": "/avatars/x.png"},
+        headers=AUTH,
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["display_name"] == "Display X"
+    assert body["phone"] == "13900001111"
+
+
+# ------------------------------------------------------- create validation
+
+
+@pytest.mark.asyncio
+async def test_create_user_with_organization_ids(app_client):
+    """Creating a user with valid organization_ids links them."""
+    # First create an org to link.
+    org = (
+        await app_client.post(
+            "/api/v1/organizations/",
+            json={"name": "Eng", "code": "eng"},
+            headers=AUTH,
+        )
+    ).json()
+    payload = _create_payload("orguser")
+    payload["organization_ids"] = [org["id"]]
+    resp = await app_client.post("/api/v1/users/", json=payload, headers=AUTH)
+    assert resp.status_code == 201, resp.text
+    org_ids = [o["id"] for o in resp.json().get("organizations", [])]
+    assert org["id"] in org_ids
+
+
+@pytest.mark.asyncio
+async def test_create_user_with_invalid_org_ids_400(app_client):
+    """Creating a user with nonexistent organization_ids → 400 (BizError)."""
+    payload = _create_payload("badorg")
+    payload["organization_ids"] = ["nonexistent-org-id"]
+    resp = await app_client.post("/api/v1/users/", json=payload, headers=AUTH)
+    assert resp.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_create_user_invalid_status_400(app_client):
+    """Creating a user with an invalid status → 400 (BizError)."""
+    payload = _create_payload("invalid")
+    payload["status"] = "bogus"
+    resp = await app_client.post("/api/v1/users/", json=payload, headers=AUTH)
+    assert resp.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_create_user_duplicate_email_rejected(app_client):
+    """Two users with the same email → second is 400."""
+    payload_a = _create_payload("dupemailA")
+    payload_a["email"] = "shared@example.com"
+    resp = await app_client.post("/api/v1/users/", json=payload_a, headers=AUTH)
+    assert resp.status_code == 201
+    payload_b = _create_payload("dupemailB")
+    payload_b["email"] = "shared@example.com"
+    resp = await app_client.post("/api/v1/users/", json=payload_b, headers=AUTH)
+    assert resp.status_code == 400
+
+
+# ------------------------------------------------------- status / password
+
+
+@pytest.mark.asyncio
+async def test_change_status_not_found_404(app_client):
+    """Changing status of a nonexistent user → 404."""
+    resp = await app_client.patch(
+        "/api/v1/users/nonexistent-id/status",
+        json={"status": "locked"},
+        headers=AUTH,
+    )
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_change_status_invalid_400(app_client):
+    """Changing to an invalid status → 400."""
+    created = (
+        await app_client.post("/api/v1/users/", json=_create_payload("statbad"), headers=AUTH)
+    ).json()
+    resp = await app_client.patch(
+        f"/api/v1/users/{created['id']}/status",
+        json={"status": "bogus"},
+        headers=AUTH,
+    )
+    assert resp.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_reset_password_not_found_404(app_client):
+    """Resetting password for a nonexistent user → 404."""
+    resp = await app_client.post(
+        "/api/v1/users/nonexistent-id/reset-password",
+        json={"new_password": "NewPass789!"},
+        headers=AUTH,
+    )
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_change_status_to_inactive(app_client):
+    """Changing status to 'inactive' is a valid transition."""
+    created = (
+        await app_client.post("/api/v1/users/", json=_create_payload("inact"), headers=AUTH)
+    ).json()
+    resp = await app_client.patch(
+        f"/api/v1/users/{created['id']}/status",
+        json={"status": "inactive"},
+        headers=AUTH,
+    )
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "inactive"
+
+
+@pytest.mark.asyncio
+async def test_super_admin_reset_password_cross_tenant(super_admin_client):
+    """Super admin can reset a cross-tenant user's password (454-477 branch)."""
+    resp = await super_admin_client.post(
+        "/api/v1/users/cross-user/reset-password",
+        json={"new_password": "SuperReset123!"},
+        headers=SA_AUTH,
+    )
+    assert resp.status_code == 204, resp.text

@@ -12,7 +12,7 @@ Tenant scoping: every read is filtered to the caller's tenant via
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import select
@@ -368,7 +368,7 @@ class UserService:
 
         old = _snapshot(user)
         user.is_deleted = True
-        user.deleted_at = datetime.utcnow()
+        user.deleted_at = datetime.now(UTC)
         user.updated_by = actor_id
         # Close every active membership (SCD2) + strip casbin roles. Super
         # admins iterate all the user's tenants; tenant admins just their own.
@@ -459,7 +459,7 @@ class UserService:
             if user is None:
                 raise NotFoundError(f"用户 {user_id} 不在该租户中")
         user.password = hash_password(payload.new_password)
-        user.password_updated_at = datetime.utcnow()
+        user.password_updated_at = datetime.now(UTC)
         user.updated_by = actor_id
         # Force re-authentication everywhere: drop all sessions so the new
         # password is the only way back in.

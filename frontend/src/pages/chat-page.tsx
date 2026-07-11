@@ -309,6 +309,7 @@ export function ChatPage() {
             messages.map((msg) => (
               <div
                 key={msg.id}
+                data-testid={msg.role === "assistant" ? "assistant-message" : "user-message"}
                 className={`flex ${
                   msg.role === "user" ? "justify-end" : "justify-start"
                 }`}
@@ -340,12 +341,14 @@ export function ChatPage() {
               onKeyDown={handleKey}
               disabled={streaming}
               rows={1}
+              data-testid="message-input"
             />
             <Button
               onClick={handleSend}
               disabled={streaming || !input.trim()}
               size="icon"
               title="发送"
+              data-testid="send-btn"
             >
               <Send className="h-4 w-4" />
             </Button>
