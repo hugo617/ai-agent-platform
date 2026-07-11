@@ -615,16 +615,28 @@
       "area": "AI 内核",
       "title": "聊天页 Markdown 渲染 + 核心交互(代码高亮/复制/停止/重新生成)",
       "user_visible_behavior": "AI 回复的标题/列表/表格/代码块正确渲染并语法高亮;用户能中途停止生成、一键复制消息或代码块、重新生成最后一条回复",
-      "status": "not_started",
+      "status": "passing",
       "plan": "harness/docs/plan-chat-markdown-rendering.md",
       "verification": [
-        "安装依赖 react-markdown + remark-gfm + rehype-highlight + highlight.js",
+        "安装依赖 react-markdown + remark-gfm + rehype-highlight + highlight.js + @tailwindcss/typography",
         "新建 frontend/src/components/chat/markdown-view.tsx(react-markdown + GFM + 代码高亮 + prose 样式)",
         "chat-page.tsx:assistant 消息用 MarkdownView 渲染(user 消息保持纯文本);停止按钮接 abortRef;复制按钮(navigator.clipboard);重新生成(简化版=填回输入框)",
         "cd frontend && npm run build 通过 + oxlint 0 warning",
         "手动浏览器验证:Markdown 渲染 + 代码高亮 + 停止/复制/重新生成(需前后端启动)"
       ],
-      "evidence": [],
+      "evidence": [
+        "cd frontend && npm run build 通过:tsc -b + vite build 成功,0 类型错误(2026-07-11);CSS 47.38KB(含 highlight.js github-dark 主题 + typography),JS 951.85KB(含 react-markdown/remark-gfm/rehype-highlight/highlight.js)",
+        "npx oxlint src/ 全仓库 → 0 warnings 0 errors(2026-07-11);改动文件 chat-page.tsx + markdown-view.tsx 单独检查亦 0 warning",
+        "依赖安装:npm install react-markdown remark-gfm rehype-highlight highlight.js @tailwindcss/typography → added 107 packages,0 vulnerabilities(2026-07-11)",
+        "MarkdownView 组件(frontend/src/components/chat/markdown-view.tsx 新建):react-markdown + remark-gfm(GFM 表格/任务列表/删除线/自动链接)+ rehype-highlight(highlight.js 语法高亮);components 覆盖:pre 包裹 relative 容器 + 代码块复制按钮(CodeBlockCopy 组件,group-hover 显示)+ code 区分行内( bg-muted)/块级(language-*)+ a 加 target=_blank rel=noopener;导入 highlight.js/styles/github-dark.css(代码块固定深色背景 bg-zinc-900,浅暗模式一致 à la ChatGPT);prose prose-sm dark:prose-invert 排版(tailwind typography 插件)",
+        "chat-page.tsx 集成:assistant 消息 content 非空时用 <MarkdownView content={msg.content}/> 渲染(去掉 whitespace-pre-wrap,Markdown 接管排版)+ overflow-x-auto 防代码块溢出;user 消息保持 whitespace-pre-wrap 纯文本(防注入);流式中 content 增长同样走 MarkdownView(react-markdown 增量重渲染,消息体 <2KB 性能可接受)",
+        "停止生成按钮:streaming 时发送按钮(Send)替换为停止按钮(Square,destructive variant),点击调 abortRef.current?.abort();catch 里识别 err.name==='AbortError' 跳过 toast(用户主动停止非错误);finally 仍执行 setStreaming(false)+invalidate conversations;data-testid='send-btn' 保留(E2E 兼容,条件渲染不冲突)",
+        "复制按钮:assistant 消息 hover 显示操作栏(Copy 图标),点击 navigator.clipboard.writeText(msg.content)→ 图标变 Check 2 秒恢复;copiedId state 按消息 id 独立反馈;代码块复制在 MarkdownView 的 CodeBlockCopy 组件内(每块独立 copied state)",
+        "重新生成(简化版):最后一条 assistant 消息操作栏显示 RotateCcw 按钮(仅 isLastAssistant && !streaming);点击移除尾部 assistant placeholder + 把对应 user 消息 content 填回输入框(setInput),用户手动重发——规避后端重复存 user 消息(plan 边界)",
+        "tailwind.config.js 注册 typography 插件(plugins: [tailwindcssTypography],原 plugins: [] 为空);darkMode: ['class'] 不变",
+        "E2E 兼容:三个 data-testid(message-input/send-btn/assistant-message)全部保留;send-btn 在发送/停止按钮上各一处但条件渲染不冲突;E2E 在非 streaming 状态点击 send-btn 安全",
+        "后端零改动(纯前端任务):git diff 确认无 app/ 文件改动;后端基线 244 passed 不变(无回归)"
+      ],
       "depends_on": "chat-frontend",
       "notes": "根因:chat-page.tsx:318 用 whitespace-pre-wrap 纯文本渲染(无 Markdown 解析);package.json 无 react-markdown;abortRef(chat-page.tsx:72,155) 声明了却没接停止按钮;无复制(grep clipboard 零命中)/无重新生成。决策:react-markdown + remark-gfm + rehype-highlight(highlight.js 轻量,非 shiki);用户消息保持纯文本(防注入);流式边流边渲染;重新生成简化版(填回输入框,避免后端重复存 user 消息)。不做:消息编辑/删除、文件上传、KaTeX/Mermaid、对话搜索/重命名(均属另一任务)。纯前端任务,后端零改动。"
     },

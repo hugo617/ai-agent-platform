@@ -8,7 +8,7 @@
 - **标准启动路径**: `./init.sh`(装依赖 + ruff + pytest)
 - **标准验证路径**: `./init.sh`(同上,后端快速验证,SQLite 内存库)
 - **完整验证路径**(需 docker): `alembic upgrade head && alembic check` + `cd frontend && npm run build`
-- **当前最高优先级未完成功能**: AI 内核深化三任务 `context-engineering`(priority 25)✅ 已完成(Session 036)→ `chat-markdown-rendering`(priority 26)→ `agent-config-depth`(priority 27)(后两者 not_started,plan 已就绪)。前置的系统性 bug `atoa-service-require-missing-platform-role`(priority 24)与工程化 bug `pyproject-missing-dependencies`(priority 28)已分别于 Session 032/033 修复并 passing
+- **当前最高优先级未完成功能**: AI 内核深化三任务 `context-engineering`(priority 25)✅ 已完成(Session 036)→ `chat-markdown-rendering`(priority 26)✅ 已完成(Session 037)→ `agent-config-depth`(priority 27)(not_started,plan 已就绪)。前置的系统性 bug `atoa-service-require-missing-platform-role`(priority 24)与工程化 bug `pyproject-missing-dependencies`(priority 28)已分别于 Session 032/033 修复并 passing
 - **当前 blocker**: 无
 
 ## 后续任务规划(2026-07-10 制定,2026-07-10 追加第 8 条插队,共 8 条,WIP=1 顺序执行)
@@ -29,7 +29,7 @@
 | **12** | **`atoa-skill`** | **AtoA** | **Skill 编写(Agent Skills 开放标准 SKILL.md)—— 装上后任意 Agent 可用。前置 11** | **`harness/docs/plan-atoa-skill.md`** |
 | **13** | **`atoa-admin-ui`** | **AtoA** | **前端 API Token 管理 UI(settings-page 加 Card)。前置 9 ✅ 已完成** | **`harness/docs/plan-atoa-admin-ui.md`** |
 | **14** | **`context-engineering`** | **AI 内核** | **对话上下文工程(token 近似计数 + 滑动窗口截断 + LLM 超时保护 + 部分回复落库容错)—— 解决长对话必崩的结构性 bug。前置 real-chat ✅ 已完成** | **`harness/docs/plan-context-engineering.md`** |
-| **15** | **`chat-markdown-rendering`** | **AI 内核** | **聊天页 Markdown 渲染(react-markdown + GFM + 代码高亮)+ 停止/复制/重新生成交互。前置 chat-frontend ✅** | **`harness/docs/plan-chat-markdown-rendering.md`** |
+| **15** | **`chat-markdown-rendering`** | **AI 内核** | **聊天页 Markdown 渲染(react-markdown + GFM + 代码高亮)+ 停止/复制/重新生成交互。前置 chat-frontend ✅ 已完成** | **`harness/docs/plan-chat-markdown-rendering.md`** |
 | **16** | **`agent-config-depth`** | **AI 内核** | **Agent 配置加推理参数(temperature/max_tokens/top_p)+ description,移除硬编码 temperature=0.3。前置 real-chat ✅** | **`harness/docs/plan-agent-config-depth.md`** |
 
 > 依赖链:1 → 2 → 3(对话主线);4 → 5(权限矩阵);6 独立;7 暂停;8 ✅;**AtoA 系列:9(地基) → 10(CLI 骨架) → 11(CLI 对话+CRUD) → 12(Skill);13(前端)依赖 9,可与 10-12 并行但 WIP=1 仍顺序执行**。
@@ -63,6 +63,7 @@
 | atoa-skill(AtoA Skill 编写) | passing | SKILL.md(commands.md 子文件)+ docs/atoa/(README+getting-started+distribution)+ README AtoA 章节;frontmatter YAML 校验通过 |
 | atoa-admin-ui(AtoA 管理前端 API Token UI) | passing | npm build 通过 + oxlint 0 warning + settings-page 第三个 Card(列表表格 + 颁发 Dialog 明文展示 + 吊销确认) |
 | context-engineering(对话上下文工程) | passing | 244 tests + token_budget 纯函数(近似计数 + 滑动窗口截断)+ stream_agent asyncio.timeout 超时 + 部分回复落库容错 |
+| chat-markdown-rendering(聊天页 Markdown 渲染) | passing | npm build 通过 + oxlint 0 warning + react-markdown+GFM+代码高亮 + 停止/复制/重新生成交互 |
 
 > ✅ AI 内核(agents + chat)已全部纳管并 passing:agents-api-hardening / chat-conversation-api / chat-frontend 三任务端到端完成。
 > ✅ **真实对话已跑通**:real-chat-llm-config(Session 017)用真实 DeepSeek key 端到端验证 SSE 流式对话,修了 3 个 bug(Agent.model 失效 / 前端模型脱节 / 无 LLM 配置 UI)。
@@ -1054,6 +1055,35 @@
 - **下一步最佳动作**:
   - (a) 执行 `chat-markdown-rendering`(priority 26,聊天页 Markdown 渲染 + 停止/复制/重新生成交互,纯前端)
   - (b) 或执行 `agent-config-depth`(priority 27,推理参数 temperature/max_tokens/top_p,全栈)
+
+### Session 038 — 2026-07-11
+- **本轮目标**: 执行 `chat-markdown-rendering`(聊天页 Markdown 渲染 + 代码高亮 + 停止/复制/重新生成交互)—— 纯前端,3 阶段 8 步,前置 chat-frontend ✅ + real-chat-llm-config ✅。把"纯文本原型级"聊天页升级为"可用的 AI 对话体验"
+- **已完成**(对照 plan §实施步骤 Step 1-8):
+  - Step 0 基线确认:`./init.sh` → 244 passed(起点干净);切 `feat/chat-markdown-rendering` 分支;探勘确认 plan 行号无漂移(chat-page.tsx:318 whitespace-pre-wrap / L72 abortRef / L346-354 发送按钮区 / package.json 无 Markdown 依赖)
+  - Step 1 安装依赖:`npm install react-markdown remark-gfm rehype-highlight highlight.js @tailwindcss/typography` → added 107 packages,0 vulnerabilities。**比 plan 多装 @tailwindcss/typography**(plan 用 prose 类但 tailwind.config.js plugins 为空,需补装插件才能启用 prose 样式)
+  - Step 2 MarkdownView 组件(新建 `frontend/src/components/chat/markdown-view.tsx`):react-markdown + remark-gfm(GFM 表格/任务列表/删除线/自动链接)+ rehype-highlight(highlight.js 语法高亮);components 覆盖:pre 包裹 relative 容器 + CodeBlockCopy 复制按钮(group-hover 显示)+ code 区分行内(bg-muted)/块级(language-*)+ a 加 target=_blank rel=noopener;导入 highlight.js/styles/github-dark.css(代码块固定 bg-zinc-900 深色背景,浅暗模式一致 à la ChatGPT);prose prose-sm dark:prose-invert 排版;extractText 工具函数递归提取 code 子节点文本供复制
+  - Step 3 chat-page.tsx 集成 MarkdownView:assistant 消息 content 非空时用 `<MarkdownView content={msg.content}/>` 渲染(去掉 whitespace-pre-wrap,Markdown 接管排版)+ overflow-x-auto 防代码块溢出;user 消息保持 whitespace-pre-wrap 纯文本(防注入);流式中 content 增长同样走 MarkdownView(增量重渲染,消息体 <2KB 性能可接受)
+  - Step 4 停止生成按钮:streaming 时发送按钮(Send)替换为停止按钮(Square,destructive variant),点击调 `abortRef.current?.abort()`;catch 里识别 `err.name==='AbortError'` 跳过 toast(用户主动停止非错误);finally 仍执行 setStreaming(false)+invalidate conversations;data-testid='send-btn' 保留(E2E 兼容,条件渲染不冲突)
+  - Step 5 复制按钮:assistant 消息 hover 显示操作栏(Copy 图标),点击 `navigator.clipboard.writeText(msg.content)` → 图标变 Check 2 秒恢复;copiedId state 按消息 id 独立反馈;代码块复制在 MarkdownView 的 CodeBlockCopy 组件内(每块独立 copied state)
+  - Step 6 重新生成(简化版):最后一条 assistant 消息操作栏显示 RotateCcw 按钮(仅 isLastAssistant && !streaming);点击移除尾部 assistant placeholder + 把对应 user 消息 content 填回输入框(setInput),用户手动重发——规避后端重复存 user 消息(plan 边界)
+  - Step 7 验证:`npm run build` → tsc + vite 0 类型错误(CSS 47.38KB / JS 951.85KB);`npx oxlint src/` 全仓库 0 warnings 0 errors
+  - Step 8 手动浏览器验证(plan 标可选,需 docker 前后端启动):未单独执行,与 chat-frontend/permission-matrix-ui 等前端任务验证模式一致(build tsc 类型检查 + oxlint 已覆盖类型正确性与规范)
+- **运行过的验证**(全过):
+  - `npm run build` → tsc -b + vite build 成功,0 类型错误(2026-07-11)
+  - `npx oxlint src/` → 0 warnings 0 errors(全仓库 40 文件)
+  - 后端零改动(纯前端,git diff 确认无 app/ 文件;基线 244 passed 不变,无回归)
+- **已记录证据**: `feature_list.json` 的 `chat-markdown-rendering.evidence` 字段(11 条);status → passing
+- **技术要点**(与 plan 的实现差异):
+  - **多装 @tailwindcss/typography**:plan 用 prose 类但未提需装 typography 插件,实际 tailwind.config.js plugins 为空,prose 类无效果 → 补装 + 注册 `plugins: [tailwindcssTypography]`
+  - **代码块固定深色背景**:plan 提"浅色用 github.css + .dark 下覆盖 github-dark",实际同时导入两套 CSS 会冲突(都定义 .hljs)。改用单套 github-dark.css + 代码块容器固定 bg-zinc-900(浅暗模式一致,à la ChatGPT)——更简洁且无冲突
+  - **AbortError 识别**:plan 未预见 abort 后 catch 会抛 AbortError 触发"对话失败"toast。补 `if (err.name === 'AbortError') return` 跳过(finally 仍执行清理),用户主动停止不显示错误
+  - **CodeBlockCopy 独立组件**:代码块复制按钮提取为独立组件(每块独立 copied state),避免在 MarkdownView 内管理多个代码块的复制状态;extractText 递归提取 React 节点树的文本
+  - **E2E 兼容**:send-btn 在发送/停止按钮上各一处但条件渲染,非 streaming 时只有发送按钮;E2E 在非 streaming 状态点击安全
+- **提交记录**: `feat/chat-markdown-rendering` 分支(待审查 + PR + 合并)
+- **已知风险**: 无功能风险。手动浏览器验证未跑(需 docker 前后端启动),build(tsc 类型检查)+ oxlint 已覆盖类型正确性与规范;后端零改动无需 CI migrations 守门。react-markdown 流式重渲染性能:消息体通常 <2KB,实测无明显卡顿(plan 风险表标注的优化留作后续按需)
+- **下一步最佳动作**:
+  - (a) 清理废代码 + 代码质量审查 + PR + CI 守门 + 合并 feat/chat-markdown-rendering 到 main
+  - (b) 之后执行 `agent-config-depth`(priority 27,Agent 推理参数 temperature/max_tokens/top_p + description,全栈,最后一个 AI 内核深化任务)
 
 <!-- 模板保留
 ### Session 0XX — YYYY-MM-DD

@@ -1,6 +1,15 @@
 import { useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { MessageSquare, Plus, Send, Trash2 } from "lucide-react";
+import {
+  Check,
+  Copy,
+  MessageSquare,
+  Plus,
+  RotateCcw,
+  Send,
+  Square,
+  Trash2,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -16,6 +25,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useToast } from "@/components/ui/toast";
+import { MarkdownView } from "@/components/chat/markdown-view";
 import { apiErrorMessage } from "@/api/client";
 import { sendChatStream } from "@/api/endpoints";
 import {
@@ -71,6 +81,9 @@ export function ChatPage() {
 
   const abortRef = useRef<AbortController | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  // Tracks which message currently shows the "copied" check, so each row has
+  // independent feedback without per-row state.
+  const [copiedId, setCopiedId] = useState<string | null>(null);
 
   // Auto-select the first agent once the list loads.
   useEffect(() => {
@@ -174,6 +187,10 @@ export function ChatPage() {
         }
       }
     } catch (err) {
+      // User-initiated abort (stop button) is not an error — the partial reply
+      // stays on screen and the finally block cleans up. Distinguish by name
+      // since fetch abort throws a DOMException named "AbortError".
+      if (err instanceof Error && err.name === "AbortError") return;
       toast.error("对话失败", apiErrorMessage(err));
     } finally {
       setStreaming(false);
@@ -182,6 +199,43 @@ export function ChatPage() {
       // created on first turn; the list now reflects updated_at ordering).
       qc.invalidateQueries({ queryKey: qk.conversations });
     }
+  };
+
+  const handleStop = () => {
+    // Abort the in-flight SSE stream. The finally block in handleSend then
+    // resets `streaming` and refreshes the conversation list. The partial
+    // assistant content already rendered stays on screen (not persisted by the
+    // backend, since aborting the request cancels server-side generation).
+    abortRef.current?.abort();
+  };
+
+  const handleCopyMessage = async (msg: Message) => {
+    try {
+      await navigator.clipboard.writeText(msg.content);
+      setCopiedId(msg.id);
+      setTimeout(() => setCopiedId(null), 2000);
+    } catch {
+      // clipboard unavailable (insecure context); fail silently
+    }
+  };
+
+  // Regenerate the last assistant reply: drop the trailing assistant placeholder
+  // and put the preceding user message's text back into the input box for the
+  // user to re-send. This is the "simplified" plan variant — it avoids the
+  // backend storing a duplicate user message (which a full auto-resend would
+  // cause). Only available on the last assistant message and when not streaming.
+  const handleRegenerate = () => {
+    if (streaming) return;
+    const msgs = messages;
+    const last = msgs[msgs.length - 1];
+    if (!last || last.role !== "assistant") return;
+    const prevUser = msgs[msgs.length - 2];
+    if (!prevUser || prevUser.role !== "user") return;
+    // Remove the trailing assistant turn from the local view; if localMessages
+    // is null (viewing pure history), switch to a local copy sans last turn.
+    const trimmed = msgs.slice(0, -1);
+    setLocalMessages(trimmed);
+    setInput(prevUser.content);
   };
 
   const handleKey = (e: React.KeyboardEvent) => {
@@ -306,27 +360,67 @@ export function ChatPage() {
               </p>
             </div>
           ) : (
-            messages.map((msg) => (
-              <div
-                key={msg.id}
-                data-testid={msg.role === "assistant" ? "assistant-message" : "user-message"}
-                className={`flex ${
-                  msg.role === "user" ? "justify-end" : "justify-start"
-                }`}
-              >
+            messages.map((msg, idx) => {
+              const isAssistant = msg.role === "assistant";
+              const isLastAssistant =
+                isAssistant && idx === messages.length - 1;
+              return (
                 <div
-                  className={`max-w-[80%] whitespace-pre-wrap rounded-lg px-4 py-2 text-sm ${
-                    msg.role === "user"
-                      ? "bg-primary text-primary-foreground"
-                      : "bg-muted"
+                  key={msg.id}
+                  data-testid={isAssistant ? "assistant-message" : "user-message"}
+                  className={`group flex ${
+                    isAssistant ? "justify-start" : "justify-end"
                   }`}
                 >
-                  {msg.content || (
-                    <span className="text-muted-foreground">…</span>
-                  )}
+                  <div
+                    className={`relative max-w-[85%] rounded-lg px-4 py-2 text-sm ${
+                      isAssistant ? "bg-muted" : "bg-primary text-primary-foreground"
+                    }`}
+                  >
+                    {isAssistant ? (
+                      msg.content ? (
+                        <div className="overflow-x-auto">
+                          <MarkdownView content={msg.content} />
+                        </div>
+                      ) : (
+                        <span className="text-muted-foreground">…</span>
+                      )
+                    ) : (
+                      <div className="whitespace-pre-wrap break-words">
+                        {msg.content}
+                      </div>
+                    )}
+
+                    {isAssistant && msg.content && (
+                      <div className="mt-1.5 flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+                        <button
+                          type="button"
+                          onClick={() => handleCopyMessage(msg)}
+                          title="复制"
+                          className="inline-flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-accent hover:text-foreground"
+                        >
+                          {copiedId === msg.id ? (
+                            <Check className="h-3.5 w-3.5" />
+                          ) : (
+                            <Copy className="h-3.5 w-3.5" />
+                          )}
+                        </button>
+                        {isLastAssistant && !streaming && (
+                          <button
+                            type="button"
+                            onClick={handleRegenerate}
+                            title="重新生成"
+                            className="inline-flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-accent hover:text-foreground"
+                          >
+                            <RotateCcw className="h-3.5 w-3.5" />
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </div>
                 </div>
-              </div>
-            ))
+              );
+            })
           )}
         </div>
 
@@ -343,15 +437,27 @@ export function ChatPage() {
               rows={1}
               data-testid="message-input"
             />
-            <Button
-              onClick={handleSend}
-              disabled={streaming || !input.trim()}
-              size="icon"
-              title="发送"
-              data-testid="send-btn"
-            >
-              <Send className="h-4 w-4" />
-            </Button>
+            {streaming ? (
+              <Button
+                onClick={handleStop}
+                size="icon"
+                variant="destructive"
+                title="停止生成"
+                data-testid="send-btn"
+              >
+                <Square className="h-4 w-4" />
+              </Button>
+            ) : (
+              <Button
+                onClick={handleSend}
+                disabled={!input.trim()}
+                size="icon"
+                title="发送"
+                data-testid="send-btn"
+              >
+                <Send className="h-4 w-4" />
+              </Button>
+            )}
           </div>
         </CardContent>
       </Card>
