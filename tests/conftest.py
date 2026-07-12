@@ -46,6 +46,7 @@ def _make_casbin(owner_user: str, tenant_id: str):
         ("roles", "read"), ("roles", "create"), ("roles", "update"), ("roles", "delete"),
         ("settings", "manage"),
         ("api_tokens", "manage"),
+        ("customers", "read"), ("customers", "create"), ("customers", "update"), ("customers", "delete"),
     ]:
         e.add_policy("owner", tenant_id, obj, act)
     # admin: manage users + read-mostly elsewhere (no agent delete, no billing).
@@ -57,11 +58,13 @@ def _make_casbin(owner_user: str, tenant_id: str):
         ("roles", "read"),
         ("settings", "manage"),
         ("api_tokens", "manage"),
+        ("customers", "read"), ("customers", "create"), ("customers", "update"),
     ]:
         e.add_policy("admin", tenant_id, obj, act)
     for obj, act in [
         ("agents", "read"), ("conversations", "read"),
         ("conversations", "create"), ("conversations", "chat"),
+        ("customers", "read"),
     ]:
         e.add_policy("member", tenant_id, obj, act)
     return e
@@ -87,6 +90,7 @@ async def test_env() -> AsyncIterator[_TestEnv]:
     from app.models import (  # noqa: F401
         agent,
         api_token,
+        customer,
         group,
         llm_config,
         log,

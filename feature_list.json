@@ -788,7 +788,7 @@
       "area": "客户域",
       "title": "Customer(客户)后端 —— 全局身份 + 门店档案 + 跨店聚合",
       "user_visible_behavior": "门店能创建/查看/编辑/删除本店客户档案(同手机号跨店复用全局身份);总部(super_admin)能看跨店聚合视图(一个客户去过哪几家店 + 每店档案)",
-      "status": "not_started",
+      "status": "passing",
       "plan": "harness/docs/plan-customers-api.md",
       "verification": [
         "新建 Customer 表(全局身份 identity_key 全局唯一,tenant_id 可空)+ CustomerProfile 表(门店档案有 tenant_id)+ Alembic 迁移",
@@ -797,7 +797,16 @@
         "pytest tests/test_customers_api.py 覆盖:新身份创建/复用身份跨店/重复创建 400/门店视图隔离/super_admin 聚合/权限边界(member read-only/admin 无 delete/owner 全权)/更新同步全局/软删除/404",
         "./init.sh 全绿 + alembic upgrade head && alembic check 无 drift"
       ],
-      "evidence": [],
+      "evidence": [
+        "./init.sh 全绿:ruff check(app+tests+alembic)→ All checks passed!;pytest → 265 passed(基线 248 + 新增 17 test_customers_api)(2026-07-12)",
+        "pytest tests/test_customers_api.py -v → 17 passed(新身份建 Customer+Profile、复用身份跨店共享 Customer、跨店聚合 profile_count=2、本店重复 400、门店列表隔离只看自己、跨店 profile get/update/delete 404、member read 通过 create/update/delete 403、非超管 HQ 端点 403、update 同步 name 到 Customer、软删除后列表消失且 Customer 存在 profile_count=0、软删后同 identity 可重建、update/delete 不存在 404、HQ aggregate 不存在 404、super_admin 列表看跨店、HQ 列表)(2026-07-12)",
+        "双表 model(app/models/customer.py):Customer 平台级无 tenant_id + identity_key 部分唯一索引(uq_customers_identity_active PG/SQLite 双库)+ 软删除;CustomerProfile 带 tenant_id FK + (customer_id,tenant_id) 部分唯一索引(uq_profile_customer_tenant_active)+ tenant_id 索引 + created_by FK users;参照 tenant.py User/UserTenant 双表 + group.py 平台级模式",
+        "迁移 6f197cf8f964(down_revision 574391d912fc):create_table customers + customer_profiles + 5 索引;server_default 补齐(is_deleted text('false')/tags text('{}')/status 'active');env.py + conftest.py 两处 customer import 同步(Session 018 教训未重演);alembic upgrade head 574391d912fc → 6f197cf8f964 成功;alembic check → No new upgrade operations detected",
+        "核心 create_profile 逻辑:customer = get_by_identity(identity_key)→ 存在则复用(同步 name/gender/birthday)+ 不存在则新建 → get_by_customer_tenant 查本店是否已有该客户档案 → 有则 BizError(400 该客户在本门店已有档案)→ 无则建 Profile(tenant_id);commit 后 re-fetch 避免 MissingGreenlet",
+        "权限设计双轨:门店视角 /customers/profiles/* 走 require_permission('customers',act) 路由守卫 + Service 内 require(platform_role) 二次校验;HQ 视角 /customers/ + /customers/{id}/aggregate 走 require_super_admin();super_admin 走 list_all 跨店、门店走 list_for_tenant 本店隔离",
+        "update_profile 同步全局身份:name/gender/birthday 写入 Customer,remark/tags/status 写入 Profile;delete_profile 只软删本店 Profile(Customer 全局身份保留,其它店可能还在用);软删后同 identity_key 可重建(partial unique index 只覆盖 live 行)",
+        "权限 seed 5 处同步:permission_service DEFAULT_OWNER_PERMS +4(customers read/create/update/delete)+ DEFAULT_ADMIN_PERMS +3(无 delete)+ DEFAULT_MEMBER_PERMS +1(read);conftest _make_casbin owner +4 / admin +3 / member +1"
+      ],
       "depends_on": "groups-api",
       "notes": "客户域核心难点:一个客户可能去多个门店。设计=全局身份(Customer,手机号/证件号唯一)+ 门店档案(CustomerProfile,带 tenant_id 隔离)。保证不破坏租户隔离铁律(门店只看自己 tenant 的 Profile)+ 跨店识别同一人(总部 JOIN 两表)。跨租户查询范式照搬 user.py:117-149 的 super_admin 形参分支。权限 seed 5 处同步(permission_service 3 常量 + conftest casbin owner/admin/member)。前置 groups-api(建议非硬依赖,MVP Customer 可不绑 Group)。不做消费记录/订单/跟进(属后续增强)。"
     },

@@ -377,6 +377,7 @@ DEFAULT_OWNER_PERMS: list[tuple[str, str]] = [
     ("roles", "read"), ("roles", "create"), ("roles", "update"), ("roles", "delete"),
     ("settings", "manage"),
     ("api_tokens", "manage"),
+    ("customers", "read"), ("customers", "create"), ("customers", "update"), ("customers", "delete"),
 ]
 DEFAULT_ADMIN_PERMS: list[tuple[str, str]] = [
     ("agents", "read"), ("agents", "create"), ("agents", "update"),
@@ -385,11 +386,13 @@ DEFAULT_ADMIN_PERMS: list[tuple[str, str]] = [
     ("roles", "read"),
     ("settings", "manage"),
     ("api_tokens", "manage"),
+    ("customers", "read"), ("customers", "create"), ("customers", "update"),
 ]
 DEFAULT_MEMBER_PERMS: list[tuple[str, str]] = [
     ("agents", "read"),
     ("conversations", "read"), ("conversations", "create"), ("conversations", "chat"),
     ("roles", "read"),
+    ("customers", "read"),
 ]
 
 
