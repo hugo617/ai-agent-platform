@@ -186,13 +186,6 @@ async def test_super_admin_can_list_roles(super_admin_client):
 
 
 @pytest.mark.asyncio
-async def test_super_admin_can_list_organizations(super_admin_client):
-    """super_admin GET /organizations returns 200 (organization_service forwards)."""
-    resp = await super_admin_client.get("/api/v1/organizations/", headers=AUTH)
-    assert resp.status_code == 200, resp.text
-
-
-@pytest.mark.asyncio
 async def test_super_admin_can_list_conversations(super_admin_client):
     """super_admin GET /conversations returns 200 (conversation_service forwards)."""
     resp = await super_admin_client.get("/api/v1/conversations/", headers=AUTH)

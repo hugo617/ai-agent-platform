@@ -143,9 +143,6 @@ export function DashboardPage() {
             <Link to="/permissions" className="text-primary hover:underline">
               → 查看权限矩阵
             </Link>
-            <Link to="/organizations" className="text-primary hover:underline">
-              → 管理组织
-            </Link>
           </CardContent>
         </Card>
       </div>

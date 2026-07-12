@@ -703,7 +703,7 @@
       "area": "管理控制台",
       "title": "删除旧 Organization 模块(清理场地,为 Group 让路)",
       "user_visible_behavior": "(内部)移除租户内部部门树 Organization + 清理 User 模块对 Organization 的耦合,User CRUD 保持正常;组织页从导航消失",
-      "status": "not_started",
+      "status": "passing",
       "plan": "harness/docs/plan-org-cleanup.md",
       "verification": [
         "./init.sh 全绿(ruff + pytest,除 test_organizations_api 整删外无其它回归)",
@@ -713,7 +713,18 @@
         "User CRUD 全部正常(list/get/create/update/delete 不因删 Organization 崩溃)",
         "权限矩阵页不再显示「组织」列"
       ],
-      "evidence": [],
+      "evidence": [
+        "./init.sh 全绿:ruff check(app+cli+tests+scripts+alembic)→ All checks passed!;pytest → 232 passed(基线 250 - 18 组织相关测试:14 test_organizations_api 整删 + 1 test_rbac_api.org_tree_crud + 1 test_service_platform_role.org_list + 2 test_users_crud.org_ids,无其它回归)(2026-07-12)",
+        "cd frontend && npm run build 通过:tsc + vite build 成功,0 类型错误(2026-07-12);npx oxlint src/ → 0 warnings 0 errors(39 文件)",
+        "APP_ENV=testing alembic upgrade head → 迁移链通;alembic check → No new upgrade operations detected(聚合迁移 c1d2e3f4a5b6 抠掉 organizations/user_organizations 建表块 + drop 块 + 头注释,保留 users/rbac/sessions/logs;本地 Postgres 残留旧表已 DROP,check 无 drift)(2026-07-12)",
+        "grep organization app/ tests/ alembic/ frontend/src/(排除注释/dist)→ 零残留(grep exit 1)",
+        "Step 1 整删 6 文件:app/models/organization.py + app/repositories/organization.py + app/services/organization_service.py + app/api/v1/organizations.py + app/schemas/organization.py + tests/test_organizations_api.py",
+        "Step 2-5 User 模块耦合清理:app/schemas/user.py(删 OrganizationBrief 类 + UserRead.organizations + UserCreate/Update.organization_ids)+ app/repositories/user.py(删 Organization/UserOrganization import + list_organizations/sync_organizations 两方法 + serialize_user 的 organizations 形参/构造块/返回字段)+ app/services/user_service.py(删 Organization import + _validate_org_ids 方法 + create/update 的 org 校验/sync 调用 + serialize_user 调用去 organizations 实参)+ app/core/validation_errors.py(删 organization_ids 中文映射)",
+        "Step 6-7 迁移+注册清理:alembic/versions/c1d2e3f4a5b6(抠 organizations+user_organizations 建表块+索引+downgrade drop 块+头注释,保留其它表)+ alembic/env.py(删 organization import)+ tests/conftest.py(删 organization import)+ app/main.py(删 organizations import + include_router)",
+        "Step 8-9 权限 seed 清理:app/services/permission_service.py(DEFAULT_OWNER 删 4 条 organizations + ADMIN 删 1 条 + MEMBER 删 1 条)+ tests/conftest.py(_make_casbin owner 删 4 条 + admin 删 1 条)",
+        "Step 10 前端清理:删 frontend/src/pages/organizations-page.tsx + endpoints.ts(删 4 import + 5 函数 fetchOrganizationTree/fetchOrganizations/createOrganization/updateOrganization/deleteOrganization)+ types.ts(删 OrganizationBrief + Organization + OrganizationTreeNode + OrganizationCreate + OrganizationUpdate 5 接口 + UserRead.organizations + UserCreate.organization_ids + 注释 roles/organizations→roles)+ queries.ts(删 4 import + qk.orgTree/organizations + 4 hooks useOrganizationTree/useCreate/useUpdate/useDeleteOrganization)+ App.tsx(删 import + Route)+ dashboard-layout.tsx(删 NAV_ITEMS 组织项 + Building2 import)+ dashboard-page.tsx(删管理组织 Link)+ permissions-page.tsx(删 OBJ_LABELS organizations + objOrder 两处硬编码)+ users-page.tsx(删 createMut 的 organization_ids:[] 字段)",
+        "测试清理:test_rbac_api.py(删 test_org_tree_crud + 文件头注释改)+ test_service_platform_role.py(删 test_super_admin_can_list_organizations)+ test_users_crud.py(删 test_create_user_with_organization_ids + test_create_user_with_invalid_org_ids_400)"
+      ],
       "notes": "MVP 业务模块第 1 任务(共 6 个)。现有 Organization 是「租户内部部门树」(tenant_id 非空外键,不能跨门店),用户的新业务用「Group 跨租户管理门店」替代——两者同名但完全不同。本任务只删不建,新 Group 在 groups-api 任务。高风险点:User 模块(repository JOIN user_organizations + service 查 Organization 表)深度耦合,必须同步清理 schema(repo list_organizations/sync_organizations)+ service(_validate_org_ids)+ 前端表单(organization_ids),否则 user CRUD 全线崩溃。聚合迁移 c1d2e3f4a5b6 不能整删(一次建多表),只能编辑抠 organizations 块。前置无,WIP=1 顺序执行。"
     },
     {

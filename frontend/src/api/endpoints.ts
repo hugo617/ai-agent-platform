@@ -16,10 +16,6 @@ import type {
   MemberUpdate,
   Message,
   MeResponse,
-  Organization,
-  OrganizationCreate,
-  OrganizationTreeNode,
-  OrganizationUpdate,
   PermissionMatrix,
   Role,
   RoleCreate,
@@ -281,36 +277,6 @@ export async function revokeRolePermission(
 export async function fetchPermissionMatrix(): Promise<PermissionMatrix> {
   const { data } = await api.get<PermissionMatrix>("/permissions/matrix");
   return data;
-}
-
-// ---------- organizations ----------
-export async function fetchOrganizationTree(): Promise<OrganizationTreeNode[]> {
-  const { data } = await api.get<OrganizationTreeNode[]>("/organizations/tree");
-  return data;
-}
-
-export async function fetchOrganizations(): Promise<Organization[]> {
-  const { data } = await api.get<Organization[]>("/organizations/");
-  return data;
-}
-
-export async function createOrganization(
-  payload: OrganizationCreate
-): Promise<Organization> {
-  const { data } = await api.post<Organization>("/organizations/", payload);
-  return data;
-}
-
-export async function updateOrganization(
-  id: string,
-  payload: OrganizationUpdate
-): Promise<Organization> {
-  const { data } = await api.put<Organization>(`/organizations/${id}`, payload);
-  return data;
-}
-
-export async function deleteOrganization(id: string): Promise<void> {
-  await api.delete(`/organizations/${id}`);
 }
 
 // ---------- llm settings (platform + tenant) ----------

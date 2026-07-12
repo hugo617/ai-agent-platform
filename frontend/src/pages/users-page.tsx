@@ -233,7 +233,6 @@ export function UsersPage() {
           phone: values.phone || undefined,
           role: values.role,
           status: values.status,
-          organization_ids: [],
         });
         toast.success("已创建用户", values.username);
       }

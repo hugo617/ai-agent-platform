@@ -37,7 +37,6 @@ const OBJ_LABELS: Record<string, string> = {
   conversations: "对话",
   users: "用户",
   roles: "角色",
-  organizations: "组织",
 };
 
 // Stable action ordering within a resource group.
@@ -67,19 +66,12 @@ export function PermissionsPage() {
       byObj.set(p.obj, list);
     }
     const objOrder = [
-      ...["agents", "conversations", "users", "roles", "organizations"].filter(
-        (o) => byObj.has(o)
+      ...["agents", "conversations", "users", "roles"].filter((o) =>
+        byObj.has(o)
       ),
       ...[...byObj.keys()]
         .filter(
-          (o) =>
-            ![
-              "agents",
-              "conversations",
-              "users",
-              "roles",
-              "organizations",
-            ].includes(o)
+          (o) => !["agents", "conversations", "users", "roles"].includes(o)
         )
         .sort(),
     ];

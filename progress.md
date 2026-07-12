@@ -8,7 +8,7 @@
 - **标准启动路径**: `./init.sh`(装依赖 + ruff + pytest)
 - **标准验证路径**: `./init.sh`(同上,后端快速验证,SQLite 内存库)
 - **完整验证路径**(需 docker): `alembic upgrade head && alembic check` + `cd frontend && npm run build`
-- **当前最高优先级未完成功能**: **MVP 业务模块(2026-07-12 规划,共 6 条 priority 29-34,WIP=1 顺序执行)** —— `org-cleanup`(priority 29,删除旧 Organization)→ `groups-api`(30,Group 后端)→ `groups-ui`(31,Group 前端)→ `customers-api`(32,Customer 后端)→ `customers-ui`(33,Customer 前端)→ `hq-platform-role`(34,总部角色 hq_staff)。详见「后续任务规划」表。AI 内核/AtoA 系列已全部 passing(27 条地基 + 6 条业务模块规划 = feature_list 共 33 条)。下一个该做:`org-cleanup`
+- **当前最高优先级未完成功能**: **MVP 业务模块(2026-07-12 规划,共 6 条 priority 29-34,WIP=1 顺序执行)** —— `org-cleanup`(priority 29,删除旧 Organization)✅ 已完成 → `groups-api`(30,Group 后端)→ `groups-ui`(31,Group 前端)→ `customers-api`(32,Customer 后端)→ `customers-ui`(33,Customer 前端)→ `hq-platform-role`(34,总部角色 hq_staff)。详见「后续任务规划」表。AI 内核/AtoA 系列已全部 passing(27 条地基 + 6 条业务模块规划 = feature_list 共 33 条)。下一个该做:`groups-api`
 - **当前 blocker**: 无
 
 ## 后续任务规划(2026-07-10 制定,2026-07-12 追加 MVP 业务模块 17-22,共 22 条,WIP=1 顺序执行)
@@ -31,7 +31,7 @@
 | **14** | **`context-engineering`** | **AI 内核** | **对话上下文工程(token 近似计数 + 滑动窗口截断 + LLM 超时保护 + 部分回复落库容错)—— 解决长对话必崩的结构性 bug。前置 real-chat ✅ 已完成** | **`harness/docs/plan-context-engineering.md`** |
 | **15** | **`chat-markdown-rendering`** | **AI 内核** | **聊天页 Markdown 渲染(react-markdown + GFM + 代码高亮)+ 停止/复制/重新生成交互。前置 chat-frontend ✅ 已完成** | **`harness/docs/plan-chat-markdown-rendering.md`** |
 | **16** | **`agent-config-depth`** | **AI 内核** | **Agent 配置加推理参数(temperature/max_tokens/top_p)+ description,移除硬编码 temperature=0.3。前置 real-chat ✅ 已完成** | **`harness/docs/plan-agent-config-depth.md`** |
-| **17** | **`org-cleanup`** | **管理控制台** | **删除旧 Organization 模块(清理场地为 Group 让路)+ 清理 User 模块耦合。MVP 第 1 任务** | **`harness/docs/plan-org-cleanup.md`** |
+| **17** | **`org-cleanup`** | **管理控制台** | **删除旧 Organization 模块(清理场地为 Group 让路)+ 清理 User 模块耦合。MVP 第 1 任务 ✅ 已完成** | **`harness/docs/plan-org-cleanup.md`** |
 | **18** | **`groups-api`** | **组织域** | **Group(组织)后端 —— 跨租户经营主体 + 门店归属(Group + GroupTenant 双表 + CRUD + 挂载/卸载)。前置 17** | **`harness/docs/plan-groups-api.md`** |
 | **19** | **`groups-ui`** | **组织域** | **Group(组织)前端 —— 组织管理页 + 门店挂载面板。前置 18** | **`harness/docs/plan-groups-ui.md`** |
 | **20** | **`customers-api`** | **客户域** | **Customer(客户)后端 —— 全局身份 + 门店档案 + 跨店聚合(Customer + CustomerProfile 双表)。前置 18** | **`harness/docs/plan-customers-api.md`** |
@@ -72,6 +72,7 @@
 | context-engineering(对话上下文工程) | passing | 244 tests + token_budget 纯函数(近似计数 + 滑动窗口截断)+ stream_agent asyncio.timeout 超时 + 部分回复落库容错 |
 | chat-markdown-rendering(聊天页 Markdown 渲染) | passing | npm build 通过 + oxlint 0 warning + react-markdown+GFM+代码高亮 + 停止/复制/重新生成交互 |
 | agent-config-depth(Agent 推理参数配置) | passing | 250 tests + alembic 迁移 + graph.py 移除硬编码 temperature=0.3 + 前端 slider/高级折叠区 |
+| org-cleanup(删除旧 Organization) | passing | 232 tests + 删 6 文件 + User 模块耦合清理 + 聚合迁移抠块 + alembic check 无 drift + 前端 build/oxlint 全绿 |
 
 > ✅ AI 内核(agents + chat)已全部纳管并 passing:agents-api-hardening / chat-conversation-api / chat-frontend 三任务端到端完成。
 > ✅ **真实对话已跑通**:real-chat-llm-config(Session 017)用真实 DeepSeek key 端到端验证 SSE 流式对话,修了 3 个 bug(Agent.model 失效 / 前端模型脱节 / 无 LLM 配置 UI)。
@@ -1182,6 +1183,35 @@
   - (a) 补「09-外部Agent接入AtoA.md」架构文档(AtoA 系列 5 任务已全 passing,文档尚未补)
   - (b) 工具体系(Agent.tools 可配置)、RAG(知识库关联)、OAuth 鉴权升级、prompt 变量模板等新功能方向
   - (c) E2E 测试扩展(当前主线 login→agent→chat→history,可加权限矩阵/会话管理场景)
+
+### Session 043 — 2026-07-12
+- **本轮目标**: 执行 `org-cleanup`(删除旧 Organization 模块 + 清理 User 模块耦合)—— MVP 业务模块第 1 任务,纯破坏性清理,6 阶段 12 Step。前置无,为 groups-api 让路
+- **已完成**(对照 plan §实施步骤 Step 1-12):
+  - Step 0 基线确认:`./init.sh` → 250 passed(起点干净);切 `feat/org-cleanup` 分支;grep 探勘确认 plan 行号无漂移(残留面 20 文件,覆盖 plan 全部点 + 多 3 个测试文件)
+  - Step 1 整删 6 文件:app/models/organization.py + repositories/organization.py + services/organization_service.py + api/v1/organizations.py + schemas/organization.py + tests/test_organizations_api.py
+  - Step 2-5 User 模块耦合清理(高风险区,全过):schemas/user.py(删 OrganizationBrief + UserRead.organizations + UserCreate/Update.organization_ids)+ repositories/user.py(删 Organization/UserOrganization import + list_organizations/sync_organizations + serialize_user 简化去 organizations)+ services/user_service.py(删 Organization import + _validate_org_ids + create/update 的 org 校验/sync 调用 + serialize_user 调用去 organizations 实参)+ validation_errors.py(删 organization_ids 中文映射)
+  - Step 6-7 迁移+注册清理:聚合迁移 c1d2e3f4a5b6 抠 organizations+user_organizations 建表块/索引/downgrade drop 块/头注释(保留 users/rbac/sessions/logs)+ env.py/conftest.py 删 organization import + main.py 删 import + include_router
+  - Step 8-9 权限 seed 清理:permission_service.py(OWNER 删 4 + ADMIN 删 1 + MEMBER 删 1 organizations tuple)+ conftest.py(_make_casbin owner 删 4 + admin 删 1)
+  - Step 10 前端清理:删 organizations-page.tsx + endpoints.ts(4 import + 5 函数)+ types.ts(5 接口 + UserRead/UserCreate 字段 + 注释)+ queries.ts(4 import + qk 2 项 + 4 hooks)+ App.tsx(import + Route)+ dashboard-layout.tsx(NAV_ITEMS + Building2 import)+ dashboard-page.tsx(Link)+ permissions-page.tsx(OBJ_LABELS + objOrder 两处)+ users-page.tsx(createMut organization_ids 字段)
+  - 测试清理:test_rbac_api.py(删 test_org_tree_crud + 头注释)+ test_service_platform_role.py(删 test_super_admin_can_list_organizations)+ test_users_crud.py(删 2 个 org_ids 测试)
+  - Step 11-12 全栈验证:全过(见下)
+- **运行过的验证**(全过):
+  - `./init.sh` → ruff `All checks passed!` + **232 passed**(基线 250 - 18 组织相关测试:14 test_organizations_api 整删 + 1 test_rbac_api.org_tree_crud + 1 test_service_platform_role.org_list + 2 test_users_crud.org_ids;无其它回归)(2026-07-12)
+  - `pytest tests/test_users_crud.py tests/test_users_api.py tests/test_rbac_api.py tests/test_service_platform_role.py tests/test_permissions_api.py -q` → 72 passed(User CRUD + 权限 + service 全正常,证明删 Organization 未崩溃 User 模块)
+  - `cd frontend && npm run build` → tsc + vite 0 类型错误(2026-07-12);`npx oxlint src/` → 0 warnings 0 errors(39 文件)
+  - `APP_ENV=testing alembic check` → No new upgrade operations detected(无 drift);**关键处理**:本地 Postgres 残留旧 organizations/user_organizations 表(迁移链抠块后变孤儿),`docker exec aap-postgres psql DROP TABLE` 后 check 通过
+  - grep organization app/ tests/ alembic/ frontend/src/(排除注释/dist)→ 零残留(grep exit 1)
+- **已记录证据**: `feature_list.json` 的 `org-cleanup.evidence` 字段(11 条);status → passing
+- **技术要点**(与 plan 的实现差异):
+  - **本地 Postgres 残留旧表是 check 失败的根因**:plan Step 6 风险表预见"聚合迁移整删会丢其它表历史 → 只编辑不删",我正确执行了编辑抠块。但 alembic check 首次失败是因本地 Postgres DB 里有旧 organizations/user_organizations 表(迁移链不再管理它们 = 孤儿),autogenerate 误判为 drift。处理:DROP 这两张本就该消失的表后 check 通过。CI Migrations job 在全新 Postgres 上跑不会有此问题(从零 upgrade 不建这两表)
+  - **User 模块耦合清理是最大风险点**:repositories/user.py 的 serialize_user 是 UserRead 序列化的核心,删 organizations 形参 + 构造块 + 返回字段后,user_service.py 两处调用点(_read/_read_all)同步去掉 organizations=orgs 实参。期间一度误删 _read_all 方法签名行(Edit 边界失误),立即 Read 发现并修复——体现破坏性清理需逐文件验证
+  - **测试清理范围**:plan 只提 test_organizations_api 整删,实际还需清 test_rbac_api(test_org_tree_crud)+ test_service_platform_role(test_super_admin_can_list_organizations)+ test_users_crud(2 个 org_ids 测试),plan 风险表已预见"其它测试引用 organization"
+  - **permissions-page.tsx 硬编码 organizations**:objOrder 数组两处硬编码 ["agents","conversations","users","roles","organizations"],后端 catalogue 已无 organizations(权限 seed 删了),但前端硬编码会保留空分组,需手动删
+- **提交记录**: `feat/org-cleanup` 分支(待审查 + PR + 合并)
+- **已知风险**: 无功能风险。CI Migrations job 需在全新 Postgres 上守门(本地已 DROP 旧表,CI 全新环境无此问题);User CRUD 已用 72 个测试覆盖证明未崩溃;前端 build(tsc)+ oxlint 已覆盖类型正确性与规范
+- **下一步最佳动作**:
+  - (a) 清理废代码 + 代码质量审查 + PR + CI 守门 + 合并 feat/org-cleanup 到 main
+  - (b) 之后执行 `groups-api`(priority 30,Group 后端,前置 org-cleanup 现已就绪)
 
 <!-- 模板保留
 ### Session 042 — 2026-07-12

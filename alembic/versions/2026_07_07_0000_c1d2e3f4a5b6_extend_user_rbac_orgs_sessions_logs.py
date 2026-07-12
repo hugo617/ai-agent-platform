@@ -8,7 +8,6 @@ Adds:
   - users: username/phone/avatar/real_name/password/password_updated_at/
            last_login_at/status/metadata/is_deleted/deleted_at/audit columns.
   - roles, permissions, role_permissions (RBAC display layer over casbin).
-  - organizations, user_organizations (org tree + membership).
   - user_sessions, user_login_methods, verification_codes (security).
   - system_logs (audit trail).
 """
@@ -137,45 +136,6 @@ def upgrade() -> None:
         sa.UniqueConstraint('tenant_id', 'role_id', 'permission_id', name='uq_role_permission_tenant'),
     )
 
-    # ------------------------------------------------------------ organizations
-    op.create_table(
-        'organizations',
-        sa.Column('id', sa.String(length=32), nullable=False),
-        sa.Column('tenant_id', sa.String(length=32), nullable=False),
-        sa.Column('name', sa.String(length=200), nullable=False),
-        sa.Column('code', sa.String(length=100), nullable=True),
-        sa.Column('path', sa.String(length=255), nullable=True),
-        sa.Column('parent_id', sa.String(length=32), nullable=True),
-        sa.Column('leader_id', sa.String(length=128), nullable=True),
-        sa.Column('status', sa.String(length=20), server_default='active', nullable=False),
-        sa.Column('sort_order', sa.Integer(), server_default='0', nullable=False),
-        sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
-        sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
-        sa.ForeignKeyConstraint(['tenant_id'], ['tenants.id'], ondelete='CASCADE'),
-        sa.ForeignKeyConstraint(['parent_id'], ['organizations.id'], ondelete='SET NULL'),
-        sa.ForeignKeyConstraint(['leader_id'], ['users.id'], ondelete='SET NULL'),
-        sa.PrimaryKeyConstraint('id'),
-    )
-    op.create_index('idx_organizations_tenant_id', 'organizations', ['tenant_id'])
-    op.create_index('idx_organizations_parent_id', 'organizations', ['parent_id'])
-
-    # ------------------------------------------------------ user_organizations
-    op.create_table(
-        'user_organizations',
-        sa.Column('id', sa.String(length=32), nullable=False),
-        sa.Column('user_id', sa.String(length=128), nullable=False),
-        sa.Column('organization_id', sa.String(length=32), nullable=False),
-        sa.Column('position', sa.String(length=100), nullable=True),
-        sa.Column('is_main', sa.Boolean(), server_default=sa.text('false'), nullable=False),
-        sa.Column('joined_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
-        sa.ForeignKeyConstraint(['user_id'], ['users.id'], ondelete='CASCADE'),
-        sa.ForeignKeyConstraint(['organization_id'], ['organizations.id'], ondelete='CASCADE'),
-        sa.PrimaryKeyConstraint('id'),
-        sa.UniqueConstraint('user_id', 'organization_id', name='uq_user_organization'),
-    )
-    op.create_index('idx_user_organizations_user_id', 'user_organizations', ['user_id'])
-    op.create_index('idx_user_organizations_org_id', 'user_organizations', ['organization_id'])
-
     # ------------------------------------------------------------- user_sessions
     op.create_table(
         'user_sessions',
@@ -285,14 +245,6 @@ def downgrade() -> None:
     op.drop_index('idx_user_sessions_expires_at', table_name='user_sessions')
     op.drop_index('idx_user_sessions_user_id', table_name='user_sessions')
     op.drop_table('user_sessions')
-
-    op.drop_index('idx_user_organizations_org_id', table_name='user_organizations')
-    op.drop_index('idx_user_organizations_user_id', table_name='user_organizations')
-    op.drop_table('user_organizations')
-
-    op.drop_index('idx_organizations_parent_id', table_name='organizations')
-    op.drop_index('idx_organizations_tenant_id', table_name='organizations')
-    op.drop_table('organizations')
 
     op.drop_table('role_permissions')
     op.drop_table('permissions')

@@ -32,7 +32,6 @@ _FIELD_LABELS: dict[str, str] = {
     "avatar": "头像",
     "role": "角色",
     "status": "状态",
-    "organization_ids": "所属组织",
 }
 
 
