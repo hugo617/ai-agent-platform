@@ -8,7 +8,7 @@
 - **标准启动路径**: `./init.sh`(装依赖 + ruff + pytest)
 - **标准验证路径**: `./init.sh`(同上,后端快速验证,SQLite 内存库)
 - **完整验证路径**(需 docker): `alembic upgrade head && alembic check` + `cd frontend && npm run build`
-- **当前最高优先级未完成功能**: **MVP 业务模块(2026-07-12 规划,共 6 条 priority 29-34,WIP=1 顺序执行)** —— `org-cleanup`(priority 29,删除旧 Organization)✅ → `groups-api`(30,Group 后端)✅ → `groups-ui`(31,Group 前端)✅ → `customers-api`(32,Customer 后端)✅ → `customers-ui`(33,Customer 前端)✅ 已完成 → `hq-platform-role`(34,总部角色 hq_staff)。详见「后续任务规划」表。AI 内核/AtoA 系列已全部 passing(28 条地基 + 5 条 MVP 业务模块待做 = feature_list 共 33 条)。下一个该做:`hq-platform-role`
+- **当前最高优先级未完成功能**: **MVP 业务模块(2026-07-12 规划,共 6 条 priority 29-34,WIP=1 顺序执行)全部 ✅ 完成** —— `org-cleanup`(29)✅ → `groups-api`(30)✅ → `groups-ui`(31)✅ → `customers-api`(32)✅ → `customers-ui`(33)✅ → `hq-platform-role`(34,总部角色 hq_staff)✅。**feature_list.json 共 33 条全部 passing**(28 条地基 + 5 条 MVP 业务模块,无 not_started 任务)。下一步方向由用户决定(可规划新业务模块 / 深化现有能力 / 二开定制)
 - **当前 blocker**: 无
 
 ## 后续任务规划(2026-07-10 制定,2026-07-12 追加 MVP 业务模块 17-22,共 22 条,WIP=1 顺序执行)
@@ -77,6 +77,7 @@
 | groups-ui(Group 组织前端) | passing | npm build 通过 + oxlint 0 warning + 组织列表 + 创建/编辑 Dialog + 门店挂载面板(Badge✕detach + 下拉attach)+ super_admin 写/其他只读 + 路由 /groups(member 可读) |
 | customers-api(Customer 客户后端) | passing | 265 tests + Customer+CustomerProfile 双表 + 迁移 6f197cf8f964 + 6 端点 + 全局身份跨店复用 + HQ 聚合 + super_admin 跨店/门店隔离 + alembic check 无 drift |
 | customers-ui(Customer 客户前端) | passing | npm build 通过 + oxlint 0 warning + 双视角(门店 CRUD / 总部聚合只读)+ 行内展开跨店档案 + 三层权限守卫(owner 全权/admin 无 delete/member 只读/super_admin 总部只读)+ 路由 /customers(Contact 图标) |
+| hq-platform-role(平台角色 hq_staff 总部业务员) | passing | 281 tests + check() 加 hq_staff+read 短路 + is_cross_tenant_viewer helper + Customer/Group Service 跨租户分支扩展 + Customer HQ 读端点守卫扩展(require_cross_tenant_viewer)+ hq_staff 只读跨店(super_admin 不回归)+ 无迁移(platform_role 自由字符串) |
 
 > ✅ AI 内核(agents + chat)已全部纳管并 passing:agents-api-hardening / chat-conversation-api / chat-frontend 三任务端到端完成。
 > ✅ **真实对话已跑通**:real-chat-llm-config(Session 017)用真实 DeepSeek key 端到端验证 SSE 流式对话,修了 3 个 bug(Agent.model 失效 / 前端模型脱节 / 无 LLM 配置 UI)。
@@ -1473,5 +1474,33 @@
 - **提交记录**: PR #35 已 squash 合并到 main(`c04ecb1`);含 1 个功能 commit(Session 050 的实现 + 本 Session 的文档更新 progress)
 - **已知风险**: 无。纯前端改动,后端零回归;手动浏览器验证未跑(需前后端启动 + 真实 token),build(tsc)+ oxlint + CI 已覆盖
 - **下一步最佳动作**: 执行 `hq-platform-role`(priority 34,总部角色 hq_staff —— 跨租户只读,plan 已就绪 `harness/docs/plan-hq-platform-role.md`,前置 customers-api ✅ 已合入 main)—— 这是 MVP 业务模块 6 条的最后一个
+
+---
+
+### Session 052 — 2026-07-12
+- **本轮目标**: 执行 `hq-platform-role`(平台角色 hq_staff —— 总部业务员「各司其职」+ 跨租户只读)—— MVP 业务模块 6 条的最后一个。plan 已就绪,前置 customers-api ✅ 已合入 main
+- **已完成**(对照 plan §实施步骤 Step 1-6):
+  - Step 0 基线确认:`./init.sh` → 265 passed(起点干净);切 `feat/hq-platform-role` 分支
+  - Step 1-2 权限层:`permission_service.check()` 加 `hq_staff` + `act == "read"` 短路(super_admin 全权短路不变);新增模块级 helper `is_cross_tenant_viewer(platform_role)` + `CROSS_TENANT_VIEWER_ROLES = ("super_admin", "hq_staff")` 常量
+  - Step 3 Customer Service:`customer_service.list_profiles` 的 `is_super = platform_role == "super_admin"` 改为 `is_cross_tenant = is_cross_tenant_viewer(platform_role)`(语义=跨租户查看者走 list_all);写操作(create/update/delete)**不改** —— hq_staff 在 check() 不短路(act != read),走 casbin → 无 customers:create/update/delete 策略 → 403 天然只读
+  - Step 4 Group Service:`group_service.list/get` 的 `platform_role == "super_admin"` 改为 `is_cross_tenant_viewer(platform_role)`;Group 写端点(create/update/delete/attach/detach)仍用 `require_super_admin()` 守卫,hq_staff 被 403 拦住(组织架构只有 super_admin 能改,期望行为)
+  - **Customer HQ 读端点守卫扩展**(plan 隐含但需显式实现):`deps.py` 新增 `require_cross_tenant_viewer()`(super_admin + hq_staff 都通过);`customers.py` 的 `GET /customers/` 与 `GET /customers/{id}/aggregate` 从 `require_super_admin()` 改为 `require_cross_tenant_viewer()`(HQ 聚合是「总部看板」核心能力,hq_staff 应能读);清理 customers.py 的 require_super_admin import(F401)
+  - Step 5 测试:新建 `tests/test_hq_platform_role.py`(16 个测试)+ conftest 加 `hq_staff_client` fixture
+  - Step 6 总验证:`./init.sh` → ruff + **281 passed**(265 基线 + 16 新增,无回归)
+- **运行过的验证**(全过):
+  - `pytest tests/test_hq_platform_role.py -v` → 16 passed
+  - `./init.sh` → ruff `All checks passed!` + **281 passed**(265 + 16)
+  - 回归:`pytest tests/test_customers_api.py tests/test_groups_api.py tests/test_service_platform_role.py tests/test_permission_service.py -q` → 51 passed(super_admin 行为完全不变,包括 test_non_super_admin_cannot_access_hq_endpoints 仍过)
+- **已记录证据**: `feature_list.json` 的 `hq-platform-role.evidence` 字段(7 条,含 check 短路 + helper + Service 扩展 + 守卫扩展 + 测试维度 + fixture 设计 + 无迁移说明)
+- **技术要点**(与 plan 的实现差异):
+  - **hq_staff_client fixture 的关键设计修正**:首版仿 super_admin_client 复用 owner 用户(owner 在 casbin 有完整 customers:create/update/delete),导致 hq_staff 写操作落入 casbin 时**owner 写权限泄漏** → POST/PUT/DELETE 返回 201/200/204 而非 403。修正:用 `_build_client(role="member", platform_role="hq_staff")` —— member 的 casbin 权限最小(只有 customers:read 无写),真实还原「总部人员无门店业务角色」场景,写操作正确 403。这是「fixture 角色选择决定测试真实性」的典型教训
+  - **plan 隐含的守卫扩展**:plan §Step3 说「Customer HQ 聚合端点 hq_staff 可读」,但HQ 端点原守卫是 `require_super_admin()` —— hq_staff 会被 403 拦在路由层,根本进不了 Service。所以必须新增 `require_cross_tenant_viewer()` 守卫并把两个 HQ 读端点改用它(plan 没显式写这一步,但逻辑必然)
+  - **无迁移/无 JWT 改动**:`platform_role` 是自由字符串字段(`tenant.py`),写 "hq_staff" 无需 Enum 约束/迁移;`security.py:160-163` JWT 提取无白名单,hq_staff 直接透传
+  - **写操作天然只读的机制**:hq_staff 在 check() 只对 `act == "read"` 短路;写操作 act ∈ {create,update,delete} 落入 casbin enforce → member 角色无对应策略 → False → 403。无需额外写保护代码
+- **提交记录**: `feat/hq-platform-role` 分支(待用户决定是否合并到 main + 发 PR)
+- **已知风险**: 无功能风险。手动 curl 验证未单独执行(纯后端 pytest 16 个测试已覆盖 hq_staff 读/写/聚合全维度 + super_admin/owner/member 三方不回归);无 schema 改动故无需 CI migrations 守门;前端 hq_staff 视角未做(plan §不做的事:MVP 复用 super_admin 总部 UI,customers-ui/groups-ui 的 isSuperAdmin 判定改 isCrossTenantViewer 留作后续微调)
+- **下一步最佳动作**:
+  - (a) 清理废代码 + 代码质量审查 + PR + CI 守门 + 合并 feat/hq-platform-role 到 main;
+  - (b) **MVP 业务模块 6 条全部完成**,feature_list.json 共 33 条全 passing —— 由用户决定下一阶段方向(规划新业务模块 / 深化现有能力 / 二开定制 / 前端 hq_staff 视角适配)
 
 ---

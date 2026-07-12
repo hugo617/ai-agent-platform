@@ -18,7 +18,7 @@ from app.core.security import (
     extract_tenant,
 )
 from app.repositories.tenant import UserRepository, UserTenantRepository
-from app.services.permission_service import permission_service
+from app.services.permission_service import is_cross_tenant_viewer, permission_service
 
 # AtoA API tokens use this prefix so get_current_user can route them to the
 # token bypass without touching the JWT path. ``ahp_`` = agenthub platform.
@@ -246,9 +246,9 @@ def require_permission(obj: str, act: str):
 def require_super_admin():
     """Build a dependency that only platform super admins satisfy.
 
-    Used by platform-wide endpoints (e.g. the platform-level LLM config) where
-    no tenant-scoped permission exists — the action crosses all tenants, so a
-    tenant role like owner/admin must NOT be enough on its own.
+    Used by platform-wide endpoints (e.g. the platform-level LLM config, Group
+    writes) where no tenant-scoped permission exists — the action crosses all
+    tenants, so a tenant role like owner/admin must NOT be enough on its own.
     """
 
     async def _guard(user: CurrentUser = Depends(get_current_user)) -> CurrentUser:
@@ -256,6 +256,26 @@ def require_super_admin():
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="无权限：需要平台超级管理员",
+            )
+        return user
+
+    return _guard
+
+
+def require_cross_tenant_viewer():
+    """Build a dependency satisfied by any cross-tenant viewer.
+
+    ``super_admin`` (full power) and ``hq_staff`` (read-only HQ viewer) both
+    pass. Used by cross-tenant *read* endpoints (e.g. the Customer HQ
+    aggregation) where hq_staff needs the panorama but must NOT be able to
+    reach the write endpoints (those stay behind ``require_super_admin``).
+    """
+
+    async def _guard(user: CurrentUser = Depends(get_current_user)) -> CurrentUser:
+        if not is_cross_tenant_viewer(user.platform_role):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="无权限：需要总部角色(super_admin 或 hq_staff)",
             )
         return user
 

@@ -4,15 +4,22 @@ Two access patterns, two permission guards:
 
 - **Store view** (``/customers/profiles/...``): tenant-scoped CRUD on this
   store's profiles. Guarded by ``require_permission('customers', act)``;
-  super_admin also sees all stores (the service splits on platform_role).
+  cross-tenant viewers (super_admin / hq_staff) also see all stores (the
+  service splits on ``is_cross_tenant_viewer``).
 - **HQ view** (``/customers/`` list + ``/customers/{id}/aggregate``):
-  cross-store aggregation, guarded by ``require_super_admin()``.
+  cross-store aggregation, guarded by ``require_cross_tenant_viewer()``
+  (super_admin full power + hq_staff read-only HQ panorama).
 """
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import CurrentUser, get_current_user, require_permission, require_super_admin
+from app.api.deps import (
+    CurrentUser,
+    get_current_user,
+    require_cross_tenant_viewer,
+    require_permission,
+)
 from app.core.database import get_db
 from app.schemas.customer import (
     CustomerProfileCreate,
@@ -33,31 +40,31 @@ def _http_exc(e: ValueError) -> HTTPException:
     return HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
-# ----------------------------------------------------------- HQ view (super_admin)
+# ----------------------------------------------- HQ view (super_admin + hq_staff)
 
 
 @router.get(
     "/",
     response_model=list[CustomerRead],
-    dependencies=[Depends(require_super_admin())],
+    dependencies=[Depends(require_cross_tenant_viewer())],
 )
 async def list_customers_hq(
     db: AsyncSession = Depends(get_db),
 ) -> list[CustomerRead]:
-    """Cross-store customer list with all profiles (super_admin only)."""
+    """Cross-store customer list with all profiles (super_admin + hq_staff)."""
     return await CustomerService(db).list_customers_hq()
 
 
 @router.get(
     "/{customer_id}/aggregate",
     response_model=CustomerRead,
-    dependencies=[Depends(require_super_admin())],
+    dependencies=[Depends(require_cross_tenant_viewer())],
 )
 async def get_customer_aggregate(
     customer_id: str,
     db: AsyncSession = Depends(get_db),
 ) -> CustomerRead:
-    """One customer with every store's profile (super_admin only)."""
+    """One customer with every store's profile (super_admin + hq_staff)."""
     try:
         return await CustomerService(db).get_customer_aggregate(customer_id)
     except ValueError as e:

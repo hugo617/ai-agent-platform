@@ -347,6 +347,36 @@ async def super_admin_client(test_env: _TestEnv) -> AsyncIterator[AsyncClient]:
 
 
 @pytest_asyncio.fixture
+async def hq_staff_client(test_env: _TestEnv) -> AsyncIterator[AsyncClient]:
+    """Impersonates a platform ``hq_staff`` user.
+
+    hq_staff is the HQ read-only viewer: any read is allowed (check() short-
+    circuits on ``hq_staff`` + ``read``), writes fall through to casbin. We
+    bind the impersonated user to the ``member`` tenant role (not owner) so its
+    casbin grants are minimal — this faithfully reproduces a real HQ employee
+    who has NO store-side business role. Member holds ``customers:read`` but
+    not create/update/delete, so hq_staff's write attempts are correctly 403.
+
+    A second tenant is seeded so cross-tenant read assertions have data to see.
+    """
+    from app.models.tenant import Tenant
+
+    other_tenant_id = f"tnt-other-{uuid.uuid4().hex}"
+    async with test_env.factory() as session:
+        session.add(Tenant(id=other_tenant_id, name="Other Tenant"))
+        await session.commit()
+
+    async for client in _build_client(
+        test_env,
+        user_id=f"hq-{uuid.uuid4().hex}",
+        email="hq@example.com",
+        role="member",
+        platform_role="hq_staff",
+    ):
+        yield client
+
+
+@pytest_asyncio.fixture
 async def app_client_real_auth(test_env: _TestEnv) -> AsyncIterator[AsyncClient]:
     """Like ``app_client`` but with REAL JWT verification (no decode_token mock).
 

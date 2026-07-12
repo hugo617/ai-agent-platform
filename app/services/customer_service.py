@@ -36,7 +36,7 @@ from app.schemas.customer import (
 )
 from app.schemas.group import TenantBrief
 from app.services.errors import BizError, NotFoundError
-from app.services.permission_service import permission_service
+from app.services.permission_service import is_cross_tenant_viewer, permission_service
 
 
 class CustomerService:
@@ -115,9 +115,10 @@ class CustomerService:
         tenant_id: str,
         platform_role: str | None = None,
     ) -> list[CustomerProfileRead]:
-        """Store view: this tenant's profiles. super_admin sees all stores."""
-        is_super = platform_role == "super_admin"
-        if not is_super:
+        """Store view: this tenant's profiles. Cross-tenant viewers
+        (super_admin / hq_staff) see all stores."""
+        is_cross_tenant = is_cross_tenant_viewer(platform_role)
+        if not is_cross_tenant:
             await permission_service.require(
                 actor_id,
                 tenant_id,
@@ -125,7 +126,7 @@ class CustomerService:
                 "read",
                 platform_role=platform_role,
             )
-        if is_super:
+        if is_cross_tenant:
             profiles = await self.profiles.list_all()
         else:
             profiles = await self.profiles.list_for_tenant(tenant_id)
