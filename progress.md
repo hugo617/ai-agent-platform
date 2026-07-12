@@ -1503,4 +1503,23 @@
   - (a) 清理废代码 + 代码质量审查 + PR + CI 守门 + 合并 feat/hq-platform-role 到 main;
   - (b) **MVP 业务模块 6 条全部完成**,feature_list.json 共 33 条全 passing —— 由用户决定下一阶段方向(规划新业务模块 / 深化现有能力 / 二开定制 / 前端 hq_staff 视角适配)
 
+### Session 053 — 2026-07-12
+- **本轮目标**: 清理废代码 + 代码质量审查 + PR + CI 守门 + 合并 Session 052 的 `hq-platform-role`(平台角色 hq_staff 总部业务员跨租户只读,MVP 业务模块收官)到 main
+- **已完成**(端到端,含合并):
+  - **废代码审查**(8 改动文件 + 1 新测试):ruff F-rules(F401/F811/F841)全绿 + 符号引用核查(`is_cross_tenant_viewer`/`require_cross_tenant_viewer`/`CROSS_TENANT_VIEWER_ROLES` 均有调用方;customers.py 的 `require_super_admin` import 已随守卫替换清理,F401 未触发)。结论:**无废代码,无需清理改动**
+  - **代码质量审查**:权限分层设计正确(check() 短路分级:super_admin 全权 / hq_staff+read 通过 / 写落 casbin→403 天然只读);`is_cross_tenant_viewer()` helper 集中跨租户读判定(DRY,替代 Service 层硬编码);守卫分层正确(HQ 读端点 require_cross_tenant_viewer / Group 写端点仍 require_super_admin,组织树 hq_staff 不可改);hq_staff_client fixture 绑定 member 角色还原真实场景(避免 owner 权限泄漏);无越界(纯权限层扩展,无 schema 改动)
+  - 基线验证:`./init.sh` → ruff All checks passed! + **281 passed**(265 基线 + 16 新增,无回归)
+  - commit `0b15a66` → push → PR #36(base main)
+  - **CI 守门:4/4 全绿**(Backend pytest+ruff 2m5s / Migrations alembic upgrade on Postgres 43s / Frontend typecheck+build+lint 29s / E2E Playwright 1m54s),**无需修复**
+  - **squash 合并 PR #36 → main**(commit `c72e377`),删除远程分支,本地已在 main + `git remote prune` 清除残留引用;本地 feature 分支已删
+  - main 上跑 `./init.sh` 确认 ruff + 281 passed,仓库仍可按标准路径工作
+- **运行过的验证**:
+  - `.venv/bin/ruff check --select F`(8 文件)+ `.venv/bin/ruff check app/ tests/ alembic/` → All checks passed!
+  - `./init.sh`(feat 分支与 main 两次)→ ruff All checks passed! + **281 passed**
+  - CI(PR #36)→ 4/4 job SUCCESS
+- **已记录证据**: 无新增(本任务是审查+发版;feature_list 的 hq-platform-role.evidence 在 Session 052 已填 7 条)
+- **提交记录**: PR #36 已 squash 合并到 main(`c72e377`);含 1 个功能 commit(Session 052 的实现 + 本 Session 的文档更新 progress)
+- **已知风险**: 无。纯权限层扩展无 schema 改动;手动 curl 验证未单独执行(pytest 16 个测试已覆盖 hq_staff 读/写/聚合全维度 + 三方不回归)
+- **下一步最佳动作**: **MVP 业务模块 6 条全部完成**(org-cleanup → groups-api/ui → customers-api/ui → hq-platform-role),feature_list.json 共 33 条全部 passing。由用户决定下一阶段方向:① 规划新业务模块 ② 深化现有能力(如前端 hq_staff 视角适配 —— customers-ui/groups-ui 的 isSuperAdmin 判定改 isCrossTenantViewer)③ 二开定制 ④ 其他
+
 ---
