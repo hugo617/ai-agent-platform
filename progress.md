@@ -1404,4 +1404,25 @@
   - (a) 清理废代码 + 代码质量审查 + PR + CI 守门 + 合并 feat/customers-api 到 main
   - (b) 之后执行 `customers-ui`(priority 33,Customer 前端 —— 门店档案 + 跨店聚合视图,前置 customers-api 现已就绪)
 
+### Session 049 — 2026-07-12
+- **本轮目标**: 清理废代码 + 代码质量审查 + PR + CI 守门 + 合并 Session 048 的 `customers-api`(Customer 客户后端 —— 全局身份 + 门店档案 + 跨店聚合)到 main
+- **已完成**(端到端,含合并):
+  - **废代码扫描**:ruff F-rules(F401/F811/F841)13 文件全绿 + 符号引用核查(所有新符号 `Customer`/`CustomerProfile`/`CustomerRepository`/`CustomerProfileRepository`/`CustomerService`/`batch_tenant_info`/schema ×7/`_http_exc` 均有引用)。repository 的 `__all__` re-export `Base` 与 group.py 完全一致(既有约定,非死代码)→ **无废代码,无需清理改动**
+  - **代码质量审查**:分层合规(Controller→Service→Repository→Model 单向);租户过滤在 Repository 层(门店视图 `get_for_tenant`/`list_for_tenant` 强制 tenant_id + is_deleted;HQ 视图 `require_super_admin()` 守卫);软删除 + 部分唯一索引(identity_key / customer_id+tenant_id)双库兼容(PG `postgresql_where` + SQLite `sqlite_where`);create-or-reuse 全局身份 + 本店重复 400 + delete 只软删 Profile 保留 Customer;batch_tenant_info 避免 N+1。与 Group/User 双表模式完全对齐,无越界改动
+  - 基线验证:`./init.sh` → ruff All checks passed! + **265 passed**(248 基线 + 17 新增)
+  - 迁移链:`alembic upgrade head`(574391d912fc → 6f197cf8f964)+ `alembic check` → No new upgrade operations detected(无 drift,Session 018 教训未重演 —— env.py + conftest.py 两处 import 同步);heads 单一 `6f197cf8f964`
+  - commit `0d1a263` → push → PR #34(base main)
+  - **CI 守门:4/4 全绿**(Backend pytest+ruff 1m44s / Migrations alembic upgrade on Postgres 49s / Frontend typecheck+build+lint 27s / E2E Playwright 1m52s),**无需修复**
+  - **squash 合并 PR #34 → main**(commit `7a0a151`),删除远程分支,本地已在 main + `git remote prune` 清除残留引用;本地 feature 分支已删
+  - main 上跑 `./init.sh` 确认 ruff + 265 passed,仓库仍可按标准路径工作
+- **运行过的验证**:
+  - `.venv/bin/ruff check --select F`(13 文件)+ `.venv/bin/ruff check app/ tests/ alembic/` → All checks passed!
+  - `./init.sh`(feat 分支与 main 两次)→ ruff All checks passed! + **265 passed**
+  - `APP_ENV=testing .venv/bin/alembic upgrade head` + `alembic check` → 迁移成功 + No new upgrade operations detected
+  - CI(PR #34)→ 4/4 job SUCCESS
+- **已记录证据**: 无新增(本任务是审查+发版;feature_list 的 customers-api.evidence 在 Session 048 已填 8 条)
+- **提交记录**: PR #34 已 squash 合并到 main(`7a0a151`);含 1 个功能 commit(Session 048 的实现 + 本 Session 的文档更新 progress)
+- **已知风险**: 无。CI Migrations job 在真实 Postgres 上确认无 drift(env.py/conftest.py 两处 import 同步)
+- **下一步最佳动作**: 执行 `customers-ui`(priority 33,Customer 前端 —— 门店档案 + 跨店聚合视图,plan 已就绪 `harness/docs/plan-customers-ui.md`,前置 customers-api ✅ 已合入 main)
+
 ---
