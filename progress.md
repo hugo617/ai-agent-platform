@@ -41,8 +41,13 @@
 | **24** | **`hq-platform-role`** | **权限** | **平台角色 hq_staff —— 总部业务员(各司其职)+ 跨租户只读。前置 22 ✅ 已完成** | **`harness/docs/plan-hq-platform-role.md`** |
 | **25** | **`demo-seed`** | **演示案例** | **大健康连锁演示案例 + 项目地图(种子脚本 scripts/seed_demo.py + db-schema.mmd 补全 + 关系图.md 第十/十一章)✅ 已完成** | **`harness/docs/plan-demo-seed.md`** |
 | **26** | **`demo-seed-full`** | **演示案例** | **演示数据全量补全 —— 扩 seed_demo.py 加 `--reset` 清理重建 + 补全全部缺口业务表(对话/消息/LLM配置/API Token/自定义角色权限/审计日志/多登录方式/Agent推理参数差异化)。前置 demo-seed(37)✅** | **`harness/docs/plan-demo-seed-full.md`** |
+| **27** | **`permission-unified-model`** | **权限重构** | **权限目录统一 + 操作权限细化(系列 1/4)—— 消除 DEFAULT_*_PERMS/路由守卫/前端 OBJ_LABELS 三处漂移,settings/api_tokens 的 manage 拆细,后端 Permission 表成唯一真相源。用户痛点:只有增删改查无视图权限/超管不可见/目录漂移** | **`harness/docs/plan-permission-unified-model.md`** |
+| **28** | **`permission-menu-view`** | **权限重构** | **菜单/视图权限 type=menu(系列 2/4)—— 启用 Permission.type='menu',前端导航/路由由 menu 权限驱动,删 needsSuperAdmin/needsUserManagement 硬编码。解决「没有视图权限」核心痛点。前置 27** | **`harness/docs/plan-permission-menu-view.md`** |
+| **29** | **`permission-data-scope`** | **权限重构** | **数据权限 data_scope 四档(系列 3/4)—— Role 加 data_scope(all/tenant/group/self)+ DataScopeResolver + Repository 自动过滤。业务员只看自己/店长看全店/区域经理看本组织。前置 27** | **`harness/docs/plan-permission-data-scope.md`** |
+| **30** | **`permission-matrix-redesign`** | **权限重构** | **权限矩阵 UI 重写(系列 4/4 收官)—— 超管锁定行(全选不可配)+ 菜单/操作两区并列 + data_scope 选择器,一处配全角色×菜单×操作×数据范围。前置 27/28/29** | **`harness/docs/plan-permission-matrix-redesign.md`** |
 
 > 依赖链:1 → 2 → 3(对话主线);4 → 5(权限矩阵);6 独立;7 暂停;8 ✅;**AtoA 系列:9(地基) → 10(CLI 骨架) → 11(CLI 对话+CRUD) → 12(Skill);13(前端)依赖 9,可与 10-12 并行但 WIP=1 仍顺序执行**。
+> **权限重构系列(2026-07-12 规划,Session 060):27(unified-model,目录统一+操作细化,地基) → 28(menu-view,菜单权限) → 29(data-scope,数据权限) → 30(matrix-redesign,矩阵 UI 收官)。依赖:27 是地基,28/29 依赖 27,30 依赖 27/28/29。WIP=1 顺序执行。系列总纲:`harness/docs/plan-permission-redesign-overview.md`。背景:用户调研后拍板做满三类权限(菜单+操作+数据),超管矩阵显示锁定行,操作权限适度细化,数据权限用角色级 data_scope 四档(非 ABAC)。**
 > **AI 内核深化(2026-07-11 规划,Session 031):14(context-engineering,长对话截断/超时,纯后端)→ 15(chat-markdown-rendering,Markdown+交互,纯前端)→ 16(agent-config-depth,推理参数,全栈)。三者独立可任意顺序,但 WIP=1 仍顺序执行。**
 > **MVP 业务模块(2026-07-12 规划,Session 042/043):17(org-cleanup,删旧 Organization)✅ → 18-19(门店管理后端+前端,Session 043 核实租户太弱补齐)→ 20(groups-api,Group 后端)✅ → 21(groups-ui,Group 前端)✅ → 22(customers-api,Customer 后端)✅ → 23(customers-ui,Customer 前端)✅ → 24(hq-platform-role,总部角色)✅。依赖链:17 → 18 → 19(门店线);19 → 20 → 21(Group 线,门店下拉依赖 tenants-admin);20 → 22 → 23(Customer 线);22 → 24(hq_staff 用 Customer 域验证)。核心模块拆后端+前端(门店/组织/客户各 2 任务),遵循「后端先、前端后」约定。第一批 6 条(17/20-24)已 passing,门店线 18(tenants-admin-api)✅ 已完成,仅剩 19(tenants-admin-ui)。WIP=1 顺序执行。**
 > AtoA = Agent-to-Agent:让任意外部 AI Agent(Claude Code/Cursor/Codex)在授权后通过 CLI+Skill 使用本平台。对标 Apifox CLI+Skill 打法 + google/agents-cli。鉴权选 PAT 先做+OAuth 预留;CLI 选 Python typer;首发能力全选(对话+只读+历史读写+CRUD)。
@@ -1685,5 +1690,36 @@
 - **下一步最佳动作**:
   - (a) 执行 `demo-seed-full`(priority 38,扩 seed_demo.py 加 --reset + 全量补全 + 真实 Postgres 验证),照 plan §4 的 12 步;
   - (b) 或由用户调整 plan 范围(如某些缺口表不需要演示数据)
+
+---
+
+### Session 060 — 2026-07-12
+- **本轮目标**: 权限体系重构任务规划 —— **仅调研+登记不实现**(用户要求)。用户提出权限这块很模糊:① 当前权限矩阵只有增删改查的操作权限,没有视图/菜单权限;② 超管「直接拥有全部」不可见不可理解;③ 应该所有需鉴权功能都能按需配到每个角色。要求调研优秀设计、给建议、与用户沟通达成满意方案后写入文档
+- **调研完成**(三路并行):
+  - **现状盘点**(Explore agent 精确取证):`Permission.type` 字段预留了分类(api/menu/view)但全项目只写过 `"api"`;7 资源 × 6 动作共 22 个权限项,settings/api_tokens 只有粗的 `manage`;`super_admin` 是硬编码 bypass(`permission_service.check` 第一行 return True)不进矩阵;前端菜单可见性由两套硬编码布尔(`needsSuperAdmin`/`needsUserManagement`)驱动,完全和权限矩阵脱钩;权限目录三处漂移(DEFAULT_*_PERMS 常量 / 路由 require_permission / 前端 OBJ_LABELS),已 drift(conversations:delete 有校验无 seed,customers/settings/api_tokens 前端无中文标签)
+  - **行业实践调研**(WebSearch 中英双语):成熟 SaaS/后台权限系统都拆三类正交维度 —— 菜单/视图权限(能看到什么)、操作/功能权限(能调用什么 API)、数据权限(能看到哪些数据行)。参考 JavaGuide《权限系统设计详解》、WorkOS《RBAC Best Practices》、AltexSoft《Access Control Matrix》、Oso《RBAC》、腾讯云/阿里云多篇中文实践
+  - **方案对齐**(AskUserQuestion 两轮共 5 问):① 权限维度范围 = 菜单+操作+数据三类全做;② 超管建模 = 矩阵显示超管行全选且锁定(后端 bypass 语义不变);③ 操作粒度 = 适度细化+统一目录;④ 数据权限深度 = B 层角色级 data_scope 四档(all/tenant/group/self,非 ABAC);⑤ 任务拆分 = 拆 4 个 WIP=1 任务
+- **已完成**(任务登记五件套):
+  - **写系列总纲** `harness/docs/plan-permission-redesign-overview.md`:背景痛点 + 行业共识 + 决策记录 + 目标架构(Permission.type 启用 menu、Role 加 data_scope、目录单一真相源、矩阵超管锁定行)+ 三类权限职责边界(menu 是 UX 影子非安全边界,api+data_scope 是硬边界)+ 子任务清单 + 系列边界(不上 ABAC/不动 bypass/不做审批流)+ 行业参考链接
+  - **写 4 个子任务 plan**:
+    - `plan-permission-unified-model.md`(priority 39,系列 1/4):DEFAULT_*_PERMS 重写拆 manage + 补缺失 + 前端删硬编码从 catalogue 读 + backfill 老租户 + 三处漂移消除
+    - `plan-permission-menu-view.md`(priority 40,系列 2/4):Permission.type='menu' 启用 + seed 菜单项 + MeResponse 暴露 menus + 前端导航/路由改用 canViewMenu + menu 不进后端校验(UX 影子)
+    - `plan-permission-data-scope.md`(priority 41,系列 3/4):Role 加 data_scope 四档 + DataScopeResolver(多角色取最宽)+ Customer/Conversation Repository 接入 + group 复用 Group+GroupTenant 解析
+    - `plan-permission-matrix-redesign.md`(priority 42,系列 4/4 收官):矩阵 UI 重写 —— 超管锁定行 + 菜单/操作两区并列 + data_scope 选择器 + 系统角色徽章 + 快捷操作
+  - **feature_list.json 追加** 4 任务(priority 39-42,area 权限,status not_started,各 plan 指向对应文档,verification + notes 含设计决策 + 前置依赖 + 不做边界)—— JSON 校验合法,42 features(37 passing + 5 not_started:demo-seed-full + 4 权限重构),无 in_progress(WIP=1 不冲突)
+  - **progress.md 更新**:任务规划表加第 27-30 行(权限重构系列)+ 依赖链说明段 + 本 Session 记录
+- **运行过的验证**:
+  - `python3 -c "import json; json.load(open('feature_list.json'))"` → ✅ JSON 合法(42 features,4 个新任务 not_started,in_progress=0)
+- **已记录证据**: 无(本任务是调研+登记,evidence 留给执行会话填)
+- **技术要点**(方案的核心设计决策):
+  - **三类权限职责边界**:menu(菜单/视图)= UX 层可绕过,驱动前端导航;api(操作)= 硬安全边界,后端 require_permission + AI 工具双重校验;data_scope(数据)= 硬安全边界,Repository 层自动注入过滤。menu 是 api 的 UX 影子,通常一起 grant 但允许独立配
+  - **超管建模**:后端保持 bypass(platform_role='super_admin' 在 permission_service.check 第一行 return True,平台级全权语义不变),只在前端矩阵让它「可见可理解」—— 独立锁定行 + 🔒 图标 + 「平台级不可配置」文案
+  - **data_scope 挂角色不挂权限项**:一个角色一种数据范围(角色=一组权限+一个数据范围),避免「每个权限单独配数据范围」的爆炸复杂度;多角色聚合取最宽(all > group > tenant > self)
+  - **目录单一真相源**:后端 Permission 表 + catalogue 端点是唯一真相源,前端从它读不再硬编码 OBJ_LABELS/ACT_ORDER;seed 时填中文 name(如「智能体-查看」)
+- **提交记录**: 未提交(登记类任务,6 个文件改动:5 plan 文档新建 + feature_list.json + progress.md;待用户决定是否单独 commit)
+- **已知风险**: 无。纯调研+登记,不改 app/ 功能代码,`./init.sh` 不受影响。执行时注意:任务 39 的 Permission 表是否拆 obj/act 实列第一版建议降级(保持 code 编码降低风险);任务 41 的 self 范围需业务表有 created_by 列(核实缺失要补)
+- **下一步最佳动作**:
+  - (a) 由用户决定先执行哪个 not_started 任务(当前 5 个:demo-seed-full 38 / permission-unified-model 39 / permission-menu-view 40 / permission-data-scope 41 / permission-matrix-redesign 42)。权限重构系列建议从 39(unified-model 地基)开始;
+  - (b) 或用户先审阅 plan 文档,调整范围后再执行
 
 ---
