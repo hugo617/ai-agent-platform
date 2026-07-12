@@ -57,10 +57,16 @@ class PermissionService:
     ) -> bool:
         """Return True if ``user_id`` may perform ``act`` on ``obj`` in ``tenant_id``.
 
-        Platform super admins bypass all permission checks.
+        Platform super admins bypass all permission checks. ``hq_staff``(总部
+        业务员)is a cross-tenant read-only viewer: any ``read`` action is allowed,
+        while writes fall through to the normal casbin path (no tenant-scoped
+        policy → 403), so hq_staff is effectively read-only unless a store
+        explicitly granted it a role.
         """
 
         if platform_role == "super_admin":
+            return True
+        if platform_role == "hq_staff" and act == "read":
             return True
 
         def _do() -> bool:
@@ -397,3 +403,15 @@ DEFAULT_MEMBER_PERMS: list[tuple[str, str]] = [
 
 
 permission_service = PermissionService()
+
+
+# Platform roles that can read across tenants (HQ viewers). Service layers use
+# this to pick the cross-tenant query branch instead of hardcoding ``== "super_admin"``.
+# Writes for hq_staff still fall through to casbin (→ 403 without a store role),
+# so this helper is about *read* scope only.
+CROSS_TENANT_VIEWER_ROLES: tuple[str, ...] = ("super_admin", "hq_staff")
+
+
+def is_cross_tenant_viewer(platform_role: str | None) -> bool:
+    """True if the role grants cross-tenant read access (super_admin or hq_staff)."""
+    return platform_role in CROSS_TENANT_VIEWER_ROLES

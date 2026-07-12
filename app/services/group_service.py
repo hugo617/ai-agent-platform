@@ -23,6 +23,7 @@ from app.models.tenant import Tenant
 from app.repositories.group import GroupRepository, GroupTenantRepository
 from app.schemas.group import GroupCreate, GroupRead, GroupUpdate, TenantBrief
 from app.services.errors import BizError, NotFoundError
+from app.services.permission_service import is_cross_tenant_viewer
 
 
 class GroupService:
@@ -90,8 +91,9 @@ class GroupService:
     async def list(
         self, tenant_id: str, platform_role: str | None = None
     ) -> list[GroupRead]:
-        """super_admin → all groups; tenant user → only this tenant's groups."""
-        if platform_role == "super_admin":
+        """Cross-tenant viewers (super_admin / hq_staff) → all groups;
+        tenant user → only this tenant's groups."""
+        if is_cross_tenant_viewer(platform_role):
             groups = await self.repo.list_all()
         else:
             groups = await self.repo.list_for_tenant(tenant_id)
@@ -101,8 +103,9 @@ class GroupService:
         self, tenant_id: str, group_id: str, platform_role: str | None = None
     ) -> GroupRead:
         group = await self._get_live(group_id)
-        # Tenant users (non-super_admin) can only read a group they belong to.
-        if platform_role != "super_admin":
+        # Tenant users (non cross-tenant viewers) can only read a group they
+        # belong to. super_admin / hq_staff see any group (read-only view).
+        if not is_cross_tenant_viewer(platform_role):
             belongs = await self.links.exists(group_id, tenant_id)
             if not belongs:
                 raise NotFoundError(f"group {group_id} not found")

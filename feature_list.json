@@ -845,7 +845,7 @@
       "area": "权限",
       "title": "平台角色 hq_staff —— 总部业务员(各司其职)+ 跨租户只读",
       "user_visible_behavior": "总部业务员(hq_staff)能跨店只读所有门店 + 客户档案聚合视图,但不能创建/编辑/删除;总部超管(super_admin)行为不变",
-      "status": "not_started",
+      "status": "passing",
       "plan": "harness/docs/plan-hq-platform-role.md",
       "verification": [
         "permission_service.check() 加 hq_staff + act=='read' 短路(任意 obj 的 read 放行)",
@@ -854,7 +854,15 @@
         "pytest tests/test_hq_platform_role.py 覆盖:hq_staff 跨店读客户/组织 200、写客户 403、改组织 403、读门店内其它资源 200、super_admin 不回归",
         "./init.sh 全绿(现有 super_admin 测试无回归)"
       ],
-      "evidence": [],
+      "evidence": [
+        "./init.sh 全绿:ruff All checks passed! + 281 passed(基线 265 + 16 新增 tests/test_hq_platform_role.py,无回归)(2026-07-12)",
+        "permission_service.check() 加 hq_staff + act=='read' 短路(super_admin 全权短路不变);新增模块级 helper is_cross_tenant_viewer(platform_role)(super_admin/hq_staff 都算跨租户查看者)+ CROSS_TENANT_VIEWER_ROLES 常量(2026-07-12)",
+        "Service 层跨租户分支扩展:customer_service.list_profiles 的 is_super 改为 is_cross_tenant_viewer;group_service.list/get 的 platform_role=='super_admin' 改为 is_cross_tenant_viewer。写操作不改:hq_staff 写落入 casbin → 无策略 403(天然只读)(2026-07-12)",
+        "Customer HQ 读端点守卫扩展:deps.py 新增 require_cross_tenant_viewer(super_admin+hq_staff 通过);GET /customers/ 与 GET /customers/{id}/aggregate 从 require_super_admin 改为 require_cross_tenant_viewer。Group 写端点仍 require_super_admin(hq_staff 403,组织架构不可改)(2026-07-12)",
+        "tests/test_hq_platform_role.py 16 个测试覆盖:hq_staff 跨店读客户/聚合/组织/agent 全 200;hq_staff 写客户 create/update/delete 全 403;hq_staff 建/删组织 403;hq_staff 访问平台 LLM 配置 403;super_admin 读 HQ 客户/建组织 不回归;owner/member 仍被 HQ 端点 403;is_cross_tenant_viewer 单元契约(2026-07-12)",
+        "conftest 加 hq_staff_client fixture:用 member 租户角色 + platform_role='hq_staff'(复用 _build_client),真实还原「总部人员无门店业务角色」场景——首版误用 owner 角色导致写权限泄漏(member 的有限 casbin 权限是 hq_staff 只读的正确边界)(2026-07-12)",
+        "无迁移/无 schema 改动(platform_role 是自由字符串字段 tenant.py,加 hq_staff 无需迁移/JWT 改动);现有 super_admin 回归测试 test_service_platform_role.py / test_customers_api.py / test_groups_api.py / test_permission_service.py 全过(51 passed)(2026-07-12)"
+      ],
       "depends_on": "customers-api",
       "notes": "用户「总部各司其职」需求的具体落地。platform_role 是自由字符串无 Enum 约束(tenant.py:92-96),加 hq_staff 无需迁移/JWT 改动。设计=check() 方案 A(加分支),不改 casbin 架构。hq_staff 定位=总部看板/巡检员,能看全貌不能改。MVP 两个平台角色(super_admin 全权 + hq_staff 只读),可扩展(后续加财务/客服等岗位再升级到平台级 casbin domain)。前置 customers-api(用 Customer 域作跨租户只读验证载体)。前端 customers-ui/groups-ui 的 isSuperAdmin 判定可顺带改为 isCrossTenantViewer(若已合并)。"
     }
