@@ -45,9 +45,14 @@
 | **28** | **`permission-menu-view`** | **权限重构** | **菜单/视图权限 type=menu(系列 2/4)—— 启用 Permission.type='menu',前端导航/路由由 menu 权限驱动,删 needsSuperAdmin/needsUserManagement 硬编码。解决「没有视图权限」核心痛点。前置 27** | **`harness/docs/plan-permission-menu-view.md`** |
 | **29** | **`permission-data-scope`** | **权限重构** | **数据权限 data_scope 四档(系列 3/4)—— Role 加 data_scope(all/tenant/group/self)+ DataScopeResolver + Repository 自动过滤。业务员只看自己/店长看全店/区域经理看本组织。前置 27** | **`harness/docs/plan-permission-data-scope.md`** |
 | **30** | **`permission-matrix-redesign`** | **权限重构** | **权限矩阵 UI 重写(系列 4/4 收官)—— 超管锁定行(全选不可配)+ 菜单/操作两区并列 + data_scope 选择器,一处配全角色×菜单×操作×数据范围。前置 27/28/29** | **`harness/docs/plan-permission-matrix-redesign.md`** |
+| **31** | **`token-usage-tracking`** | **计费** | **Token 用量采集(系列 1/4 地基)—— stream_agent 读真实 usage_metadata + Message 加 token 列 + UsageEvent 账本表。解决对话消耗的 token 完全没被采集(stream_agent 丢弃 usage_metadata)** | **`harness/docs/plan-token-usage-tracking.md`** |
+| **32** | **`token-wallet-billing`** | **计费** | **Token 钱包计费(系列 2/4 核心)—— 预付钱包制 + 扣减(FOR UPDATE 防双扣)+ 充值(总部划拨)+ 余额不足拦截 + ModelPricing 定价表。实现「门店向总部购买 token」商业闭环。前置 31** | **`harness/docs/plan-token-wallet-billing.md`** |
+| **33** | **`customer-conversation-link`** | **客户域/计费** | **客户维度 Token 归因(系列 3/4)—— Conversation 绑 customer_id + UsageEvent 透传 + 客户 360 AI 服务维度 + 跨店汇总。让消耗可分摊到客户。前置 31** | **`harness/docs/plan-customer-conversation-link.md`** |
+| **34** | **`token-billing-ui`** | **计费** | **Token 计费前端看板(系列 4/4 收官)—— 门店级(余额/消耗/流水/用量)+ 总部级(门店汇总/充值/定价维护)+ 余额预警。前置 31/32/33** | **`harness/docs/plan-token-billing-ui.md`** |
 
 > 依赖链:1 → 2 → 3(对话主线);4 → 5(权限矩阵);6 独立;7 暂停;8 ✅;**AtoA 系列:9(地基) → 10(CLI 骨架) → 11(CLI 对话+CRUD) → 12(Skill);13(前端)依赖 9,可与 10-12 并行但 WIP=1 仍顺序执行**。
 > **权限重构系列(2026-07-12 规划,Session 060):27(unified-model,目录统一+操作细化,地基) → 28(menu-view,菜单权限) → 29(data-scope,数据权限) → 30(matrix-redesign,矩阵 UI 收官)。依赖:27 是地基,28/29 依赖 27,30 依赖 27/28/29。WIP=1 顺序执行。系列总纲:`harness/docs/plan-permission-redesign-overview.md`。背景:用户调研后拍板做满三类权限(菜单+操作+数据),超管矩阵显示锁定行,操作权限适度细化,数据权限用角色级 data_scope 四档(非 ABAC)。**
+> **Token 费用管理系列(2026-07-12 规划,Session 061):31(usage-tracking,用量采集地基) → 32(wallet-billing,钱包计费核心) → 33(customer-link,客户归因) → 34(billing-ui,前端看板收官)。依赖:31 是地基,32/33 依赖 31,34 依赖 31/32/33。执行顺序 31→32→33→34(后端先前端后)。系列总纲:`harness/docs/plan-token-billing-overview.md`。背景:用户提出「门店向总部购买 token,token 用于门店和门店客户」—— 这是平台从「能跑」到「能卖」的商业闭环。全量排查确认商业层完全缺失(stream_agent 丢弃 usage_metadata、无 wallet/quota/balance、Conversation 不绑 Customer)。用户拍板:预付钱包制 + 模型真实 token 单价表 + 纯额度划拨(不接支付)+ 做客户归因。**
 > **AI 内核深化(2026-07-11 规划,Session 031):14(context-engineering,长对话截断/超时,纯后端)→ 15(chat-markdown-rendering,Markdown+交互,纯前端)→ 16(agent-config-depth,推理参数,全栈)。三者独立可任意顺序,但 WIP=1 仍顺序执行。**
 > **MVP 业务模块(2026-07-12 规划,Session 042/043):17(org-cleanup,删旧 Organization)✅ → 18-19(门店管理后端+前端,Session 043 核实租户太弱补齐)→ 20(groups-api,Group 后端)✅ → 21(groups-ui,Group 前端)✅ → 22(customers-api,Customer 后端)✅ → 23(customers-ui,Customer 前端)✅ → 24(hq-platform-role,总部角色)✅。依赖链:17 → 18 → 19(门店线);19 → 20 → 21(Group 线,门店下拉依赖 tenants-admin);20 → 22 → 23(Customer 线);22 → 24(hq_staff 用 Customer 域验证)。核心模块拆后端+前端(门店/组织/客户各 2 任务),遵循「后端先、前端后」约定。第一批 6 条(17/20-24)已 passing,门店线 18(tenants-admin-api)✅ 已完成,仅剩 19(tenants-admin-ui)。WIP=1 顺序执行。**
 > AtoA = Agent-to-Agent:让任意外部 AI Agent(Claude Code/Cursor/Codex)在授权后通过 CLI+Skill 使用本平台。对标 Apifox CLI+Skill 打法 + google/agents-cli。鉴权选 PAT 先做+OAuth 预留;CLI 选 Python typer;首发能力全选(对话+只读+历史读写+CRUD)。
@@ -1720,6 +1725,39 @@
 - **已知风险**: 无。纯调研+登记,不改 app/ 功能代码,`./init.sh` 不受影响。执行时注意:任务 39 的 Permission 表是否拆 obj/act 实列第一版建议降级(保持 code 编码降低风险);任务 41 的 self 范围需业务表有 created_by 列(核实缺失要补)
 - **下一步最佳动作**:
   - (a) 由用户决定先执行哪个 not_started 任务(当前 5 个:demo-seed-full 38 / permission-unified-model 39 / permission-menu-view 40 / permission-data-scope 41 / permission-matrix-redesign 42)。权限重构系列建议从 39(unified-model 地基)开始;
+  - (b) 或用户先审阅 plan 文档,调整范围后再执行
+
+---
+
+### Session 061 — 2026-07-12
+- **本轮目标**: MVP 业务缺口分析 + Token 费用管理任务规划 —— **仅调研+登记不实现**(用户要求)。用户提出 token 费用管理:门店向总部购买 token,token 用于门店和门店的客户。要求从业务角度思考 MVP 还差哪些,调研后给方案,沟通达成满意后写入文档
+- **调研完成**(两路并行):
+  - **现状盘点**(Explore agent 精确取证):平台有成熟组织地基(Group→Tenant→Customer),但**整条商业闭环完全缺失**。① 用量采集:`stream_agent`(graph.py L125-178)事件循环只处理 on_chat_model_stream 只 yield 文本,**丢弃 chunk.usage_metadata**(LangChain 流末尾暴露的真实 input/output tokens);② Message 表只有 5 列(role+content),无 token/model/cost 列;③ LlmConfig 只存连接信息(api_key/base_url/model)无单价;④ 全项目搜 quota/credit/balance/wallet **零命中**;⑤ Conversation 只绑(tenant,agent,user)不绑 Customer,无法做客户归因
+  - **方案对齐**(AskUserQuestion 两轮):① 计费模式 = 预付钱包制(实时扣减余额为0拦截);② 定价基准 = 模型真实 token + 单价表(总部可加价);③ 采购支付 = 纯额度划拨(不接支付网关,MVP 务实);④ 客户归因 = 做(Conversation 绑 customer_id)
+- **业务缺口全局视角**:5 个完整域(组织/权限/AI内核/AtoA/客户)+ 1 个缺失商业闭环。Token 费用管理 = 商业闭环的第一层(MVP 核心 7 项:用量采集/钱包余额/消耗扣减/充值流程/定价表/客户归因/用量看板)。另识别两个增强方向:客户 360 视图(复用归因数据,几乎免费)、用量预警(简单)
+- **已完成**(任务登记五件套):
+  - **写系列总纲** `harness/docs/plan-token-billing-overview.md`:业务需求 + 现状缺口 + 用户决策记录 + 额度流转图(总部充值→门店消耗→客户归因)+ 数据模型设计(Wallet/WalletTransaction/UsageEvent/ModelPricing 4 新表 + Message/Conversation 改造)+ 三层职责边界 + 子任务清单 + 关键实现细节(精确到行)+ 不做边界
+  - **写 4 个子任务 plan**:
+    - `plan-token-usage-tracking.md`(priority 43,系列 1/4 地基):stream_agent 加 on_chat_model_end 累加 usage + stream_usage=True + Message 加 4 列 + UsageEvent 账本表
+    - `plan-token-wallet-billing.md`(priority 44,系列 2/4 核心):Wallet/WalletTransaction/ModelPricing 三表 + BillingService(charge FOR UPDATE 防双扣/recharge/calc_cost)+ 余额预检拦截 + create_tenant 初始化 wallet + 计费 API + 权限项
+    - `plan-customer-conversation-link.md`(priority 45,系列 3/4):Conversation 加 customer_id + UsageEvent 透传 + 客户用量聚合端点 + 客户 360 AI 服务维度 + 聊天页关联客户
+    - `plan-token-billing-ui.md`(priority 46,系列 4/4 收官):门店级看板(余额/消耗/流水)+ 总部级看板(门店汇总/充值/定价)+ 余额预警 + 用量钻取
+  - **feature_list.json 追加** 4 任务(priority 43-46,area 计费/客户域,status not_started,各 plan 指向对应文档,verification + notes 含设计决策 + 前置依赖 + 不做边界)—— JSON 校验合法,46 features(37 passing + 9 not_started),无 in_progress(WIP=1 不冲突)
+  - **progress.md 更新**:任务规划表加第 31-34 行(Token 费用管理系列)+ 依赖链说明段 + 本 Session 记录
+- **运行过的验证**:
+  - `python3 -c "import json; json.load(open('feature_list.json'))"` → ✅ JSON 合法(46 features,4 个新任务 not_started,in_progress=0)
+- **已记录证据**: 无(本任务是调研+登记,evidence 留给执行会话填)
+- **技术要点**(方案的核心设计决策):
+  - **余额用整数 token 数非金额**:定价变化时余额不变,只在扣减时按当时单价算 cost 快照写死,余额和 cost 解耦
+  - **扣减用 SELECT FOR UPDATE**:`with_for_update()` 锁 wallet 行防同门店并发对话双扣(PG 生效,SQLite no-op 测试够用);扣减在 append_message 同事务保证原子性
+  - **DeepSeek 流式 usage 特殊性**:OpenAI 兼容 API 流式下 usage 只在末尾 chunk 返回,需显式传 stream_usage=True;ReAct agent 多轮 on_chat_model_end 需累加非覆盖
+  - **实际服务 model ≠ agent.model**:chat.py L102-106 解析后的 model 变量(agent.model 不在 available_models 时 fallback 到 default_model),计费必须记这个解析后的值
+  - **定价快照**:扣减时按当时 ModelPricing 算 cost 写进 UsageEvent.cost 和 WalletTransaction,不依赖未来单价变化
+  - **customer_id 可空 + 对话级关联**:不是所有对话关联客户(员工内部咨询);对话级而非消息级(简单够用);Customer 全局身份支持跨店汇总
+- **提交记录**: 未提交(登记类任务,6 个文件改动:5 plan 文档新建 + feature_list.json + progress.md;待用户决定是否单独 commit)
+- **已知风险**: 无。纯调研+登记,不改 app/ 功能代码,`./init.sh` 不受影响。执行时注意:① DeepSeek stream_usage 是否生效需真实 key 验证(不生效则降级非流式取 usage);② with_for_update 在 SQLite 是 no-op(不报错,测试可跑);③ 扣减失败用 try/except 不阻断已完成的对话(差异靠对账补)
+- **下一步最佳动作**:
+  - (a) 由用户决定先执行哪个 not_started 任务(当前 9 个:demo-seed-full 38 / 权限重构 39-42 / Token 计费 43-46)。Token 计费系列建议从 43(usage-tracking 地基)开始
   - (b) 或用户先审阅 plan 文档,调整范围后再执行
 
 ---
