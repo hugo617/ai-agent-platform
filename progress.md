@@ -1455,4 +1455,23 @@
   - (a) 清理废代码 + 代码质量审查 + PR + CI 守门 + 合并 feat/customers-ui 到 main;
   - (b) 执行 `hq-platform-role`(priority 34,总部角色 hq_staff —— 跨租户只读,plan 已就绪,前置 customers-api ✅)
 
+### Session 051 — 2026-07-12
+- **本轮目标**: 清理废代码 + 代码质量审查 + PR + CI 守门 + 合并 Session 050 的 `customers-ui`(Customer 客户前端 —— 门店档案 + 跨店聚合视图)到 main
+- **已完成**(端到端,含合并):
+  - **废代码审查**(7 改动文件,含 1 新页面):oxlint 6 文件 0 warning + tsc noUnusedLocals/Parameters 严格开启且 build 通过。发现 `useCustomerAggregate`/`fetchCustomerAggregate` 无页面消费者 → 核查属「对称预留 API surface」(对标已有后端端点 `GET /customers/{id}/aggregate`,与仓库既有 `useSessions` 预留模式一致),按 Session 020 决策**保留** → **无废代码,无需清理改动**
+  - **代码质量审查**(customers-page.tsx):数据流清晰(useCustomerProfiles/useCustomers → 渲染;写操作 onSuccess 同时 invalidate customerProfiles + customers);双视角按 platform_role 切换(super_admin → HqView 只读跨店聚合 / 其他 → StoreView 本店 CRUD);三层权限守卫(canCreate=canManageUsers / canDelete=owner only / super_admin 总部只读);HQ 跨店详情用行内展开(列表端点已返回完整 profiles,无额外请求);tags JSON parse 失败 toast 报错;Fragment key 修复(多行 TableRow 需 key);无越界(纯前端,后端零改动)
+  - 验证:`npm run build`(tsc+vite)0 类型错误 + oxlint 0 warning;后端零改动,`./init.sh` → ruff + **265 passed** 无回归
+  - commit `2d5d339` → push → PR #35(base main)
+  - **CI 守门:4/4 全绿**(Backend pytest+ruff 2m3s / Migrations alembic upgrade on Postgres 42s / Frontend typecheck+build+lint 28s / E2E Playwright 1m46s),**无需修复**
+  - **squash 合并 PR #35 → main**(commit `c04ecb1`),删除远程分支,本地已在 main + `git remote prune` 清除残留引用;本地 feature 分支已删
+  - main 上跑 `./init.sh` 确认 ruff + 265 passed,仓库仍可按标准路径工作
+- **运行过的验证**:
+  - `npm run build` + `npx oxlint`(6 文件)→ 0 类型错误 / 0 warning
+  - `./init.sh`(feat 分支与 main 两次)→ ruff All checks passed! + **265 passed**
+  - CI(PR #35)→ 4/4 job SUCCESS
+- **已记录证据**: 无新增(本任务是审查+发版;feature_list 的 customers-ui.evidence 在 Session 050 已填 8 条)
+- **提交记录**: PR #35 已 squash 合并到 main(`c04ecb1`);含 1 个功能 commit(Session 050 的实现 + 本 Session 的文档更新 progress)
+- **已知风险**: 无。纯前端改动,后端零回归;手动浏览器验证未跑(需前后端启动 + 真实 token),build(tsc)+ oxlint + CI 已覆盖
+- **下一步最佳动作**: 执行 `hq-platform-role`(priority 34,总部角色 hq_staff —— 跨租户只读,plan 已就绪 `harness/docs/plan-hq-platform-role.md`,前置 customers-api ✅ 已合入 main)—— 这是 MVP 业务模块 6 条的最后一个
+
 ---
