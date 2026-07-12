@@ -28,6 +28,16 @@ class Tenant(Base):
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
     name: Mapped[str] = mapped_column(String(128), nullable=False)
+    # Lifecycle status: active / inactive / locked. MVP default "active".
+    status: Mapped[str] = mapped_column(
+        String(20), default="active", server_default="active"
+    )
+    description: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    address: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    # The platform user who created this tenant (super_admin under the tightened
+    # POST policy; nullable for the bootstrap/dev-seed path). Not a hard FK to
+    # keep the bootstrap path (where the user row may not exist yet) simple.
+    created_by: Mapped[str | None] = mapped_column(String(128), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

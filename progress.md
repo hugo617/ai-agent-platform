@@ -8,10 +8,10 @@
 - **标准启动路径**: `./init.sh`(装依赖 + ruff + pytest)
 - **标准验证路径**: `./init.sh`(同上,后端快速验证,SQLite 内存库)
 - **完整验证路径**(需 docker): `alembic upgrade head && alembic check` + `cd frontend && npm run build`
-- **当前最高优先级未完成功能**: **MVP 业务模块(2026-07-12 规划,共 6 条 priority 29-34,WIP=1 顺序执行)全部 ✅ 完成** —— `org-cleanup`(29)✅ → `groups-api`(30)✅ → `groups-ui`(31)✅ → `customers-api`(32)✅ → `customers-ui`(33)✅ → `hq-platform-role`(34,总部角色 hq_staff)✅。顺带修复用户反馈的 chat 页面 bug(`chat-overflow-title-fix`,会话标题生成 + 溢出修复)✅。**feature_list.json 共 34 条全部 passing**(28 条地基 + 5 条 MVP 业务模块 + 1 条 chat bug 修复)。门店(租户)管理后端补齐 `tenants-admin-api` 已实现待合并。下一步方向由用户决定(可规划新业务模块 / 深化现有能力 / 二开定制)
+- **当前最高优先级未完成功能**: **MVP 业务模块(2026-07-12 规划,priority 29-36)** —— 第一批 6 条已 passing:`org-cleanup`(29)✅ / `groups-api`(32)✅ / `groups-ui`(33)✅ / `customers-api`(34)✅ / `customers-ui`(35)✅ / `hq-platform-role`(36)✅。**门店(租户)管理补齐**:`tenants-admin-api`(30,门店后端补齐)✅ → `tenants-admin-ui`(31,独立门店管理页)。顺带修复用户反馈的 chat 页面 bug(`chat-overflow-title-fix`,会话标题生成 + 溢出修复)✅。**下一个该做:`tenants-admin-ui`**。feature_list 共 35 条(34 passing + 1 not_started)
 - **当前 blocker**: 无
 
-## 后续任务规划(2026-07-10 制定,2026-07-12 追加 MVP 业务模块 17-22,共 22 条,WIP=1 顺序执行)
+## 后续任务规划(2026-07-10 制定,2026-07-12 追加 MVP 业务模块 17-24,共 24 条,WIP=1 顺序执行)
 
 | 顺序 | id | 方向 | 范围 | plan 文档 |
 |------|----|------|------|----------|
@@ -32,15 +32,17 @@
 | **15** | **`chat-markdown-rendering`** | **AI 内核** | **聊天页 Markdown 渲染(react-markdown + GFM + 代码高亮)+ 停止/复制/重新生成交互。前置 chat-frontend ✅ 已完成** | **`harness/docs/plan-chat-markdown-rendering.md`** |
 | **16** | **`agent-config-depth`** | **AI 内核** | **Agent 配置加推理参数(temperature/max_tokens/top_p)+ description,移除硬编码 temperature=0.3。前置 real-chat ✅ 已完成** | **`harness/docs/plan-agent-config-depth.md`** |
 | **17** | **`org-cleanup`** | **管理控制台** | **删除旧 Organization 模块(清理场地为 Group 让路)+ 清理 User 模块耦合。MVP 第 1 任务 ✅ 已完成** | **`harness/docs/plan-org-cleanup.md`** |
-| **18** | **`groups-api`** | **组织域** | **Group(组织)后端 —— 跨租户经营主体 + 门店归属(Group + GroupTenant 双表 + CRUD + 挂载/卸载)。前置 17** | **`harness/docs/plan-groups-api.md`** |
-| **19** | **`groups-ui`** | **组织域** | **Group(组织)前端 —— 组织管理页 + 门店挂载面板。前置 18** | **`harness/docs/plan-groups-ui.md`** |
-| **20** | **`customers-api`** | **客户域** | **Customer(客户)后端 —— 全局身份 + 门店档案 + 跨店聚合(Customer + CustomerProfile 双表)。前置 18** | **`harness/docs/plan-customers-api.md`** |
-| **21** | **`customers-ui`** | **客户域** | **Customer(客户)前端 —— 门店档案 + 跨店聚合视图(双视角按 platform_role 切换)。前置 20** | **`harness/docs/plan-customers-ui.md`** |
-| **22** | **`hq-platform-role`** | **权限** | **平台角色 hq_staff —— 总部业务员(各司其职)+ 跨租户只读。前置 20** | **`harness/docs/plan-hq-platform-role.md`** |
+| **18** | **`tenants-admin-api`** | **门店域** | **门店(租户)管理后端补齐 —— super_admin 平台级列表(GET /tenants/all 含 member_count)+ 详情 + 编辑(PUT)+ 收紧 POST 权限。核实租户后端太弱补齐。前置 17** | **`harness/docs/plan-tenants-admin-api.md`** |
+| **19** | **`tenants-admin-ui`** | **门店域** | **门店(租户)管理前端 —— 独立门店管理页(super_admin)+ 侧边栏导航。前置 18** | **`harness/docs/plan-tenants-admin-ui.md`** |
+| **20** | **`groups-api`** | **组织域** | **Group(组织)后端 —— 跨租户经营主体 + 门店归属(Group + GroupTenant 双表 + CRUD + 挂载/卸载)。前置 19 ✅ 已完成** | **`harness/docs/plan-groups-api.md`** |
+| **21** | **`groups-ui`** | **组织域** | **Group(组织)前端 —— 组织管理页 + 门店挂载面板。前置 20 ✅ 已完成** | **`harness/docs/plan-groups-ui.md`** |
+| **22** | **`customers-api`** | **客户域** | **Customer(客户)后端 —— 全局身份 + 门店档案 + 跨店聚合(Customer + CustomerProfile 双表)。前置 20 ✅ 已完成** | **`harness/docs/plan-customers-api.md`** |
+| **23** | **`customers-ui`** | **客户域** | **Customer(客户)前端 —— 门店档案 + 跨店聚合视图(双视角按 platform_role 切换)。前置 22 ✅ 已完成** | **`harness/docs/plan-customers-ui.md`** |
+| **24** | **`hq-platform-role`** | **权限** | **平台角色 hq_staff —— 总部业务员(各司其职)+ 跨租户只读。前置 22 ✅ 已完成** | **`harness/docs/plan-hq-platform-role.md`** |
 
 > 依赖链:1 → 2 → 3(对话主线);4 → 5(权限矩阵);6 独立;7 暂停;8 ✅;**AtoA 系列:9(地基) → 10(CLI 骨架) → 11(CLI 对话+CRUD) → 12(Skill);13(前端)依赖 9,可与 10-12 并行但 WIP=1 仍顺序执行**。
 > **AI 内核深化(2026-07-11 规划,Session 031):14(context-engineering,长对话截断/超时,纯后端)→ 15(chat-markdown-rendering,Markdown+交互,纯前端)→ 16(agent-config-depth,推理参数,全栈)。三者独立可任意顺序,但 WIP=1 仍顺序执行。**
-> **MVP 业务模块(2026-07-12 规划,Session 042):17(org-cleanup,删旧 Organization)→ 18(groups-api,Group 后端)→ 19(groups-ui,Group 前端)→ 20(customers-api,Customer 后端)→ 21(customers-ui,Customer 前端)→ 22(hq-platform-role,总部角色)。依赖链:17 → 18 → 19(Group 线);18 → 20 → 21(Customer 线);20 → 22(hq_staff 用 Customer 域验证)。核心模块拆后端+前端(Group/Customer 各 2 任务),遵循「后端先、前端后」约定。WIP=1 顺序执行。**
+> **MVP 业务模块(2026-07-12 规划,Session 042/043):17(org-cleanup,删旧 Organization)✅ → 18-19(门店管理后端+前端,Session 043 核实租户太弱补齐)→ 20(groups-api,Group 后端)✅ → 21(groups-ui,Group 前端)✅ → 22(customers-api,Customer 后端)✅ → 23(customers-ui,Customer 前端)✅ → 24(hq-platform-role,总部角色)✅。依赖链:17 → 18 → 19(门店线);19 → 20 → 21(Group 线,门店下拉依赖 tenants-admin);20 → 22 → 23(Customer 线);22 → 24(hq_staff 用 Customer 域验证)。核心模块拆后端+前端(门店/组织/客户各 2 任务),遵循「后端先、前端后」约定。第一批 6 条(17/20-24)已 passing,门店线 18(tenants-admin-api)✅ 已完成,仅剩 19(tenants-admin-ui)。WIP=1 顺序执行。**
 > AtoA = Agent-to-Agent:让任意外部 AI Agent(Claude Code/Cursor/Codex)在授权后通过 CLI+Skill 使用本平台。对标 Apifox CLI+Skill 打法 + google/agents-cli。鉴权选 PAT 先做+OAuth 预留;CLI 选 Python typer;首发能力全选(对话+只读+历史读写+CRUD)。
 
 ## 已 passing 的地基能力(详见 feature_list.json)
@@ -78,6 +80,7 @@
 | customers-api(Customer 客户后端) | passing | 265 tests + Customer+CustomerProfile 双表 + 迁移 6f197cf8f964 + 6 端点 + 全局身份跨店复用 + HQ 聚合 + super_admin 跨店/门店隔离 + alembic check 无 drift |
 | customers-ui(Customer 客户前端) | passing | npm build 通过 + oxlint 0 warning + 双视角(门店 CRUD / 总部聚合只读)+ 行内展开跨店档案 + 三层权限守卫(owner 全权/admin 无 delete/member 只读/super_admin 总部只读)+ 路由 /customers(Contact 图标) |
 | hq-platform-role(平台角色 hq_staff 总部业务员) | passing | 281 tests + check() 加 hq_staff+read 短路 + is_cross_tenant_viewer helper + Customer/Group Service 跨租户分支扩展 + Customer HQ 读端点守卫扩展(require_cross_tenant_viewer)+ hq_staff 只读跨店(super_admin 不回归)+ 无迁移(platform_role 自由字符串) |
+| tenants-admin-api(门店管理后端补齐) | passing | 294 tests + Tenant 加 status/created_by/description/address + 迁移 84605f063730 + GET /tenants/all + GET/PUT /tenants/{id} + POST 收紧 super_admin + member_count 运行时聚合(LEFT JOIN _ACTIVE)+ alembic check 无 drift |
 
 > ✅ AI 内核(agents + chat)已全部纳管并 passing:agents-api-hardening / chat-conversation-api / chat-frontend 三任务端到端完成。
 > ✅ **真实对话已跑通**:real-chat-llm-config(Session 017)用真实 DeepSeek key 端到端验证 SSE 流式对话,修了 3 个 bug(Agent.model 失效 / 前端模型脱节 / 无 LLM 配置 UI)。
@@ -1524,6 +1527,27 @@
 
 ---
 
+### Session 054 — 2026-07-12
+- **本轮目标**: 回应用户三个问题(租户后端?前端租户管理?成员 vs 客户?)+ 核实发现门店管理缺口 + 补规划门店管理 2 任务(文档登记,0 功能代码)
+- **前置核实**(3 个 Explore agent 并行):
+  - 租户后端 API 核实:`app/api/v1/tenants.py` 仅 2 端点(POST 创建 + GET 我的租户),无 list-all/edit/detail;权限宽松(任何登录用户可建,非 super_admin 专属);前端无独立门店页、侧边栏无门店项,唯一入口是 dashboard 简陋卡片
+  - 成员 vs 客户概念澄清:Member=UserTenant(门店员工,有系统账号,有角色,能登录,操作系统);Customer=CustomerProfile(门店顾客,无系统账号,有档案状态,被服务)。两者平行:一员工多店=UserTenant 多条;一客户多店=CustomerProfile 多条
+  - MVP 6 任务实现核实:全部已落地(org-cleanup ✅ 旧 Organization 已删;groups-api/ui ✅ Group+GroupTenant+553行前端;customers-api/ui ✅ Customer+CustomerProfile+667行前端;hq-platform-role ✅ check() 加 hq_staff+read 分支 + is_cross_tenant_viewer helper)。迁移 head=6f197cf8f964
+- **发现问题**:门店(租户)管理太弱,super_admin 看不到所有门店/不能编辑/无独立页面 → groups-ui 门店挂载下拉 + customers-ui 客户归属门店 缺数据源
+- **已完成**(0 功能代码,纯 harness 文档登记):
+  - 写 2 份 plan 文档:`plan-tenants-admin-api.md`(门店后端补齐:GET /tenants/all + GET/PUT /tenants/{id} + 收紧 POST + Tenant 加 status/created_by/description/address)+ `plan-tenants-admin-ui.md`(独立门店管理页 + 侧边栏导航 + dashboard 按钮权限收紧)
+  - `feature_list.json`:priority 顺延(groups-api 30→32 / groups-ui 31→33 / customers-api 32→34 / customers-ui 33→35 / hq-platform-role 34→36)+ 插入 tenants-admin-api(30)/tenants-admin-ui(31)+ 更新 depends_on 链;features 从 33 增至 35
+  - `progress.md`:任务规划表插 2 行(顺序 18-19)+ 标题更新条数(22→24)+ 依赖链更新(门店线 17→18→19 作为 Group/Customer 前置)+ 当前最高优先级改为 tenants-admin-api
+- **运行过的验证**: `python3 -c "import json; ..."`(JSON 合法性,features 35 条,priority 29-36 顺序正确)
+- **已记录证据**: 无(本任务是规划登记,2 条新任务的 evidence 字段待执行时填)
+- **提交记录**: 待用户决定是否提交(本会话只改文档:2 plan + feature_list.json + progress.md,0 功能代码)
+- **已知风险**: 无。plan 文档基于 2026-07-12 main 代码核实(迁移 head=6f197cf8f964,MVP 6 任务已 passing),执行前建议快速 grep 确认无漂移
+- **下一步最佳动作**:
+  - (a) 执行 `tenants-admin-api`(priority 30,plan 已就绪,门店后端补齐,新会话可直接开干);
+  - (b) 或先提交本次文档改动(2 plan + feature_list.json + progress.md)
+
+---
+
 ### Session 055 — 2026-07-12
 - **本轮目标**: 修复用户反馈的 chat 页面两 bug(会话列表全是「新对话」+ 消息过多溢出会话框)+ 排查其它问题写入 Harness 实践文档
 - **根因排查**(代码佐证):
@@ -1543,7 +1567,40 @@
   - `cd frontend && npm run lint` → 0 warnings 0 errors
 - **已记录证据**: feature_list.json `chat-overflow-title-fix`.evidence 填 4 条(ruff + 16 pytest + build + lint)
 - **决策记录**(用户确认):标题用「首条消息截断」方案(后端生成,前端信任 title),否决 LLM 总结(额外成本+异步复杂)和列表返回 first_message(多动 schema)
-- **提交记录**: 待用户决定是否提交(本会话改 3 代码 + 3 文档)
+- **提交记录**: PR #37 squash 合并到 main(`18d07ee`)
 - **下一步最佳动作**: 由用户决定 —— ① 提交本次修复 ② 继续推进 tenants-admin-api(priority 30,plan 已就绪)③ 其它方向
+
+---
+
+
+### Session 056 — 2026-07-12
+- **本轮目标**: 执行 `tenants-admin-api`(门店管理后端补齐 —— 平台级列表 + 编辑 + 详情)—— 8 步,纯后端。前置 org-cleanup ✅ 已 passing
+- **已完成**(对照 plan §实施步骤 Step 1-8):
+  - Step 0 基线确认:`./init.sh` → 281 passed(起点干净);切 `feat/tenants-admin-api` 分支
+  - Step 1 Tenant model 加字段(`app/models/tenant.py`):status(String(20) default='active' + server_default='active' 回填现有行)、description/address(String(500) nullable)、created_by(String(128) nullable,**非 FK** —— bootstrap 路径 dev-user 可能不存在于 users 表,plain String 更稳)
+  - Step 2 Alembic 迁移 `84605f063730`(down_revision `6f197cf8f964`):add_column tenants status/description/address/created_by;status 加 server_default='active'(plan §Step2 明确要求回填);env.py 已 import tenant 无需改(Session 018 教训未重演);alembic upgrade head + alembic check 无 drift;model status 也加 server_default 对齐迁移避免 drift
+  - Step 3 Schema(`app/schemas/tenant.py`):TenantRead 加 status/description/address/created_by/member_count(运行时聚合默认 0)+ TenantUpdate(全 Optional);member_count 是运行时聚合非表字段(避免冗余维护)
+  - Step 4 Repository(`app/repositories/tenant.py`):list_all_with_member_count(LEFT JOIN UserTenant + COUNT + _ACTIVE 谓词 valid_to IS NULL + GROUP BY + created_at desc)+ get_detail_with_member_count(单门店同聚合);import 加 func
+  - Step 5 Service(`app/services/tenant_service.py`):list_all / get_detail(NotFoundError if absent)/ update(exclude_unset 部分更新 + flush/commit/refresh + 重新聚合 member_count);create_tenant 加 created_by keyword-only 参数(向后兼容);_to_read helper 从 ORM 对象 + member_count 组装 TenantRead
+  - Step 6 API(`app/api/v1/tenants.py`):GET /tenants/all + GET /tenants/{tenant_id} + PUT /tenants/{tenant_id}(三端点 require_super_admin dependencies)+ POST /tenants/ 收紧为 super_admin;_http_exc 异常映射(NotFoundError→404,其他 ValueError→400);⚠️ 路由顺序 /all 必须在 /{tenant_id} 前定义(plan 风险表已标注);GET /tenants/(我的租户)保留无守卫
+  - Step 7 测试(`tests/test_tenants_api.py` 从 8 扩到 19):原 8 个中保留 4 个不依赖 POST 的核心回归 + 新增 15 个(POST 收紧 owner/member 403 ×2、GET /all super_admin + 非 super_admin 403、member_count 仅聚合 active SCD2 行、GET /{id} super_admin + 非 super_admin 403 + 404、PUT /{id} super_admin + partial 不影响其他字段 + 非 super_admin 403 + 404、user-scoped list member_count 恒 0);依赖 POST 的原测试改用 super_admin_client
+  - Step 8 总验证:全绿(见下)
+- **运行过的验证**(全过):
+  - `./init.sh` → ruff `All checks passed!` + **294 passed**(281 基线 + 净增 13,无回归)
+  - `pytest tests/test_tenants_api.py -v` → 19 passed
+  - `APP_ENV=testing alembic upgrade head` → 6f197cf8f964 → 84605f063730 迁移成功
+  - `APP_ENV=testing alembic check` → No new upgrade operations detected(无 drift)
+- **已记录证据**: `feature_list.json` 的 `tenants-admin-api.evidence` 字段(10 条)
+- **技术要点**(与 plan 的实现差异):
+  - **created_by 用 plain String 非 FK**:plan §Step1 写 `ForeignKey("users.id")`,实际改为 nullable plain String —— bootstrap 路径(main.py dev_bootstrap 用 dev-user)创建租户时该 user 可能不存在于 users 表,FK 约束会失败;且 created_by 仅作记录用途不参与 JOIN,plain String 更稳
+  - **member_count 是运行时聚合非表字段**:plan §Step1 明确「不存表」,Repository 用 LEFT JOIN + COUNT 实现;_ACTIVE 谓词(valid_to IS NULL)确保只算当前成员不算历史成员(test_list_all_member_count_aggregates_active_only 关闭 SCD2 行后 count 1→0 验证)
+  - **路由顺序陷阱**:FastAPI 按**定义顺序**匹配路由,`/all` 必须在 `/{tenant_id}` 前定义,否则 "all" 被当 tenant_id 匹配(plan 风险表已标注,代码注释也标注)
+  - **bootstrap 路径安全**:main.py dev_bootstrap 直接调 svc.create_tenant()(不经 HTTP 守卫),收紧 POST 权限不影响它;create_tenant 新签名 created_by 默认 None 向后兼容
+  - **model server_default 对齐**:status 字段 model 也加 server_default='active'(不止 default),与迁移的 server_default 一致,否则 alembic check 报 drift(model 默认值不进 DDL 但 server_default 进)
+- **提交记录**: `feat/tenants-admin-api` 分支(待用户决定是否合并到 main + PR)
+- **已知风险**: 无功能风险。手动 curl 验证未单独执行,纯后端改动 pytest 已覆盖 API 行为 + 权限边界 + SCD2 聚合正确性;前端手动浏览器验证未跑(属 tenants-admin-ui 任务范围)
+- **下一步最佳动作**:
+  - (a) 清理废代码 + 代码质量审查 + PR + CI 守门 + 合并 feat/tenants-admin-api 到 main;
+  - (b) 执行 `tenants-admin-ui`(priority 31,独立门店管理页 super_admin + 侧边栏导航,前置已就绪)
 
 ---

@@ -2,7 +2,7 @@
 
 from datetime import UTC, datetime
 
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -23,6 +23,48 @@ class TenantRepository(BaseRepository[Tenant]):
 
     async def get_by_id(self, tenant_id: str) -> Tenant | None:
         return await self.db.get(Tenant, tenant_id)
+
+    # ----------------------------------------------- platform-level reads
+    # Used by the super_admin endpoints (GET /tenants/all, GET /tenants/{id}).
+    # member_count is a runtime aggregate (COUNT active user_tenants rows) — it
+    # is NOT a persisted column, so callers pair each Tenant with its count.
+
+    async def list_all_with_member_count(self) -> list[tuple[Tenant, int]]:
+        """All tenants, each paired with its active member count.
+
+        LEFT JOIN so tenants with zero members still appear (count 0). Ordered
+        by created_at desc so the newest stores surface first.
+        """
+        stmt = (
+            select(
+                Tenant,
+                func.count(UserTenant.id).label("member_count"),
+            )
+            .outerjoin(UserTenant, (UserTenant.tenant_id == Tenant.id) & _ACTIVE)
+            .group_by(Tenant.id)
+            .order_by(Tenant.created_at.desc())
+        )
+        rows = (await self.db.execute(stmt)).all()
+        return [(tenant, int(count)) for tenant, count in rows]
+
+    async def get_detail_with_member_count(
+        self, tenant_id: str
+    ) -> tuple[Tenant, int] | None:
+        """Single tenant with its active member count, or None if not found."""
+        stmt = (
+            select(
+                Tenant,
+                func.count(UserTenant.id).label("member_count"),
+            )
+            .outerjoin(UserTenant, (UserTenant.tenant_id == Tenant.id) & _ACTIVE)
+            .where(Tenant.id == tenant_id)
+            .group_by(Tenant.id)
+        )
+        row = (await self.db.execute(stmt)).one_or_none()
+        if row is None:
+            return None
+        tenant, count = row
+        return tenant, int(count)
 
 
 class UserRepository(BaseRepository[User]):

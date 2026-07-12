@@ -728,8 +728,57 @@
       "notes": "MVP 业务模块第 1 任务(共 6 个)。现有 Organization 是「租户内部部门树」(tenant_id 非空外键,不能跨门店),用户的新业务用「Group 跨租户管理门店」替代——两者同名但完全不同。本任务只删不建,新 Group 在 groups-api 任务。高风险点:User 模块(repository JOIN user_organizations + service 查 Organization 表)深度耦合,必须同步清理 schema(repo list_organizations/sync_organizations)+ service(_validate_org_ids)+ 前端表单(organization_ids),否则 user CRUD 全线崩溃。聚合迁移 c1d2e3f4a5b6 不能整删(一次建多表),只能编辑抠 organizations 块。前置无,WIP=1 顺序执行。"
     },
     {
-      "id": "groups-api",
+      "id": "tenants-admin-api",
       "priority": 30,
+      "area": "门店域",
+      "title": "门店(租户)管理后端补齐 —— 平台级列表 + 编辑 + 详情",
+      "user_visible_behavior": "总部(super_admin)能查看所有门店列表(含成员数)、查看门店详情、编辑门店信息(名/状态/地址);普通用户仍只看自己所属门店",
+      "status": "passing",
+      "plan": "harness/docs/plan-tenants-admin-api.md",
+      "verification": [
+        "新增端点:GET /tenants/all(super_admin 全部含 member_count)、GET /tenants/{id}(详情)、PUT /tenants/{id}(super_admin 编辑)",
+        "收紧 POST /tenants/ 权限为 super_admin 专属(原任意登录用户可建)",
+        "Tenant model 加字段(status/created_by/description/address)+ Alembic 迁移",
+        "pytest tests/test_tenants_api.py 扩展:super_admin list_all/get_detail/update、非 super_admin 403、POST 收紧 403、404、回归 GET /tenants/(我的)",
+        "./init.sh 全绿 + alembic upgrade head && alembic check 无 drift"
+      ],
+      "evidence": [
+        "./init.sh 全绿:ruff check(app/ cli/ tests/ scripts/ alembic/)→ All checks passed!;pytest → 294 passed(基线 281 + 净增 13,无回归)(2026-07-12)",
+        "pytest tests/test_tenants_api.py -v → 19 passed(原 8 核心回归 + 新增 11:POST 收紧 owner/member 403 ×2、GET /all super_admin + 非 super_admin 403、member_count 仅聚合 active SCD2 行、GET /{id} super_admin + 非 super_admin 403 + 404、PUT /{id} super_admin + partial 不影响其他字段 + 非 super_admin 403 + 404、user-scoped list member_count 恒 0)(2026-07-12)",
+        "Tenant model(app/models/tenant.py)加字段:status(String(20) default='active' + server_default='active',给现有行回填)、description/address(String(500) nullable)、created_by(String(128) nullable,非 FK —— bootstrap 路径 dev-user 可能不存在于 users 表,plain String 更稳;记录 super_admin 创建者)",
+        "Alembic 迁移 84605f063730(down_revision 6f197cf8f964):add_column tenants status/description/address/created_by;status 加 server_default='active' 回填现有行(NOT NULL 约束);APP_ENV=testing alembic upgrade head(6f197cf8f964 → 84605f063730)成功;alembic check → No new upgrade operations detected(env.py 已 import tenant 无需改;model status 加 server_default 对齐迁移避免 drift)",
+        "Repository 扩展(app/repositories/tenant.py):list_all_with_member_count(LEFT JOIN UserTenant + COUNT + _ACTIVE 谓词 valid_to IS NULL + GROUP BY + created_at desc)、get_detail_with_member_count(单门店同聚合)。member_count 是运行时聚合非表字段(避免冗余维护)",
+        "Service 扩展(app/services/tenant_service.py):list_all(调 repo 聚合)、get_detail(NotFoundError if absent)、update(exclude_unset 部分更新 + flush/commit/refresh + 重新聚合 member_count)、create_tenant 加 created_by keyword-only 参数(向后兼容,dev_bootstrap 不传仍正常);_to_read helper 从 ORM 对象 + member_count 组装 TenantRead",
+        "API 扩展(app/api/v1/tenants.py):GET /tenants/all(super_admin dependencies)+ GET /tenants/{tenant_id}(super_admin)+ PUT /tenants/{tenant_id}(super_admin)+ POST /tenants/ 收紧为 super_admin dependencies;_http_exc 异常映射(NotFoundError→404,其他 ValueError→400);⚠️ 路由顺序:/all 必须在 /{tenant_id} 前定义(否则 'all' 被当 tenant_id 匹配);GET /tenants/(我的租户)保留无守卫",
+        "权限守卫设计:平台级 4 端点(GET /all、GET /{id}、POST /、PUT /{id})统一 require_super_admin()(deps.py:246,cross-tenant 操作不属于租户级 RBAC);user-scoped GET /tenants/ 保留任意登录用户;casbin seed 无需改(门店管理走 super_admin 不进租户级 RBAC)",
+        "bootstrap 路径安全确认:main.py dev_bootstrap(L153)直接调 svc.create_tenant()(不经 HTTP 守卫),收紧 POST 权限不影响它;scripts/init_admin.py 只调 /auth/login(不经 POST /tenants/);create_tenant 新签名 created_by 默认 None 向后兼容",
+        "架构铁律遵守:依赖单向 Controller→Service→Repository→Model;多租户隔离在平台级端点天然由 super_admin 守卫(看所有租户是 super_admin 的定义);user-scoped list 仍走 memberships.list_for_user 用户隔离;member_count 聚合用 _ACTIVE 谓词与 SCD2 当前态语义一致"
+      ],
+      "depends_on": "org-cleanup",
+      "notes": "核实发现租户后端极弱(仅 POST 创建 + GET 我的租户两端点,无 list-all/edit/detail)。super_admin 看不到所有门店、门店不能改名、groups-ui/customers-ui 需要门店下拉无数据源。本任务补齐:GET /tenants/all(super_admin 平台级列表含 member_count)+ GET/PUT /tenants/{id} + 收紧 POST 为 super_admin。Tenant 加 status/created_by/description/address 字段。前置 org-cleanup(已 passing)。迁移 head=6f197cf8f964。为 groups-ui(门店挂载下拉)和 customers-ui(客户归属门店)提供数据源。"
+    },
+    {
+      "id": "tenants-admin-ui",
+      "priority": 31,
+      "area": "门店域",
+      "title": "门店(租户)管理前端 —— 独立门店管理页",
+      "user_visible_behavior": "总部管理员(super_admin)能在独立门店页查看/创建/编辑所有门店;普通用户侧边栏看不到门店项,dashboard 保留「我的租户」卡片",
+      "status": "not_started",
+      "plan": "harness/docs/plan-tenants-admin-ui.md",
+      "verification": [
+        "新建 tenants-page.tsx:门店列表(名/状态/地址/成员数/创建者)+ 创建/编辑 Dialog",
+        "侧边栏 NAV_ITEMS 加「门店」项(仅 super_admin 可见,需新增 needsSuperAdmin 机制或条件渲染)",
+        "dashboard「创建租户」按钮收紧为 super_admin 可见(权限收紧后普通用户 POST 403)",
+        "保留 dashboard「我的租户」卡片(普通用户视角不变)",
+        "cd frontend && npm run build 通过 + oxlint 0 warning"
+      ],
+      "evidence": [],
+      "depends_on": "tenants-admin-api",
+      "notes": "现状:前端无独立门店页、侧边栏无门店项,唯一入口是 dashboard 概览页的简陋卡片。本任务建独立门店管理页(super_admin 视角)+ 侧边栏导航。groups-ui 的门店挂载下拉用 useAllTenants() 取数据(依赖本任务)。前置 tenants-admin-api。纯前端任务。保留普通用户的 dashboard 卡片体验。"
+    },
+    {
+      "id": "groups-api",
+      "priority": 32,
       "area": "组织域",
       "title": "Group(组织)后端 —— 跨租户经营主体 + 门店归属",
       "user_visible_behavior": "总部(super_admin)能创建/编辑/删除组织(Group),并把 1~N 个门店(tenant)挂载到组织下;门店用户能只读查看自己所属组织",
@@ -751,12 +800,12 @@
         "GroupService(app/services/group_service.py):参照 agent_service.py CRUD 范式;_to_read helper 组装 GroupRead(JOIN GroupTenant+Tenant 填 tenant_ids + tenants TenantBrief);create/update 后 re-fetch 避免 commit 过期对象触发 MissingGreenlet(对齐 user_service._read 模式);delete 软删除;attach_tenant/detach_tenant 校验 group 存在 + tenant 存在 + 重复挂载 BizError 400 + 未挂载 NotFoundError 404",
         "实现差异 vs plan:(1) GroupTenant 用普通 UniqueConstraint(非 partial index)——挂载关系解除=删行无软删除态,plan §Step1 的 partial index 修正为普通约束;(2) Group 加软删除(用户决策,plan §Step1 字面无 is_deleted)对齐项目铁律;(3) _to_read 用 group.__table__.columns 遍历(非 GroupRead.model_fields,因后者含 tenant_ids/tenants 非 ORM 属性)"
       ],
-      "depends_on": "org-cleanup",
+      "depends_on": "tenants-admin-ui",
       "notes": "Group 是用户业务里的「经营主体」:可能是连锁企业(多家门店)也可能是单店。平台级实体(无 tenant_id),总部 super_admin 维护。门店挂载走 GroupTenant 多对多关联表。权限设计:写操作用 require_super_admin()(纯平台级),读操作 Service 内分流(super_admin 看全部 / 门店用户看自己所属)。不进 DEFAULT_*_PERMS(门店角色无权管 Group),super_admin 通过 require_super_admin 守卫不走 casbin。参照 agent_service.py CRUD 范式。前置 org-cleanup(旧 Organization 已删)。"
     },
     {
       "id": "groups-ui",
-      "priority": 31,
+      "priority": 33,
       "area": "组织域",
       "title": "Group(组织)前端 —— 组织管理页 + 门店挂载",
       "user_visible_behavior": "总部管理员能在组织页创建/编辑/删除组织,并把门店挂载到组织下;门店用户能只读查看自己所属组织",
@@ -784,7 +833,7 @@
     },
     {
       "id": "customers-api",
-      "priority": 32,
+      "priority": 34,
       "area": "客户域",
       "title": "Customer(客户)后端 —— 全局身份 + 门店档案 + 跨店聚合",
       "user_visible_behavior": "门店能创建/查看/编辑/删除本店客户档案(同手机号跨店复用全局身份);总部(super_admin)能看跨店聚合视图(一个客户去过哪几家店 + 每店档案)",
@@ -812,7 +861,7 @@
     },
     {
       "id": "customers-ui",
-      "priority": 33,
+      "priority": 35,
       "area": "客户域",
       "title": "Customer(客户)前端 —— 门店档案 + 跨店聚合视图",
       "user_visible_behavior": "门店员工能管理本店客户档案(列表/创建/编辑);总部管理员能看到跨店聚合视图(客户去过哪几家店 + 每店档案)",
@@ -841,7 +890,7 @@
     },
     {
       "id": "hq-platform-role",
-      "priority": 34,
+      "priority": 36,
       "area": "权限",
       "title": "平台角色 hq_staff —— 总部业务员(各司其职)+ 跨租户只读",
       "user_visible_behavior": "总部业务员(hq_staff)能跨店只读所有门店 + 客户档案聚合视图,但不能创建/编辑/删除;总部超管(super_admin)行为不变",
