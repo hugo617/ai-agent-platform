@@ -15,6 +15,7 @@ from app.api.v1 import (
     auth,
     chat,
     conversations,
+    customers,
     groups,
     members,
     permissions,
@@ -71,6 +72,7 @@ def create_app() -> FastAPI:
     app.include_router(settings_router.router, prefix=prefix)
     app.include_router(chat.router, prefix=prefix)
     app.include_router(conversations.router, prefix=prefix)
+    app.include_router(customers.router, prefix=prefix)
     app.include_router(groups.router, prefix=prefix)
 
     @app.get("/health", tags=["meta"])

@@ -8,7 +8,7 @@
 - **标准启动路径**: `./init.sh`(装依赖 + ruff + pytest)
 - **标准验证路径**: `./init.sh`(同上,后端快速验证,SQLite 内存库)
 - **完整验证路径**(需 docker): `alembic upgrade head && alembic check` + `cd frontend && npm run build`
-- **当前最高优先级未完成功能**: **MVP 业务模块(2026-07-12 规划,共 6 条 priority 29-34,WIP=1 顺序执行)** —— `org-cleanup`(priority 29,删除旧 Organization)✅ → `groups-api`(30,Group 后端)✅ → `groups-ui`(31,Group 前端)✅ 已完成 → `customers-api`(32,Customer 后端)→ `customers-ui`(33,Customer 前端)→ `hq-platform-role`(34,总部角色 hq_staff)。详见「后续任务规划」表。AI 内核/AtoA 系列已全部 passing(28 条地基 + 3 条 MVP 业务模块待做 = feature_list 共 33 条)。下一个该做:`customers-api`
+- **当前最高优先级未完成功能**: **MVP 业务模块(2026-07-12 规划,共 6 条 priority 29-34,WIP=1 顺序执行)** —— `org-cleanup`(priority 29,删除旧 Organization)✅ → `groups-api`(30,Group 后端)✅ → `groups-ui`(31,Group 前端)✅ → `customers-api`(32,Customer 后端)✅ 已完成 → `customers-ui`(33,Customer 前端)→ `hq-platform-role`(34,总部角色 hq_staff)。详见「后续任务规划」表。AI 内核/AtoA 系列已全部 passing(28 条地基 + 4 条 MVP 业务模块待做 = feature_list 共 33 条)。下一个该做:`customers-ui`
 - **当前 blocker**: 无
 
 ## 后续任务规划(2026-07-10 制定,2026-07-12 追加 MVP 业务模块 17-22,共 22 条,WIP=1 顺序执行)
@@ -75,6 +75,7 @@
 | org-cleanup(删除旧 Organization) | passing | 232 tests + 删 6 文件 + User 模块耦合清理 + 聚合迁移抠块 + alembic check 无 drift + 前端 build/oxlint 全绿 |
 | groups-api(Group 组织后端) | passing | 248 tests + Group+GroupTenant 双表 + 迁移 574391d912fc + 7 端点 + super_admin 写/登录读分流 + 软删除 + alembic check 无 drift |
 | groups-ui(Group 组织前端) | passing | npm build 通过 + oxlint 0 warning + 组织列表 + 创建/编辑 Dialog + 门店挂载面板(Badge✕detach + 下拉attach)+ super_admin 写/其他只读 + 路由 /groups(member 可读) |
+| customers-api(Customer 客户后端) | passing | 265 tests + Customer+CustomerProfile 双表 + 迁移 6f197cf8f964 + 6 端点 + 全局身份跨店复用 + HQ 聚合 + super_admin 跨店/门店隔离 + alembic check 无 drift |
 
 > ✅ AI 内核(agents + chat)已全部纳管并 passing:agents-api-hardening / chat-conversation-api / chat-frontend 三任务端到端完成。
 > ✅ **真实对话已跑通**:real-chat-llm-config(Session 017)用真实 DeepSeek key 端到端验证 SSE 流式对话,修了 3 个 bug(Agent.model 失效 / 前端模型脱节 / 无 LLM 配置 UI)。
@@ -1370,5 +1371,37 @@
 - **提交记录**: PR #33 已 squash 合并到 main(`59806c6`);含 Session 046 的功能 commit + 本 Session 的清理 commit(7811481 + 77b404d → squash 为 59806c6)
 - **已知风险**: 无。CI 4/4 全绿(含 Migrations 在真实 Postgres + E2E Playwright)
 - **下一步最佳动作**: 开始 `customers-api`(priority 32,Customer 后端 —— 全局身份 + 门店档案 + 跨店聚合,plan 已就绪 `harness/docs/plan-customers-api.md`,前置 groups-api ✅ 已合入)
+
+---
+
+### Session 048 — 2026-07-12
+- **本轮目标**: 执行 `customers-api`(Customer 客户后端 —— 全局身份 + 门店档案 + 跨店聚合)—— 纯后端,9 步 4 阶段。前置 groups-api ✅ 已合入 main(PR #32)
+- **已完成**(对照 plan §实施步骤 Step 1-9):
+  - Step 0 基线确认:`./init.sh` → 248 passed(起点干净);切 `feat/customers-api` 分支;codegraph 探勘 group.py/tenant.py/user.py/base.py/conftest 全部参照模式确认无漂移
+  - Step 1 Customer + CustomerProfile model(`app/models/customer.py` 新建):Customer 平台级无 tenant_id + identity_key 部分唯一索引(uq_customers_identity_active PG/SQLite 双库)+ 软删除;CustomerProfile 带 tenant_id FK + (customer_id,tenant_id) 部分唯一索引 + tenant_id 索引 + created_by FK;参照 tenant.py User/UserTenant 双表 + group.py 平台级模式;server_default 补齐对齐 Group 模式
+  - Step 2 Alembic 迁移(6f197cf8f964,down_revision 574391d912fc):create_table customers + customer_profiles + 5 索引;env.py + conftest.py 两处 customer import 同步(Session 018 教训未重演);alembic upgrade head + check 无 drift
+  - Step 3 Schema(`app/schemas/customer.py`):CustomerBrief(嵌入 profile)/ CustomerProfileBrief(嵌入 HQ 视图,复用 TenantBrief)/ CustomerProfileRead(门店视角)/ CustomerProfileCreate(含 identity_key 全局身份 + 本店档案字段)/ CustomerProfileUpdate(全局字段同步 + 本店字段)/ CustomerRead(HQ 聚合含 profiles + profile_count)
+  - Step 4 Repository(`app/repositories/customer.py`):CustomerRepository 继承 BaseRepository(平台级,get/get_by_identity/list_all)+ CustomerProfileRepository 继承 TenantScopedRepository(get_for_tenant/list_for_tenant/list_all/get_by_customer_tenant/list_for_customer)+ batch_tenant_info helper(避免 N+1)
+  - Step 5 Service(`app/services/customer_service.py`):参照 group_service + user_service super_admin 分支;create_profile 核心逻辑(get_by_identity 复用身份 → get_by_customer_tenant 查重 → 建 Profile);update_profile 同步全局身份到 Customer + 本店字段到 Profile;delete_profile 软删本店 Profile 保留 Customer;list_profiles/create/update/delete 全传 platform_role 继承 super_admin 短路;HQ list_customers_hq + get_customer_aggregate
+  - Step 6 API(`app/api/v1/customers.py`):6 端点;门店视角 /customers/profiles/* 走 require_permission('customers',act);HQ 视角 /customers/ + /customers/{id}/aggregate 走 require_super_admin();_http_exc isinstance 错误映射
+  - Step 7 注册路由 + 权限 seed:main.py import + include_router(字母序 customers 在 conversations 之后 groups 之前);permission_service DEFAULT_OWNER +4 / ADMIN +3 / MEMBER +1;conftest _make_casbin owner +4 / admin +3 / member +1
+  - Step 8 测试(`tests/test_customers_api.py` 17 个):新身份建 Customer+Profile / 复用身份跨店共享(profile_count=2)/ 本店重复 400 / 门店列表隔离 / 跨店 profile 404 / member read 通过 create/update/delete 403 / 非超管 HQ 403 / update 同步 name / 软删除 + Customer 存在 / 软删后重建 / 404 ×3 / super_admin 跨店列表 / HQ 列表
+  - Step 9 总验证:全绿(见下)
+- **运行过的验证**(全过):
+  - `./init.sh` → ruff `All checks passed!` + **265 passed**(248 基线 + 17 新增,无回归)
+  - `pytest tests/test_customers_api.py -v` → 17 passed
+  - `APP_ENV=testing alembic upgrade head` → 574391d912fc → 6f197cf8f964 迁移成功
+  - `APP_ENV=testing alembic check` → No new upgrade operations detected(无 drift);heads 单一 `6f197cf8f964`
+- **已记录证据**: `feature_list.json` 的 `customers-api.evidence` 字段(8 条);status → passing
+- **技术要点**(与 plan 的实现差异):
+  - **permission_service 导入方式**:plan 骨架用 `from app.services import permission_service`(模块),实际需 `from app.services.permission_service import permission_service`(单例实例)——参照 user_service/group_service。首次用模块导入导致 AttributeError(permission_service.require 是实例方法非模块属性),修正后通过
+  - **测试 fixture 不可混用**:发现 `app_client` + `member_client` 同时活跃时,后启动的 fixture 的 `decode_token` patch 覆盖前者 → member_client 实际以 owner 身份发请求 → update 返回 200 而非 403。根因:conftest 的 `with patch.object(deps_mod, "decode_token", ...)` 是模块级全局,两个 fixture 的 patch 嵌套时后者生效。解法:`test_member_cannot_update_or_delete` 改用 db_session 直接建 profile(不依赖 app_client),参照 test_groups_api 的 member 测试也只用单 client 模式
+  - **soft_delete 方法移除**:Repository 原有 soft_delete helper 未被 Service 使用(Service 直接设 is_deleted + deleted_at),清理避免混淆
+  - **server_default 补齐**:首次生成迁移时 is_deleted/tags/status 只有 Python default 无 server_default,对齐 Group 模式补上 server_default=text('false')/text('{}')/'active',重新生成迁移确保 NOT NULL 列有 DB 默认值
+- **提交记录**: `feat/customers-api` 分支(待审查 + PR + 合并)
+- **已知风险**: 无功能风险。手动 curl 验证未单独执行(纯后端 pytest 已覆盖 API 行为 + 权限边界 + 跨店隔离);前端管理 UI 未做(customers-ui 任务,priority 33);CI Migrations job 待在真实 Postgres 守门(本地已 alembic check 无 drift)
+- **下一步最佳动作**:
+  - (a) 清理废代码 + 代码质量审查 + PR + CI 守门 + 合并 feat/customers-api 到 main
+  - (b) 之后执行 `customers-ui`(priority 33,Customer 前端 —— 门店档案 + 跨店聚合视图,前置 customers-api 现已就绪)
 
 ---
