@@ -1346,6 +1346,29 @@
   - **权限守卫用 platform_role==='super_admin'** 而非 canManageUsers(Group 是平台级实体,门店 owner/admin 无权管,与 roles/users 的 canManageUsers 守卫不同)
 - **提交记录**: `feat/groups-ui` 分支(待审查 + PR + 合并)
 - **已知风险**: 无功能风险。手动浏览器验证未跑(需前后端启动 + 真实 token + super_admin 账号),build(tsc 类型检查)+ oxlint 已覆盖类型正确性与规范;后端 Group 端点已在 groups-api 任务用 16 个测试端到端覆盖
-- **下一步最佳动作**: 清理废代码 + 代码质量审查 + PR + CI 守门 + 合并 feat/groups-ui 到 main;之后开始 `customers-api`(priority 32,Customer 后端,plan 已就绪 `harness/docs/plan-customers-api.md`,前置 groups-api ✅ 已合入)
+  - **下一步最佳动作**: 清理废代码 + 代码质量审查 + PR + CI 守门 + 合并 feat/groups-ui 到 main;之后开始 `customers-api`(priority 32,Customer 后端,plan 已就绪 `harness/docs/plan-customers-api.md`,前置 groups-api ✅ 已合入)
+
+---
+
+### Session 047 — 2026-07-12
+- **本轮目标**: 清理废代码 + 代码质量审查 + PR + CI 守门 + 合并 feat/groups-ui 到 main(groups-ui 任务收尾发版)
+- **已完成**(端到端,含合并):
+  - **废代码扫描**(8 改动文件,后端零改动纯前端):oxlint 0 warning;tsc -b 通过;符号引用核查发现 **`useGroup`/`fetchGroup`(单查 hook/函数)是死代码** —— 页面用 `useGroups` 列表查询 + 编辑时从列表项取对象,单查 hook 零调用方(`fetchGroup` 仅被 `useGroup` 内部引用,随之一并死掉)。与 Session 013 的 `fetchPermissionCatalogue`、Session 020 判定的「对称预留」同类。`qk.group(id)` 作为 update/attach/detach 的 invalidate key 保留(无订阅者时为无害 no-op)。**已清理**(queries.ts 删 `useGroup` + import;endpoints.ts 删 `fetchGroup`)
+  - **代码质量审查**:纯前端无越界;权限守卫与后端一致(后端 groups.py:写全 require_super_admin + 读登录即可 Service 分流;前端 canManage=platform_role==='super_admin' 守卫全部门店挂载/CRUD 入口,路由 /groups 在 ProtectedRoute 内 member 可读);数据流清晰(useGroups→列表→编辑用列表项;attach/detach mutation+invalidate);错误处理完整(所有 mutation try/catch+toast);无 console.log/TODO/注释死代码
+  - 基线验证:`./init.sh` → ruff All checks passed! + **248 passed**(后端零改动无回归)
+  - 清理后重验证:`npm run build`(tsc+vite)0 类型错误 + oxlint 0 warning
+  - commit `77b404d`(清理)→ push `feat/groups-ui` → 建 **PR #33**(base main,含 2 commit:功能 7811481 + 清理 77b404d)
+  - **CI 守门:4/4 全绿**(Migrations 44s / Frontend 29s / Backend 1m42s / E2E 1m55s),**无需修复**
+  - **squash 合并 PR #33 → main**(commit `59806c6`),`--delete-branch` 删除远程分支,`git remote prune` 清除残留引用;本地切回 main 同步;本地 feature 分支已随 checkout 清理
+  - main 上跑 `./init.sh` 确认 ruff + 248 passed,仓库仍可按标准路径工作
+- **运行过的验证**:
+  - `npx oxlint src/`(清理前后)→ 0 warnings 0 errors
+  - `npx tsc -b` + `npm run build`(清理后)→ 0 类型错误 / vite 通过
+  - `./init.sh`(feat 分支 + main)→ ruff All checks passed! + **248 passed**
+  - CI(PR #33)→ 4/4 job SUCCESS
+- **已记录证据**: 无新增(本任务是审查+发版+废代码清理;废代码清理已并入 PR #33 的 squash commit;feature_list 的 groups-ui.evidence 在 Session 046 已填)
+- **提交记录**: PR #33 已 squash 合并到 main(`59806c6`);含 Session 046 的功能 commit + 本 Session 的清理 commit(7811481 + 77b404d → squash 为 59806c6)
+- **已知风险**: 无。CI 4/4 全绿(含 Migrations 在真实 Postgres + E2E Playwright)
+- **下一步最佳动作**: 开始 `customers-api`(priority 32,Customer 后端 —— 全局身份 + 门店档案 + 跨店聚合,plan 已就绪 `harness/docs/plan-customers-api.md`,前置 groups-api ✅ 已合入)
 
 ---
