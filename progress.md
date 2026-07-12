@@ -1242,6 +1242,33 @@
 
 ---
 
+### Session 043 — 2026-07-12
+- **本轮目标**: 清理废代码 + 代码质量审查 + PR + CI 守门 + 合并 feat/org-cleanup 到 main(org-cleanup 任务收尾发版)
+- **已完成**(端到端,含合并):
+  - **废代码扫描 + 清理彻底性核查**:后端 `grep organization app/ tests/ cli/` = **0 残留**;前端 `grep organization frontend/src/` = **0 残留**。权限 seed 三处(permission_service DEFAULT_OWNER/ADMIN/MEMBER + conftest casbin owner/admin/member)organizations 项全删且一致;User 模块耦合清理彻底(repository/service/schema 无 org 引用,`serialize_user` 简化)。env.py + conftest.py 两处 model import 同步删除(吸取 Session 018 教训未重演)。聚合迁移 c1d2e3f4a5b6 抠块编辑是 plan §Step 6 有意决策,非误删。
+  - **本地全量验证**(全绿):
+    - `./init.sh` → ruff + **232 passed**(基线 250 - 18 组织相关测试,无其它回归)
+    - `cd frontend && npm run build` → tsc + vite 0 类型错误
+    - 迁移链:临时空库 `aap_verify` 跑 `alembic upgrade head` → 10 个迁移全到 head `5dd68e90d6f0`;`alembic check` → **No new upgrade operations detected**;organizations/user_organizations 表确认不存在(抠块生效)
+  - **网络问题排查 + 解决**:`git fetch` 报 `Proxy CONNECT aborted`(代理 127.0.0.1:9910 端口 OPEN 但 CONNECT 握手超时失效)。诊断:直连 github.com 超时(aTrust 零信任客户端拦截),但 api.github.com 通(gh CLI 可用)、ssh.github.com:443 通(无 SSH key)。用户重启代理后 `curl -x 9910 https://github.com` → 200(531ms),git push 恢复。
+  - commit `b50754d` → push `feat/org-cleanup` → 建 **PR #31**(base main)。注:commit message 含 `(#29)` 是笔误(PR #29 实际是 chat-markdown-rendering),本 PR 为新 PR。
+  - **CI 守门:4/4 全绿**(Backend pytest+ruff 1m14s / Frontend typecheck+build+lint 28s / Migrations alembic upgrade on Postgres 46s / E2E Playwright 2m12s),**无需修复**。
+  - **squash 合并 PR #31 → main**(commit `89b31ae`),删除远程分支,`git remote prune` 清除 3 个残留引用。
+  - **本地 main 同步(rebase)**:本地 main 领先 origin/main 一个未推送的 docs commit `6e08a4d`(Session 042 的 6 plan 文档 + feature_list 5 新任务)。rebase onto `89b31ae` 时冲突(feature_list.json + progress.md 的 org-cleanup 状态字段),解法:两文件均取 `--ours`(保留 89b31ae 的 org-cleanup=passing + 10 evidence;6e08a4d 的 5 个新任务规划在非冲突区已自动合并)。rebase 后该 docs commit 被吸收(89b31ae 已含全部 plan 文档),本地 main = origin/main = `89b31ae`,无遗留。
+  - main 上跑 `./init.sh` exit 0 确认标准启动路径仍工作
+- **运行过的验证**:
+  - 后端残留 grep + 前端残留 grep → 均 0
+  - `./init.sh`(feat 分支 + main 两次)→ ruff + **232 passed**
+  - `cd frontend && npm run build` → 0 类型错误
+  - 临时库 `aap_verify`:`alembic upgrade head`(10 迁移全过)+ `alembic check`(无 drift)+ organizations 表不存在确认
+  - CI(PR #31)→ 4/4 job SUCCESS
+- **已记录证据**: 无新增(org-cleanup 的 evidence 在执行会话已填 10 条;本任务是审查+发版+合并)
+- **提交记录**: PR #31 已 squash 合并到 main(`89b31ae`);本地无新增 commit(docs commit 6e08a4d 被 rebase 吸收)
+- **已知风险**: 无。CI Migrations job 在真实 Postgres 上确认无 drift;抠块编辑聚合迁移在空库完整重建验证通过
+- **下一步最佳动作**: 执行 `groups-api`(priority 30,Group 后端 —— 跨租户经营主体 + 门店归属,plan 已就绪 `harness/docs/plan-groups-api.md`,前置 org-cleanup ✅ 已合入 main)
+
+---
+
 ### Session 0XX — YYYY-MM-DD
 - 本轮目标:
 - 已完成:(含通过标准)
