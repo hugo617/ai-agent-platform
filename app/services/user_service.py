@@ -20,7 +20,6 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.password import hash_password
-from app.models.organization import Organization
 from app.models.rbac import Role
 from app.models.tenant import User
 from app.repositories.security import LoginMethodRepository, SessionRepository
@@ -136,8 +135,7 @@ class UserService:
             role_brief = {"id": r.id, "name": r.name, "code": r.code} if r else None
             if role_brief is None:
                 role_brief = {"id": "", "name": role, "code": role}
-        orgs = await self.list_repo.list_organizations(user.id)
-        data = serialize_user(user, organizations=orgs)
+        data = serialize_user(user)
         data["role"] = role_brief
         return UserRead.model_validate(data)
 
@@ -162,8 +160,7 @@ class UserService:
             role_brief = {"id": r.id, "name": r.name, "code": r.code} if r else None
             if role_brief is None:
                 role_brief = {"id": "", "name": role, "code": role}
-        orgs = await self.list_repo.list_organizations(user.id)
-        data = serialize_user(user, organizations=orgs)
+        data = serialize_user(user)
         data["role"] = role_brief
         data["tenant_id"] = tid
         data["tenant_name"] = tname
@@ -199,9 +196,6 @@ class UserService:
         if payload.email and await self.users.get_by_email(str(payload.email)):
             raise BizError("邮箱已存在")
 
-        # Validate organization_ids belong to this tenant.
-        await self._validate_org_ids(tenant_id, payload.organization_ids)
-
         user = User(
             id=uuid.uuid4().hex,
             username=payload.username,
@@ -227,10 +221,6 @@ class UserService:
         await permission_service.add_role_for_user_in_domain(
             user.id, payload.role, tenant_id
         )
-
-        # Org links.
-        if payload.organization_ids:
-            await self.list_repo.sync_organizations(user.id, payload.organization_ids)
 
         # Primary email login method.
         self.login_methods.add_local_email(user.id, str(payload.email))
@@ -316,13 +306,6 @@ class UserService:
                 await permission_service.set_role_for_user_in_domain(
                     user.id, payload.role, tenant_id
                 )
-
-        # Org links (tenant-scoped — skipped for super admins editing across
-        # tenants, since the org tree belongs to a specific tenant).
-        if payload.organization_ids is not None and not is_super_admin:
-            await self._validate_org_ids(tenant_id, payload.organization_ids)
-            await self.list_repo.sync_organizations(user.id, payload.organization_ids)
-            changes["organization_ids"] = payload.organization_ids
 
         await self.logs.record(
             action="user.update",
@@ -481,20 +464,6 @@ class UserService:
             resource_id=user.id,
         )
         await self.db.commit()
-
-    # --------------------------------------------------------------- helpers
-
-    async def _validate_org_ids(self, tenant_id: str, org_ids: list[str]) -> None:
-        if not org_ids:
-            return
-        stmt = select(Organization).where(
-            Organization.tenant_id == tenant_id,
-            Organization.id.in_(org_ids),
-        )
-        found = list((await self.db.execute(stmt)).scalars().all())
-        missing = set(org_ids) - {o.id for o in found}
-        if missing:
-            raise BizError(f"未知的组织 ID: {sorted(missing)}")
 
 
 def _snapshot(user: User) -> dict[str, Any]:

@@ -2,7 +2,7 @@
 
 ``UserRepository`` (in repositories/tenant.py) covers single-row lookups.
 This module adds the paginated/filtered list query, soft-delete, statistics,
-and the user↔organization link sync — operations specific to user management.
+operations specific to user management.
 """
 
 from __future__ import annotations
@@ -13,7 +13,6 @@ from typing import Any
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.organization import Organization, UserOrganization
 from app.models.tenant import Tenant, User, UserTenant
 
 
@@ -214,34 +213,6 @@ class UserListRepository:
         result = await self.db.execute(stmt)
         return {row.user_id: (row.tenant_id, row.name) for row in result}
 
-    async def list_organizations(self, user_id: str) -> list[Organization]:
-        stmt = (
-            select(Organization)
-            .join(UserOrganization, UserOrganization.organization_id == Organization.id)
-            .where(UserOrganization.user_id == user_id)
-        )
-        result = await self.db.execute(stmt)
-        return list(result.scalars().all())
-
-    async def sync_organizations(
-        self, user_id: str, organization_ids: list[str]
-    ) -> None:
-        """Replace the user's org memberships with the given list."""
-        existing = await self.db.execute(
-            select(UserOrganization).where(UserOrganization.user_id == user_id)
-        )
-        for row in existing.scalars().all():
-            await self.db.delete(row)
-        for idx, org_id in enumerate(organization_ids):
-            self.db.add(
-                UserOrganization(
-                    user_id=user_id,
-                    organization_id=org_id,
-                    is_main=(idx == 0),
-                )
-            )
-        await self.db.flush()
-
 
 def serialize_user(
     user: User,
@@ -250,9 +221,8 @@ def serialize_user(
     role_id: str | None = None,
     role_name: str | None = None,
     role_code: str | None = None,
-    organizations: list[Organization] | None = None,
 ) -> dict[str, Any]:
-    """Flatten a User ORM row + its role/orgs into a UserRead-shaped dict.
+    """Flatten a User ORM row + its role into a UserRead-shaped dict.
 
     The role is passed in (resolved separately) because it lives on
     ``user_tenants``, not on the user row itself.
@@ -264,10 +234,6 @@ def serialize_user(
             "name": role_name or (role or ""),
             "code": role_code or (role or ""),
         }
-    orgs = [
-        {"id": o.id, "name": o.name, "code": o.code}
-        for o in (organizations or [])
-    ]
     return {
         "id": user.id,
         "username": user.username,
@@ -278,7 +244,6 @@ def serialize_user(
         "avatar": user.avatar,
         "status": user.status,
         "role": role_brief,
-        "organizations": orgs,
         "last_login_at": user.last_login_at,
         "created_at": user.created_at,
         "updated_at": user.updated_at,

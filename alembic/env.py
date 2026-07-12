@@ -20,7 +20,6 @@ from app.models import (  # noqa: F401
     llm_config,
     log,
     message,
-    organization,
     rbac,
     security,
     tenant,

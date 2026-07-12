@@ -8,13 +8,11 @@ import {
   changeUserStatus,
   createAgent,
   createApiToken,
-  createOrganization,
   createRole,
   createTenant,
   createUser,
   deleteAgent,
   deleteConversation,
-  deleteOrganization,
   deleteRole,
   deleteUser,
   fetchAgents,
@@ -23,7 +21,6 @@ import {
   fetchEffectiveModels,
   fetchMembers,
   fetchMessages,
-  fetchOrganizationTree,
   fetchPermissionMatrix,
   fetchPlatformLlmConfig,
   fetchRoleLabels,
@@ -42,7 +39,6 @@ import {
   terminateSession,
   updateAgent,
   updateMember,
-  updateOrganization,
   updatePlatformLlmConfig,
   updateRole,
   updateTenantLlmConfig,
@@ -55,8 +51,6 @@ import type {
   LlmConfigUpdate,
   MemberCreate,
   MemberUpdate,
-  OrganizationCreate,
-  OrganizationUpdate,
   RoleCreate,
   RolePermissionGrant,
   RoleUpdate,
@@ -80,8 +74,6 @@ export const qk = {
   roleLabels: ["roles", "labels"] as const,
   rolePermissions: (id: string) => ["roles", id, "permissions"] as const,
   permissionMatrix: ["permissions", "matrix"] as const,
-  orgTree: ["organizations", "tree"] as const,
-  organizations: ["organizations"] as const,
   sessions: ["auth", "sessions"] as const,
   conversations: ["conversations"] as const,
   messages: (conversationId: string) =>
@@ -303,42 +295,6 @@ export function useRevokeRolePermission() {
       qc.invalidateQueries({ queryKey: qk.rolePermissions(roleId) });
       qc.invalidateQueries({ queryKey: qk.permissionMatrix });
     },
-  });
-}
-
-// ---------- organizations ----------
-export function useOrganizationTree() {
-  return useQuery({ queryKey: qk.orgTree, queryFn: fetchOrganizationTree });
-}
-
-export function useCreateOrganization() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (payload: OrganizationCreate) => createOrganization(payload),
-    onSuccess: () => qc.invalidateQueries({ queryKey: qk.organizations }),
-  });
-}
-
-export function useUpdateOrganization() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: ({
-      id,
-      payload,
-    }: {
-      id: string;
-      payload: OrganizationUpdate;
-    }) => updateOrganization(id, payload),
-    onSuccess: () =>
-      qc.invalidateQueries({ queryKey: qk.organizations }),
-  });
-}
-
-export function useDeleteOrganization() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (id: string) => deleteOrganization(id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: qk.organizations }),
   });
 }
 

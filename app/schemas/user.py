@@ -12,13 +12,6 @@ from pydantic import BaseModel, ConfigDict, EmailStr, Field
 VALID_STATUSES = {"active", "inactive", "locked"}
 
 
-class OrganizationBrief(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-    id: str
-    name: str
-    code: str | None = None
-
-
 class RoleBrief(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: str
@@ -40,7 +33,6 @@ class UserRead(BaseModel):
     avatar: str | None = None
     status: str = "active"
     role: RoleBrief | None = None
-    organizations: list[OrganizationBrief] = []
     last_login_at: datetime | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None
@@ -58,7 +50,6 @@ class UserCreate(BaseModel):
     phone: str | None = Field(default=None, max_length=20)
     avatar: str | None = Field(default=None, max_length=255)
     role: str = Field(default="member", max_length=64)
-    organization_ids: list[str] = Field(default_factory=list)
     status: str = "active"
 
 
@@ -70,7 +61,6 @@ class UserUpdate(BaseModel):
     phone: str | None = Field(default=None, max_length=20)
     avatar: str | None = Field(default=None, max_length=255)
     role: str | None = Field(default=None, max_length=64)
-    organization_ids: list[str] | None = None
     status: str | None = None
 
 

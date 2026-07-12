@@ -16,7 +16,6 @@ from app.api.v1 import (
     chat,
     conversations,
     members,
-    organizations,
     permissions,
     roles,
     tenants,
@@ -67,7 +66,6 @@ def create_app() -> FastAPI:
     app.include_router(users.router, prefix=prefix)
     app.include_router(members.router, prefix=prefix)
     app.include_router(roles.router, prefix=prefix)
-    app.include_router(organizations.router, prefix=prefix)
     app.include_router(permissions.router, prefix=prefix)
     app.include_router(settings_router.router, prefix=prefix)
     app.include_router(chat.router, prefix=prefix)

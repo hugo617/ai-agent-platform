@@ -49,12 +49,6 @@ export interface RoleBrief {
   code: string;
 }
 
-export interface OrganizationBrief {
-  id: string;
-  name: string;
-  code: string | null;
-}
-
 export interface UserFull {
   id: string;
   username: string | null;
@@ -65,7 +59,6 @@ export interface UserFull {
   avatar: string | null;
   status: UserStatus;
   role: RoleBrief | null;
-  organizations: OrganizationBrief[];
   last_login_at: string | null;
   created_at: string | null;
   updated_at: string | null;
@@ -83,7 +76,6 @@ export interface UserFormData {
   phone?: string;
   avatar?: string;
   role: string;
-  organization_ids: string[];
   status: UserStatus;
 }
 
@@ -114,7 +106,7 @@ export interface UserStatistics {
   new_this_month: number;
 }
 
-// ============= roles / organizations =============
+// ============= roles =============
 
 export interface Role {
   id: string;
@@ -178,40 +170,6 @@ export interface PermissionMatrix {
   permissions: PermissionItem[];
   // [role.code][permission.code] → granted (SCD2 current state)
   matrix: Record<string, Record<string, boolean>>;
-}
-
-export interface Organization {
-  id: string;
-  tenant_id: string;
-  name: string;
-  code: string | null;
-  path: string | null;
-  parent_id: string | null;
-  leader_id: string | null;
-  status: string;
-  sort_order: number;
-  created_at: string | null;
-}
-
-export interface OrganizationTreeNode extends Organization {
-  children: OrganizationTreeNode[];
-}
-
-export interface OrganizationCreate {
-  name: string;
-  code?: string;
-  parent_id?: string | null;
-  leader_id?: string | null;
-  sort_order?: number;
-}
-
-export interface OrganizationUpdate {
-  name?: string;
-  code?: string | null;
-  parent_id?: string | null;
-  leader_id?: string | null;
-  status?: string;
-  sort_order?: number;
 }
 
 // ============= LLM settings =============

@@ -472,34 +472,6 @@ async def test_update_user_display_name_and_phone(app_client):
 
 
 @pytest.mark.asyncio
-async def test_create_user_with_organization_ids(app_client):
-    """Creating a user with valid organization_ids links them."""
-    # First create an org to link.
-    org = (
-        await app_client.post(
-            "/api/v1/organizations/",
-            json={"name": "Eng", "code": "eng"},
-            headers=AUTH,
-        )
-    ).json()
-    payload = _create_payload("orguser")
-    payload["organization_ids"] = [org["id"]]
-    resp = await app_client.post("/api/v1/users/", json=payload, headers=AUTH)
-    assert resp.status_code == 201, resp.text
-    org_ids = [o["id"] for o in resp.json().get("organizations", [])]
-    assert org["id"] in org_ids
-
-
-@pytest.mark.asyncio
-async def test_create_user_with_invalid_org_ids_400(app_client):
-    """Creating a user with nonexistent organization_ids → 400 (BizError)."""
-    payload = _create_payload("badorg")
-    payload["organization_ids"] = ["nonexistent-org-id"]
-    resp = await app_client.post("/api/v1/users/", json=payload, headers=AUTH)
-    assert resp.status_code == 400
-
-
-@pytest.mark.asyncio
 async def test_create_user_invalid_status_400(app_client):
     """Creating a user with an invalid status → 400 (BizError)."""
     payload = _create_payload("invalid")
