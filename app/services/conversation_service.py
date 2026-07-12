@@ -26,8 +26,16 @@ class ConversationService:
         title: str | None = None,
         conversation_id: str | None = None,
         platform_role: str | None = None,
+        first_message: str | None = None,
     ) -> Conversation:
-        """Return an existing conversation or create a new one (after permission check)."""
+        """Return an existing conversation or create a new one (after permission check).
+
+        When creating a new conversation with no explicit ``title``, derive one
+        from ``first_message`` (the first user turn) by taking its first 20
+        chars + ellipsis. This keeps the conversation list legible without a
+        separate title-generation step. Matches the frontend's
+        ``conversationLabel`` snippet length.
+        """
         await permission_service.require(
             user_id, tenant_id, self.OBJECT, "create", platform_role=platform_role
         )
@@ -40,11 +48,17 @@ class ConversationService:
                 )
             return conv
 
+        derived_title = title
+        if derived_title is None and first_message:
+            text = first_message.strip()
+            snippet = text[:20]
+            derived_title = f"{snippet}…" if len(snippet) < len(text) else snippet
+
         conv = Conversation(
             tenant_id=tenant_id,
             agent_id=agent_id,
             user_id=user_id,
-            title=title,
+            title=derived_title,
         )
         await self.conversations.add(conv)
         await self.db.commit()

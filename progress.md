@@ -8,7 +8,7 @@
 - **标准启动路径**: `./init.sh`(装依赖 + ruff + pytest)
 - **标准验证路径**: `./init.sh`(同上,后端快速验证,SQLite 内存库)
 - **完整验证路径**(需 docker): `alembic upgrade head && alembic check` + `cd frontend && npm run build`
-- **当前最高优先级未完成功能**: **MVP 业务模块(2026-07-12 规划,共 6 条 priority 29-34,WIP=1 顺序执行)全部 ✅ 完成** —— `org-cleanup`(29)✅ → `groups-api`(30)✅ → `groups-ui`(31)✅ → `customers-api`(32)✅ → `customers-ui`(33)✅ → `hq-platform-role`(34,总部角色 hq_staff)✅。**feature_list.json 共 33 条全部 passing**(28 条地基 + 5 条 MVP 业务模块,无 not_started 任务)。下一步方向由用户决定(可规划新业务模块 / 深化现有能力 / 二开定制)
+- **当前最高优先级未完成功能**: **MVP 业务模块(2026-07-12 规划,共 6 条 priority 29-34,WIP=1 顺序执行)全部 ✅ 完成** —— `org-cleanup`(29)✅ → `groups-api`(30)✅ → `groups-ui`(31)✅ → `customers-api`(32)✅ → `customers-ui`(33)✅ → `hq-platform-role`(34,总部角色 hq_staff)✅。顺带修复用户反馈的 chat 页面 bug(`chat-overflow-title-fix`,会话标题生成 + 溢出修复)✅。**feature_list.json 共 34 条全部 passing**(28 条地基 + 5 条 MVP 业务模块 + 1 条 chat bug 修复)。门店(租户)管理后端补齐 `tenants-admin-api` 已实现待合并。下一步方向由用户决定(可规划新业务模块 / 深化现有能力 / 二开定制)
 - **当前 blocker**: 无
 
 ## 后续任务规划(2026-07-10 制定,2026-07-12 追加 MVP 业务模块 17-22,共 22 条,WIP=1 顺序执行)
@@ -1521,5 +1521,29 @@
 - **提交记录**: PR #36 已 squash 合并到 main(`c72e377`);含 1 个功能 commit(Session 052 的实现 + 本 Session 的文档更新 progress)
 - **已知风险**: 无。纯权限层扩展无 schema 改动;手动 curl 验证未单独执行(pytest 16 个测试已覆盖 hq_staff 读/写/聚合全维度 + 三方不回归)
 - **下一步最佳动作**: **MVP 业务模块 6 条全部完成**(org-cleanup → groups-api/ui → customers-api/ui → hq-platform-role),feature_list.json 共 33 条全部 passing。由用户决定下一阶段方向:① 规划新业务模块 ② 深化现有能力(如前端 hq_staff 视角适配 —— customers-ui/groups-ui 的 isSuperAdmin 判定改 isCrossTenantViewer)③ 二开定制 ④ 其他
+
+---
+
+### Session 055 — 2026-07-12
+- **本轮目标**: 修复用户反馈的 chat 页面两 bug(会话列表全是「新对话」+ 消息过多溢出会话框)+ 排查其它问题写入 Harness 实践文档
+- **根因排查**(代码佐证):
+  - **Bug 1 会话标题恒为「新对话」**:① 后端 `conversation_service.create_or_get()` 创建会话时 `title=None` 默认参数,`chat_stream` 端点从不传 title → 所有会话 title 字段 null;② 前端 `conversationLabel(conv, firstMessage?)` 设计了「首条消息截前 20 字」兜底,但**调用处只传 conv 没传 firstMessage** → 兜底失效 → 全部 fallback「新对话」
+  - **Bug 2 溢出**:① 会话列表 CardContent 只有 `overflow-y-auto` 无 `flex-1/min-h-0` → 作为普通 div 不滚动,会话多了撑破 Card;② user 消息 `whitespace-pre-wrap` 缺断行 → 长 URL/长 token 横向溢出气泡
+  - **其它发现**:移动端两 Card 都 `h-[calc(100vh-12rem)]` 单列堆叠双倍超高;删除按钮点击区偏小
+- **已完成**(3 文件代码 + 3 文件文档):
+  - 后端 `conversation_service.py`:`create_or_get` 加 `first_message` 可选参数,新建会话且 title=None 时取首条消息 strip 后前 20 字(<总长加 `…`);向后兼容
+  - 后端 `chat.py`:`chat_stream` 调 create_or_get 传 `first_message=payload.message`(1 行)
+  - 前端 `chat-page.tsx`:列表 Card 改 `flex flex-col` + CardContent 加 `min-h-0 flex-1 overflow-y-auto`;user 气泡加 `[overflow-wrap:anywhere]`;assistant 气泡加 `overflow-hidden`;两 Card 移动端改 `h-[70vh] lg:h-[calc(100vh-12rem)]`;列表项加 created_at + label/delete 按钮 min-h 点击区
+  - 测试 `tests/test_chat.py`:+2 测试(长消息截断 + 短消息原样)
+  - 文档:新建 `harness/docs/plan-chat-overflow-title-fix.md` + feature_list.json +37 `chat-overflow-title-fix` + 本会话记录
+- **运行过的验证**:
+  - `.venv/bin/ruff check conversation_service.py chat.py` → All checks passed!
+  - `pytest tests/test_chat.py -q` → **16 passed**(原 14 + 新 2,无回归)
+  - `cd frontend && npm run build` → ✅ built(tsc + vite,0 类型错误)
+  - `cd frontend && npm run lint` → 0 warnings 0 errors
+- **已记录证据**: feature_list.json `chat-overflow-title-fix`.evidence 填 4 条(ruff + 16 pytest + build + lint)
+- **决策记录**(用户确认):标题用「首条消息截断」方案(后端生成,前端信任 title),否决 LLM 总结(额外成本+异步复杂)和列表返回 first_message(多动 schema)
+- **提交记录**: 待用户决定是否提交(本会话改 3 代码 + 3 文档)
+- **下一步最佳动作**: 由用户决定 —— ① 提交本次修复 ② 继续推进 tenants-admin-api(priority 30,plan 已就绪)③ 其它方向
 
 ---

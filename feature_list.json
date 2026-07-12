@@ -865,6 +865,33 @@
       ],
       "depends_on": "customers-api",
       "notes": "用户「总部各司其职」需求的具体落地。platform_role 是自由字符串无 Enum 约束(tenant.py:92-96),加 hq_staff 无需迁移/JWT 改动。设计=check() 方案 A(加分支),不改 casbin 架构。hq_staff 定位=总部看板/巡检员,能看全貌不能改。MVP 两个平台角色(super_admin 全权 + hq_staff 只读),可扩展(后续加财务/客服等岗位再升级到平台级 casbin domain)。前置 customers-api(用 Customer 域作跨租户只读验证载体)。前端 customers-ui/groups-ui 的 isSuperAdmin 判定可顺带改为 isCrossTenantViewer(若已合并)。"
+    },
+    {
+      "id": "chat-overflow-title-fix",
+      "priority": 35,
+      "area": "AI 内核",
+      "title": "聊天页溢出修复 + 会话标题生成",
+      "user_visible_behavior": "会话列表显示每条会话的标题(首条消息摘要)而非全是「新对话」;会话多了能纵向滚动不撑破边框;长链接/长串消息不横向溢出气泡",
+      "status": "passing",
+      "plan": "harness/docs/plan-chat-overflow-title-fix.md",
+      "verification": [
+        "后端 create_or_get 加 first_message 参数:新建会话时用首条 user 消息前 20 字作 title(≥20 字加 …)",
+        "chat_stream 端点调 create_or_get 传 first_message=payload.message",
+        "前端会话列表 Card 改 flex flex-col + CardContent 加 min-h-0 flex-1 overflow-y-auto(可纵向滚动)",
+        "前端 user 气泡加 [overflow-wrap:anywhere]、assistant 气泡加 overflow-hidden(防横向溢出)",
+        "移动端 Card 高度改 h-[70vh] lg:h-[calc(100vh-12rem)](单列堆叠不双倍超高)",
+        "会话列表项加 created_at 次要信息 + 删除按钮 min-h/min-w 点击区",
+        "pytest tests/test_chat.py 全绿(含新增 2 个 title 测试)+ npm run build/lint 全绿"
+      ],
+      "evidence": [
+        "后端 ruff check(conversation_service.py + chat.py)→ All checks passed!(2026-07-12)",
+        "pytest tests/test_chat.py -q → 16 passed(原 14 + 新增 2: test_conversation_title_derived_from_first_message 长消息截前 20 字+… + test_conversation_title_short_message_no_ellipsis 短消息原样无…)(2026-07-12)",
+        "cd frontend && npm run build 通过:tsc -b + vite build 成功,0 类型错误(2026-07-12)",
+        "cd frontend && npm run lint(oxlint)→ Found 0 warnings and 0 errors(2026-07-12)",
+        "根因:① 后端 create_or_get 创建会话 title 恒为 None,chat 端点从不传 title → 所有会话 title 字段 null;② 前端 conversationLabel(conv, firstMessage?) 设计了首条消息截断兜底但调用处只传 conv → 兜底失效 → 全部 fallback「新对话」;③ 会话列表 CardContent 只有 overflow-y-auto 无 flex-1/min-h-0 → 不滚动撑破 Card;④ user 消息 whitespace-pre-wrap 缺 break-words → 长串横向溢出"
+      ],
+      "depends_on": "chat-markdown-rendering",
+      "notes": "用户反馈 bug 修复。决策:标题在后端 create_or_get 内用首条 user 消息截前 20 字生成(用户确认首条消息截断方案,否决 LLM 总结/列表返回 first_message 两案);前端信任后端 title 字段,conversationLabel 的 firstMessage 参数保留供未来按需展开。溢出修复纯 CSS:列表 Card 加 flex flex-col + CardContent min-h-0 flex-1(min-h-0 是 flex 子项能收缩的关键);user 气泡 [overflow-wrap:anywhere];assistant 气泡 overflow-hidden 兜底。顺带修移动端双倍超高(70vh)和删除按钮点击区(min-h/min-w)。无 schema/迁移改动。"
     }
   ]
 }

@@ -173,6 +173,42 @@ async def test_message_history_after_chat(app_client, monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_conversation_title_derived_from_first_message(app_client, monkeypatch):
+    """A new conversation's title is the first user message, truncated to 20 chars."""
+    agent_id = (
+        await app_client.post(
+            "/api/v1/agents/", json={"name": "Title Bot"}, headers=AUTH
+        )
+    ).json()["id"]
+    long_msg = "请帮我详细分析一下这个多租户系统的权限模型设计思路"
+    await _mock_chat(app_client, monkeypatch, agent_id, message=long_msg)
+
+    conv = (
+        await app_client.get("/api/v1/conversations/", headers=AUTH)
+    ).json()[0]
+    # Title is the first 20 chars + ellipsis, not None, not the whole message.
+    assert conv["title"] is not None
+    assert conv["title"] == long_msg[:20] + "…"
+    assert len(conv["title"]) == 21  # 20 chars + ellipsis
+
+
+@pytest.mark.asyncio
+async def test_conversation_title_short_message_no_ellipsis(app_client, monkeypatch):
+    """A short first message (<20 chars) becomes the title verbatim, no ellipsis."""
+    agent_id = (
+        await app_client.post(
+            "/api/v1/agents/", json={"name": "Short Bot"}, headers=AUTH
+        )
+    ).json()["id"]
+    await _mock_chat(app_client, monkeypatch, agent_id, message="你好")
+
+    conv = (
+        await app_client.get("/api/v1/conversations/", headers=AUTH)
+    ).json()[0]
+    assert conv["title"] == "你好"
+
+
+@pytest.mark.asyncio
 async def test_delete_conversation(app_client, monkeypatch):
     """DELETE removes the conversation; it no longer appears in the list."""
     agent_id = (
