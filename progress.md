@@ -8,7 +8,7 @@
 - **标准启动路径**: `./init.sh`(装依赖 + ruff + pytest)
 - **标准验证路径**: `./init.sh`(同上,后端快速验证,SQLite 内存库)
 - **完整验证路径**(需 docker): `alembic upgrade head && alembic check` + `cd frontend && npm run build`
-- **当前最高优先级未完成功能**: **MVP 业务模块(2026-07-12 规划,共 6 条 priority 29-34,WIP=1 顺序执行)** —— `org-cleanup`(priority 29,删除旧 Organization)✅ → `groups-api`(30,Group 后端)✅ → `groups-ui`(31,Group 前端)✅ → `customers-api`(32,Customer 后端)✅ 已完成 → `customers-ui`(33,Customer 前端)→ `hq-platform-role`(34,总部角色 hq_staff)。详见「后续任务规划」表。AI 内核/AtoA 系列已全部 passing(28 条地基 + 4 条 MVP 业务模块待做 = feature_list 共 33 条)。下一个该做:`customers-ui`
+- **当前最高优先级未完成功能**: **MVP 业务模块(2026-07-12 规划,共 6 条 priority 29-34,WIP=1 顺序执行)** —— `org-cleanup`(priority 29,删除旧 Organization)✅ → `groups-api`(30,Group 后端)✅ → `groups-ui`(31,Group 前端)✅ → `customers-api`(32,Customer 后端)✅ → `customers-ui`(33,Customer 前端)✅ 已完成 → `hq-platform-role`(34,总部角色 hq_staff)。详见「后续任务规划」表。AI 内核/AtoA 系列已全部 passing(28 条地基 + 5 条 MVP 业务模块待做 = feature_list 共 33 条)。下一个该做:`hq-platform-role`
 - **当前 blocker**: 无
 
 ## 后续任务规划(2026-07-10 制定,2026-07-12 追加 MVP 业务模块 17-22,共 22 条,WIP=1 顺序执行)
@@ -76,6 +76,7 @@
 | groups-api(Group 组织后端) | passing | 248 tests + Group+GroupTenant 双表 + 迁移 574391d912fc + 7 端点 + super_admin 写/登录读分流 + 软删除 + alembic check 无 drift |
 | groups-ui(Group 组织前端) | passing | npm build 通过 + oxlint 0 warning + 组织列表 + 创建/编辑 Dialog + 门店挂载面板(Badge✕detach + 下拉attach)+ super_admin 写/其他只读 + 路由 /groups(member 可读) |
 | customers-api(Customer 客户后端) | passing | 265 tests + Customer+CustomerProfile 双表 + 迁移 6f197cf8f964 + 6 端点 + 全局身份跨店复用 + HQ 聚合 + super_admin 跨店/门店隔离 + alembic check 无 drift |
+| customers-ui(Customer 客户前端) | passing | npm build 通过 + oxlint 0 warning + 双视角(门店 CRUD / 总部聚合只读)+ 行内展开跨店档案 + 三层权限守卫(owner 全权/admin 无 delete/member 只读/super_admin 总部只读)+ 路由 /customers(Contact 图标) |
 
 > ✅ AI 内核(agents + chat)已全部纳管并 passing:agents-api-hardening / chat-conversation-api / chat-frontend 三任务端到端完成。
 > ✅ **真实对话已跑通**:real-chat-llm-config(Session 017)用真实 DeepSeek key 端到端验证 SSE 流式对话,修了 3 个 bug(Agent.model 失效 / 前端模型脱节 / 无 LLM 配置 UI)。
@@ -1424,5 +1425,34 @@
 - **提交记录**: PR #34 已 squash 合并到 main(`7a0a151`);含 1 个功能 commit(Session 048 的实现 + 本 Session 的文档更新 progress)
 - **已知风险**: 无。CI Migrations job 在真实 Postgres 上确认无 drift(env.py/conftest.py 两处 import 同步)
 - **下一步最佳动作**: 执行 `customers-ui`(priority 33,Customer 前端 —— 门店档案 + 跨店聚合视图,plan 已就绪 `harness/docs/plan-customers-ui.md`,前置 customers-api ✅ 已合入 main)
+
+---
+
+### Session 050 — 2026-07-12
+- **本轮目标**: 执行 `customers-ui`(Customer 客户前端 —— 门店档案 + 跨店聚合视图)—— 6 步,纯前端,前置 customers-api ✅ 已合入 main(PR #34)
+- **已完成**(对照 plan §实施步骤 Step 1-6):
+  - Step 0 基线确认:`./init.sh` → 265 passed(起点干净);切 `feat/customers-ui` 分支
+  - Step 1 types.ts:加 6 个 Customer 类型(CustomerBrief/CustomerProfileBrief/CustomerProfileRead/CustomerProfileCreate/CustomerProfileUpdate/CustomerRead)—— **对齐真实后端 app/schemas/customer.py**(关键:CustomerProfileBrief.tenant 是嵌套 TenantBrief,非 plan 文档的扁平 tenant_id/tenant_name;HQ 视角返回类型叫 CustomerRead 非 plan 的 CustomerAggregate)
+  - Step 2 endpoints.ts:加 6 个端点函数(门店 CRUD 4 个 + 总部聚合 2 个);import 补 4 个类型
+  - Step 3 queries.ts:加 qk.customerProfiles + qk.customers + qk.customer(id) 三个 key + 6 个 hooks;写操作 onSuccess 同时 invalidate customerProfiles + customers(门店编辑后总部聚合视图也刷新)
+  - Step 4 新建 customers-page.tsx:双视角 —— CustomersPage 按 me.platform_role==='super_admin' 条件渲染 StoreView / HqView;StoreView = 本店档案列表 + 创建/编辑 Dialog + 删除确认;HqView = 全局客户列表 + 行内展开跨店档案明细;三层权限守卫(canCreate=canManageUsers / canDelete=owner only / super_admin 总部只读)
+  - Step 5 路由导航:App.tsx 注册 /customers(ProtectedRoute 内,与 /groups 同级 member 可见);dashboard-layout NAV_ITEMS 加「客户」项(Contact 图标,在「组织」之后)
+  - Step 6 验证:npm run build 通过(tsc + vite,0 类型错误);oxlint 6 改动文件 0 warning
+- **运行过的验证**(全过):
+  - `cd frontend && npm run build` → tsc -b + vite build 成功,0 类型错误
+  - `npx oxlint`(6 改动文件)→ 0 warnings 0 errors
+  - 后端零改动(纯前端,基线 265 passed 不变,无回归);pytest tests/test_customers_api.py → 17 passed 确认前置端点就绪
+- **已记录证据**: `feature_list.json` 的 `customers-ui.evidence` 字段(8 条)
+- **技术要点**(与 plan 的实现差异):
+  - **schema 偏差修正**:plan 文档的 CustomerProfileBrief 用扁平 tenant_id/tenant_name,但真实后端 app/schemas/customer.py 用嵌套 tenant: TenantBrief;HQ 聚合返回类型后端叫 CustomerRead(plan 文档叫 CustomerAggregate)——一律以真实后端 schema 为准
+  - **跨店详情用行内展开**(非 plan 的 useCustomerAggregate 按需加载):HQ 列表端点已返回每个客户的完整 profiles 数组,点击行直接展开内联渲染,无需额外请求——MVP 量小更简单(useCustomerAggregate hook 仍提供,留作单客户详情页未来用)
+  - **tags 用原生 textarea 填 JSON**:项目无 Textarea UI 组件,用 Tailwind 样式匹配 Input 外观;create 时 JSON.parse 失败 toast 报错,update 时空值跳过(不改 tags)
+  - **Fragment key 修复**:HqView map 内返回多行 TableRow 需用 `<Fragment key={c.id}>` 包裹(非 `<>`,后者不能接 key)
+  - **客户图标用 Contact**:避免与用户管理页的 Users 图标冲突(plan 风险表已预警)
+- **提交记录**: `feat/customers-ui` 分支(待用户决定是否合并到 main)
+- **已知风险**: 无功能风险。手动浏览器验证未跑(需前后端启动 + 真实 token),build(tsc 类型检查)+ oxlint 已覆盖类型正确性与规范;后端零改动无需 CI migrations 守门
+- **下一步最佳动作**:
+  - (a) 清理废代码 + 代码质量审查 + PR + CI 守门 + 合并 feat/customers-ui 到 main;
+  - (b) 执行 `hq-platform-role`(priority 34,总部角色 hq_staff —— 跨租户只读,plan 已就绪,前置 customers-api ✅)
 
 ---

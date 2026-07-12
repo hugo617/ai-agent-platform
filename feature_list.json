@@ -816,7 +816,7 @@
       "area": "客户域",
       "title": "Customer(客户)前端 —— 门店档案 + 跨店聚合视图",
       "user_visible_behavior": "门店员工能管理本店客户档案(列表/创建/编辑);总部管理员能看到跨店聚合视图(客户去过哪几家店 + 每店档案)",
-      "status": "not_started",
+      "status": "passing",
       "plan": "harness/docs/plan-customers-ui.md",
       "verification": [
         "新建 customers-page.tsx:按 me.platform_role 切双视角(门店视角=本店档案 CRUD / 总部视角=跨店聚合只读)",
@@ -826,7 +826,16 @@
         "路由 /customers 注册 + NAV_ITEMS 加「客户」项(图标避用 Users,改 Contact/UserCircle)",
         "cd frontend && npm run build 通过 + oxlint 0 warning"
       ],
-      "evidence": [],
+      "evidence": [
+        "cd frontend && npm run build 通过:tsc -b + vite build 成功,0 类型错误(2026-07-12)",
+        "npx oxlint src/pages/customers-page.tsx src/hooks/queries.ts src/api/endpoints.ts src/api/types.ts src/App.tsx src/components/layout/dashboard-layout.tsx → 0 warnings 0 errors(2026-07-12)",
+        "后端零改动(纯前端任务,基线 265 passed 不变,无回归);pytest tests/test_customers_api.py → 17 passed 确认前置端点就绪",
+        "API 层:types.ts 加 6 个 Customer 类型(CustomerBrief/CustomerProfileBrief/CustomerProfileRead/CustomerProfileCreate/CustomerProfileUpdate/CustomerRead)—— 对齐真实后端 app/schemas/customer.py(注意:CustomerProfileBrief.tenant 是嵌套 TenantBrief,非 plan 文档的扁平 tenant_id/tenant_name;HQ 视角返回类型叫 CustomerRead 非 plan 的 CustomerAggregate);endpoints.ts 加 6 个端点函数(fetchCustomerProfiles/createCustomerProfile/updateCustomerProfile/deleteCustomerProfile/fetchCustomers/fetchCustomerAggregate)",
+        "hooks 层:queries.ts 加 qk.customerProfiles + qk.customers + qk.customer(id);6 个 hooks(useCustomerProfiles/useCreateCustomerProfile/useUpdateCustomerProfile/useDeleteCustomerProfile/useCustomers/useCustomerAggregate)—— 写操作 onSuccess 同时 invalidate customerProfiles + customers(门店编辑后总部聚合视图也刷新)",
+        "页面(customers-page.tsx 新建,双视角):CustomersPage 按 me.platform_role==='super_admin' 条件渲染 StoreView / HqView;StoreView = 本店档案列表(姓名/手机/性别/生日/状态/最近到店/备注)+ 创建/编辑 Dialog(identity_key 编辑时 disabled 全局身份标识不可改 + gender/birthday/remark/tags_json + status)+ 删除确认;HqView = 全局客户列表(姓名/手机/性别/去过 N 家店 Badge)+ 点击行内联展开跨店档案明细(列表数据已含 profiles 无需额外请求)",
+        "权限守卫三层:canCreate=canManageUsers(me)(owner/admin 可创建编辑,member 只读);canDelete=me.roles.includes('owner')(仅 owner 可删除,admin 不能);super_admin 总部视图只读(写操作在门店视角);路由 /customers 在 ProtectedRoute 内 member 可见(门店视角 member 只读)",
+        "实现差异 vs plan:(1) CustomerProfileBrief.tenant 用嵌套 TenantBrief(对齐真实后端 schema,plan 文档写扁平 tenant_id/tenant_name 是过时的);(2) HQ 聚合返回类型用 CustomerRead(非 plan 的 CustomerAggregate,后端 schema 就叫 CustomerRead);(3) 跨店档案详情用行内展开(列表已含 profiles)而非 plan 的 useCustomerAggregate 按需加载——MVP 量小列表全返回更简单;(4) tags 用原生 textarea 填 JSON(项目无 Textarea UI 组件,用 Tailwind 样式匹配 Input);(5) 客户图标用 Contact(避免与用户管理页的 Users 冲突)"
+      ],
       "depends_on": "customers-api",
       "notes": "纯前端任务。核心是双视角切换(isSuperAdmin = me.platform_role==='super_admin' 条件渲染两套表格)。参照 users-page.tsx 的 super_admin 跨租户视图模式。创建时跨店复用 identity_key 由后端自动处理,前端正常显示 201。前置 customers-api(5 个端点就绪)。hq_staff 视角在 hq-platform-role 任务适配(本任务只 super_admin + 门店视角)。不做搜索/筛选/导入导出/去重合并(MVP)。"
     },
