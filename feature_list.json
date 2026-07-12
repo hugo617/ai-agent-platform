@@ -980,6 +980,25 @@
         "./init.sh 全绿:纯文档+脚本任务,app/ 零改动,基线不回归"
       ],
       "notes": "用户补充大健康/中医/理疗连锁业务背景后的演示案例任务。种子脚本照搬 init_admin.py 范式(幂等 select-then-add + 调真实 Service/Repository 让 casbin/SCD2 副作用正确触发)。权限约束处理:CustomerService.create_profile/AgentService.create 内部 require 查 casbin,脚本传门店 owner 作 actor + 先 seed_tenant_defaults 再调 create。跨店身份复用通过 Customer.identity_key 全局唯一实现(张先生/刘女士跨店复用同 Customer,各店独立 CustomerProfile)。密码安全:演示账号统一弱密码 Demo@123456,脚本注释标明仅演示用。纯文档+脚本任务,不改任何 app/ 功能代码、不加批量导入端点、不做前端改动。实现完全对齐 plan 6 步。"
+    },
+    {
+      "id": "demo-seed-full",
+      "priority": 38,
+      "area": "演示案例",
+      "title": "演示数据全量补全(清理重建 --reset + 覆盖所有业务实体)",
+      "user_visible_behavior": "跑 `python scripts/seed_demo.py --reset` 一键清空旧演示数据并重建全量业务数据(对话/消息/LLM配置/API Token/自定义角色权限/审计日志/多登录方式/Agent推理参数差异化),让演示覆盖项目全部业务表而不只是组织客户门店三域",
+      "status": "not_started",
+      "plan": "harness/docs/plan-demo-seed-full.md",
+      "verification": [
+        "python scripts/seed_demo.py --reset 一键清空全部演示数据(按 FK 反向顺序)+ 全量重建,无报错",
+        "python scripts/seed_demo.py(无参数)幂等可重跑,新加实体(对话/LLM配置/Token/自定义角色/登录方式)打印 exists 跳过",
+        "重建后覆盖全部业务表(除 UserSession/VerificationCode 运行时态外):3门店+7用户+2组织+5+客户身份+7+门店档案+4 Agent(推理参数各不同)+4-6段对话+20-30条消息+1平台级+1租户级 LLM配置+2 API Token+1自定义角色+差异化权限+SystemLog非空+1+额外登录方式",
+        "登录验证三级 fallback:朝阳店 Agent 下拉显示 deepseek-reasoner(租户级覆盖);海淀/王府井显示 deepseek-chat(回退平台级)",
+        "登录验证自定义角色:朝阳店李师傅(senior_therapist)能改客户档案(customers:update)但不能删(无 customers:delete)",
+        "./init.sh 全绿(纯脚本任务,无 app/ 代码改动,基线不回归)"
+      ],
+      "evidence": [],
+      "notes": "demo-seed(37)只覆盖了组织/客户/门店三域 8 张表,用户要求覆盖全面。本任务在 seed_demo.py 基础上扩:① 加 --reset 清理重建(按 FK 反向删除 + 演示白名单边界,不误伤 super_admin/非演示数据);② 补全缺口表(Conversation/Message/LlmConfig/ApiToken/SystemLog/自定义Role+Permission+RolePermission/UserLoginMethod)+ Agent 推理参数差异化。关键设计:清理用演示白名单(门店名/用户名/code/identity_key)反查行ID级联删,绝不用裸 DELETE FROM;Conversation 用 create_or_get + append_message、LlmConfig 用 upsert_platform/upsert_tenant、ApiToken 用 issue(明文只展示一次)、自定义角色用 RbacService.create+grant_permission——全调真实 Service 让 casbin/SCD2/审计副作用正确触发。不种 UserSession/VerificationCode(运行时态);不调真实 LLM(assistant 消息写死文本);LlmConfig api_key 用占位符(真实 key 由用户在 settings 页填)。前置 demo-seed(37)已 passing。纯脚本+文档任务,不改 app/ 功能代码。"
     }
   ]
 }

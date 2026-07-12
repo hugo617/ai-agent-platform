@@ -8,7 +8,7 @@
 - **标准启动路径**: `./init.sh`(装依赖 + ruff + pytest)
 - **标准验证路径**: `./init.sh`(同上,后端快速验证,SQLite 内存库)
 - **完整验证路径**(需 docker): `alembic upgrade head && alembic check` + `cd frontend && npm run build`
-- **当前最高优先级未完成功能**: **MVP 业务模块(2026-07-12 规划,priority 29-37)全部收官** —— 门店线 `org-cleanup`(29)✅ / `tenants-admin-api`(30)✅ / `tenants-admin-ui`(31)✅;组织线 `groups-api`(32)✅ / `groups-ui`(33)✅;客户线 `customers-api`(34)✅ / `customers-ui`(35)✅;权限线 `hq-platform-role`(36)✅;演示案例 `demo-seed`(37)✅。**feature_list 37 条全部 passing,无 not_started 任务**。MVP 业务模块 17-25 依赖链(17→18→19→20→21→22→23→24→25)全部完成。
+- **当前最高优先级未完成功能**: **`demo-seed-full`(priority 38,演示数据全量补全)** —— MVP 业务模块(29-37)全部收官后,用户要求演示数据「覆盖全面」。本任务在 `demo-seed`(37)基础上扩 `scripts/seed_demo.py`:加 `--reset` 清理重建 + 补全缺口业务表(对话/消息/LLM配置/API Token/自定义角色权限/审计日志/多登录方式/Agent推理参数差异化)。**feature_list 38 条:37 passing + 1 not_started(demo-seed-full)**。
 - **当前 blocker**: 无
 
 ## 后续任务规划(2026-07-10 制定,2026-07-12 追加 MVP 业务模块 17-24,共 24 条,WIP=1 顺序执行)
@@ -40,6 +40,7 @@
 | **23** | **`customers-ui`** | **客户域** | **Customer(客户)前端 —— 门店档案 + 跨店聚合视图(双视角按 platform_role 切换)。前置 22 ✅ 已完成** | **`harness/docs/plan-customers-ui.md`** |
 | **24** | **`hq-platform-role`** | **权限** | **平台角色 hq_staff —— 总部业务员(各司其职)+ 跨租户只读。前置 22 ✅ 已完成** | **`harness/docs/plan-hq-platform-role.md`** |
 | **25** | **`demo-seed`** | **演示案例** | **大健康连锁演示案例 + 项目地图(种子脚本 scripts/seed_demo.py + db-schema.mmd 补全 + 关系图.md 第十/十一章)✅ 已完成** | **`harness/docs/plan-demo-seed.md`** |
+| **26** | **`demo-seed-full`** | **演示案例** | **演示数据全量补全 —— 扩 seed_demo.py 加 `--reset` 清理重建 + 补全全部缺口业务表(对话/消息/LLM配置/API Token/自定义角色权限/审计日志/多登录方式/Agent推理参数差异化)。前置 demo-seed(37)✅** | **`harness/docs/plan-demo-seed-full.md`** |
 
 > 依赖链:1 → 2 → 3(对话主线);4 → 5(权限矩阵);6 独立;7 暂停;8 ✅;**AtoA 系列:9(地基) → 10(CLI 骨架) → 11(CLI 对话+CRUD) → 12(Skill);13(前端)依赖 9,可与 10-12 并行但 WIP=1 仍顺序执行**。
 > **AI 内核深化(2026-07-11 规划,Session 031):14(context-engineering,长对话截断/超时,纯后端)→ 15(chat-markdown-rendering,Markdown+交互,纯前端)→ 16(agent-config-depth,推理参数,全栈)。三者独立可任意顺序,但 WIP=1 仍顺序执行。**
@@ -1660,5 +1661,29 @@
 - **下一步最佳动作**:
   - (a) 清理废代码 + 代码质量审查 + PR + CI 守门 + 合并 feat/tenants-admin-ui 到 main;
   - (b) 无 not_started 任务,由用户决定下一阶段方向(可选:E2E 补门店管理流程 / 新业务模块 / 文档更新)
+
+---
+
+### Session 059 — 2026-07-12
+- **本轮目标**: 登记 `demo-seed-full`(priority 38,演示数据全量补全)任务到 harness —— **仅登记不实现**(用户明确选择)。MVP 收官(demo-seed 37 passing)后,用户要求「所有业务数据都有一份,覆盖全面」,需清理旧数据后按组织/客户/门店重建全量业务数据
+- **已完成**(任务登记三件套):
+  - **数据覆盖缺口分析**:对照项目 22 张业务表,seed_demo.py 现只覆盖 8 张(组织/客户/门店三域)。缺口表:Conversation/Message(对话,AI 内核核心产物)/ LlmConfig(三级 fallback)/ ApiToken(AtoA)/ SystemLog(审计)/ 自定义 Role+Permission+RolePermission(RBAC 灵活性)/ UserLoginMethod(多登录方式)/ Agent 推理参数(temperature/max_tokens/top_p 现全默认)
+  - **决策对齐**(AskUserQuestion 两问):清理策略 = 脚本加 `--reset`(非独立清理脚本、非纯幂等覆盖);交付范围 = 仅登记任务(plan + feature_list + progress,后续会话再执行)
+  - **写 plan 文档** `harness/docs/plan-demo-seed-full.md`:7 节(背景目标 / 数据覆盖矩阵 / 交付物 / 实施步骤 12 步 / 验收标准 6 条 / 风险不做 / evidence 占位)。核心设计:① `--reset` 按 FK 反向删除 + 演示白名单边界(门店名/用户名/code/identity_key 反查行 ID 级联删,绝不用裸 DELETE FROM,super_admin/默认角色权限不删);② 全调真实 Service(RbacService.create/grant_permission、LlmConfigService.upsert_platform/upsert_tenant、ApiTokenService.issue、ConversationService.create_or_get/append_message)让 casbin/SCD2/审计副作用正确触发;③ 不种 UserSession/VerificationCode(运行时态)、不调真实 LLM(assistant 消息写死文本)、LlmConfig api_key 用占位符
+  - **feature_list.json 追加** `demo-seed-full`(priority 38,area 演示案例,status not_started,plan 指向新文档,6 条 verification + notes 含清理边界设计 + 全调真实 Service 理由)—— JSON 校验合法,38 features(37 passing + 1 not_started),无 in_progress(WIP=1 不冲突)
+  - **progress.md 更新**:当前最高优先级改为 demo-seed-full;任务规划表加第 26 行(前置 demo-seed 37 ✅)
+- **运行过的验证**:
+  - `python3 -c "import json; json.load(open('feature_list.json'))"` → ✅ JSON 合法(38 features,last=demo-seed-full not_started,not_started=1,in_progress=0)
+- **已记录证据**: 无(本任务是登记,evidence 留给执行会话填)
+- **技术要点**(plan 的关键设计决策):
+  - **清理边界铁律**:`--reset` 不用裸 `DELETE FROM table`(误伤非演示数据),改用演示白名单常量反查行 ID 再级联删;super_admin + 默认三角色(is_system=True)+ 默认权限不删(它们由 init_admin/seed_defaults 建,不属于演示范围);casbin policy 表同步清理演示 user/tenant 的 grouping+policy 行
+  - **全调真实 Service**:不绕过 Service 直接写 ORM 行 —— 因为 casbin 分组策略 / SCD2 角色权限 / system_logs 审计行都由 Service 层副作用产生,直接写 ORM 会漏掉这些,演示数据就不「真」(如自定义角色不进 casbin 则权限验证失效)
+  - **Agent 推理参数差异化演示**:4 个 Agent 各设不同 temperature/max_tokens/top_p(朝阳 0.3 严谨 / 海淀 0.7 默认 / 王府井 0.9 发散 / 总部 0.2 保守),AgentCreate schema 已支持(`schemas/agent.py:16-18`),演示「不同 Agent 不同推理风格」
+  - **三级 fallback 可演示**:平台级 LlmConfig(default_model=deepseek-chat)+ 朝阳店租户级覆盖(deepseek-reasoner),登录后朝阳店 Agent 下拉显示 reasoner、海淀/王府井回退 chat
+- **提交记录**: 未提交(登记类任务,三个文件改动:plan 文档新建 + feature_list.json + progress.md;待用户决定是否单独 commit 或与后续执行合并)
+- **已知风险**: 无。纯登记,不改 app/ 功能代码,`./init.sh` 不受影响
+- **下一步最佳动作**:
+  - (a) 执行 `demo-seed-full`(priority 38,扩 seed_demo.py 加 --reset + 全量补全 + 真实 Postgres 验证),照 plan §4 的 12 步;
+  - (b) 或由用户调整 plan 范围(如某些缺口表不需要演示数据)
 
 ---
