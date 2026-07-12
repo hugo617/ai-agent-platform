@@ -9,12 +9,14 @@ import {
   changeUserStatus,
   createAgent,
   createApiToken,
+  createCustomerProfile,
   createGroup,
   createRole,
   createTenant,
   createUser,
   deleteAgent,
   deleteConversation,
+  deleteCustomerProfile,
   deleteGroup,
   deleteRole,
   deleteUser,
@@ -22,6 +24,9 @@ import {
   fetchAgents,
   fetchApiTokens,
   fetchConversations,
+  fetchCustomerAggregate,
+  fetchCustomerProfiles,
+  fetchCustomers,
   fetchEffectiveModels,
   fetchGroups,
   fetchMembers,
@@ -43,6 +48,7 @@ import {
   revokeRolePermission,
   terminateSession,
   updateAgent,
+  updateCustomerProfile,
   updateGroup,
   updateMember,
   updatePlatformLlmConfig,
@@ -54,6 +60,8 @@ import type {
   AgentCreate,
   AgentUpdate,
   ApiTokenCreate,
+  CustomerProfileCreate,
+  CustomerProfileUpdate,
   GroupCreate,
   GroupUpdate,
   LlmConfigUpdate,
@@ -92,6 +100,11 @@ export const qk = {
   apiTokens: ["api-tokens"] as const,
   groups: ["groups"] as const,
   group: (id: string) => ["groups", id] as const,
+  // customers: two query families — store profiles (tenant-scoped CRUD) and
+  // HQ aggregation (cross-store, super_admin only).
+  customerProfiles: ["customers", "profiles"] as const,
+  customers: ["customers"] as const,
+  customer: (id: string) => ["customers", id] as const,
 };
 
 // ---------- tenants ----------
@@ -161,6 +174,68 @@ export function useDetachTenant() {
       qc.invalidateQueries({ queryKey: qk.groups });
       qc.invalidateQueries({ queryKey: qk.group(groupId) });
     },
+  });
+}
+
+// ---------- customers (global identity + per-store profile) ----------
+// Store view hooks: this tenant's profile CRUD. Writes also invalidate the HQ
+// list (customers) so a super_admin viewing the aggregate sees the change.
+export function useCustomerProfiles() {
+  return useQuery({
+    queryKey: qk.customerProfiles,
+    queryFn: fetchCustomerProfiles,
+  });
+}
+
+export function useCreateCustomerProfile() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: CustomerProfileCreate) => createCustomerProfile(payload),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: qk.customerProfiles });
+      qc.invalidateQueries({ queryKey: qk.customers });
+    },
+  });
+}
+
+export function useUpdateCustomerProfile() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      id,
+      payload,
+    }: {
+      id: string;
+      payload: CustomerProfileUpdate;
+    }) => updateCustomerProfile(id, payload),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: qk.customerProfiles });
+      qc.invalidateQueries({ queryKey: qk.customers });
+    },
+  });
+}
+
+export function useDeleteCustomerProfile() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => deleteCustomerProfile(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: qk.customerProfiles });
+      qc.invalidateQueries({ queryKey: qk.customers });
+    },
+  });
+}
+
+// HQ view hooks: cross-store aggregation (super_admin only).
+export function useCustomers() {
+  return useQuery({ queryKey: qk.customers, queryFn: fetchCustomers });
+}
+
+export function useCustomerAggregate(id: string | null) {
+  return useQuery({
+    queryKey: qk.customer(id ?? ""),
+    queryFn: () => fetchCustomerAggregate(id as string),
+    enabled: !!id,
   });
 }
 

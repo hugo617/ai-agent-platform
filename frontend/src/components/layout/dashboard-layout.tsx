@@ -3,6 +3,7 @@ import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import {
   Bot,
   Building2,
+  Contact,
   LayoutDashboard,
   LogOut,
   Menu,
@@ -34,6 +35,7 @@ const NAV_ITEMS: NavItem[] = [
   { to: "/agents", label: "智能体", icon: Bot },
   { to: "/chat", label: "对话", icon: MessageSquare },
   { to: "/groups", label: "组织", icon: Building2 },
+  { to: "/customers", label: "客户", icon: Contact },
   { to: "/members", label: "成员", icon: UserCog, needsUserManagement: true },
   { to: "/users", label: "用户", icon: Users, needsUserManagement: true },
   { to: "/roles", label: "角色", icon: Shield, needsUserManagement: true },

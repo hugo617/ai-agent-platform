@@ -350,6 +350,81 @@ export interface GroupUpdate {
   sort_order?: number;
 }
 
+// ============= customers (global identity + per-store profile) =============
+//
+// Two read shapes mirror the two access patterns on the backend:
+// - CustomerProfileRead — the *store* view: this tenant's profile + global identity
+// - CustomerRead        — the *HQ* (super_admin) view: global identity + every store profile
+
+/** Minimal global-identity info, embedded in a store profile read. */
+export interface CustomerBrief {
+  id: string;
+  identity_key: string;
+  name: string;
+  gender: string | null;
+  birthday: string | null;
+  avatar: string | null;
+}
+
+/** A per-store profile summary, embedded in a cross-store CustomerRead. */
+export interface CustomerProfileBrief {
+  id: string;
+  tenant: TenantBrief;
+  remark: string | null;
+  tags: Record<string, unknown>;
+  status: string;
+  last_visit_at: string | null;
+}
+
+/** What a store user sees: their profile + the global identity. */
+export interface CustomerProfileRead {
+  id: string;
+  customer_id: string;
+  tenant_id: string;
+  remark: string | null;
+  tags: Record<string, unknown>;
+  status: string;
+  last_visit_at: string | null;
+  created_at: string;
+  updated_at: string;
+  customer: CustomerBrief;
+}
+
+/** Create a customer in *this* store (reuses global identity if identity_key exists). */
+export interface CustomerProfileCreate {
+  identity_key: string;
+  name: string;
+  gender?: string;
+  birthday?: string;
+  remark?: string;
+  tags?: Record<string, unknown>;
+  status?: string;
+}
+
+/** Update a store profile (global-identity fields sync to the Customer). */
+export interface CustomerProfileUpdate {
+  name?: string;
+  gender?: string;
+  birthday?: string;
+  remark?: string;
+  tags?: Record<string, unknown>;
+  status?: string;
+}
+
+/** What super_admin sees: global identity + every store's profile (cross-store aggregation). */
+export interface CustomerRead {
+  id: string;
+  identity_key: string;
+  name: string;
+  gender: string | null;
+  birthday: string | null;
+  avatar: string | null;
+  created_at: string;
+  updated_at: string;
+  profiles: CustomerProfileBrief[];
+  profile_count: number;
+}
+
 export interface ApiError {
   detail: string;
 }
