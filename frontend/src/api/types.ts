@@ -308,6 +308,48 @@ export interface ApiTokenCreated extends ApiToken {
   token: string; // plaintext; returned only here, never retrievable again
 }
 
+// ============= groups (platform-level org + tenant attachment) =============
+
+/** Minimal tenant info embedded in a GroupRead (aligns with app/schemas/group.py). */
+export interface TenantBrief {
+  id: string;
+  name: string | null;
+}
+
+/** A platform-level group (business org) with its attached tenants expanded. */
+export interface Group {
+  id: string;
+  name: string;
+  code: string | null;
+  address: string | null;
+  description: string | null;
+  status: string;
+  sort_order: number;
+  tenant_ids: string[];
+  tenants: TenantBrief[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface GroupCreate {
+  name: string;
+  code?: string;
+  address?: string;
+  description?: string;
+  status?: string;
+  sort_order?: number;
+  tenant_ids?: string[];
+}
+
+export interface GroupUpdate {
+  name?: string;
+  code?: string;
+  address?: string;
+  description?: string;
+  status?: string;
+  sort_order?: number;
+}
+
 export interface ApiError {
   detail: string;
 }

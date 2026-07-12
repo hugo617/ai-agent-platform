@@ -9,6 +9,7 @@ import { LoginPage } from "@/pages/login-page";
 import { DashboardPage } from "@/pages/dashboard-page";
 import { AgentsPage } from "@/pages/agents-page";
 import { ChatPage } from "@/pages/chat-page";
+import { GroupsPage } from "@/pages/groups-page";
 import { RolesPage } from "@/pages/roles-page";
 import { MembersPage } from "@/pages/members-page";
 import { PermissionsPage } from "@/pages/permissions-page";
@@ -46,6 +47,7 @@ export default function App() {
                 <Route path="/" element={<DashboardPage />} />
                 <Route path="/agents" element={<AgentsPage />} />
                 <Route path="/chat" element={<ChatPage />} />
+                <Route path="/groups" element={<GroupsPage />} />
 
                 {/* User-management routes also require authorization: a plain
                     member is redirected to "/". The backend still enforces 403

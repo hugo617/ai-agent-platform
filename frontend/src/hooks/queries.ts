@@ -5,20 +5,26 @@ import {
 } from "@tanstack/react-query";
 import {
   addMember,
+  attachTenant,
   changeUserStatus,
   createAgent,
   createApiToken,
+  createGroup,
   createRole,
   createTenant,
   createUser,
   deleteAgent,
   deleteConversation,
+  deleteGroup,
   deleteRole,
   deleteUser,
+  detachTenant,
   fetchAgents,
   fetchApiTokens,
   fetchConversations,
   fetchEffectiveModels,
+  fetchGroup,
+  fetchGroups,
   fetchMembers,
   fetchMessages,
   fetchPermissionMatrix,
@@ -38,6 +44,7 @@ import {
   revokeRolePermission,
   terminateSession,
   updateAgent,
+  updateGroup,
   updateMember,
   updatePlatformLlmConfig,
   updateRole,
@@ -48,6 +55,8 @@ import type {
   AgentCreate,
   AgentUpdate,
   ApiTokenCreate,
+  GroupCreate,
+  GroupUpdate,
   LlmConfigUpdate,
   MemberCreate,
   MemberUpdate,
@@ -82,6 +91,8 @@ export const qk = {
   llmConfigTenant: ["settings", "llm", "tenant"] as const,
   effectiveModels: ["settings", "models"] as const,
   apiTokens: ["api-tokens"] as const,
+  groups: ["groups"] as const,
+  group: (id: string) => ["groups", id] as const,
 };
 
 // ---------- tenants ----------
@@ -94,6 +105,71 @@ export function useCreateTenant() {
   return useMutation({
     mutationFn: (name: string) => createTenant(name),
     onSuccess: () => qc.invalidateQueries({ queryKey: qk.tenants }),
+  });
+}
+
+// ---------- groups (platform-level org + tenant attachment) ----------
+export function useGroups() {
+  return useQuery({ queryKey: qk.groups, queryFn: fetchGroups });
+}
+
+export function useGroup(id: string) {
+  return useQuery({
+    queryKey: qk.group(id),
+    queryFn: () => fetchGroup(id),
+    enabled: !!id,
+  });
+}
+
+export function useCreateGroup() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: GroupCreate) => createGroup(payload),
+    onSuccess: () => qc.invalidateQueries({ queryKey: qk.groups }),
+  });
+}
+
+export function useUpdateGroup() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, payload }: { id: string; payload: GroupUpdate }) =>
+      updateGroup(id, payload),
+    onSuccess: (_data, { id }) => {
+      qc.invalidateQueries({ queryKey: qk.groups });
+      qc.invalidateQueries({ queryKey: qk.group(id) });
+    },
+  });
+}
+
+export function useDeleteGroup() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => deleteGroup(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: qk.groups }),
+  });
+}
+
+export function useAttachTenant() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ groupId, tenantId }: { groupId: string; tenantId: string }) =>
+      attachTenant(groupId, tenantId),
+    onSuccess: (_data, { groupId }) => {
+      qc.invalidateQueries({ queryKey: qk.groups });
+      qc.invalidateQueries({ queryKey: qk.group(groupId) });
+    },
+  });
+}
+
+export function useDetachTenant() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ groupId, tenantId }: { groupId: string; tenantId: string }) =>
+      detachTenant(groupId, tenantId),
+    onSuccess: (_data, { groupId }) => {
+      qc.invalidateQueries({ queryKey: qk.groups });
+      qc.invalidateQueries({ queryKey: qk.group(groupId) });
+    },
   });
 }
 
