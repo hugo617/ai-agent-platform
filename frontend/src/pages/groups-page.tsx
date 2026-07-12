@@ -62,7 +62,7 @@ import {
   useDeleteGroup,
   useDetachTenant,
   useGroups,
-  useTenants,
+  useAllTenants,
   useUpdateGroup,
 } from "@/hooks/queries";
 
@@ -99,7 +99,9 @@ export function GroupsPage() {
   const canManage = me?.platform_role === "super_admin";
 
   const { data: groups, isLoading } = useGroups();
-  const { data: tenants } = useTenants();
+  // Only super_admin can attach stores, so only they need the full tenant
+  // list; a read-only (non-super-admin) viewer would otherwise trigger a 403.
+  const { data: tenants } = useAllTenants(canManage);
   const createMut = useCreateGroup();
   const updateMut = useUpdateGroup();
   const deleteMut = useDeleteGroup();

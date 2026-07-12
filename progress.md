@@ -8,7 +8,7 @@
 - **标准启动路径**: `./init.sh`(装依赖 + ruff + pytest)
 - **标准验证路径**: `./init.sh`(同上,后端快速验证,SQLite 内存库)
 - **完整验证路径**(需 docker): `alembic upgrade head && alembic check` + `cd frontend && npm run build`
-- **当前最高优先级未完成功能**: **MVP 业务模块(2026-07-12 规划,priority 29-36)** —— 第一批 6 条已 passing:`org-cleanup`(29)✅ / `groups-api`(32)✅ / `groups-ui`(33)✅ / `customers-api`(34)✅ / `customers-ui`(35)✅ / `hq-platform-role`(36)✅。门店后端 `tenants-admin-api`(30)✅ 已合并 main(PR #38)。顺带修复 chat bug(`chat-overflow-title-fix` ✅ PR #37)。**演示案例 `demo-seed`(37)✅ 已完成**(种子脚本 + 项目地图文档)。**下一个该做:`tenants-admin-ui`(31,独立门店管理页)**。feature_list 共 37 条(37 passing)
+- **当前最高优先级未完成功能**: **MVP 业务模块(2026-07-12 规划,priority 29-37)全部收官** —— 门店线 `org-cleanup`(29)✅ / `tenants-admin-api`(30)✅ / `tenants-admin-ui`(31)✅;组织线 `groups-api`(32)✅ / `groups-ui`(33)✅;客户线 `customers-api`(34)✅ / `customers-ui`(35)✅;权限线 `hq-platform-role`(36)✅;演示案例 `demo-seed`(37)✅。**feature_list 37 条全部 passing,无 not_started 任务**。MVP 业务模块 17-25 依赖链(17→18→19→20→21→22→23→24→25)全部完成。
 - **当前 blocker**: 无
 
 ## 后续任务规划(2026-07-10 制定,2026-07-12 追加 MVP 业务模块 17-24,共 24 条,WIP=1 顺序执行)
@@ -82,6 +82,7 @@
 | customers-ui(Customer 客户前端) | passing | npm build 通过 + oxlint 0 warning + 双视角(门店 CRUD / 总部聚合只读)+ 行内展开跨店档案 + 三层权限守卫(owner 全权/admin 无 delete/member 只读/super_admin 总部只读)+ 路由 /customers(Contact 图标) |
 | hq-platform-role(平台角色 hq_staff 总部业务员) | passing | 281 tests + check() 加 hq_staff+read 短路 + is_cross_tenant_viewer helper + Customer/Group Service 跨租户分支扩展 + Customer HQ 读端点守卫扩展(require_cross_tenant_viewer)+ hq_staff 只读跨店(super_admin 不回归)+ 无迁移(platform_role 自由字符串) |
 | tenants-admin-api(门店管理后端补齐) | passing | 294 tests + Tenant 加 status/created_by/description/address + 迁移 84605f063730 + GET /tenants/all + GET/PUT /tenants/{id} + POST 收紧 super_admin + member_count 运行时聚合(LEFT JOIN _ACTIVE)+ alembic check 无 drift |
+| tenants-admin-ui(门店管理前端) | passing | npm build 通过 + oxlint 0 warning + 独立门店页(super_admin 列表/创建/编辑 Dialog)+ RequireSuperAdmin 路由守卫 + 侧边栏「门店」项(needsSuperAdmin)+ dashboard 创建按钮收紧 + groups-page 门店挂载下拉改用 useAllTenants(修复 super_admin 只能看自己租户的 UX 缺陷) |
 
 > ✅ AI 内核(agents + chat)已全部纳管并 passing:agents-api-hardening / chat-conversation-api / chat-frontend 三任务端到端完成。
 > ✅ **真实对话已跑通**:real-chat-llm-config(Session 017)用真实 DeepSeek key 端到端验证 SSE 流式对话,修了 3 个 bug(Agent.model 失效 / 前端模型脱节 / 无 LLM 配置 UI)。
@@ -1629,5 +1630,35 @@
 - **下一步最佳动作**:
   - (a) 提交 + PR + CI 守门 + 合并 demo-seed 到 main;
   - (b) 执行 `tenants-admin-ui`(priority 31,独立门店管理页,前置 tenants-admin-api ✅ 已就绪)
+
+---
+
+### Session 058 — 2026-07-12
+- **本轮目标**: 执行 `tenants-admin-ui`(门店管理前端 —— 独立门店管理页)—— 7 步,纯前端。前置 tenants-admin-api ✅ 已 passing。**MVP 业务模块收官任务**(完成后 feature_list 37 条全 passing)
+- **已完成**(对照 plan §实施步骤 Step 1-7):
+  - Step 0 基线确认:`./init.sh` → 294 passed(起点干净);切 `feat/tenants-admin-ui` 分支
+  - Step 1-2 类型+API 层:types.ts Tenant 扩展 status/description/address/member_count/created_by(全 optional 兼容现有 dashboard)+ 新增 TenantUpdate;endpoints.ts 加 fetchAllTenants(GET /tenants/all)+ updateTenant(PUT /tenants/{id})
+  - Step 3 hooks 层:queries.ts 加 qk.allTenants key + useAllTenants(enabled 参数)+ useUpdateTenant;useCreateTenant onSuccess 扩展 invalidate allTenants
+  - Step 4 门店页:新建 tenants-page.tsx(列表表格 + 创建/编辑共用 Dialog + react-hook-form/zod);新建 require-super-admin.tsx 路由守卫组件(对齐 RequireUserManagement 模式)
+  - Step 5 路由导航:App.tsx /tenants 注册在 RequireSuperAdmin 内;dashboard-layout 加「门店」(Store 图标,needsSuperAdmin)+ NavItem 接口加 needsSuperAdmin 字段 + filter 逻辑扩展
+  - Step 6 dashboard 收紧:创建租户按钮加 hidden={super_admin 判定}
+  - Step 7 验证 + 顺带修复:npm build + oxlint 全绿;groups-page 门店挂载下拉从 useTenants 改 useAllTenants(修复 super_admin 只能看自己租户的 UX 缺陷)
+- **运行过的验证**(全过):
+  - `./init.sh`(基线)→ ruff All checks passed! + **294 passed**(纯前端任务,后端零改动不回归)
+  - `cd frontend && npm run build` → tsc -b + vite build 成功,0 类型错误(JS 976.51KB / CSS 47.99KB)
+  - `npx oxlint src/`(全仓库 43 文件)→ **0 warnings 0 errors**
+- **已记录证据**: `feature_list.json` 的 `tenants-admin-ui.evidence` 字段(11 条,含废代码清理 + groups-page 顺带修复 + 路由守卫设计)
+- **技术要点**(与 plan 的实现差异):
+  - **废代码清理**:删除 plan Step 2 定义的 fetchTenant(单门店详情,无调用方)+ qk.tenant key(无 query 注册)—— 对齐 Session 013 删 fetchPermissionCatalogue 惯例(未被页面使用的 API 客户端 = 删除,即使对应后端端点存在)
+  - **路由守卫新建独立组件**:非用条件渲染,新建 RequireSuperAdmin(对齐 RequireUserManagement 模式),me.platform_role !== 'super_admin' → Navigate to /
+  - **顺带修复 groups-page UX 缺陷**:groups-ui 当时门店挂载下拉用了 useTenants(user-scoped 我的),导致 super_admin 管理 Group 门店挂载时只能看到自己租户、看不到其他门店;本任务改为 useAllTenants(canManage 条件启用,非 super_admin 只读访问时 query 不启用避免 403)—— 这是 plan 风险表暗示的依赖(『groups-ui 的门店挂载下拉用 useAllTenants() 取数据』)
+  - **创建 Dialog 只发 name**:后端 TenantCreate 仅接受 name,额外字段(status/description/address)若填了则创建后 PUT 补充(两步:POST + PUT);编辑用 diff payload 只发变更字段
+  - **needsSuperAdmin 导航机制**:NavItem 接口加 needsSuperAdmin 字段;filter 逻辑三层判定(super_admin / needsUserManagement / 默认可见)
+- **提交记录**: `feat/tenants-admin-ui` 分支(待用户决定是否合并到 main + PR)
+- **已知风险**: 无功能风险。手动浏览器验证未跑(需前后端启动 + 真实 super_admin token),build(tsc 类型检查)+ oxlint 已覆盖类型正确性与规范;后端门店端点已在 tenants-admin-api 任务用 19 个测试覆盖
+- **MVP 收官**: 本任务完成后,feature_list 37 条全部 passing,not_started=0。MVP 业务模块(2026-07-12 规划的 org-cleanup→tenants-admin-api/ui→groups-api/ui→customers-api/ui→hq-platform-role→demo-seed)全部完成
+- **下一步最佳动作**:
+  - (a) 清理废代码 + 代码质量审查 + PR + CI 守门 + 合并 feat/tenants-admin-ui 到 main;
+  - (b) 无 not_started 任务,由用户决定下一阶段方向(可选:E2E 补门店管理流程 / 新业务模块 / 文档更新)
 
 ---
