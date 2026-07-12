@@ -17,6 +17,7 @@ from app.core.database import Base
 from app.models import (  # noqa: F401
     agent,
     api_token,
+    group,
     llm_config,
     log,
     message,

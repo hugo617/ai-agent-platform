@@ -733,7 +733,7 @@
       "area": "组织域",
       "title": "Group(组织)后端 —— 跨租户经营主体 + 门店归属",
       "user_visible_behavior": "总部(super_admin)能创建/编辑/删除组织(Group),并把 1~N 个门店(tenant)挂载到组织下;门店用户能只读查看自己所属组织",
-      "status": "not_started",
+      "status": "passing",
       "plan": "harness/docs/plan-groups-api.md",
       "verification": [
         "新建 Group 表(平台级无 tenant_id)+ GroupTenant 关联表(多对多)+ Alembic 迁移",
@@ -741,7 +741,16 @@
         "pytest tests/test_groups_api.py 覆盖:super_admin CRUD + 挂载/卸载、门店 owner/admin/member 只读自己 Group、404、重复挂载 400、跨租户隔离",
         "./init.sh 全绿 + APP_ENV=testing alembic upgrade head && alembic check 无 drift(env.py + conftest.py 两处 import 同步)"
       ],
-      "evidence": [],
+      "evidence": [
+        "./init.sh 全绿:ruff check(app+cli+tests+scripts+alembic)→ All checks passed!;pytest → 248 passed(基线 232 + 新增 16 test_groups_api)(2026-07-12)",
+        "pytest tests/test_groups_api.py -v → 16 passed(super_admin:create+get、list 空→有数据、create+tenant_ids 同时挂载、create 未知 tenant_id 404、update、update 重复 code 400、delete 软删除后列表不含+get 404、get 不存在 404、attach+detach 门店、attach 未知 tenant 404、detach 未挂载 404;门店写守卫:owner POST 403、member POST 403、member attach 403;门店读隔离:tenant 用户只看自己所属 Group、看不到不相关 Group + 直接 get 404)(2026-07-12)",
+        "Group model(app/models/group.py 新建):平台级无 tenant_id;字段 id/name/code/address/description/status/sort_order/is_deleted/deleted_at/created_at/updated_at;软删除 + partial unique index uq_groups_code_active(postgresql_where=is_deleted false + sqlite_where=is_deleted 0 双库,对齐 User.uq_users_username_active 模式,软删除后 code 可复用);GroupTenant 关联表(group_id+tenant_id FK CASCADE + UniqueConstraint uq_group_tenant 防重复挂载 + idx_group_tenants_tenant_id 索引反查)",
+        "迁移 574391d912fc(down_revision 5dd68e90d6f0):create_table groups + group_tenants + 3 索引;server_default 补齐(status='active'/sort_order=0/is_deleted=false)给现有行填默认值;APP_ENV=testing alembic upgrade head 成功;alembic check → No new upgrade operations detected(env.py + conftest.py 两处 group import 同步,Session 018 教训未重演)",
+        "权限设计(核心技术决策):Group 平台级不用 require_permission('groups',act),写操作用 require_super_admin()(纯平台级,仅 super_admin),读操作 Depends(get_current_user) 登录即可 + Service 内分流(is_super_admin 看全部 / 门店用户 list_for_tenant 反查自己所属);groups 不进 DEFAULT_OWNER/ADMIN/MEMBER_PERMS,conftest casbin seed 不加 groups 项;门店用户读自己所属 Group 不查 groups:read(因无此 casbin 权限,走「登录即可」路径)",
+        "GroupRepository(app/repositories/group.py):平台级,继承 BaseRepository(非 TenantScopedRepository,因 Group 无 tenant_id);list_all(super_admin 全部,is_deleted=False 过滤)+ list_for_tenant(门店视角 JOIN GroupTenant 反查)+ get_by_code(唯一性校验);GroupTenantRepository:list_for_group/exists/attach/detach/tenant_exists(挂载前校验 tenant 存在)",
+        "GroupService(app/services/group_service.py):参照 agent_service.py CRUD 范式;_to_read helper 组装 GroupRead(JOIN GroupTenant+Tenant 填 tenant_ids + tenants TenantBrief);create/update 后 re-fetch 避免 commit 过期对象触发 MissingGreenlet(对齐 user_service._read 模式);delete 软删除;attach_tenant/detach_tenant 校验 group 存在 + tenant 存在 + 重复挂载 BizError 400 + 未挂载 NotFoundError 404",
+        "实现差异 vs plan:(1) GroupTenant 用普通 UniqueConstraint(非 partial index)——挂载关系解除=删行无软删除态,plan §Step1 的 partial index 修正为普通约束;(2) Group 加软删除(用户决策,plan §Step1 字面无 is_deleted)对齐项目铁律;(3) _to_read 用 group.__table__.columns 遍历(非 GroupRead.model_fields,因后者含 tenant_ids/tenants 非 ORM 属性)"
+      ],
       "depends_on": "org-cleanup",
       "notes": "Group 是用户业务里的「经营主体」:可能是连锁企业(多家门店)也可能是单店。平台级实体(无 tenant_id),总部 super_admin 维护。门店挂载走 GroupTenant 多对多关联表。权限设计:写操作用 require_super_admin()(纯平台级),读操作 Service 内分流(super_admin 看全部 / 门店用户看自己所属)。不进 DEFAULT_*_PERMS(门店角色无权管 Group),super_admin 通过 require_super_admin 守卫不走 casbin。参照 agent_service.py CRUD 范式。前置 org-cleanup(旧 Organization 已删)。"
     },
