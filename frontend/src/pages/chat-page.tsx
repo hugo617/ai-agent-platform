@@ -249,7 +249,7 @@ export function ChatPage() {
   return (
     <div className="grid gap-6 lg:grid-cols-[280px_1fr]">
       {/* ---- conversation list ---- */}
-      <Card className="h-[calc(100vh-12rem)] lg:order-1 order-2">
+      <Card className="flex h-[70vh] flex-col lg:h-[calc(100vh-12rem)] lg:order-1 order-2">
         <CardHeader className="flex-row items-center justify-between space-y-0">
           <CardTitle className="text-base">会话</CardTitle>
           <Button
@@ -262,7 +262,7 @@ export function ChatPage() {
             <Plus className="h-4 w-4" />
           </Button>
         </CardHeader>
-        <CardContent className="overflow-y-auto p-2">
+        <CardContent className="min-h-0 flex-1 overflow-y-auto p-2">
           {convsLoading ? (
             <div className="py-8 text-center text-sm text-muted-foreground">
               加载中…
@@ -288,14 +288,17 @@ export function ChatPage() {
                       }`}
                     >
                       <button
-                        className="flex-1 truncate text-left"
+                        className="flex min-h-[28px] flex-1 flex-col items-start truncate text-left"
                         onClick={() => selectConversation(conv.id)}
                         title={conversationLabel(conv)}
                       >
-                        {conversationLabel(conv)}
+                        <span className="truncate">{conversationLabel(conv)}</span>
+                        <span className="text-[11px] text-muted-foreground">
+                          {fmt(conv.created_at)}
+                        </span>
                       </button>
                       <button
-                        className="opacity-0 transition-opacity group-hover:opacity-100"
+                        className="inline-flex min-h-[28px] min-w-[28px] items-center justify-center opacity-0 transition-opacity group-hover:opacity-100"
                         title="删除会话"
                         disabled={streaming}
                         onClick={() => handleDeleteConversation(conv)}
@@ -312,7 +315,7 @@ export function ChatPage() {
       </Card>
 
       {/* ---- chat panel ---- */}
-      <Card className="flex h-[calc(100vh-12rem)] flex-col lg:order-2 order-1">
+      <Card className="flex h-[70vh] flex-col lg:h-[calc(100vh-12rem)] lg:order-2 order-1">
         {/* agent picker + header */}
         <CardHeader className="flex-row items-center justify-between space-y-0 border-b">
           <div className="flex items-center gap-3">
@@ -373,7 +376,7 @@ export function ChatPage() {
                   }`}
                 >
                   <div
-                    className={`relative max-w-[85%] rounded-lg px-4 py-2 text-sm ${
+                    className={`relative max-w-[85%] overflow-hidden rounded-lg px-4 py-2 text-sm ${
                       isAssistant ? "bg-muted" : "bg-primary text-primary-foreground"
                     }`}
                   >
@@ -386,7 +389,7 @@ export function ChatPage() {
                         <span className="text-muted-foreground">…</span>
                       )
                     ) : (
-                      <div className="whitespace-pre-wrap break-words">
+                      <div className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]">
                         {msg.content}
                       </div>
                     )}

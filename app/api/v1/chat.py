@@ -66,6 +66,7 @@ async def chat_stream(
             agent_id=agent.id,
             conversation_id=payload.conversation_id,
             platform_role=user.platform_role,
+            first_message=payload.message,
         )
     except ValueError as e:
         raise _http_exc(e) from e
