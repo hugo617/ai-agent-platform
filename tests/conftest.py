@@ -87,6 +87,7 @@ async def test_env() -> AsyncIterator[_TestEnv]:
     from app.models import (  # noqa: F401
         agent,
         api_token,
+        group,
         llm_config,
         log,
         message,

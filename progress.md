@@ -8,7 +8,7 @@
 - **标准启动路径**: `./init.sh`(装依赖 + ruff + pytest)
 - **标准验证路径**: `./init.sh`(同上,后端快速验证,SQLite 内存库)
 - **完整验证路径**(需 docker): `alembic upgrade head && alembic check` + `cd frontend && npm run build`
-- **当前最高优先级未完成功能**: **MVP 业务模块(2026-07-12 规划,共 6 条 priority 29-34,WIP=1 顺序执行)** —— `org-cleanup`(priority 29,删除旧 Organization)✅ 已完成 → `groups-api`(30,Group 后端)→ `groups-ui`(31,Group 前端)→ `customers-api`(32,Customer 后端)→ `customers-ui`(33,Customer 前端)→ `hq-platform-role`(34,总部角色 hq_staff)。详见「后续任务规划」表。AI 内核/AtoA 系列已全部 passing(27 条地基 + 6 条业务模块规划 = feature_list 共 33 条)。下一个该做:`groups-api`
+- **当前最高优先级未完成功能**: **MVP 业务模块(2026-07-12 规划,共 6 条 priority 29-34,WIP=1 顺序执行)** —— `org-cleanup`(priority 29,删除旧 Organization)✅ → `groups-api`(30,Group 后端)✅ 已完成 → `groups-ui`(31,Group 前端)→ `customers-api`(32,Customer 后端)→ `customers-ui`(33,Customer 前端)→ `hq-platform-role`(34,总部角色 hq_staff)。详见「后续任务规划」表。AI 内核/AtoA 系列已全部 passing(28 条地基 + 5 条业务模块待做 = feature_list 共 33 条)。下一个该做:`groups-ui`
 - **当前 blocker**: 无
 
 ## 后续任务规划(2026-07-10 制定,2026-07-12 追加 MVP 业务模块 17-22,共 22 条,WIP=1 顺序执行)
@@ -73,6 +73,7 @@
 | chat-markdown-rendering(聊天页 Markdown 渲染) | passing | npm build 通过 + oxlint 0 warning + react-markdown+GFM+代码高亮 + 停止/复制/重新生成交互 |
 | agent-config-depth(Agent 推理参数配置) | passing | 250 tests + alembic 迁移 + graph.py 移除硬编码 temperature=0.3 + 前端 slider/高级折叠区 |
 | org-cleanup(删除旧 Organization) | passing | 232 tests + 删 6 文件 + User 模块耦合清理 + 聚合迁移抠块 + alembic check 无 drift + 前端 build/oxlint 全绿 |
+| groups-api(Group 组织后端) | passing | 248 tests + Group+GroupTenant 双表 + 迁移 574391d912fc + 7 端点 + super_admin 写/登录读分流 + 软删除 + alembic check 无 drift |
 
 > ✅ AI 内核(agents + chat)已全部纳管并 passing:agents-api-hardening / chat-conversation-api / chat-frontend 三任务端到端完成。
 > ✅ **真实对话已跑通**:real-chat-llm-config(Session 017)用真实 DeepSeek key 端到端验证 SSE 流式对话,修了 3 个 bug(Agent.model 失效 / 前端模型脱节 / 无 LLM 配置 UI)。
@@ -1269,12 +1270,35 @@
 
 ---
 
-### Session 0XX — YYYY-MM-DD
-- 本轮目标:
-- 已完成:(含通过标准)
-- 运行过的验证:
-- 已记录证据:(feature_list 的 evidence 字段)
-- 提交记录:
-- 已知风险:
-- 下一步最佳动作:
--->
+### Session 044 — 2026-07-12
+- **本轮目标**: 执行 `groups-api`(Group 组织后端 —— 跨租户经营主体 + 门店归属)—— 纯后端,9 步 4 阶段。前置 org-cleanup ✅ 已合入 main(PR #31)
+- **已完成**(对照 plan §实施步骤 Step 1-9):
+  - Step 0 基线确认:`./init.sh` → 232 passed(起点干净);切 `feat/groups-api` 分支;codegraph 探勘 agent_service/roles.py/deps.py/base.py/conftest 全部参照模式
+  - Step 1 Group + GroupTenant model(`app/models/group.py` 新建):Group 平台级无 tenant_id + 软删除(is_deleted + deleted_at + partial unique index uq_groups_code_active 双库 postgresql_where/sqlite_where);GroupTenant 关联表(group_id+tenant_id FK CASCADE + UniqueConstraint uq_group_tenant + idx_group_tenants_tenant_id 反查索引)
+  - Step 2 Alembic 迁移(574391d912fc,down_revision 5dd68e90d6f0):create_table groups + group_tenants + 3 索引;server_default 补齐(status/sort_order/is_deleted);env.py + conftest.py 两处 group import 同步(Session 018 教训未重演);alembic upgrade head + check 无 drift
+  - Step 3 Schema(`app/schemas/group.py`):TenantBrief(id+name)+ GroupRead(含 tenant_ids/tenants 服务层填充)+ GroupCreate(含 tenant_ids 创建时挂载)+ GroupUpdate(全 Optional)
+  - Step 4 Repository(`app/repositories/group.py`):GroupRepository 继承 BaseRepository(非 TenantScopedRepository,因 Group 无 tenant_id);list_all + list_for_tenant(JOIN 反查)+ get_by_code;GroupTenantRepository list_for_group/exists/attach/detach/tenant_exists
+  - Step 5 Service(`app/services/group_service.py`):参照 agent_service.py;_to_read helper(JOIN GroupTenant+Tenant 填 tenant_ids + tenants);create/update 后 re-fetch 避免 commit 过期对象(MissingGreenlet);delete 软删除;attach/detach 校验 group+tenant 存在 + 重复挂载 BizError 400 + 未挂载 NotFoundError 404
+  - Step 6 API(`app/api/v1/groups.py`):7 端点;写操作 require_super_admin()(纯平台级);读操作 Depends(get_current_user) 登录即可 + Service 内分流;_http_exc isinstance 错误映射
+  - Step 7 main.py 注册路由(groups 在 chat/conversations 之后);权限确认:groups 不进 DEFAULT_*_PERMS,conftest casbin seed 不加 groups 项
+  - Step 8 测试(`tests/test_groups_api.py` 16 个):super_admin CRUD 全通 + attach/detach + 软删除 + 404 + 重复挂载 400 + 未知 tenant 404;门店 owner/member 写 403;门店用户读隔离(只看自己所属 Group + 不相关 Group 直接 get 404)
+  - Step 9 总验证:全绿(见下)
+- **运行过的验证**(全过):
+  - `./init.sh` → ruff `All checks passed!` + **248 passed**(232 基线 + 16 新增,无回归)
+  - `pytest tests/test_groups_api.py -v` → 16 passed
+  - `APP_ENV=testing alembic upgrade head` → 5dd68e90d6f0 → 574391d912fc 迁移成功
+  - `APP_ENV=testing alembic check` → No new upgrade operations detected(无 drift)
+- **已记录证据**: `feature_list.json` 的 `groups-api.evidence` 字段(8 条,含权限设计 + 双表结构 + 迁移 + 软删除 + 平台级 Repository + 实现差异)
+- **技术要点**(与 plan 的实现差异):
+  - **GroupTenant 用普通 UniqueConstraint**(非 partial index):挂载关系解除=删行无软删除态,plan §Step1 字面的 partial index 修正为普通约束
+  - **Group 加软删除**(用户决策):plan §Step1 字面无 is_deleted,用户选择软删除对齐项目铁律(旧 Organization 也是软删除)
+  - **_to_read 用 group.__table__.columns 遍历**(非 GroupRead.model_fields):后者含 tenant_ids/tenants 非 ORM 属性会 AttributeError
+  - **create/update 后 re-fetch**:commit 过期 ORM 对象后读属性触发 MissingGreenlet(async lazy load),对齐 user_service._read 模式
+  - **权限设计是核心**:Group 平台级不用 require_permission('groups',act),写用 require_super_admin(),读 Depends(get_current_user) 登录即可 + Service 内 is_super_admin 分流;门店用户读自己所属 Group 不查 groups:read(因无此 casbin 权限,走「登录即可」路径)
+- **提交记录**: `feat/groups-api` 分支(待审查 + PR + 合并)
+- **已知风险**: 无功能风险。手动 curl 验证未单独执行(纯后端 pytest 已覆盖 API 行为 + 权限边界 + 跨租户隔离);迁移链待 CI migrations job 在真实 Postgres 上守门
+- **下一步最佳动作**:
+  - (a) 清理废代码 + 代码质量审查 + PR + CI 守门 + 合并 feat/groups-api 到 main;
+  - (b) 开始下一个任务 `groups-ui`(priority 31,Group 前端 —— 组织管理页 + 门店挂载面板,前置已就绪)
+
+---
