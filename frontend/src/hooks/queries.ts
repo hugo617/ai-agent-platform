@@ -23,7 +23,6 @@ import {
   fetchApiTokens,
   fetchConversations,
   fetchEffectiveModels,
-  fetchGroup,
   fetchGroups,
   fetchMembers,
   fetchMessages,
@@ -111,14 +110,6 @@ export function useCreateTenant() {
 // ---------- groups (platform-level org + tenant attachment) ----------
 export function useGroups() {
   return useQuery({ queryKey: qk.groups, queryFn: fetchGroups });
-}
-
-export function useGroup(id: string) {
-  return useQuery({
-    queryKey: qk.group(id),
-    queryFn: () => fetchGroup(id),
-    enabled: !!id,
-  });
 }
 
 export function useCreateGroup() {

@@ -117,11 +117,6 @@ export async function fetchGroups(): Promise<Group[]> {
   return data;
 }
 
-export async function fetchGroup(id: string): Promise<Group> {
-  const { data } = await api.get<Group>(`/groups/${id}`);
-  return data;
-}
-
 export async function createGroup(payload: GroupCreate): Promise<Group> {
   const { data } = await api.post<Group>("/groups/", payload);
   return data;
