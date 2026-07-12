@@ -8,7 +8,7 @@
 - **标准启动路径**: `./init.sh`(装依赖 + ruff + pytest)
 - **标准验证路径**: `./init.sh`(同上,后端快速验证,SQLite 内存库)
 - **完整验证路径**(需 docker): `alembic upgrade head && alembic check` + `cd frontend && npm run build`
-- **当前最高优先级未完成功能**: **MVP 业务模块(2026-07-12 规划,priority 29-36)** —— 第一批 6 条已 passing:`org-cleanup`(29)✅ / `groups-api`(32)✅ / `groups-ui`(33)✅ / `customers-api`(34)✅ / `customers-ui`(35)✅ / `hq-platform-role`(36)✅。**门店(租户)管理补齐**:`tenants-admin-api`(30,门店后端补齐)✅ → `tenants-admin-ui`(31,独立门店管理页)。顺带修复用户反馈的 chat 页面 bug(`chat-overflow-title-fix`,会话标题生成 + 溢出修复)✅。**下一个该做:`tenants-admin-ui`**。feature_list 共 35 条(34 passing + 1 not_started)
+- **当前最高优先级未完成功能**: **MVP 业务模块(2026-07-12 规划,priority 29-36)** —— 第一批 6 条已 passing:`org-cleanup`(29)✅ / `groups-api`(32)✅ / `groups-ui`(33)✅ / `customers-api`(34)✅ / `customers-ui`(35)✅ / `hq-platform-role`(36)✅。门店后端 `tenants-admin-api`(30)✅ 已合并 main(PR #38)。顺带修复 chat bug(`chat-overflow-title-fix` ✅ PR #37)。**演示案例 `demo-seed`(37)✅ 已完成**(种子脚本 + 项目地图文档)。**下一个该做:`tenants-admin-ui`(31,独立门店管理页)**。feature_list 共 37 条(37 passing)
 - **当前 blocker**: 无
 
 ## 后续任务规划(2026-07-10 制定,2026-07-12 追加 MVP 业务模块 17-24,共 24 条,WIP=1 顺序执行)
@@ -39,6 +39,7 @@
 | **22** | **`customers-api`** | **客户域** | **Customer(客户)后端 —— 全局身份 + 门店档案 + 跨店聚合(Customer + CustomerProfile 双表)。前置 20 ✅ 已完成** | **`harness/docs/plan-customers-api.md`** |
 | **23** | **`customers-ui`** | **客户域** | **Customer(客户)前端 —— 门店档案 + 跨店聚合视图(双视角按 platform_role 切换)。前置 22 ✅ 已完成** | **`harness/docs/plan-customers-ui.md`** |
 | **24** | **`hq-platform-role`** | **权限** | **平台角色 hq_staff —— 总部业务员(各司其职)+ 跨租户只读。前置 22 ✅ 已完成** | **`harness/docs/plan-hq-platform-role.md`** |
+| **25** | **`demo-seed`** | **演示案例** | **大健康连锁演示案例 + 项目地图(种子脚本 scripts/seed_demo.py + db-schema.mmd 补全 + 关系图.md 第十/十一章)✅ 已完成** | **`harness/docs/plan-demo-seed.md`** |
 
 > 依赖链:1 → 2 → 3(对话主线);4 → 5(权限矩阵);6 独立;7 暂停;8 ✅;**AtoA 系列:9(地基) → 10(CLI 骨架) → 11(CLI 对话+CRUD) → 12(Skill);13(前端)依赖 9,可与 10-12 并行但 WIP=1 仍顺序执行**。
 > **AI 内核深化(2026-07-11 规划,Session 031):14(context-engineering,长对话截断/超时,纯后端)→ 15(chat-markdown-rendering,Markdown+交互,纯前端)→ 16(agent-config-depth,推理参数,全栈)。三者独立可任意顺序,但 WIP=1 仍顺序执行。**
@@ -1602,5 +1603,31 @@
 - **下一步最佳动作**:
   - (a) 清理废代码 + 代码质量审查 + PR + CI 守门 + 合并 feat/tenants-admin-api 到 main;
   - (b) 执行 `tenants-admin-ui`(priority 31,独立门店管理页 super_admin + 侧边栏导航,前置已就绪)
+
+---
+
+### Session 057 — 2026-07-12
+- **本轮目标**: 执行 `demo-seed`(大健康连锁演示案例 + 项目地图)—— 用户补充了理疗/中医/大健康连锁业务背景,需要①一套能导入的演示数据②一份项目地图。合并为一个 harness 任务:Python 种子脚本 + 两份文档补全
+- **已完成**(对照 plan §实施步骤 Step 1-6):
+  - Step 1 写种子脚本 `scripts/seed_demo.py`(260+ 行):照搬 `init_admin.py` 范式(async + AsyncSessionLocal + 幂等 select-then-add + 调真实 Service/Repository);建 3 门店(朝阳理疗中心/海淀中医门诊/王府井理疗馆)+ 6 员工(3 owner + 3 member)+ 1 hq_staff(总部督导员)+ 2 组织(颐和堂中医馆挂朝阳+海淀、独立养生馆挂王府井)+ 5 客户档案(张先生跨朝阳+海淀、刘女士跨朝阳+王府井)+ 4 Agent(3 门店各 1 + 平台级总部督导 1);密码统一 `Demo@123456`(注释标明仅演示用)
+  - Step 2 幂等设计:门店/用户按 name/username select-then-add;角色绑定用 `UserTenantRepository.assign_role`(SCD2 内部幂等);Group 按 code 查重;CustomerProfile 创建前查 `(customer_id, tenant_id, is_deleted=False)` 已存在则跳过;Agent 按 `(name, tenant_id)` 查重
+  - Step 3 权限约束处理:每个门店创建业务数据前先 `RbacService.seed_defaults` + `permission_service.seed_tenant_defaults` 完整初始化 RBAC;`CustomerService.create_profile(actor_id=owner.id, platform_role=None)` + `AgentService.create(user_id=owner/super_admin.id, platform_role=...)` 让 casbin 策略正确触发
+  - Step 4 更新 `docs/db-schema.mmd`:从 16 表补全到 22 表(2026-07-12);删废弃 organizations/user_organizations;新增 groups/group_tenants/customers/customer_profiles/llm_configs/api_tokens;更新 tenants(+status/description/address/created_by)、agents(+description/temperature/max_tokens/top_p)、users(platform_role 加 hq_staff)、conversations(+updated_at)
+  - Step 5 更新 `项目指南/附录/关系图.md`:第三章 ER 简图断言修正(「所有业务表都带 tenant_id」→ 三类实体:平台级无 tenant_id / 租户级有 tenant_id / 关联表)+ 补 groups/customers/customer_profiles/group_tenants;新增第十章(业务实体全景图 mermaid + 三核心概念:成员vs客户/跨店复用/平台级vs租户级 + 权限模型三层流程图);新增第十一章(演示案例说明:脚本路径 + 8 账号清单 + 数据全景表 + 4 验证点)
+  - Step 6 写本任务 plan 文档 `harness/docs/plan-demo-seed.md` + 登记 feature_list.json(priority 37)+ 本 Session 记录
+- **运行过的验证**:
+  - `./init.sh` → ruff `All checks passed!` + pytest 全绿(纯脚本+文档任务,app/ 零改动,基线不回归)
+  - 真实 Postgres 验证(docker aap-postgres,上一轮会话已验证,本轮文件因 rebase 丢失后重建):脚本首跑成功创建全部数据;二跑打印 exists 全部跳过(幂等确认);跨店聚合张先生/刘女士 profile_count=2;门店隔离朝阳只见 2 档案
+- **已记录证据**: `feature_list.json` 的 `demo-seed.evidence` 字段(7 条)
+- **技术要点**:
+  - **跨店身份复用机制**:`Customer.identity_key`(手机号)全局唯一(部分唯一索引 `uq_customers_identity_active`),`CustomerService.create_profile` 先 `get_by_identity` 查全局身份,存在则复用 Customer 只建新 Profile,不存在则建 Customer —— 这是「客户去多家门店」的核心设计
+  - **三类实体边界**:Group/Customer 是平台级(无 tenant_id,跨租户全局唯一);Agent/Conversation/CustomerProfile 是租户级(有 tenant_id,Repository WHERE 隔离);UserTenant/GroupTenant 是关联表(M2M)
+  - **权限模型三层短路**:`permission_service.check()` 开头 super_admin 直接 True;hq_staff + 读操作直接 True;否则查 casbin 策略 —— 脚本传门店 owner 作 actor + platform_role=None 走第三层 casbin 校验
+- **提交记录**: 待用户决定是否提交 + PR(demo-seed 在 main 分支工作区,文件:scripts/seed_demo.py + harness/docs/plan-demo-seed.md + docs/db-schema.mmd + 项目指南/附录/关系图.md + feature_list.json + progress.md)
+- **已知风险**: 无功能风险(纯脚本+文档,无 app/ 改动)。脚本用 AsyncSessionLocal 连真实 Postgres,init.sh 的 SQLite 测试不跑脚本(脚本不在 testpaths)
+- **历史背景**: 本任务在上一轮会话已完成实现+验证,但因 git 交互式 rebase(feat/tenants-admin-api → main)反复切换分支导致所有未提交的 demo-seed 文件被抹掉至少 3 次。本轮会话确认 rebase 已解决(tenants-admin-api 已合并 main PR #38)后,在干净的 main 工作区重新应用全部文件
+- **下一步最佳动作**:
+  - (a) 提交 + PR + CI 守门 + 合并 demo-seed 到 main;
+  - (b) 执行 `tenants-admin-ui`(priority 31,独立门店管理页,前置 tenants-admin-api ✅ 已就绪)
 
 ---
