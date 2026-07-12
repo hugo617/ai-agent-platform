@@ -3,6 +3,7 @@ import { BrowserRouter, Route, Routes } from "react-router-dom";
 import { AuthProvider } from "@/components/auth/auth-context";
 import { ProtectedRoute } from "@/components/auth/protected-route";
 import { RequireUserManagement } from "@/components/auth/require-permission";
+import { RequireSuperAdmin } from "@/components/auth/require-super-admin";
 import { ToastProvider } from "@/components/ui/toast";
 import { DashboardLayout } from "@/components/layout/dashboard-layout";
 import { LoginPage } from "@/pages/login-page";
@@ -15,6 +16,7 @@ import { RolesPage } from "@/pages/roles-page";
 import { MembersPage } from "@/pages/members-page";
 import { PermissionsPage } from "@/pages/permissions-page";
 import { SettingsPage } from "@/pages/settings-page";
+import { TenantsPage } from "@/pages/tenants-page";
 import { UsersPage } from "@/pages/users-page";
 import { NotFoundPage } from "@/pages/not-found-page";
 
@@ -50,6 +52,14 @@ export default function App() {
                 <Route path="/chat" element={<ChatPage />} />
                 <Route path="/groups" element={<GroupsPage />} />
                 <Route path="/customers" element={<CustomersPage />} />
+
+                {/* Platform-level (super_admin only) routes. The backend still
+                    enforces 403 on GET /tenants/all for non-super-admins; this
+                    guard is a UX layer that keeps the nav item and route out
+                    of reach for tenant users. */}
+                <Route element={<RequireSuperAdmin />}>
+                  <Route path="/tenants" element={<TenantsPage />} />
+                </Route>
 
                 {/* User-management routes also require authorization: a plain
                     member is redirected to "/". The backend still enforces 403

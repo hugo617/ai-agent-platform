@@ -122,6 +122,9 @@ export function DashboardPage() {
               size="sm"
               className="mt-2 w-full"
               onClick={() => setTenantDialogOpen(true)}
+              // POST /tenants/ was tightened to super_admin in tenants-admin-api;
+              // hide the button for tenant users to avoid a confusing 403.
+              hidden={me?.platform_role !== "super_admin"}
             >
               创建租户
             </Button>

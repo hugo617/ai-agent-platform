@@ -11,6 +11,7 @@ import {
   Settings,
   Shield,
   ShieldCheck,
+  Store,
   Users,
   UserCog,
   X,
@@ -28,6 +29,8 @@ interface NavItem {
   icon: React.ComponentType<{ className?: string }>;
   /** When true, the item is hidden for users who can't manage users (members). */
   needsUserManagement?: boolean;
+  /** When true, the item is visible only to platform super admins. */
+  needsSuperAdmin?: boolean;
 }
 
 const NAV_ITEMS: NavItem[] = [
@@ -36,6 +39,7 @@ const NAV_ITEMS: NavItem[] = [
   { to: "/chat", label: "对话", icon: MessageSquare },
   { to: "/groups", label: "组织", icon: Building2 },
   { to: "/customers", label: "客户", icon: Contact },
+  { to: "/tenants", label: "门店", icon: Store, needsSuperAdmin: true },
   { to: "/members", label: "成员", icon: UserCog, needsUserManagement: true },
   { to: "/users", label: "用户", icon: Users, needsUserManagement: true },
   { to: "/roles", label: "角色", icon: Shield, needsUserManagement: true },
@@ -74,9 +78,11 @@ export function DashboardLayout() {
           <span className="text-lg font-semibold">智能体云平台</span>
         </div>
         <nav className="flex flex-col gap-1 p-4">
-          {NAV_ITEMS.filter(
-            (item) => !item.needsUserManagement || canManageUsers(me),
-          ).map((item) => (
+          {NAV_ITEMS.filter((item) => {
+            if (item.needsSuperAdmin) return me?.platform_role === "super_admin";
+            if (item.needsUserManagement) return canManageUsers(me);
+            return true;
+          }).map((item) => (
             <NavLink
               key={item.to}
               to={item.to}

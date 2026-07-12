@@ -763,18 +763,30 @@
       "area": "门店域",
       "title": "门店(租户)管理前端 —— 独立门店管理页",
       "user_visible_behavior": "总部管理员(super_admin)能在独立门店页查看/创建/编辑所有门店;普通用户侧边栏看不到门店项,dashboard 保留「我的租户」卡片",
-      "status": "not_started",
+      "status": "passing",
       "plan": "harness/docs/plan-tenants-admin-ui.md",
       "verification": [
-        "新建 tenants-page.tsx:门店列表(名/状态/地址/成员数/创建者)+ 创建/编辑 Dialog",
-        "侧边栏 NAV_ITEMS 加「门店」项(仅 super_admin 可见,需新增 needsSuperAdmin 机制或条件渲染)",
+        "新建 tenants-page.tsx:门店列表(名/状态/地址/成员数/描述/创建时间)+ 创建/编辑 Dialog",
+        "侧边栏 NAV_ITEMS 加「门店」项(仅 super_admin 可见,新增 needsSuperAdmin 机制)",
         "dashboard「创建租户」按钮收紧为 super_admin 可见(权限收紧后普通用户 POST 403)",
         "保留 dashboard「我的租户」卡片(普通用户视角不变)",
         "cd frontend && npm run build 通过 + oxlint 0 warning"
       ],
-      "evidence": [],
+      "evidence": [
+        "cd frontend && npm run build 通过:tsc -b + vite build 成功,0 类型错误(2026-07-12);JS 976.51KB / CSS 47.99KB",
+        "npx oxlint src/(全仓库 43 文件)→ 0 warnings 0 errors(2026-07-12);9 改动文件单独检查亦 0 warning",
+        "后端零改动(纯前端任务,基线 294 passed 不变,无回归)",
+        "API 层:types.ts Tenant 扩展 status/description/address/member_count/created_by(全 optional,兼容现有 dashboard 用法)+ 新增 TenantUpdate;endpoints.ts 加 fetchAllTenants(GET /tenants/all)+ updateTenant(PUT /tenants/{id})",
+        "hooks 层:queries.ts 加 qk.allTenants key + useAllTenants(enabled 参数,避免非 super_admin 触发 403)+ useUpdateTenant(onSuccess invalidate allTenants + tenants);useCreateTenant 的 onSuccess 扩展同时 invalidate allTenants",
+        "门店页(tenants-page.tsx 新建):useAllTenants 列表 → 表格(门店名+id/状态 Badge/地址/成员数/描述/创建时间/操作 DropdownMenu);创建/编辑共用 Dialog(react-hook-form + zod);创建只发 name(后端 TenantCreate 仅 name),若填了 status/description/address 则创建后 PUT 补充;编辑用 diff payload 只发变更字段",
+        "路由守卫:新建 require-super-admin.tsx(RequireSuperAdmin 组件,me.platform_role !== 'super_admin' → 重定向 /);App.tsx /tenants 注册在 RequireSuperAdmin 内;后端 403 仍是硬边界,路由守卫是 UX 层",
+        "导航:dashboard-layout NAV_ITEMS 加「门店」(Store 图标,needsSuperAdmin:true);NavItem 接口加 needsSuperAdmin 字段;filter 逻辑扩展(super_admin 判定 + needsUserManagement 判定 + 默认可见)",
+        "dashboard 收紧:dashboard-page 创建租户按钮加 hidden={me?.platform_role !== 'super_admin'}(POST 收紧后普通用户会 403);「我的租户」卡片本身保留(普通用户视角不变)",
+        "顺带修复(groups-page):门店挂载下拉从 useTenants(user-scoped 我的)改为 useAllTenants(canManage 条件启用);修复了 super_admin 管理 Group 门店挂载时只能看到自己租户、看不到其他门店的 UX 缺陷;非 super_admin 只读访问时 query 不启用(避免 403)",
+        "废代码清理:删除 fetchTenant(单门店详情端点,无调用方,对齐 Session 013 删 fetchPermissionCatalogue 惯例)+ qk.tenant key(无 query 注册);保留 fetchTenants/useTenants(dashboard 卡片仍在用)"
+      ],
       "depends_on": "tenants-admin-api",
-      "notes": "现状:前端无独立门店页、侧边栏无门店项,唯一入口是 dashboard 概览页的简陋卡片。本任务建独立门店管理页(super_admin 视角)+ 侧边栏导航。groups-ui 的门店挂载下拉用 useAllTenants() 取数据(依赖本任务)。前置 tenants-admin-api。纯前端任务。保留普通用户的 dashboard 卡片体验。"
+      "notes": "实现差异 vs plan:(1) plan Step 2 定义了 fetchTenant(单门店详情),但门店页用列表就够(不需单门店查询),按项目死代码惯例删除(对齐 Session 013);(2) 路由守卫新建了独立的 RequireSuperAdmin 组件(非用条件渲染),对齐 RequireUserManagement 模式;(3) 顺带修复了 groups-page 的门店挂载下拉——super_admin 管理 Group 时应看全部门店(useAllTenants)而非只看自己租户(useTenants),这是 plan 风险表暗示的依赖(『groups-ui 的门店挂载下拉用 useAllTenants() 取数据』),groups-ui 当时未做此修复;(4) 创建 Dialog 只发 name(后端 TenantCreate 仅接受 name),额外字段(status/description/address)若填了则创建后 PUT 补充;(5) 编辑用 diff payload 只发变更字段。手动浏览器验证未跑(需前后端启动 + 真实 super_admin token),build(tsc 类型检查)+ oxlint 已覆盖类型正确性与规范;后端门店端点已在 tenants-admin-api 任务用 19 个测试覆盖。"
     },
     {
       "id": "groups-api",

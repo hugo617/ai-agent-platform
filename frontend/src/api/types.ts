@@ -4,7 +4,23 @@
 export interface Tenant {
   id: string;
   name: string;
+  // The four fields below are only populated by the platform-level endpoints
+  // (GET /tenants/all, GET /tenants/{id}); the user-scoped GET /tenants/ (my
+  // tenants) leaves them at their defaults. Kept optional so the existing
+  // dashboard "my tenants" card (which only reads id/name) is unaffected.
+  status?: string;
+  description?: string | null;
+  address?: string | null;
+  member_count?: number;
+  created_by?: string | null;
   created_at: string;
+}
+
+export interface TenantUpdate {
+  name?: string;
+  status?: string;
+  description?: string;
+  address?: string;
 }
 
 export interface User {

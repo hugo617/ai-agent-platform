@@ -29,6 +29,7 @@ import {
   fetchCustomers,
   fetchEffectiveModels,
   fetchGroups,
+  fetchAllTenants,
   fetchMembers,
   fetchMessages,
   fetchPermissionMatrix,
@@ -51,6 +52,7 @@ import {
   updateCustomerProfile,
   updateGroup,
   updateMember,
+  updateTenant,
   updatePlatformLlmConfig,
   updateRole,
   updateTenantLlmConfig,
@@ -70,6 +72,7 @@ import type {
   RoleCreate,
   RolePermissionGrant,
   RoleUpdate,
+  TenantUpdate,
   UserFilters,
   UserFormData,
   UserStatus,
@@ -80,6 +83,9 @@ import type {
 // it is intentionally absent here to avoid a split-brain key.
 export const qk = {
   tenants: ["tenants"] as const,
+  // allTenants = GET /tenants/all (super_admin platform-wide list, with
+  // member_count). Distinct from qk.tenants (user-scoped "my tenants").
+  allTenants: ["tenants", "all"] as const,
   agents: ["agents"] as const,
   agent: (id: string) => ["agents", id] as const,
   members: ["members"] as const,
@@ -108,6 +114,9 @@ export const qk = {
 };
 
 // ---------- tenants ----------
+// useTenants/useCreateTenant serve the dashboard "my tenants" card (user-scoped
+// GET /tenants/). The platform-level hooks below drive the store-management
+// page (super_admin GET /tenants/all + PUT /tenants/{id}).
 export function useTenants() {
   return useQuery({ queryKey: qk.tenants, queryFn: fetchTenants });
 }
@@ -116,7 +125,36 @@ export function useCreateTenant() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (name: string) => createTenant(name),
-    onSuccess: () => qc.invalidateQueries({ queryKey: qk.tenants }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: qk.tenants });
+      qc.invalidateQueries({ queryKey: qk.allTenants });
+    },
+  });
+}
+
+// Platform-wide tenant list (super_admin only). Also used by the groups page's
+// tenant-attachment dropdown, where super_admin needs to see every store.
+// `enabled` lets callers (e.g. the groups page, which non-super-admins view
+// read-only) avoid firing a 403-guaranteed request.
+export function useAllTenants(enabled = true) {
+  return useQuery({
+    queryKey: qk.allTenants,
+    queryFn: fetchAllTenants,
+    enabled,
+  });
+}
+
+export function useUpdateTenant() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, payload }: { id: string; payload: TenantUpdate }) =>
+      updateTenant(id, payload),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: qk.allTenants });
+      // Also refresh the user-scoped list: a rename should propagate to the
+      // dashboard "my tenants" card if the edited tenant belongs to the user.
+      qc.invalidateQueries({ queryKey: qk.tenants });
+    },
   });
 }
 
