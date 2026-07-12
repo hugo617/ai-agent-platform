@@ -760,7 +760,7 @@
       "area": "组织域",
       "title": "Group(组织)前端 —— 组织管理页 + 门店挂载",
       "user_visible_behavior": "总部管理员能在组织页创建/编辑/删除组织,并把门店挂载到组织下;门店用户能只读查看自己所属组织",
-      "status": "not_started",
+      "status": "passing",
       "plan": "harness/docs/plan-groups-ui.md",
       "verification": [
         "新建 groups-page.tsx:组织列表(名/编码/地址/关联门店数/状态)+ 创建/编辑 Dialog + 门店挂载面板(Badge + ✕ 卸载 + 下拉挂载)",
@@ -768,7 +768,17 @@
         "路由 /groups 注册(ProtectedRoute 内,不加 RequireUserManagement)+ NAV_ITEMS 加「组织」项",
         "cd frontend && npm run build 通过 + oxlint 0 warning"
       ],
-      "evidence": [],
+      "evidence": [
+        "cd frontend && npm run build 通过:tsc -b + vite build 成功,0 类型错误(2026-07-12);chunk size >500KB 警告是既有警告(highlight.js/react-markdown,非本任务引入)",
+        "npx oxlint(6 改动文件:groups-page.tsx/queries.ts/endpoints.ts/types.ts/App.tsx/dashboard-layout.tsx)→ 0 warnings 0 errors(2026-07-12)",
+        "后端零改动(纯前端任务,基线 248 passed 不变,无回归)",
+        "API 层(types.ts):加 TenantBrief(id/name:string|null —— 对齐后端 app/schemas/group.py 的 TenantBrief.name: str|None,非 plan 骨架的 name:string)+ Group(id/name/code/address/description/status/sort_order/tenant_ids/tenants/created_at/updated_at)+ GroupCreate(含 tenant_ids 创建时批量挂载)+ GroupUpdate(全 optional,无 tenant_ids —— 挂载走独立端点)",
+        "API 层(endpoints.ts):加 7 端点 fetchGroups/fetchGroup/createGroup/updateGroup(PUT,对齐后端 @router.put)/deleteGroup/attachTenant(POST /groups/{id}/tenants/{tid})/detachTenant(DELETE 同路径);放在 tenants 段之后",
+        "hooks 层(queries.ts):qk 加 groups + group:(id);7 hooks useGroups/useGroup(enabled:!!id)/useCreateGroup/useUpdateGroup(onSuccess invalidate groups+group(id))/useDeleteGroup/useAttachTenant(useMemo 算 attachableTenants,onSuccess invalidate groups+group(groupId))/useDetachTenant(同);import 补 7 端点 + GroupCreate/GroupUpdate 类型(字母序)",
+        "页面(groups-page.tsx 新建):参照 roles-page(useForm+zodResolver+Dialog)+ members-page(Badge 多选);列表表格(组织名/编码/地址/关联门店数 Badge N 家/状态 Badge/更新时间/操作 DropdownMenu);创建 Dialog(zod schema name 必填 + code/address/description/status/sort_order + 关联门店 Checkbox 列表数据来自 useTenants 勾选填入 tenant_ids 随 createGroup 提交);编辑 Dialog(基础字段 + 门店挂载面板:已关联门店 Badge+✕ 调 detachTenant + 底部「+ 添加门店」下拉只显示未关联门店调 attachTenant);删除确认 Dialog(destructive);权限守卫 canManage = me?.platform_role==='super_admin'(非 canManageUsers,门店 owner/admin 无权管 Group);空态提示门店用户「您还未归属任何组织,请联系总部」",
+        "路由导航:App.tsx 加 import GroupsPage + Route /groups(ProtectedRoute 内、RequireUserManagement 外,与 /agents /chat 同级 —— member 可读自己 Group);dashboard-layout.tsx 加 Building2 import(字母序)+ NAV_ITEMS 加 { to:'/groups', label:'组织', icon:Building2 }(不带 needsUserManagement,所有人可见),放在 /chat 与 /members 之间",
+        "实现差异 vs plan:(1) TenantBrief.name 对齐后端 str|None(plan 骨架写 string 不准);(2) updateGroup 用 PUT(后端 @router.put)而非 plan 骨架未明确的 PATCH;(3) 编辑态门店挂载用 useMemo 算 attachableTenants(已关联 set 过滤)驱动下拉;(4) status 选项 active/inactive(对齐后端 GroupBase.status='active' 默认值);(5) 路由 /groups 不加 RequireUserManagement(plan 明确 member 可读自己 Group);(6) 权限守卫用 platform_role==='super_admin' 而非 canManageUsers(plan 风险表提示 Group 平台级仅 super_admin 管控)"
+      ],
       "depends_on": "groups-api",
       "notes": "纯前端任务,后端零改动。参照 roles-page.tsx / users-page.tsx 数据驱动模式 + members-page.tsx 的多选交互模式。与旧 organizations-page.tsx(已删)的本质区别:旧=门店内部部门树(租户级),新=跨租户经营主体(平台级)。门店挂载交互:已关联门店显示为 Badge 点✕调 detachTenant,底部下拉选门店调 attachTenant。前置 groups-api(7 个端点就绪)。"
     },

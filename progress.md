@@ -8,7 +8,7 @@
 - **标准启动路径**: `./init.sh`(装依赖 + ruff + pytest)
 - **标准验证路径**: `./init.sh`(同上,后端快速验证,SQLite 内存库)
 - **完整验证路径**(需 docker): `alembic upgrade head && alembic check` + `cd frontend && npm run build`
-- **当前最高优先级未完成功能**: **MVP 业务模块(2026-07-12 规划,共 6 条 priority 29-34,WIP=1 顺序执行)** —— `org-cleanup`(priority 29,删除旧 Organization)✅ → `groups-api`(30,Group 后端)✅ 已完成 → `groups-ui`(31,Group 前端)→ `customers-api`(32,Customer 后端)→ `customers-ui`(33,Customer 前端)→ `hq-platform-role`(34,总部角色 hq_staff)。详见「后续任务规划」表。AI 内核/AtoA 系列已全部 passing(28 条地基 + 5 条业务模块待做 = feature_list 共 33 条)。下一个该做:`groups-ui`
+- **当前最高优先级未完成功能**: **MVP 业务模块(2026-07-12 规划,共 6 条 priority 29-34,WIP=1 顺序执行)** —— `org-cleanup`(priority 29,删除旧 Organization)✅ → `groups-api`(30,Group 后端)✅ → `groups-ui`(31,Group 前端)✅ 已完成 → `customers-api`(32,Customer 后端)→ `customers-ui`(33,Customer 前端)→ `hq-platform-role`(34,总部角色 hq_staff)。详见「后续任务规划」表。AI 内核/AtoA 系列已全部 passing(28 条地基 + 3 条 MVP 业务模块待做 = feature_list 共 33 条)。下一个该做:`customers-api`
 - **当前 blocker**: 无
 
 ## 后续任务规划(2026-07-10 制定,2026-07-12 追加 MVP 业务模块 17-22,共 22 条,WIP=1 顺序执行)
@@ -74,6 +74,7 @@
 | agent-config-depth(Agent 推理参数配置) | passing | 250 tests + alembic 迁移 + graph.py 移除硬编码 temperature=0.3 + 前端 slider/高级折叠区 |
 | org-cleanup(删除旧 Organization) | passing | 232 tests + 删 6 文件 + User 模块耦合清理 + 聚合迁移抠块 + alembic check 无 drift + 前端 build/oxlint 全绿 |
 | groups-api(Group 组织后端) | passing | 248 tests + Group+GroupTenant 双表 + 迁移 574391d912fc + 7 端点 + super_admin 写/登录读分流 + 软删除 + alembic check 无 drift |
+| groups-ui(Group 组织前端) | passing | npm build 通过 + oxlint 0 warning + 组织列表 + 创建/编辑 Dialog + 门店挂载面板(Badge✕detach + 下拉attach)+ super_admin 写/其他只读 + 路由 /groups(member 可读) |
 
 > ✅ AI 内核(agents + chat)已全部纳管并 passing:agents-api-hardening / chat-conversation-api / chat-frontend 三任务端到端完成。
 > ✅ **真实对话已跑通**:real-chat-llm-config(Session 017)用真实 DeepSeek key 端到端验证 SSE 流式对话,修了 3 个 bug(Agent.model 失效 / 前端模型脱节 / 无 LLM 配置 UI)。
@@ -1320,5 +1321,31 @@
 - **提交记录**: PR #32 已 squash 合并到 main(`d688a4f`);本地无新增 commit
 - **已知风险**: 无。CI Migrations job 在真实 Postgres 上确认无 drift
 - **下一步最佳动作**: 执行 `groups-ui`(priority 31,Group 前端 —— 组织管理页 + 门店挂载面板,plan 已就绪 `harness/docs/plan-groups-ui.md`,前置 groups-api ✅ 已合入 main)
+
+---
+
+### Session 046 — 2026-07-12
+- **本轮目标**: 执行 `groups-ui`(Group 组织前端 —— 组织管理页 + 门店挂载)—— 纯前端,6 步,前置 groups-api ✅ 已合入 main(PR #32)
+- **已完成**(对照 plan §实施步骤 Step 1-6):
+  - Step 0 基线确认:`./init.sh` → 248 passed(起点干净);切 `feat/groups-ui` 分支
+  - Step 1 types.ts:加 TenantBrief(id/name:string|null —— 对齐后端 TenantBrief.name: str|None)+ Group + GroupCreate(含 tenant_ids)+ GroupUpdate(全 optional 无 tenant_ids)
+  - Step 2 endpoints.ts:加 7 端点 fetchGroups/fetchGroup/createGroup/updateGroup(PUT)/deleteGroup/attachTenant/detachTenant;import 补 Group/GroupCreate/GroupUpdate(字母序)
+  - Step 3 queries.ts:qk 加 groups + group:(id);7 hooks useGroups/useGroup(enabled)/useCreateGroup/useUpdateGroup/useDeleteGroup/useAttachTenant/useDetachTenant;attach/detach onSuccess 同时 invalidate groups + group(groupId)
+  - Step 4 groups-page.tsx 新建:参照 roles-page(useForm+zodResolver)+ members-page(Badge);列表表格 + 创建 Dialog(门店 Checkbox 多选填 tenant_ids)+ 编辑 Dialog(门店挂载面板 Badge✕detach + 下拉attach)+ 删除确认;权限守卫 platform_role==='super_admin'
+  - Step 5 路由导航:App.tsx 加 Route /groups(ProtectedRoute 内、RequireUserManagement 外,member 可读);dashboard-layout 加 Building2 + NAV_ITEMS「组织」项(不带 needsUserManagement)
+  - Step 6 总验证:全绿(见下)
+- **运行过的验证**(全过):
+  - `cd frontend && npm run build` → tsc -b + vite build 成功,0 类型错误
+  - `npx oxlint`(6 改动文件)→ 0 warnings 0 errors
+  - 后端零改动(纯前端任务,基线 248 passed 不变,无回归)
+- **已记录证据**: `feature_list.json` 的 `groups-ui.evidence` 字段(9 条,含类型对齐 + API 层 + hooks + 页面结构 + 权限守卫 + 路由 + 与 plan 差异)
+- **技术要点**(与 plan 的实现差异):
+  - **TenantBrief.name 对齐后端 str|None**:plan 骨架写的 `name: string` 不准,实际后端 app/schemas/group.py TenantBrief.name: str|None,前端对齐为 `string | null`
+  - **updateGroup 用 PUT**:后端 app/api/v1/groups.py 是 @router.put,前端对接 PUT(非 PATCH)
+  - **编辑态门店挂载用 useMemo 算 attachableTenants**:已关联门店用 Set 过滤,下拉只显示未关联门店
+  - **权限守卫用 platform_role==='super_admin'** 而非 canManageUsers(Group 是平台级实体,门店 owner/admin 无权管,与 roles/users 的 canManageUsers 守卫不同)
+- **提交记录**: `feat/groups-ui` 分支(待审查 + PR + 合并)
+- **已知风险**: 无功能风险。手动浏览器验证未跑(需前后端启动 + 真实 token + super_admin 账号),build(tsc 类型检查)+ oxlint 已覆盖类型正确性与规范;后端 Group 端点已在 groups-api 任务用 16 个测试端到端覆盖
+- **下一步最佳动作**: 清理废代码 + 代码质量审查 + PR + CI 守门 + 合并 feat/groups-ui 到 main;之后开始 `customers-api`(priority 32,Customer 后端,plan 已就绪 `harness/docs/plan-customers-api.md`,前置 groups-api ✅ 已合入)
 
 ---
