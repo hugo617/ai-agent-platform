@@ -3,30 +3,41 @@
 %% 数据库：PostgreSQL 16（测试用 SQLite 镜像）
 %% 多租户 SaaS：共享数据库 + tenant_id 隔离
 %% 维护：每次 model / 迁移变更后同步本文件 + db-schema.html
-%% 表清单：16 张（15 应用表 + 1 casbin_rule 适配器托管）
-%% 更新于：2026-07-09
+%% 表清单：22 张（21 应用表 + 1 casbin_rule 适配器托管）
+%% 三类实体：平台级(无 tenant_id) / 租户级(有 tenant_id) / 关联表
+%% 更新于：2026-07-12
 %% ===============================================================
 
 erDiagram
     %% ---------- 实体关系 ----------
+    %% 租户与成员
     tenants ||--o{ user_tenants : "租户成员(SCD2)"
     users ||--o{ user_tenants : "成员关系(SCD2)"
+
+    %% AI 对话主线(租户级)
     tenants ||--o{ agents : "租户下 Agent"
     tenants ||--o{ conversations : "租户会话"
     agents ||--o{ conversations : "Agent 会话"
     conversations ||--o{ messages : "会话消息"
 
+    %% RBAC(租户级)
     tenants ||--o{ roles : "租户角色"
     tenants ||--o{ permissions : "租户权限"
     roles ||--o{ role_permissions : "角色-权限(SCD2)"
     permissions ||--o{ role_permissions : "角色-权限(SCD2)"
     roles }o--o{ users : "经 user_tenants.role 软关联"
 
-    tenants ||--o{ organizations : "租户组织"
-    organizations ||--o{ organizations : "父子组织(SET NULL)"
-    organizations ||--o{ user_organizations : "组织成员"
-    users ||--o{ user_organizations : "所属组织"
+    %% 业务实体(平台级 + 租户级)
+    groups ||--o{ group_tenants : "组织挂载门店(M2M)"
+    tenants ||--o{ group_tenants : "门店归属组织(M2M)"
+    customers ||--o{ customer_profiles : "全局身份-门店档案"
+    tenants ||--o{ customer_profiles : "门店档案(租户级)"
 
+    %% LLM 配置 + API Token(租户级 / 平台级)
+    tenants ||--o{ llm_configs : "租户级 LLM 配置(NULL=平台级)"
+    tenants ||--o{ api_tokens : "租户级 API Token"
+
+    %% 用户会话与日志
     users ||--o{ user_sessions : "登录会话"
     users ||--o{ user_login_methods : "登录方式"
     users ||--o{ system_logs : "操作人(SET NULL)"
@@ -38,7 +49,11 @@ erDiagram
 
     tenants {
         varchar(32) id PK "主键, uuid4().hex"
-        varchar(128) name NN "租户名称"
+        varchar(128) name NN "门店/租户名称"
+        varchar(20) status "状态: active/inactive/locked, 默认 active"
+        varchar(500) description "描述, 可空"
+        varchar(500) address "门店地址, 可空"
+        varchar(128) created_by "创建人(软引用 users.id), 可空"
         timestamptz created_at NN "创建时间, now()"
     }
 
@@ -51,7 +66,7 @@ erDiagram
         varchar(20) phone "手机号, 可空（IDX）"
         varchar(255) avatar "头像路径, 默认 /avatars/default.jpg"
         varchar(255) password "bcrypt 哈希, OIDC 账号为 null"
-        varchar(32) platform_role "平台角色: null=普通用户, super_admin=跨租户超管"
+        varchar(32) platform_role "平台角色: null=普通用户, super_admin=跨租户超管, hq_staff=总部业务员(跨租户只读)"
         varchar(20) status "状态: active/inactive/locked, 默认 active"
         jsonb metadata "扩展元数据(JSONB), 默认 {}"
         boolean is_deleted "软删除标记, 默认 false（IDX）"
@@ -79,7 +94,11 @@ erDiagram
         varchar(32) tenant_id FK "FK→tenants.id, CASCADE, IDX"
         varchar(128) name NN "Agent 名称"
         text system_prompt "系统提示词, 默认空串"
-        varchar(64) model "模型名, 默认 gpt-4o-mini"
+        varchar(64) model "模型名, 默认 deepseek-chat"
+        text description "描述, 默认空串"
+        float temperature "推理温度 0.0-2.0, 默认 0.7"
+        integer max_tokens "最大输出 token, 可空(NULL=用 provider 默认)"
+        float top_p "核采样概率, 可空(NULL=用 provider 默认)"
         timestamptz created_at NN "创建时间, now()"
     }
 
@@ -90,6 +109,7 @@ erDiagram
         varchar(128) user_id "发起用户（软引用 users.id, 无 FK, IDX）保留历史"
         varchar(255) title "会话标题, 可空"
         timestamptz created_at NN "创建时间, now()"
+        timestamptz updated_at NN "更新时间, now()+onupdate(列表排序依据)"
     }
 
     messages {
@@ -142,27 +162,87 @@ erDiagram
         timestamptz created_at NN "创建时间"
     }
 
-    organizations {
+    %% ---------- 平台级业务实体(无 tenant_id) ----------
+
+    groups {
         varchar(32) id PK "主键, uuid4().hex"
-        varchar(32) tenant_id FK "FK→tenants.id, CASCADE（IDX idx_organizations_tenant_id）"
-        varchar(200) name NN "组织名称"
-        varchar(100) code "组织代码, 可空"
-        varchar(255) path "层级路径(如 /父id/子id), 可空"
-        varchar(32) parent_id FK "父组织, 自引用 FK→organizations.id, SET NULL（IDX）"
-        varchar(128) leader_id FK "负责人, FK→users.id, SET NULL"
-        varchar(20) status "状态, 默认 active"
+        varchar(200) name NN "组织名称(连锁企业/单体店)"
+        varchar(100) code "组织代码, 可空(部分唯一索引 uq_groups_code_active)"
+        varchar(500) address "地址, 可空"
+        text description "描述, 可空"
+        varchar(20) status "状态: active/inactive, 默认 active"
         integer sort_order "排序, 默认 0"
+        boolean is_deleted "软删除标记, 默认 false(IDX)"
+        timestamptz deleted_at "删除时间, 可空"
+        timestamptz created_at NN "创建时间, now()"
+        timestamptz updated_at NN "更新时间, now()+onupdate"
+    }
+
+    group_tenants {
+        varchar(32) id PK "主键, uuid4().hex"
+        varchar(32) group_id FK "FK→groups.id, CASCADE"
+        varchar(32) tenant_id FK "FK→tenants.id, CASCADE(IDX)"
+        timestamptz joined_at NN "挂载时间, now()"
+    }
+
+    customers {
+        varchar(32) id PK "主键, uuid4().hex"
+        varchar(100) identity_key NN "全局身份键(手机号/证件号), 部分唯一索引 uq_customers_identity_active"
+        varchar(100) name NN "客户姓名"
+        varchar(20) gender "性别, 可空"
+        date birthday "生日, 可空"
+        varchar(255) avatar "头像, 可空"
+        boolean is_deleted "软删除标记, 默认 false"
+        timestamptz deleted_at "删除时间, 可空"
         timestamptz created_at NN "创建时间"
         timestamptz updated_at NN "更新时间, now()+onupdate"
     }
 
-    user_organizations {
+    %% ---------- 租户级业务实体(有 tenant_id) ----------
+
+    customer_profiles {
         varchar(32) id PK "主键, uuid4().hex"
-        varchar(128) user_id FK "FK→users.id, CASCADE（IDX）"
-        varchar(32) organization_id FK "FK→organizations.id, CASCADE（IDX）"
-        varchar(100) position "职位, 可空"
-        boolean is_main "是否主组织, 默认 false"
-        timestamptz joined_at NN "加入时间, now()"
+        varchar(32) customer_id FK "FK→customers.id, CASCADE"
+        varchar(32) tenant_id FK "FK→tenants.id, CASCADE(IDX)"
+        text remark "门店备注, 可空"
+        jsonb tags "标签(JSONB), 默认 {}"
+        varchar(20) status "状态, 默认 active"
+        timestamptz last_visit_at "最后到店时间, 可空"
+        varchar(128) created_by "建档人(软引用 users.id), 可空"
+        boolean is_deleted "软删除标记, 默认 false"
+        timestamptz deleted_at "删除时间, 可空"
+        timestamptz created_at NN "创建时间"
+        timestamptz updated_at NN "更新时间, now()+onupdate"
+    }
+
+    llm_configs {
+        varchar(32) id PK "主键, uuid4().hex"
+        varchar(32) tenant_id FK "FK→tenants.id, CASCADE, 可空(NULL=平台级超管配置)"
+        text api_key_encrypted NN "Fernet 加密的 API key"
+        varchar(64) api_key_hint "掩码提示(如 sk-***abcd), 默认空串"
+        varchar(255) base_url NN "LLM 服务地址"
+        varchar(64) default_model NN "默认模型"
+        jsonb available_models "可选模型列表(JSONB), 默认 []"
+        boolean is_active "是否生效, 默认 true"
+        timestamptz created_at NN "创建时间"
+        timestamptz updated_at NN "更新时间, now()+onupdate"
+    }
+
+    api_tokens {
+        varchar(32) id PK "主键, uuid4().hex"
+        varchar(32) tenant_id FK "FK→tenants.id, CASCADE(IDX)"
+        varchar(128) created_by_user_id FK "颁发者, FK→users.id, SET NULL(IDX)"
+        varchar(128) name NN "Token 名称"
+        varchar(16) token_type "类型: pat(默认) / oauth(预留)"
+        text token_hash NN "Fernet 加密的 token 哈希"
+        varchar(32) token_prefix "前缀(ahp_***, 索引)"
+        jsonb scopes "权限范围(JSONB), 默认 []"
+        timestamptz last_used_at "最后使用时间, 可空"
+        timestamptz expires_at "过期时间, 可空(NULL=永不过期)"
+        boolean is_active "是否生效, 默认 true"
+        boolean is_deleted "软删除标记, 默认 false(IDX)"
+        timestamptz created_at NN "创建时间"
+        timestamptz updated_at NN "更新时间, now()+onupdate"
     }
 
     user_sessions {
@@ -210,7 +290,7 @@ erDiagram
         varchar(32) id PK "主键, uuid4().hex"
         varchar(20) level NN "级别: info/warn/error/debug, 默认 info"
         varchar(100) action NN "操作类型(user.create/role.delete...)"
-        varchar(50) module NN "模块(users/roles/organizations...)"
+        varchar(50) module NN "模块(users/roles/groups/customers/agents...)"
         text message NN "日志消息"
         jsonb details "详细信息(JSONB)"
         varchar(100) resource_type "资源类型, 可空（复合 IDX resource_type+resource_id）"
