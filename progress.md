@@ -8,10 +8,10 @@
 - **标准启动路径**: `./init.sh`(装依赖 + ruff + pytest)
 - **标准验证路径**: `./init.sh`(同上,后端快速验证,SQLite 内存库)
 - **完整验证路径**(需 docker): `alembic upgrade head && alembic check` + `cd frontend && npm run build`
-- **当前最高优先级未完成功能**: AI 内核深化三任务全部完成 ✅ —— `context-engineering`(priority 25,Session 036)+ `chat-markdown-rendering`(priority 26,Session 038/039 发版)+ `agent-config-depth`(priority 27,Session 040/041 发版)。feature_list.json 中无 not_started 任务剩余(所有 27 条均 passing)。前置的系统性 bug `atoa-service-require-missing-platform-role`(priority 24)与工程化 bug `pyproject-missing-dependencies`(priority 28)已分别于 Session 032/033 修复并 passing
+- **当前最高优先级未完成功能**: **MVP 业务模块(2026-07-12 规划,共 6 条 priority 29-34,WIP=1 顺序执行)** —— `org-cleanup`(priority 29,删除旧 Organization)→ `groups-api`(30,Group 后端)→ `groups-ui`(31,Group 前端)→ `customers-api`(32,Customer 后端)→ `customers-ui`(33,Customer 前端)→ `hq-platform-role`(34,总部角色 hq_staff)。详见「后续任务规划」表。AI 内核/AtoA 系列已全部 passing(27 条地基 + 6 条业务模块规划 = feature_list 共 33 条)。下一个该做:`org-cleanup`
 - **当前 blocker**: 无
 
-## 后续任务规划(2026-07-10 制定,2026-07-10 追加第 8 条插队,共 8 条,WIP=1 顺序执行)
+## 后续任务规划(2026-07-10 制定,2026-07-12 追加 MVP 业务模块 17-22,共 22 条,WIP=1 顺序执行)
 
 | 顺序 | id | 方向 | 范围 | plan 文档 |
 |------|----|------|------|----------|
@@ -31,9 +31,16 @@
 | **14** | **`context-engineering`** | **AI 内核** | **对话上下文工程(token 近似计数 + 滑动窗口截断 + LLM 超时保护 + 部分回复落库容错)—— 解决长对话必崩的结构性 bug。前置 real-chat ✅ 已完成** | **`harness/docs/plan-context-engineering.md`** |
 | **15** | **`chat-markdown-rendering`** | **AI 内核** | **聊天页 Markdown 渲染(react-markdown + GFM + 代码高亮)+ 停止/复制/重新生成交互。前置 chat-frontend ✅ 已完成** | **`harness/docs/plan-chat-markdown-rendering.md`** |
 | **16** | **`agent-config-depth`** | **AI 内核** | **Agent 配置加推理参数(temperature/max_tokens/top_p)+ description,移除硬编码 temperature=0.3。前置 real-chat ✅ 已完成** | **`harness/docs/plan-agent-config-depth.md`** |
+| **17** | **`org-cleanup`** | **管理控制台** | **删除旧 Organization 模块(清理场地为 Group 让路)+ 清理 User 模块耦合。MVP 第 1 任务** | **`harness/docs/plan-org-cleanup.md`** |
+| **18** | **`groups-api`** | **组织域** | **Group(组织)后端 —— 跨租户经营主体 + 门店归属(Group + GroupTenant 双表 + CRUD + 挂载/卸载)。前置 17** | **`harness/docs/plan-groups-api.md`** |
+| **19** | **`groups-ui`** | **组织域** | **Group(组织)前端 —— 组织管理页 + 门店挂载面板。前置 18** | **`harness/docs/plan-groups-ui.md`** |
+| **20** | **`customers-api`** | **客户域** | **Customer(客户)后端 —— 全局身份 + 门店档案 + 跨店聚合(Customer + CustomerProfile 双表)。前置 18** | **`harness/docs/plan-customers-api.md`** |
+| **21** | **`customers-ui`** | **客户域** | **Customer(客户)前端 —— 门店档案 + 跨店聚合视图(双视角按 platform_role 切换)。前置 20** | **`harness/docs/plan-customers-ui.md`** |
+| **22** | **`hq-platform-role`** | **权限** | **平台角色 hq_staff —— 总部业务员(各司其职)+ 跨租户只读。前置 20** | **`harness/docs/plan-hq-platform-role.md`** |
 
 > 依赖链:1 → 2 → 3(对话主线);4 → 5(权限矩阵);6 独立;7 暂停;8 ✅;**AtoA 系列:9(地基) → 10(CLI 骨架) → 11(CLI 对话+CRUD) → 12(Skill);13(前端)依赖 9,可与 10-12 并行但 WIP=1 仍顺序执行**。
 > **AI 内核深化(2026-07-11 规划,Session 031):14(context-engineering,长对话截断/超时,纯后端)→ 15(chat-markdown-rendering,Markdown+交互,纯前端)→ 16(agent-config-depth,推理参数,全栈)。三者独立可任意顺序,但 WIP=1 仍顺序执行。**
+> **MVP 业务模块(2026-07-12 规划,Session 042):17(org-cleanup,删旧 Organization)→ 18(groups-api,Group 后端)→ 19(groups-ui,Group 前端)→ 20(customers-api,Customer 后端)→ 21(customers-ui,Customer 前端)→ 22(hq-platform-role,总部角色)。依赖链:17 → 18 → 19(Group 线);18 → 20 → 21(Customer 线);20 → 22(hq_staff 用 Customer 域验证)。核心模块拆后端+前端(Group/Customer 各 2 任务),遵循「后端先、前端后」约定。WIP=1 顺序执行。**
 > AtoA = Agent-to-Agent:让任意外部 AI Agent(Claude Code/Cursor/Codex)在授权后通过 CLI+Skill 使用本平台。对标 Apifox CLI+Skill 打法 + google/agents-cli。鉴权选 PAT 先做+OAuth 预留;CLI 选 Python typer;首发能力全选(对话+只读+历史读写+CRUD)。
 
 ## 已 passing 的地基能力(详见 feature_list.json)
@@ -1177,6 +1184,34 @@
   - (c) E2E 测试扩展(当前主线 login→agent→chat→history,可加权限矩阵/会话管理场景)
 
 <!-- 模板保留
+### Session 042 — 2026-07-12
+- **本轮目标**: MVP 业务场景设计探讨 + 把 MVP 拆分为 6 个 harness 子任务(文档登记,0 功能代码)
+- **前置探讨**(为规划提供业务依据):
+  - 用户需求:MVP = SaaS 管理 + 智能体问答;总部管理员各司其职看所有门店+客户;各门店只有自己门店+客户;边际条件(一人多店/一客户多店)都要满足;智能体后续设计
+  - 派 Explore agent 核实现状:多租户隔离(TenantScopedRepository 强制 tenant_id)+ UserTenant 多对多(SCD2)+ super_admin 跨租户短路(check() :63)+ 现有 Organization 是「租户内部部门树」不能跨门店 + 客户实体完全不存在 + 无跨租户数据共享机制
+  - 与用户对齐 4 轮决策(AskUserQuestion):①门店=租户 ②不做区域中间层,组织=经营主体(连锁或单店)+ 地址 ③客户=全局身份+门店档案 ④总部角色 MVP 两(super_admin+hq_staff)可扩展,门店内 owner/admin/member 复用 ⑤用户归属复用 UserTenant ⑥先单独删旧 Organization 再建新 ⑦MVP 客户只做基础信息
+- **已完成**(0 功能代码,纯 harness 文档登记):
+  - 派 3 个 Explore agent 并行调研:harness 文档体系(plan 模板/feature_list 字段/progress 表格/clean-state 7 项)+ 前后端分层任务范例(permission-matrix-api↔ui / chat-conversation-api↔frontend)+ 权限 seed/超管/跨租户机制(check 短路/user.py super_admin 形参/platform_role 自由字符串)
+  - 派 1 个 Explore agent 核实删 Organization 影响面:6 个可整删 + 8 个需编辑(user schema/repo/service 深度耦合)+ 聚合迁移 c1d2e3f4a5b6 只能编辑不能整删
+  - **写 6 份 plan 文档**(均对齐现有模板:背景+当前状态速查表+目标+前置+分阶段步骤+验收+风险/不做的事+参考文件):
+    - `plan-org-cleanup.md` — 删除旧 Organization + 清理 User 模块耦合(6 阶段 12 Step)
+    - `plan-groups-api.md` — Group 后端(Group+GroupTenant 双表,平台级无 tenant_id,super_admin 写/门店只读)
+    - `plan-groups-ui.md` — Group 前端(组织页 + 门店挂载面板)
+    - `plan-customers-api.md` — Customer 后端(Customer 全局身份 + CustomerProfile 门店档案 + 跨店聚合,照搬 user.py super_admin 分支)
+    - `plan-customers-ui.md` — Customer 前端(双视角:门店档案 CRUD / 总部跨店聚合只读)
+    - `plan-hq-platform-role.md` — hq_staff 平台角色(check() 加 hq_staff+read 短路 + is_cross_tenant_viewer helper)
+  - `feature_list.json`:追加 6 条(priority 29-34,status 全 not_started,evidence 全 [],plan 指向对应文档,depends_on 链:org-cleanup→groups-api→groups-ui / customers-api→customers-ui / hq-platform-role);顶层 last_updated→2026-07-12;features 从 27 增至 33
+  - `progress.md`:任务规划表加 6 行(顺序 17-22)+ 标题更新条数/日期 + 依赖链说明 + 当前最高优先级改为 org-cleanup
+- **运行过的验证**: `python3 -c "import json; json.load(open('feature_list.json'))"`(JSON 合法性,待跑)
+- **已记录证据**: 无(本任务是规划登记,6 条任务的 evidence 字段待各自执行时填)
+- **提交记录**: 待用户决定是否提交(本会话只改文档:6 plan + feature_list.json + progress.md,0 功能代码)
+- **已知风险**: 无。plan 文档里的文件路径/行号基于 2026-07-12 main 代码核实,执行前建议快速 grep 确认无漂移(所有 plan 文档已注明此约定)
+- **下一步最佳动作**:
+  - (a) 执行 `org-cleanup`(priority 29,plan 已就绪,纯破坏性清理,新会话可直接开干);
+  - (b) 或先提交本次文档改动(6 plan + feature_list.json + progress.md)
+
+---
+
 ### Session 0XX — YYYY-MM-DD
 - 本轮目标:
 - 已完成:(含通过标准)

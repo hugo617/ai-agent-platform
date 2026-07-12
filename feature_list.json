@@ -1,7 +1,7 @@
 {
   "project": "ai-agent-platform",
   "description": "多租户 AI 智能体 SaaS 平台脚手架(FastAPI + React + pycasbin + LangGraph)",
-  "last_updated": "2026-07-11",
+  "last_updated": "2026-07-12",
   "harness_version": "stage1-clean-state",
   "rules": {
     "single_active_feature": true,
@@ -696,6 +696,119 @@
         "架构决策理由:pyproject 把 app+cli 打成一个项目(packages.find include app*,cli*),故 pip install -e . 必须装齐两者依赖。CLI 依赖(typer/rich/click)原在 requirements-cli.txt 独立分层,但作 dynamic 单一来源时必须合并进 requirements.txt,否则 pipx/pip install -e . 读不到 CLI 依赖(原 bug 复现)。合并后 requirements-cli.txt 冗余故删"
       ],
       "notes": "关联 atoa-cli-core(priority 20),其 plan 假设 pipx install -e . 可直接全局分发,实际因 dependencies 缺失受阻。根因修复:pyproject.toml [project] 加 dependencies=[typer,httpx,click, ...](CLI 运行最小集)——建议同时补全后端依赖让 pip install -e . 在干净环境可用。本任务在 AtoA 接入配置中用 pipx inject 临时绕过,治本修复留作独立任务。不影响后端运行(后端用 .venv 已装齐),仅影响 CLI 全局分发与干净环境安装。 Session 033 根治:采用 dynamic dependencies 从 requirements.txt 读取(单一事实来源,零版本漂移),CLI 依赖合并进 requirements.txt 后 requirements-cli.txt 删除。死依赖(pgvector/python-dateutil)本次不清理(独立任务)。pipx reinstall 实测留作可选证据(本会话用 pip install -e . + metadata 检查已等价证明 dependencies 声明正确)。"
+    },
+    {
+      "id": "org-cleanup",
+      "priority": 29,
+      "area": "管理控制台",
+      "title": "删除旧 Organization 模块(清理场地,为 Group 让路)",
+      "user_visible_behavior": "(内部)移除租户内部部门树 Organization + 清理 User 模块对 Organization 的耦合,User CRUD 保持正常;组织页从导航消失",
+      "status": "not_started",
+      "plan": "harness/docs/plan-org-cleanup.md",
+      "verification": [
+        "./init.sh 全绿(ruff + pytest,除 test_organizations_api 整删外无其它回归)",
+        "cd frontend && npm run build 通过(tsc + vite)+ oxlint 0 warning",
+        "APP_ENV=testing alembic upgrade head && alembic check 无 drift(聚合迁移文件已抠 organizations 块)",
+        "grep 'organization' app/ frontend/src/(排除注释)零残留",
+        "User CRUD 全部正常(list/get/create/update/delete 不因删 Organization 崩溃)",
+        "权限矩阵页不再显示「组织」列"
+      ],
+      "evidence": [],
+      "notes": "MVP 业务模块第 1 任务(共 6 个)。现有 Organization 是「租户内部部门树」(tenant_id 非空外键,不能跨门店),用户的新业务用「Group 跨租户管理门店」替代——两者同名但完全不同。本任务只删不建,新 Group 在 groups-api 任务。高风险点:User 模块(repository JOIN user_organizations + service 查 Organization 表)深度耦合,必须同步清理 schema(repo list_organizations/sync_organizations)+ service(_validate_org_ids)+ 前端表单(organization_ids),否则 user CRUD 全线崩溃。聚合迁移 c1d2e3f4a5b6 不能整删(一次建多表),只能编辑抠 organizations 块。前置无,WIP=1 顺序执行。"
+    },
+    {
+      "id": "groups-api",
+      "priority": 30,
+      "area": "组织域",
+      "title": "Group(组织)后端 —— 跨租户经营主体 + 门店归属",
+      "user_visible_behavior": "总部(super_admin)能创建/编辑/删除组织(Group),并把 1~N 个门店(tenant)挂载到组织下;门店用户能只读查看自己所属组织",
+      "status": "not_started",
+      "plan": "harness/docs/plan-groups-api.md",
+      "verification": [
+        "新建 Group 表(平台级无 tenant_id)+ GroupTenant 关联表(多对多)+ Alembic 迁移",
+        "新增端点:GET /groups/(super_admin 全部 / 门店用户看自己所属)、GET/POST/PUT/DELETE /groups/{id}(写仅 super_admin)、POST/DELETE /groups/{id}/tenants/{tenant_id}(挂载/卸载门店)",
+        "pytest tests/test_groups_api.py 覆盖:super_admin CRUD + 挂载/卸载、门店 owner/admin/member 只读自己 Group、404、重复挂载 400、跨租户隔离",
+        "./init.sh 全绿 + APP_ENV=testing alembic upgrade head && alembic check 无 drift(env.py + conftest.py 两处 import 同步)"
+      ],
+      "evidence": [],
+      "depends_on": "org-cleanup",
+      "notes": "Group 是用户业务里的「经营主体」:可能是连锁企业(多家门店)也可能是单店。平台级实体(无 tenant_id),总部 super_admin 维护。门店挂载走 GroupTenant 多对多关联表。权限设计:写操作用 require_super_admin()(纯平台级),读操作 Service 内分流(super_admin 看全部 / 门店用户看自己所属)。不进 DEFAULT_*_PERMS(门店角色无权管 Group),super_admin 通过 require_super_admin 守卫不走 casbin。参照 agent_service.py CRUD 范式。前置 org-cleanup(旧 Organization 已删)。"
+    },
+    {
+      "id": "groups-ui",
+      "priority": 31,
+      "area": "组织域",
+      "title": "Group(组织)前端 —— 组织管理页 + 门店挂载",
+      "user_visible_behavior": "总部管理员能在组织页创建/编辑/删除组织,并把门店挂载到组织下;门店用户能只读查看自己所属组织",
+      "status": "not_started",
+      "plan": "harness/docs/plan-groups-ui.md",
+      "verification": [
+        "新建 groups-page.tsx:组织列表(名/编码/地址/关联门店数/状态)+ 创建/编辑 Dialog + 门店挂载面板(Badge + ✕ 卸载 + 下拉挂载)",
+        "权限守卫:写操作仅 super_admin 可见按钮(me.platform_role==='super_admin');门店用户只读",
+        "路由 /groups 注册(ProtectedRoute 内,不加 RequireUserManagement)+ NAV_ITEMS 加「组织」项",
+        "cd frontend && npm run build 通过 + oxlint 0 warning"
+      ],
+      "evidence": [],
+      "depends_on": "groups-api",
+      "notes": "纯前端任务,后端零改动。参照 roles-page.tsx / users-page.tsx 数据驱动模式 + members-page.tsx 的多选交互模式。与旧 organizations-page.tsx(已删)的本质区别:旧=门店内部部门树(租户级),新=跨租户经营主体(平台级)。门店挂载交互:已关联门店显示为 Badge 点✕调 detachTenant,底部下拉选门店调 attachTenant。前置 groups-api(7 个端点就绪)。"
+    },
+    {
+      "id": "customers-api",
+      "priority": 32,
+      "area": "客户域",
+      "title": "Customer(客户)后端 —— 全局身份 + 门店档案 + 跨店聚合",
+      "user_visible_behavior": "门店能创建/查看/编辑/删除本店客户档案(同手机号跨店复用全局身份);总部(super_admin)能看跨店聚合视图(一个客户去过哪几家店 + 每店档案)",
+      "status": "not_started",
+      "plan": "harness/docs/plan-customers-api.md",
+      "verification": [
+        "新建 Customer 表(全局身份 identity_key 全局唯一,tenant_id 可空)+ CustomerProfile 表(门店档案有 tenant_id)+ Alembic 迁移",
+        "新增端点:GET/POST/PUT/DELETE /customers/profiles/(门店视角 CRUD,走 require_permission('customers',act))、GET /customers/ + GET /customers/{id}/aggregate(总部聚合,走 require_super_admin)",
+        "核心逻辑:门店创建客户先 get_by_identity 复用全局 Customer,只建本店 Profile;同客户同门店重复创建 400",
+        "pytest tests/test_customers_api.py 覆盖:新身份创建/复用身份跨店/重复创建 400/门店视图隔离/super_admin 聚合/权限边界(member read-only/admin 无 delete/owner 全权)/更新同步全局/软删除/404",
+        "./init.sh 全绿 + alembic upgrade head && alembic check 无 drift"
+      ],
+      "evidence": [],
+      "depends_on": "groups-api",
+      "notes": "客户域核心难点:一个客户可能去多个门店。设计=全局身份(Customer,手机号/证件号唯一)+ 门店档案(CustomerProfile,带 tenant_id 隔离)。保证不破坏租户隔离铁律(门店只看自己 tenant 的 Profile)+ 跨店识别同一人(总部 JOIN 两表)。跨租户查询范式照搬 user.py:117-149 的 super_admin 形参分支。权限 seed 5 处同步(permission_service 3 常量 + conftest casbin owner/admin/member)。前置 groups-api(建议非硬依赖,MVP Customer 可不绑 Group)。不做消费记录/订单/跟进(属后续增强)。"
+    },
+    {
+      "id": "customers-ui",
+      "priority": 33,
+      "area": "客户域",
+      "title": "Customer(客户)前端 —— 门店档案 + 跨店聚合视图",
+      "user_visible_behavior": "门店员工能管理本店客户档案(列表/创建/编辑);总部管理员能看到跨店聚合视图(客户去过哪几家店 + 每店档案)",
+      "status": "not_started",
+      "plan": "harness/docs/plan-customers-ui.md",
+      "verification": [
+        "新建 customers-page.tsx:按 me.platform_role 切双视角(门店视角=本店档案 CRUD / 总部视角=跨店聚合只读)",
+        "门店视角:列表(姓名/手机/状态/最近到店)+ 创建/编辑 Dialog(identity_key+name+本店档案字段)+ 删除确认",
+        "总部视角:全局客户列表(姓名/手机/去过 N 家店)+ 点击展开跨店档案详情(每条 [门店名+备注+状态+最近到店])",
+        "权限守卫:member 只读 / admin 无 delete / owner 全权 / super_admin 总部只读",
+        "路由 /customers 注册 + NAV_ITEMS 加「客户」项(图标避用 Users,改 Contact/UserCircle)",
+        "cd frontend && npm run build 通过 + oxlint 0 warning"
+      ],
+      "evidence": [],
+      "depends_on": "customers-api",
+      "notes": "纯前端任务。核心是双视角切换(isSuperAdmin = me.platform_role==='super_admin' 条件渲染两套表格)。参照 users-page.tsx 的 super_admin 跨租户视图模式。创建时跨店复用 identity_key 由后端自动处理,前端正常显示 201。前置 customers-api(5 个端点就绪)。hq_staff 视角在 hq-platform-role 任务适配(本任务只 super_admin + 门店视角)。不做搜索/筛选/导入导出/去重合并(MVP)。"
+    },
+    {
+      "id": "hq-platform-role",
+      "priority": 34,
+      "area": "权限",
+      "title": "平台角色 hq_staff —— 总部业务员(各司其职)+ 跨租户只读",
+      "user_visible_behavior": "总部业务员(hq_staff)能跨店只读所有门店 + 客户档案聚合视图,但不能创建/编辑/删除;总部超管(super_admin)行为不变",
+      "status": "not_started",
+      "plan": "harness/docs/plan-hq-platform-role.md",
+      "verification": [
+        "permission_service.check() 加 hq_staff + act=='read' 短路(任意 obj 的 read 放行)",
+        "抽象 helper is_cross_tenant_viewer(platform_role)(super_admin + hq_staff 都算跨租户查看者)",
+        "Customer/Group Service 的跨租户查询分支:从 == 'super_admin' 扩展为 in ('super_admin','hq_staff');写操作 hq_staff 走 casbin 无策略则 403(天然只读)",
+        "pytest tests/test_hq_platform_role.py 覆盖:hq_staff 跨店读客户/组织 200、写客户 403、改组织 403、读门店内其它资源 200、super_admin 不回归",
+        "./init.sh 全绿(现有 super_admin 测试无回归)"
+      ],
+      "evidence": [],
+      "depends_on": "customers-api",
+      "notes": "用户「总部各司其职」需求的具体落地。platform_role 是自由字符串无 Enum 约束(tenant.py:92-96),加 hq_staff 无需迁移/JWT 改动。设计=check() 方案 A(加分支),不改 casbin 架构。hq_staff 定位=总部看板/巡检员,能看全貌不能改。MVP 两个平台角色(super_admin 全权 + hq_staff 只读),可扩展(后续加财务/客服等岗位再升级到平台级 casbin domain)。前置 customers-api(用 Customer 域作跨租户只读验证载体)。前端 customers-ui/groups-ui 的 isSuperAdmin 判定可顺带改为 isCrossTenantViewer(若已合并)。"
     }
   ]
 }
