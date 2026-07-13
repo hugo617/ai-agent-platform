@@ -118,6 +118,46 @@ class CustomerProfileRepository(TenantScopedRepository[CustomerProfile]):
         )
         return list((await self.db.execute(stmt)).scalars().all())
 
+    async def list_for_scope(
+        self,
+        *,
+        scope: str,
+        tenant_id: str,
+        group_tenant_ids: list[str] | None = None,
+        owner_user_id: str | None = None,
+    ) -> list[CustomerProfile]:
+        """Live profiles filtered by the caller's resolved row-level data scope.
+
+        Driven by ``DataScopeService.resolve`` (权限重构系列 3/4); this method
+        takes the *already-resolved* scope so the Repository stays free of any
+        Service/permission dependency (single-direction: Service → Repository).
+
+        - ``all``     → ignore tenant_id (cross-store, for platform viewers)
+        - ``tenant``  → ``tenant_id == tenant_id`` (the pre-feature default)
+        - ``group``   → ``tenant_id IN (group_tenant_ids)``
+        - ``self``    → ``tenant_id == tenant_id AND created_by == owner_user_id``
+        """
+        base = CustomerProfile.is_deleted.is_(False)
+        if scope == "all":
+            where = base
+        elif scope == "group":
+            ids = group_tenant_ids or [tenant_id]
+            where = base & CustomerProfile.tenant_id.in_(ids)
+        elif scope == "self":
+            where = (
+                base
+                & (CustomerProfile.tenant_id == tenant_id)
+                & (CustomerProfile.created_by == owner_user_id)
+            )
+        else:  # "tenant" (also the safe fallback)
+            where = base & (CustomerProfile.tenant_id == tenant_id)
+        stmt = (
+            select(CustomerProfile)
+            .where(where)
+            .order_by(CustomerProfile.created_at.desc())
+        )
+        return list((await self.db.execute(stmt)).scalars().all())
+
 
 async def batch_tenant_info(
     db: AsyncSession, tenant_ids: list[str]

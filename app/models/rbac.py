@@ -57,6 +57,13 @@ class Role(Base):
     )
     sort_order: Mapped[int] = mapped_column(default=0)
     status: Mapped[str] = mapped_column(String(20), default="active")
+    # Row-level data scope for the role (权限重构系列 3/4). Four levels:
+    #   "all"     — platform-wide, no filter (only super_admin/hq_staff via bypass)
+    #   "tenant"  — this tenant's rows (default; owner/admin/member)
+    #   "group"   — rows in all tenants belonging to the user's Group(s)
+    #   "self"    — only rows created by the user
+    # Enforced at the Repository layer via DataScopeService (app/services/data_scope).
+    data_scope: Mapped[str] = mapped_column(String(20), default="tenant")
     created_by: Mapped[str | None] = mapped_column(
         String(128), ForeignKey("users.id"), nullable=True
     )

@@ -78,6 +78,7 @@ class RbacService:
             code=payload.code,
             description=payload.description,
             sort_order=payload.sort_order,
+            data_scope=payload.data_scope,
             created_by=actor_id,
             updated_by=actor_id,
         )
@@ -113,7 +114,7 @@ class RbacService:
         role = await self.roles.get_for_tenant(tenant_id, role_id)
         if role is None:
             raise NotFoundError(f"role {role_id} not found")
-        for field in ("name", "description", "sort_order", "status"):
+        for field in ("name", "description", "sort_order", "status", "data_scope"):
             v = getattr(payload, field)
             if v is not None:
                 setattr(role, field, v)
@@ -296,13 +297,17 @@ class RbacService:
         the casbin role name so the user-management UI's role dropdown stays in
         sync with the enforcer.
         """
+        # (code, name, desc, data_scope) — all three system roles default to
+        # ``tenant``: owner/admin/member see every row in their own store, which
+        # matches the pre-data-scope TenantScopedRepository behaviour. A narrower
+        # scope (group/self) is opt-in via custom roles or a later role update.
         defaults = [
-            ("owner", "Owner", "全部权限"),
-            ("admin", "Admin", "管理权限（不含计费/删除）"),
-            ("member", "Member", "只读 + 对话"),
+            ("owner", "Owner", "全部权限", "tenant"),
+            ("admin", "Admin", "管理权限（不含计费/删除）", "tenant"),
+            ("member", "Member", "只读 + 对话", "tenant"),
         ]
         created: list[Role] = []
-        for idx, (code, name, desc) in enumerate(defaults):
+        for idx, (code, name, desc, data_scope) in enumerate(defaults):
             existing = await self.roles.get_by_code(tenant_id, code)
             if existing is not None:
                 continue
@@ -313,6 +318,7 @@ class RbacService:
                 description=desc,
                 is_system=True,
                 sort_order=idx,
+                data_scope=data_scope,
             )
             self.db.add(role)
             created.append(role)

@@ -35,6 +35,7 @@ from app.schemas.customer import (
     CustomerRead,
 )
 from app.schemas.group import TenantBrief
+from app.services.data_scope import DataScopeService
 from app.services.errors import BizError, NotFoundError
 from app.services.permission_service import is_cross_tenant_viewer, permission_service
 
@@ -115,8 +116,13 @@ class CustomerService:
         tenant_id: str,
         platform_role: str | None = None,
     ) -> list[CustomerProfileRead]:
-        """Store view: this tenant's profiles. Cross-tenant viewers
-        (super_admin / hq_staff) see all stores."""
+        """Store view filtered by the caller's row-level data scope.
+
+        Platform viewers (super_admin / hq_staff) resolve to ``all`` (every
+        store); tenant roles resolve to tenant/group/self per their role's
+        ``data_scope`` (权限重构系列 3/4). Permission check still runs for
+        non-platform users (``customers:read``).
+        """
         is_cross_tenant = is_cross_tenant_viewer(platform_role)
         if not is_cross_tenant:
             await permission_service.require(
@@ -126,10 +132,15 @@ class CustomerService:
                 "read",
                 platform_role=platform_role,
             )
-        if is_cross_tenant:
-            profiles = await self.profiles.list_all()
-        else:
-            profiles = await self.profiles.list_for_tenant(tenant_id)
+        resolved = await DataScopeService(self.db).resolve(
+            actor_id, tenant_id, platform_role
+        )
+        profiles = await self.profiles.list_for_scope(
+            scope=resolved.scope,
+            tenant_id=tenant_id,
+            group_tenant_ids=resolved.tenant_ids or None,
+            owner_user_id=resolved.owner_user_id,
+        )
         # Batch-load customers to avoid N+1.
         customer_ids = list({p.customer_id for p in profiles})
         customers_map: dict[str, Customer] = {}
