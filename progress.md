@@ -8,7 +8,7 @@
 - **标准启动路径**: `./init.sh`(装依赖 + ruff + pytest)
 - **标准验证路径**: `./init.sh`(同上,后端快速验证,SQLite 内存库)
 - **完整验证路径**(需 docker): `alembic upgrade head && alembic check` + `cd frontend && npm run build`
-- **当前最高优先级未完成功能**: **`token-usage-tracking`(priority 43,Token 费用管理系列 1/4 地基)** —— 权限重构系列(39-42)✅ 全部收官后,转 Token 费用管理系列。43 是系列地基(stream_agent 加 on_chat_model_end 累加 usage + Message 加 4 列 + UsageEvent 账本表)。前置无。
+- **当前最高优先级未完成功能**: **`token-wallet-billing`(priority 44,Token 费用管理系列 2/4 核心)** —— token-usage-tracking(43)✅ 已 passing(用量采集地基完成:stream_agent 累加 usage_metadata + Message 加 4 列 + UsageEvent 账本表)。44 是系列核心(Wallet/WalletTransaction/ModelPricing 三表 + BillingService charge FOR UPDATE 防双扣 + 余额预检拦截)。前置 token-usage-tracking(43)✅。
 - **当前 blocker**: 无
 
 ## 后续任务规划
@@ -64,6 +64,7 @@
 | permission-menu-view(菜单/视图权限 2/4) | passing | 306 tests + Permission.type='menu' 启用 + DEFAULT_MENU_PERMS + MeResponse.menus + 前端导航/路由改 canViewMenu 驱动 + 删 needsSuperAdmin/needsUserManagement 硬编码 + 修孤儿测试 bug |
 | permission-data-scope(角色级数据范围 3/4) | passing | 315 tests + Role.data_scope 四档(all/tenant/group/self)+ DataScopeService(service 层,多角色取最宽)+ CustomerProfile.list_for_scope + 迁移 4708b3fbf2e7(server_default 回填免 backfill)+ 仅 CustomerProfile 接入(会话不接入,用户决策) |
 | permission-matrix-redesign(矩阵 UI 重写 4/4 收官) | passing | npm build + oxlint 0 warning + 前端 types.ts 补 data_scope + permissions-page 重写(超管锁定行卡片 + 操作权限区 data_scope Select 行 + 增强图例 🔒)+ useUpdateRole invalidate matrix + 纯前端后端零改动基线 315 不回归 |
+| token-usage-tracking(Token 用量采集 1/4 地基) | passing | 321 tests + stream_agent 累加 on_chat_model_end usage(ReAct 多轮 sum)+ Message 加 4 列(prompt/completion/total/model 可空)+ UsageEvent 账本表 + 迁移 b739b2ae902b + _record_usage try/except 不阻断对话 |
 
 > ✅ AI 内核(agents + chat)已全部纳管并 passing。
 > ✅ **真实对话已跑通**:real-chat-llm-config(Session 017)用真实 DeepSeek key 端到端验证 SSE 流式对话。
@@ -540,5 +541,36 @@
 - **系列收官**: 权限重构系列(39-42)全部合入 main。39(unified-model,PR #42)+ 40(menu-view,PR #43)+ 41(data-scope,PR #44)+ 42(matrix-redesign,PR #45)
 - **已知风险**: 无功能风险。手动浏览器验证未跑(需前后端启动),build(tsc 类型检查)+ oxlint + pytest + CI 4 job 已覆盖类型/规范/行为/迁移链/不回归
 - **下一步最佳动作**: 执行 `token-usage-tracking`(priority 43,Token 费用管理系列 1/4 地基,现为最高优先级 not_started)—— stream_agent 加 on_chat_model_end 累加 usage + Message 加 4 列 + UsageEvent 账本表
+
+---
+
+### Session 074 — 2026-07-13
+- **本轮目标**: 执行 `token-usage-tracking`(priority 43,Token 费用管理系列 1/4 地基)—— 让系统「知道每次对话用了多少 token、哪个模型服务的」。现状(2026-07-12 取证):stream_agent 只 yield 文本从不读 usage_metadata;Message 只有 5 列无 token/model;全项目搜 quota/credit/balance/wallet 零命中。本任务做采集+落库,不做扣费/拦截(任务 44)
+- **已完成**(对照 plan §实施步骤 9 步):
+  - **Step 1**(`app/agents/graph.py` `_build_llm_kwargs`):kwargs 加 `"stream_usage": True`(DeepSeek/OpenAI 兼容 API 流式下 usage 只在末尾 chunk 返回,需此 flag 才聚合)
+  - **Step 2**(`app/agents/graph.py` `stream_agent`):返回类型 `AsyncIterator[str]` → `AsyncIterator[str | dict[str, Any]]`;事件循环加 `on_chat_model_end` 分支,累加 `output.usage_metadata`(ReAct 多轮 sum 非覆盖);流末尾 yield `{"usage": usage_acc, "model": model}` 汇总
+  - **Step 3**(`app/models/message.py` + 迁移):Message 加 4 列(`prompt_tokens`/`completion_tokens`/`total_tokens`/`model`,均可空无 server_default,旧消息 NULL 是正确语义);迁移 `b739b2ae902b`(down_revision `4708b3fbf2e7`,add_column × 4)
+  - **Step 4**(`app/services/conversation_service.py` `append_message`):加 4 个关键字参数(prompt_tokens/completion_tokens/total_tokens/model,默认 None 向后兼容);Message 构造传这些值
+  - **Step 5**(`app/api/v1/chat.py` `event_source`):`async for chunk` → `async for item`;`isinstance(item, str)` → delta 帧;`isinstance(item, dict) and "usage" in item` → `usage_data`;成功+中断两路径都调 `append_message(..., prompt_tokens=..., model=...)` 带 usage 落库;记录实际服务 model(chat.py L102-106 解析后的 model,非 agent.model)
+  - **Step 6**(新建 `app/models/usage_event.py` + `app/repositories/usage_event.py`):UsageEvent 模型(追加式账本:tenant/conversation/message/agent/customer_id 暂空/cost 暂空)+ UsageEventRepository(sum_tokens_for_tenant 聚合 / list_for_tenant / list_for_conversation);alembic/env.py import 注册;迁移加 usage_events 表(FK CASCADE + 3 索引 + 复合索引 idx_usage_events_tenant_created)
+  - **Step 7**(`app/api/v1/chat.py` `_record_usage` 辅助函数):append_message 成功后写一条 UsageEvent;try/except 包裹,失败 rollback 仅丢 ledger 行(不丢已 commit 的 message),不阻断对话(用量丢失 < 对话失败);中断路径同样调
+  - **Step 8**(新建 `tests/test_usage_tracking.py` 6 测试):① stream_agent 多轮累加(2 次 on_chat_model_end → sum=30/13/43 非 last=20/8/28,用真 AIMessageChunk + fake astream_events)② 成功路径 Message+UsageEvent 落库(token 列 + ledger 行全字段断言)③ 向后兼容(纯 str stream → NULL 列 + 无 ledger)④ 中断路径 partial usage 落库 ⑤ 跨租户隔离(list_for_tenant + sum_zeros 空租户)⑥ append_message 无 kwargs 兼容
+  - **Step 9**:验证 + 文档(feature_list.json evidence 9 条 + status passing;progress.md 更新)
+- **运行过的验证**(全过):
+  - `./init.sh` → ruff `All checks passed!` + **321 passed**(基线 315 + 新增 6)
+  - `cd frontend && npm run build` → tsc + vite build 成功,0 类型错误
+  - `npx oxlint src/` → 0 warnings 0 errors(43 文件)
+  - 迁移文件 py_compile 通过;SQLite 跑迁移链因既有 `now()` PG 函数不兼容(非本任务引入,测试用 create_all 不走迁移,CI Migrations job 覆盖 PG)
+- **已记录证据**: `feature_list.json` 的 `token-usage-tracking.evidence` 字段(9 条),status 改为 passing
+- **技术要点**(与 plan 的实现差异):
+  - **yield 契约 str → str|dict 仅影响 1 个调用方**:plan 风险表提「两个调用方(chat.py event_source + AtoA CLI chat)」,但 CLI 是 HTTP SSE 消费者(收文本帧),不直接调 stream_agent。yield 契约变更只需改后端 chat.py event_source 一处。旧 fake_stream(只 yield str)仍工作(isinstance(str, dict) 为 False → usage_data 保持 None → token 列 NULL,向后兼容)
+  - **_record_usage 用 rollback 非 savepoint**:append_message 已 commit(message 安全),_record_usage 的 add+commit 失败时 rollback 丢 ledger 行。理论上 rollback 会 expire 所有对象,但 event_source 之后不再读 msg/conv,所以无影响。plan 说「try/except 不阻断对话」,实现满足
+  - **UsageEvent.customer_id/cost 留空**:本任务只采集原始 token 数,customer_id(任务 45 填)+ cost(任务 44 填)暂 None,模型字段已就位让后续任务只填值不改 schema
+  - **MessageRead schema 不暴露新列**:本任务是后端地基,前端看板是任务 46。MessageRead 的 `from_attributes=True` 默认忽略 Message 模型多出的字段,API 返回不变,前端不感知(无需改前端 types.ts)
+- **提交记录**: 待用户决定是否提交 + 是否走 PR + CI 守门(8 文件改动:3 后端实现 + 1 迁移新建 + 2 新建模型/Repository + 1 测试新建 + feature_list.json + progress.md)
+- **已知风险**: 无功能风险。迁移未在真实 Postgres 手动跑(CI Migrations job 覆盖);DeepSeek stream_usage 是否生效需真实 key 验证(plan 风险表已标注,不生效则降级非流式取 usage,本任务已开启 stream_usage 待真实环境验证);手动浏览器验证未跑(需前后端启动),build(tsc)+ oxlint + pytest 321 已覆盖类型/规范/行为/不回归
+- **下一步最佳动作**:
+  - (a) 清理废代码 + 代码质量审查 + commit + PR + CI 守门 + 合并 token-usage-tracking 到 main;
+  - (b) 执行 `token-wallet-billing`(priority 44,Token 费用管理系列 2/4 核心,现为最高优先级 not_started)—— Wallet/WalletTransaction/ModelPricing 三表 + BillingService charge FOR UPDATE 防双扣 + 余额预检拦截
 
 ---

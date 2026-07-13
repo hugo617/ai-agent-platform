@@ -1004,7 +1004,7 @@
       "area": "计费",
       "title": "Token 用量采集(用量事件层)(Token 费用管理系列 1/4)",
       "user_visible_behavior": "每次 AI 对话后系统记录真实的 token 用量(输入/输出/合计)+ 实际服务的模型名,为后续计费提供数据基础;目前对话消耗的 token 完全没被采集(stream_agent 丢弃 usage_metadata)",
-      "status": "not_started",
+      "status": "passing",
       "plan": "harness/docs/plan-token-usage-tracking.md",
       "verification": [
         "_build_llm_kwargs 开启 stream_usage: True(DeepSeek 流式末尾返回 usage)",
@@ -1017,7 +1017,17 @@
         "pytest tests/test_usage_tracking.py 覆盖:采集正确性/多轮累加/落库/向后兼容/中断路径/跨租户隔离",
         "./init.sh 全绿 + alembic upgrade head && alembic check 无 drift"
       ],
-      "evidence": [],
+      "evidence": [
+        "_build_llm_kwargs 开启 stream_usage: True(graph.py,DeepSeek 流式末尾 chunk 返回 usage)",
+        "stream_agent 事件循环加 on_chat_model_end 分支,累加 usage_metadata(ReAct 多轮累加非覆盖),流末尾 yield {usage, model} 汇总;返回类型 AsyncIterator[str | dict]",
+        "Message 加 4 列(prompt_tokens/completion_tokens/total_tokens/model,均可空向后兼容)+ 迁移 b739b2ae902b(down_revision 4708b3fbf2e7)",
+        "append_message 扩展关键字参数接收 token 数据(prompt_tokens/completion_tokens/total_tokens/model,向后兼容旧调用)",
+        "event_source 消费 usage:isinstance 分发 str→delta / dict→usage_data;成功+中断两路径都带 usage 落库;记录实际服务 model(chat.py L102-106 解析后的 model)",
+        "新建 UsageEvent 表(usage_events,追加式账本:tenant/conversation/message/agent/customer_id 暂空/cost 暂空)+ Repository(sum_tokens_for_tenant/list_for_tenant/list_for_conversation)+ 迁移注册 + alembic/env.py import",
+        "对话成功后写一条 UsageEvent(_record_usage 辅助函数,try/except 包裹不阻断对话,失败 rollback 仅丢 ledger 行不丢已 commit 的 message)",
+        "pytest tests/test_usage_tracking.py 6 测试全过:stream_agent 多轮累加(2 次 on_chat_model_end sum 非 last)/ 成功路径 Message+UsageEvent 落库 / 向后兼容(纯 str stream → NULL 列 + 无 ledger)/ 中断路径 partial usage 落库 / 跨租户隔离(list_for_tenant + sum_zeros) / append_message 无 kwargs 兼容",
+        "./init.sh 全绿:ruff All checks passed! + 321 passed(基线 315 + 新增 6);npm run build 成功 0 类型错误;oxlint 0 warnings 0 errors"
+      ],
       "notes": "Token 费用管理系列地基任务。现状(2026-07-12 精确取证):stream_agent(L125-178)事件循环只处理 on_chat_model_stream 只 yield 文本,从不读 chunk.usage_metadata(LangChain 流末尾暴露的真实用量);Message 只有 5 列无 token/model;全项目搜 quota/credit/balance/wallet 零命中。关键技术点:① DeepSeek 流式需 stream_usage=True 才返回 usage;② ReAct agent 多轮 on_chat_model_end 需累加;③ yield 契约从 AsyncIterator[str] 改为 str|dict。系列总纲 plan-token-billing-overview.md。不做:钱包扣费(任务44)、客户归因(customer_id 留空,任务45)、定价(cost 留空,任务44)、改 ReAct 工具链。UsageEvent 写入失败用 try/except 包裹不阻断对话(用量丢失<对话失败)。"
     },
     {
