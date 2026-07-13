@@ -4,6 +4,7 @@ import {
   Bot,
   Building2,
   Contact,
+  Coins,
   LayoutDashboard,
   LogOut,
   Menu,
@@ -14,13 +15,14 @@ import {
   Store,
   Users,
   UserCog,
+  Wallet,
   X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useAuth } from "@/components/auth/auth-context";
-import { canViewMenu } from "@/lib/permission";
+import { canViewMenu, hasPermission } from "@/lib/permission";
 import { logout } from "@/api/endpoints";
 
 interface NavItem {
@@ -37,6 +39,12 @@ interface NavItem {
    * bypass covers them); gate purely on platform_role === "super_admin".
    */
   platformOnly?: boolean;
+  /**
+   * Gate visibility on an api permission code (e.g. "wallet:read") instead of a
+   * menu code. Used when a feature has no seeded menu permission but its api
+   * permission is granted to the right roles. super_admin short-circuits true.
+   */
+  permission?: { obj: string; act: string };
 }
 
 const NAV_ITEMS: NavItem[] = [
@@ -45,7 +53,18 @@ const NAV_ITEMS: NavItem[] = [
   { to: "/chat", label: "对话", icon: MessageSquare, menuCode: "menu:chat" },
   { to: "/groups", label: "组织", icon: Building2, menuCode: "menu:groups" },
   { to: "/customers", label: "客户", icon: Contact, menuCode: "menu:customers" },
+  // Token 费用管理系列 4/4 — store-level billing. No menu:billing permission is
+  // seeded (the series ships wallet:read on owner/admin/member instead), so we
+  // gate the nav item on the api permission directly. super_admin bypasses.
+  {
+    to: "/billing",
+    label: "费用管理",
+    icon: Wallet,
+    permission: { obj: "wallet", act: "read" },
+  },
   { to: "/tenants", label: "门店", icon: Store, platformOnly: true },
+  // HQ-level billing — super_admin only (recharge + pricing policy).
+  { to: "/billing/admin", label: "计费管理", icon: Coins, platformOnly: true },
   { to: "/members", label: "成员", icon: UserCog, menuCode: "menu:members" },
   { to: "/users", label: "用户", icon: Users, menuCode: "menu:users" },
   { to: "/roles", label: "角色", icon: Shield, menuCode: "menu:roles" },
@@ -85,9 +104,16 @@ export function DashboardLayout() {
         </div>
         <nav className="flex flex-col gap-1 p-4">
           {NAV_ITEMS.filter((item) => {
-            // Platform-level items (e.g. /tenants) have no tenant menu perm —
-            // show them purely on platform_role.
+            // Platform-level items (e.g. /tenants, /billing/admin) have no
+            // tenant menu perm — show them purely on platform_role.
             if (item.platformOnly) return me?.platform_role === "super_admin";
+            // Api-permission-gated items (e.g. /billing on wallet:read).
+            if (item.permission)
+              return hasPermission(
+                me,
+                item.permission.obj,
+                item.permission.act,
+              );
             // Otherwise visibility is driven by the menu permission code.
             return canViewMenu(me, item.menuCode ?? "");
           }).map((item) => (

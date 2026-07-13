@@ -700,3 +700,28 @@
 - **下一步最佳动作**: 执行 `token-billing-ui`(priority 46,Token 费用管理系列 4/4 收官,现为最高优先级 not_started)—— 门店级看板 + 总部级看板 + 余额预警 + 用量钻取
 
 ---
+
+### Session 080 — 2026-07-14
+- **本轮目标**: 实现 `token-billing-ui`(priority 46,Token 费用管理系列 4/4 收官)—— 纯前端两级计费看板 + 充值 + 用量钻取。后端已全建(app/api/v1/billing.py 9 端点 + app/schemas/billing.py)
+- **执行**(plan §实施步骤 Step 1-8 全部完成,在 `feat/token-billing-ui` 新分支):
+  - **Step 1 类型**: `frontend/src/api/types.ts` 加 Wallet/WalletUpdate/WalletTransaction(+WalletTransactionType)/ModelPricing/ModelPricingUpsert/RechargeRequest/UsageEventItem/UsageSummary/UsageDetail 9 接口,逐字段对齐 app/schemas/billing.py(amount 带符号、tenant_id 可空=平台默认、cost Decimal 快照)
+  - **Step 2 端点**: `frontend/src/api/endpoints.ts` 加 fetchWallet/fetchWalletByTenant/updateMyWallet/fetchTransactions/fetchUsage/recharge/fetchPricing/createPricing/updatePricing/deletePricing 10 函数(GET /billing/wallet null 容错)
+  - **Step 3 hooks**: `frontend/src/hooks/queries.ts` 加 qk.wallet/walletByTenant/transactions/usage/pricing + 9 hooks;recharge.onSuccess invalidate 受影响 tenant wallet + 自有钱包 + transactions
+  - **Step 4 门店看板**(`billing-page.tsx` 新建):余额卡片(balance < low_balance_threshold 卡片+数字+banner 变 destructive 红)+ 累计充值/消耗/状态 3 计数卡 + 近7/30天纯CSS柱状消耗趋势(`buildDailyTrend` 按日桶聚合 UsageEvent.total_tokens,无图表库依赖)+ Prompt/Completion/Total 累计汇总 + 最近流水表(类型图标 + 金额红绿 + 相对时间)+ 用量明细钻取表;RefreshCw 一键 refetch;fmtTokens 千分位 + fmtCost ¥四位 + fmtRelative 相对时间
+  - **Step 5 总部看板**(`billing-admin-page.tsx` 新建):全平台余额/充值/消耗 3 汇总卡(`useQueries` 扇出逐店 GET /billing/wallet/{tenant_id},后端无聚合端点)+ 门店钱包表 + 充值 Dialog(react-hook-form + zod v4)+ ModelPricing CRUD 表(新建/编辑/停用)
+  - **Step 6 导航**: `dashboard-layout.tsx` 加「费用管理」/billing(新 `permission:{obj,act}` 字段走 hasPermission)+「计费管理」/billing/admin(platformOnly super_admin);图标 Wallet/Coins
+  - **Step 7 路由**: `require-permission.tsx` 加 `RequireApiPermission` 守卫(PATH_API_PERM 映射 /billing→wallet:read);`App.tsx` 注册 /billing(RequireApiPermission)+ /billing/admin(RequireSuperAdmin 同 tenants 块)
+- **偏差说明**(对比 plan,均合理):
+  1. 无 menu:billing 权限种子 → /billing 守卫与导航改用 api 权限 wallet:read(新增 NavItem.permission 字段 + RequireApiPermission 守卫,super_admin bypass;wallet:read 已 seed 给 owner/admin/member)
+  2. 后端无聚合「全部门店钱包」端点 → HQ 汇总用 useQueries 逐店扇出(已注释说明;若后续慢可加汇总端点)
+  3. zod v4 用 `error` 替代 v3 的 `invalid_type_error`(项目用 zod ^4.4.3)
+- **验证**(全过):
+  - `cd frontend && npm run build` → tsc + vite **0 类型错误**(built in 1.77s;chunk size >500kB 为既有非阻塞提示,非本次引入)
+  - `cd frontend && npx oxlint src/` → **Found 0 warnings and 0 errors**(45 files / 102 rules)
+  - `./init.sh` → ruff All checks passed + **356 passed**(后端未改动,纯前端任务,确认不回归)
+- **当前状态**: `feat/token-billing-ui` 分支,改动 8 文件(7 前端 + 1 feature_list + 本 progress),未 commit(留给 ship-it)。token-billing-ui(46)✅ passing,Token 费用管理系列 4/4 收官
+- **已知风险**: 无功能风险。HQ 逐店扇出查询在门店数大时偏慢(当前门店量级可接受);真实充值/对话扣费联调需前后端启动 + 真实 DeepSeek key
+- **下一步最佳动作**: ship-it 收尾(清理 → review → commit → PR → CI → merge)→ token-billing-ui 入 main;之后看板类(`dashboard-analytics` 47)可复用本轮 buildDailyTrend 模式
+
+---
+

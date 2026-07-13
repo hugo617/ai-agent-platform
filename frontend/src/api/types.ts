@@ -478,6 +478,106 @@ export interface CustomerUsage {
   last_active_at: string | null;
 }
 
+// ============= billing (Token 费用管理系列 4/4) =============
+//
+// Aligns with app/schemas/billing.py. The wallet carries the live balance +
+// lifetime counters; transactions are the append-only ledger; pricing rows
+// hold per-model token prices (platform default + tenant override).
+
+/** The prepaid token wallet for one tenant (WalletRead). */
+export interface Wallet {
+  id: string;
+  tenant_id: string;
+  balance: number;
+  total_recharged: number;
+  total_consumed: number;
+  low_balance_threshold: number;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+/** One append-only ledger row (recharge / consume / refund / adjust). */
+export type WalletTransactionType =
+  | "recharge"
+  | "consume"
+  | "refund"
+  | "adjust";
+
+export interface WalletTransaction {
+  id: string;
+  wallet_id: string;
+  tenant_id: string;
+  type: string;
+  amount: number; // signed: +recharge -consume
+  balance_after: number;
+  usage_event_id: string | null;
+  model: string | null;
+  remark: string | null;
+  operator_id: string | null;
+  created_at: string;
+}
+
+/** Super-admin payload for POST /billing/recharge. */
+export interface RechargeRequest {
+  tenant_id: string;
+  amount: number; // positive integer token count
+  remark?: string;
+}
+
+/** One per-model pricing row (platform default or tenant override). */
+export interface ModelPricing {
+  id: string;
+  tenant_id: string | null; // null = platform default; set = tenant override
+  model: string;
+  input_price_per_1k: number;
+  output_price_per_1k: number;
+  currency: string;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+/** Payload for POST/PUT /billing/pricing. */
+export interface ModelPricingUpsert {
+  tenant_id?: string | null;
+  model: string;
+  input_price_per_1k: number;
+  output_price_per_1k: number;
+  currency?: string;
+  is_active?: boolean;
+}
+
+/**
+ * One usage-event row in the /billing/usage drill-down. The backend returns
+ * these as a plain dict (not a Pydantic schema), so this mirrors that shape.
+ */
+export interface UsageEventItem {
+  id: string;
+  conversation_id: string | null;
+  message_id: string | null;
+  agent_id: string | null;
+  model: string | null;
+  prompt_tokens: number | null;
+  completion_tokens: number | null;
+  total_tokens: number | null;
+  cost: number | null;
+  created_at: string | null;
+}
+
+/** Aggregate token totals returned alongside the usage rows. */
+export interface UsageSummary {
+  prompt_tokens: number;
+  completion_tokens: number;
+  total_tokens: number;
+}
+
+/** Response shape of GET /billing/usage. */
+export interface UsageDetail {
+  items: UsageEventItem[];
+  summary: UsageSummary;
+}
+
 export interface ApiError {
   detail: string;
 }
