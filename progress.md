@@ -8,7 +8,7 @@
 - **标准启动路径**: `./init.sh`(装依赖 + ruff + pytest)
 - **标准验证路径**: `./init.sh`(同上,后端快速验证,SQLite 内存库)
 - **完整验证路径**(需 docker): `alembic upgrade head && alembic check` + `cd frontend && npm run build`
-- **当前最高优先级未完成功能**: **`customer-conversation-link`(priority 45,Token 费用管理系列 3/4)** —— token-wallet-billing(44)✅ 已 passing(钱包计费核心完成:Wallet/WalletTransaction/ModelPricing 三表 + BillingService charge FOR UPDATE 防双扣 + 余额预检拦截 + create_tenant 初始化 wallet + 计费 API + 权限项)。45 做 Conversation 加 customer_id + UsageEvent 透传 + 客户用量聚合 + 客户 360 AI 服务维度。前置 token-wallet-billing(44)✅。
+- **当前最高优先级未完成功能**: **`customer-conversation-link`(priority 45,Token 费用管理系列 3/4)** —— token-wallet-billing(44)✅ 已 passing 并入 main(PR #47,commit 2d7cf7d;钱包计费核心完成:Wallet/WalletTransaction/ModelPricing 三表 + BillingService charge FOR UPDATE 防双扣 + 余额预检拦截 + create_tenant 初始化 wallet + 计费 API + 权限项 + 代码质量审查修复 billing.py 局部 import 提顶层 + update_my_wallet 下沉 Service)。45 做 Conversation 加 customer_id + UsageEvent 透传 + 客户用量聚合 + 客户 360 AI 服务维度。前置 token-wallet-billing(44)✅。
 - **当前 blocker**: 无
 
 ## 后续任务规划
@@ -626,5 +626,25 @@
 - **下一步最佳动作**:
   - (a) 清理废代码 + 代码质量审查 + commit + PR + CI 守门 + 合并 token-wallet-billing 到 main;
   - (b) 执行 `customer-conversation-link`(priority 45,Token 费用管理系列 3/4,现为最高优先级 not_started)—— Conversation 加 customer_id + UsageEvent 透传 + 客户用量聚合 + 客户 360 AI 服务维度
+
+---
+
+### Session 077 — 2026-07-13
+- **本轮目标**: 清理废代码 + 代码质量审查 + commit + PR + CI 守门 + 合并 token-wallet-billing(44)到 main
+- **代码审查结论**(已用 diff 通读 + grep 全面验证,8 新增 + 8 修改共 17 文件全部 review):
+  - 🐛 **2 处代码质量问题(已修)**:
+    - **`billing.py:234` 函数内局部 `from sqlalchemy import select`**:违反项目惯例(其他 api 文件全顶层 import select)。修:提到顶层 import 与 `AsyncSession` 并列,删函数内局部 import
+    - **`update_my_wallet` 路由层 `setattr(wallet, field, value)` 直接操作 Model**:违反 Controller→Service→Repository→Model 单向依赖铁律(写操作必须走 Service 层;只读端点直接用 Repository 是既有惯例 auth.py/chat.py 同款,但写操作不行)。修:在 BillingService 新增 `update_wallet_settings(tenant_id, low_balance_threshold, is_active)` 方法(含 None 跳过语义 + commit + refresh + 返回 wallet),路由层改为调 Service 方法
+  - 清理验证通过(无需改):本次改动文件 grep 无 `print/breakpoint/pdb/debugger/TODO/FIXME/HACK` 残留;无死代码(所有新文件都有调用链);架构合规(修复后 Controller→Service→Repository→Model 单向不变;多租户过滤在 Repository 层 `get_for_tenant`/`list_for_tenant` 内 `is_deleted=False` + tenant_id 过滤)
+  - 迁移合规:`e8f9a0b1c2d3` down_revision 正确指向 `b739b2ae902b`,up/down 对称,三表纯 additive(FK CASCADE wallet/transaction/tenant、SET NULL usage_event)+ 索引齐全(部分唯一索引 uq_wallets_tenant_active 双库兼容 PG/SQLite + 4 普通索引);env.py + conftest.py 两处 model import 同步(含补 usage_event 到 conftest —— 任务43遗留遗漏)
+- **执行**:
+  - 修 2 处代码质量问题 → `./init.sh` 全绿(ruff + **345 passed**)+ `npm run build` 成功(0 类型错误,纯后端任务前端零改动)
+  - 切 `feat/token-wallet-billing` 分支 → commit(17 文件,1927 insertions)→ push → 建 PR #47
+  - CI 4 job 全绿:Migrations(43s) + Frontend(29s) + E2E(1m44s) + Backend(2m50s),无需修复
+  - `gh pr merge 47 --squash --delete-branch` → GitHub 端 squash 合并成功(2026-07-13T15:05:43Z,commit 2d7cf7d),远程分支已删;本地 main fast-forward 同步;`git fetch --prune` 清理远程残留引用
+- **提交记录**: PR #47 已合并(squash),commit `2d7cf7d feat(billing): Token 钱包计费核心 (Token 费用管理 2/4) (#47)`
+- **当前状态**: main 干净、与 origin/main 同步(均 2d7cf7d)、本地仅 main 分支。token-wallet-billing(44)✅ 已 passing 并入 main
+- **已知风险**: 无功能风险。真实 DeepSeek stream_usage 计费链路需真实 key 端到端验证(plan 风险表标注);手动浏览器验证未跑(需前后端启动),pytest 345 + CI 4 job 已覆盖行为/迁移链/类型/不回归
+- **下一步最佳动作**: 执行 `customer-conversation-link`(priority 45,Token 费用管理系列 3/4,现为最高优先级 not_started)—— Conversation 加 customer_id + UsageEvent 透传 + 客户用量聚合 + 客户 360 AI 服务维度
 
 ---
