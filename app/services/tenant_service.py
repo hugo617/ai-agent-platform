@@ -64,6 +64,14 @@ class TenantService:
             tenant.id, owner_user_id, db=self.db
         )
 
+        # 6. Initialize a zero-balance token wallet (same transaction). The
+        #    chat endpoint's balance gate treats a missing wallet as "no
+        #    balance", so every tenant must have one from birth for chats to
+        #    work at all. Recharging credits this wallet later.
+        from app.services.billing_service import BillingService
+
+        await BillingService(self.db).create_wallet_for_tenant(tenant.id)
+
         await self.db.commit()
         return _to_read(tenant, member_count=1)
 

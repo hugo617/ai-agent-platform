@@ -8,14 +8,14 @@
 - **标准启动路径**: `./init.sh`(装依赖 + ruff + pytest)
 - **标准验证路径**: `./init.sh`(同上,后端快速验证,SQLite 内存库)
 - **完整验证路径**(需 docker): `alembic upgrade head && alembic check` + `cd frontend && npm run build`
-- **当前最高优先级未完成功能**: **`token-wallet-billing`(priority 44,Token 费用管理系列 2/4 核心)** —— token-usage-tracking(43)✅ 已 passing(用量采集地基完成:stream_agent 累加 usage_metadata + Message 加 4 列 + UsageEvent 账本表)。44 是系列核心(Wallet/WalletTransaction/ModelPricing 三表 + BillingService charge FOR UPDATE 防双扣 + 余额预检拦截)。前置 token-usage-tracking(43)✅。
+- **当前最高优先级未完成功能**: **`customer-conversation-link`(priority 45,Token 费用管理系列 3/4)** —— token-wallet-billing(44)✅ 已 passing(钱包计费核心完成:Wallet/WalletTransaction/ModelPricing 三表 + BillingService charge FOR UPDATE 防双扣 + 余额预检拦截 + create_tenant 初始化 wallet + 计费 API + 权限项)。45 做 Conversation 加 customer_id + UsageEvent 透传 + 客户用量聚合 + 客户 360 AI 服务维度。前置 token-wallet-billing(44)✅。
 - **当前 blocker**: 无
 
 ## 后续任务规划
 
 任务全景与依赖关系见 `feature_list.json`(priority/depends_on 字段为真相源)。三个系列总纲:
 - **权限重构系列**(39-42):`harness/docs/plan-permission-redesign-overview.md` —— 39 ✅ → 40 ✅ → 41 ✅ → 42(matrix-redesign 收官,当前)
-- **Token 费用管理系列**(43-46):`harness/docs/plan-token-billing-overview.md` —— 43(usage-tracking)→ 32(wallet-billing)→ 33(customer-link)→ 34(billing-ui)
+- **Token 费用管理系列**(43-46):`harness/docs/plan-token-billing-overview.md` —— 43(usage-tracking)✅ → 44(wallet-billing)✅ → 45(customer-link,当前)→ 46(billing-ui)
 - **MVP 补全系列**(47-58):`harness/docs/plan-mvp-completion-overview.md` —— 12 个缺口分三梯队(SaaS 体面/配套/V2)
 
 > 历史任务规划表(顺序 1-46 的完整决策快照)已归档至 `harness/docs/archive/sessions-001-056.md`(随 Session 001-056 一并迁出)。
@@ -65,6 +65,7 @@
 | permission-data-scope(角色级数据范围 3/4) | passing | 315 tests + Role.data_scope 四档(all/tenant/group/self)+ DataScopeService(service 层,多角色取最宽)+ CustomerProfile.list_for_scope + 迁移 4708b3fbf2e7(server_default 回填免 backfill)+ 仅 CustomerProfile 接入(会话不接入,用户决策) |
 | permission-matrix-redesign(矩阵 UI 重写 4/4 收官) | passing | npm build + oxlint 0 warning + 前端 types.ts 补 data_scope + permissions-page 重写(超管锁定行卡片 + 操作权限区 data_scope Select 行 + 增强图例 🔒)+ useUpdateRole invalidate matrix + 纯前端后端零改动基线 315 不回归 |
 | token-usage-tracking(Token 用量采集 1/4 地基) | passing | 321 tests + stream_agent 累加 on_chat_model_end usage(ReAct 多轮 sum)+ Message 加 4 列(prompt/completion/total/model 可空)+ UsageEvent 账本表 + 迁移 b739b2ae902b + _record_usage try/except 不阻断对话 |
+| token-wallet-billing(Token 钱包计费 2/4 核心) | passing | 345 tests + Wallet/WalletTransaction/ModelPricing 三表 + 迁移 e8f9a0b1c2d3 + BillingService(charge FOR UPDATE/calc_cost 租户覆盖>平台默认/recharge)+ event_source 余额预检(wallet 存在且<=0 拦截)+ create_tenant 同事务初始化零余额 wallet + /billing API + 权限 wallet:read/billing:read |
 
 > ✅ AI 内核(agents + chat)已全部纳管并 passing。
 > ✅ **真实对话已跑通**:real-chat-llm-config(Session 017)用真实 DeepSeek key 端到端验证 SSE 流式对话。
@@ -595,5 +596,35 @@
 - **当前状态**: main 干净、与 origin/main 同步(均 3531d5b)、本地仅 main 分支。token-usage-tracking(43)✅ 已 passing 并入 main
 - **已知风险**: 无功能风险。迁移 CI Migrations job 已覆盖 PG(49s 全绿);DeepSeek stream_usage 是否生效需真实 key 验证(plan 风险表已标注,不生效则降级非流式取 usage);手动浏览器验证未跑(需前后端启动),build(tsc)+ oxlint + pytest 321 + CI 4 job 已覆盖类型/规范/行为/迁移链/不回归
 - **下一步最佳动作**: 执行 `token-wallet-billing`(priority 44,Token 费用管理系列 2/4 核心,现为最高优先级 not_started)—— Wallet/WalletTransaction/ModelPricing 三表 + BillingService charge FOR UPDATE 防双扣 + 余额预检拦截 + create_tenant 初始化 wallet + 计费 API + 权限项
+
+---
+
+### Session 076 — 2026-07-13
+- **本轮目标**: 执行 `token-wallet-billing`(priority 44,Token 费用管理系列 2/4 核心)—— 实现「门店向总部购买 token,token 用于门店和门店客户」的商业闭环核心。前置 token-usage-tracking(43)✅ 已 passing(用量采集地基完成)
+- **已完成**(对照 plan §实施步骤 9 步):
+  - **Step 1-2 三模型 + 迁移**(`app/models/wallet.py` + `app/models/model_pricing.py` + 迁移 `e8f9a0b1c2d3`):Wallet(一门店一钱包,部分唯一索引 uq_wallets_tenant_active,balance/total_recharged/total_consumed 整数 token 数,low_balance_threshold)+ WalletTransaction(追加式账本 recharge/consume/refund/adjust,amount 带符号,balance_after)+ ModelPricing(tenant_id 可空:NULL=平台默认/非空=租户覆盖,input/output_price_per_1k Numeric(10,6),参照 LlmConfig 决策不用 DB 唯一约束避免双库 NULLS NOT DISTINCT 语义冲突);迁移 down_revision 指向 b739b2ae902b;env.py + conftest.py 两处 model import 同步(**含补 usage_event 到 conftest —— 任务43遗留遗漏,WalletTransaction FK 引用 usage_events 触发 NoReferencedTableError**)
+  - **Step 3-4 Repository + Service**(`app/repositories/wallet.py` + `app/services/billing_service.py`):WalletRepository(get_for_tenant_for_update 用 with_for_update PG 行锁防并发双扣,SQLite no-op 测试够用)+ WalletTransactionRepository + ModelPricingRepository(get_for_model 租户覆盖>平台默认解析);BillingService(get_wallet/has_balance/calc_cost/charge/recharge/create_wallet_for_tenant)—— calc_cost 未配置返回 0 允许对话;charge 用 FOR UPDATE 锁 wallet 行,balance-=total,stamp cost 到 UsageEvent.cost,写 consume 流水;recharge 正整数校验 + 写 recharge 流水;create_wallet_for_tenant 幂等(已存在返回现有)
+  - **Step 5 event_source 余额预检 + 扣减**(`app/api/v1/chat.py`):event_source 开头查 wallet,**wallet 存在且 balance<=0 才拦截**(SSE error 事件「token 余额不足」),无 wallet 放行(优雅降级,覆盖建表前租户 + test_env);super_admin bypass;_record_usage 改返回 UsageEvent(供 charge 引用);新增 _charge_usage 包装 charge 的 try/except 不阻断已完成的对话;成功+中断两路径都扣减
+  - **Step 6 create_tenant 初始化 wallet**(`app/services/tenant_service.py`):create_tenant 步骤 6 加 BillingService.create_wallet_for_tenant(tenant.id),同事务原子性
+  - **Step 7 API + schemas + 权限**(`app/api/v1/billing.py` + `app/schemas/billing.py` + `app/main.py` + `app/services/permission_service.py` + `tests/conftest.py`):GET/PUT /billing/wallet(wallet:read/update)+ GET /billing/wallet/{id}(super_admin)+ GET /billing/transactions(wallet:read)+ GET /billing/usage(billing:read)+ POST /billing/recharge(super_admin)+ GET/POST/PUT/DELETE /billing/pricing(billing:read / super_admin);DEFAULT_OWNER/ADMIN_PERMS 加 wallet:read/wallet:update/billing:read;DEFAULT_MEMBER_PERMS 加 billing:read(只读);OBJ_CN 加 wallet=钱包/billing=计费;conftest _make_casbin 三角色同步;billing router 注册到 main.py
+  - **Step 8-9 测试 + 总验证**(新建 `tests/test_billing.py` 24 测试):calc_cost 三档(租户覆盖>平台默认>未配置=0)/ charge 原子性(balance 减+total_consumed 增+consume 流水+cost 快照)/ charge 无 wallet 安全返回 None / charge 未配置模型 cost=0 / recharge 正数校验+无 wallet 报错+流水+total_recharged / 钱包初始化幂等 / create_tenant 零余额钱包(POST /tenants/ 端到端)/ 余额=0 对话拦截 / 有余额对话扣减 / 无 wallet 对话放行 / API 权限边界(owner 读/member 403/super_admin 充值/pricing CRUD super_admin)/ pricing owner 读有效定价 / 租户隔离
+- **运行过的验证**(全过):
+  - `./init.sh` → ruff `All checks passed!` + **345 passed**(基线 321 + 新增 24)
+  - `cd frontend && npm run build` → tsc + vite build 成功,0 类型错误(纯后端任务,前端零改动)
+  - **真实 Postgres 迁移验证**(docker aap-postgres):`alembic upgrade head` 三迁移连续成功(data_scope → token-usage → wallet-billing),`alembic check` → `No new upgrade operations detected`(无 drift)
+  - 迁移链连贯:`b739b2ae902b -> e8f9a0b1c2d3 (head)` 正确指向
+- **已记录证据**: `feature_list.json` 的 `token-wallet-billing.evidence` 字段(9 条),status 改为 passing
+- **技术要点**(与 plan 的实现差异):
+  - **余额预检语义修正(plan Step5)**:plan 伪代码 `if wallet and not has_balance`,我初版写成 `if not has_balance`(无 wallet 也拦截)导致 test_chat 回归。修正为 `wallet is not None and wallet.balance <= 0`(wallet 存在且余额不足才拦截;无 wallet 放行)—— 向后兼容建表前租户 + test_env,平台优雅降级而非锁死所有人
+  - **conftest 补 usage_event import**:任务43合并时 conftest 的 model import 列表没加 usage_event(任务43测试能过是因为 test_usage_tracking 自己 import)。本任务 WalletTransaction FK 引用 usage_events 表,create_all 建表时 NoReferencedTableError。补上 usage_event + wallet + model_pricing 三 import
+  - **ModelPricing 不用 DB 唯一约束**:参照 LlmConfig 决策 —— tenant_id 可空时部分唯一索引需 NULLS NOT DISTINCT(PG/SQLite 语义不同,冲突双库兼容铁律)。唯一性靠 _upsert_pricing service 层查重 + 更新 in place
+  - **BillingService 用 self.db 模式(非单例)**:对齐 user_service/tenant_service(构造时传 db),不用 llm_config_service 的「方法收 db 参数」单例模式。每个调用方 `BillingService(db)` 构造,与请求生命周期一致
+  - **_record_usage 改返回 UsageEvent**:任务43返回 None,本任务 charge 需引用刚创建的 UsageEvent(透传 cost stamp)。两路径(成功+中断)都改接收返回值传给 _charge_usage
+  - **并发双扣防护语义**:with_for_update PG 生效行锁;SQLite no-op 但单线程 async 测试仍一致。plan 提的「两协程同时 charge」测试在 SQLite 无法验证真行锁(无并发),逻辑正确性靠单线程串行扣减测试覆盖,生产 PG 行锁生效
+- **提交记录**: 待用户决定是否提交 + 是否走 PR + CI 守门(16 文件改动:3 模型新建 + 1 迁移新建 + 1 Repository + 1 Service + 2 schema + 1 router + chat.py/tenant_service.py/main.py 改动 + permission_service.py/conftest.py 权限 seed + 1 测试新建 + feature_list.json + progress.md)
+- **已知风险**: 无功能风险。真实 DeepSeek stream_usage 计费链路需真实 key 端到端验证(plan 风险表标注);手动浏览器验证未跑(需前后端启动),pytest 345 + 真实 PG 迁移 + 前端 build 已覆盖行为/迁移链/类型/不回归
+- **下一步最佳动作**:
+  - (a) 清理废代码 + 代码质量审查 + commit + PR + CI 守门 + 合并 token-wallet-billing 到 main;
+  - (b) 执行 `customer-conversation-link`(priority 45,Token 费用管理系列 3/4,现为最高优先级 not_started)—— Conversation 加 customer_id + UsageEvent 透传 + 客户用量聚合 + 客户 360 AI 服务维度
 
 ---

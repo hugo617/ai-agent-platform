@@ -460,6 +460,8 @@ DEFAULT_OWNER_PERMS: list[tuple[str, str]] = [
     ("api_tokens", "read"), ("api_tokens", "create"), ("api_tokens", "delete"),
     ("customers", "read"), ("customers", "create"), ("customers", "update"), ("customers", "delete"),
     ("customers", "export"),
+    ("wallet", "read"), ("wallet", "update"),
+    ("billing", "read"),
 ]
 DEFAULT_ADMIN_PERMS: list[tuple[str, str]] = [
     ("agents", "read"), ("agents", "create"), ("agents", "update"), ("agents", "export"),
@@ -469,12 +471,15 @@ DEFAULT_ADMIN_PERMS: list[tuple[str, str]] = [
     ("settings", "read"), ("settings", "update"),
     ("api_tokens", "read"), ("api_tokens", "create"), ("api_tokens", "delete"),
     ("customers", "read"), ("customers", "create"), ("customers", "update"), ("customers", "export"),
+    ("wallet", "read"), ("wallet", "update"),
+    ("billing", "read"),
 ]
 DEFAULT_MEMBER_PERMS: list[tuple[str, str]] = [
     ("agents", "read"),
     ("conversations", "read"), ("conversations", "create"), ("conversations", "chat"),
     ("roles", "read"),
     ("customers", "read"),
+    ("billing", "read"),
 ]
 
 # ---------------------------------------------------------------------------
@@ -520,6 +525,8 @@ OBJ_CN: dict[str, str] = {
     "settings": "设置",
     "api_tokens": "API令牌",
     "customers": "客户",
+    "wallet": "钱包",
+    "billing": "计费",
     "menu": "菜单",
 }
 ACT_CN: dict[str, str] = {
