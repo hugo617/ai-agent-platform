@@ -69,7 +69,13 @@ class RolePermissionRead(BaseModel):
 
 
 class PermissionItem(BaseModel):
-    """A single permission catalogue entry (one ``<obj>:<act>`` unit)."""
+    """A single permission catalogue entry (one ``<obj>:<act>`` unit).
+
+    ``obj``/``act`` are parsed from ``code``; ``obj_label``/``act_label`` carry
+    Chinese display names (sourced from ``OBJ_CN``/``ACT_CN`` in
+    ``permission_service``) so the frontend renders the matrix without keeping
+    its own label map.
+    """
 
     model_config = ConfigDict(from_attributes=True)
     id: str
@@ -77,6 +83,8 @@ class PermissionItem(BaseModel):
     name: str
     obj: str  # resource part parsed from code
     act: str  # action part parsed from code
+    obj_label: str  # Chinese display name for the resource (e.g. "智能体")
+    act_label: str  # Chinese display name for the action (e.g. "查看")
 
 
 class PermissionMatrix(BaseModel):

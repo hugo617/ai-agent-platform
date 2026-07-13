@@ -179,6 +179,10 @@ export interface PermissionItem {
   name: string;
   obj: string;
   act: string;
+  // Chinese display labels sourced from the backend (OBJ_CN/ACT_CN), so the
+  // frontend renders the matrix without keeping its own label map.
+  obj_label: string; // e.g. "智能体"
+  act_label: string; // e.g. "查看"
 }
 
 export interface PermissionMatrix {

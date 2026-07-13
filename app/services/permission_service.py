@@ -253,20 +253,33 @@ class PermissionService:
         Source: the ``permissions`` rows upserted by ``seed_tenant_defaults`` /
         ``grant`` (one row per ``<obj>:<act>`` unit). Tenant scoping happens in
         the query (is_deleted=False), per the multi-tenant rule.
+
+        Ordered by ``code`` so the matrix renders in a stable order without the
+        frontend having to keep its own sort table.
         """
         rows = (
             await db.execute(
-                select(Permission).where(
+                select(Permission)
+                .where(
                     Permission.tenant_id == tenant_id,
                     Permission.is_deleted.is_(False),
                 )
+                .order_by(Permission.code)
             )
         ).scalars().all()
         items: list[PermissionItem] = []
         for p in rows:
             obj, act = p.code.split(":", 1) if ":" in p.code else (p.code, "")
             items.append(
-                PermissionItem(id=p.id, code=p.code, name=p.name, obj=obj, act=act)
+                PermissionItem(
+                    id=p.id,
+                    code=p.code,
+                    name=p.name,
+                    obj=obj,
+                    act=act,
+                    obj_label=OBJ_CN.get(obj, obj),
+                    act_label=ACT_CN.get(act, act),
+                )
             )
         return items
 
@@ -304,7 +317,9 @@ class PermissionService:
 
         ``code == "<obj>:<act>"`` (e.g. ``"agents:delete"``) so each row is a
         single permission unit and role_permissions can point at exactly the
-        pair that casbin reasons about. Idempotent across re-seeds.
+        pair that casbin reasons about. Idempotent across re-seeds. The
+        ``name`` is a Chinese friendly label (e.g. ``"智能体-查看"``) sourced
+        from ``OBJ_CN``/``ACT_CN`` so the catalogue is self-describing.
         """
         code = f"{obj}:{act}"
         existing = (
@@ -319,7 +334,7 @@ class PermissionService:
         if existing is not None:
             return existing.id
         perm = Permission(
-            name=f"{obj} {act}",
+            name=f"{OBJ_CN.get(obj, obj)}-{ACT_CN.get(act, act)}",
             code=code,
             tenant_id=tenant_id,
             type="api",
@@ -375,24 +390,38 @@ class PermissionService:
 # seed and the role_permissions SCD2 seed. Keep in sync with the test fixtures
 # (tests/conftest.py _make_casbin) and the doc table in
 # 项目指南/02-后端架构/06-权限模型RBAC.md.
+#
+# Catalogue design (permission-unified-model, 2026-07-13):
+#   * ``settings``/``api_tokens`` used to carry only a coarse ``manage`` action;
+#     now split into read/update (settings) and read/create/delete (api_tokens)
+#     so the matrix can express "read-only settings" or "issue but not revoke".
+#   * ``conversations:delete``/``conversations:update`` are now seeded for owner
+#     (they already had route guards but no role held them).
+#   * ``agents:export``/``customers:export`` are reserved — no route yet, but
+#     seeded so the matrix shows them and future export endpoints just work.
+#   * ``export`` is reserved (no route yet) but seeded for owner/admin so the
+#     matrix exposes the slot — grant/revoke keeps casbin in sync.
 # ---------------------------------------------------------------------------
 DEFAULT_OWNER_PERMS: list[tuple[str, str]] = [
     ("agents", "read"), ("agents", "create"), ("agents", "update"), ("agents", "delete"),
-    ("conversations", "read"), ("conversations", "create"), ("conversations", "chat"),
+    ("agents", "export"),
+    ("conversations", "read"), ("conversations", "create"), ("conversations", "update"),
+    ("conversations", "delete"), ("conversations", "chat"),
     ("users", "read"), ("users", "create"), ("users", "update"), ("users", "delete"),
     ("roles", "read"), ("roles", "create"), ("roles", "update"), ("roles", "delete"),
-    ("settings", "manage"),
-    ("api_tokens", "manage"),
+    ("settings", "read"), ("settings", "update"),
+    ("api_tokens", "read"), ("api_tokens", "create"), ("api_tokens", "delete"),
     ("customers", "read"), ("customers", "create"), ("customers", "update"), ("customers", "delete"),
+    ("customers", "export"),
 ]
 DEFAULT_ADMIN_PERMS: list[tuple[str, str]] = [
-    ("agents", "read"), ("agents", "create"), ("agents", "update"),
+    ("agents", "read"), ("agents", "create"), ("agents", "update"), ("agents", "export"),
     ("conversations", "read"), ("conversations", "create"), ("conversations", "chat"),
     ("users", "read"), ("users", "create"), ("users", "update"),
     ("roles", "read"),
-    ("settings", "manage"),
-    ("api_tokens", "manage"),
-    ("customers", "read"), ("customers", "create"), ("customers", "update"),
+    ("settings", "read"), ("settings", "update"),
+    ("api_tokens", "read"), ("api_tokens", "create"), ("api_tokens", "delete"),
+    ("customers", "read"), ("customers", "create"), ("customers", "update"), ("customers", "export"),
 ]
 DEFAULT_MEMBER_PERMS: list[tuple[str, str]] = [
     ("agents", "read"),
@@ -400,6 +429,31 @@ DEFAULT_MEMBER_PERMS: list[tuple[str, str]] = [
     ("roles", "read"),
     ("customers", "read"),
 ]
+
+# ---------------------------------------------------------------------------
+# Chinese display labels — shared by ``_upsert_permission`` (seed writes them
+# into Permission.name) and ``get_catalogue`` (returns them as obj_label /
+# act_label). This is the single source of truth for friendly names so the
+# frontend never hardcodes them again (removes the OBJ_LABELS/ACT_ORDER drift).
+# ---------------------------------------------------------------------------
+OBJ_CN: dict[str, str] = {
+    "agents": "智能体",
+    "conversations": "对话",
+    "users": "用户",
+    "roles": "角色",
+    "settings": "设置",
+    "api_tokens": "API令牌",
+    "customers": "客户",
+}
+ACT_CN: dict[str, str] = {
+    "read": "查看",
+    "create": "创建",
+    "update": "编辑",
+    "delete": "删除",
+    "chat": "对话",
+    "export": "导出",
+    "manage": "管理",  # legacy, kept for backfill of old rows
+}
 
 
 permission_service = PermissionService()

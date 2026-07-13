@@ -39,31 +39,36 @@ def _make_casbin(owner_user: str, tenant_id: str):
     e.add_role_for_user_in_domain(owner_user, "owner", tenant_id)
     for obj, act in [
         ("agents", "read"), ("agents", "create"), ("agents", "update"),
-        ("agents", "delete"), ("conversations", "read"),
-        ("conversations", "create"), ("conversations", "chat"),
-        ("conversations", "delete"),
+        ("agents", "delete"), ("agents", "export"),
+        ("conversations", "read"), ("conversations", "create"),
+        ("conversations", "update"), ("conversations", "delete"),
+        ("conversations", "chat"),
         ("users", "read"), ("users", "create"), ("users", "update"), ("users", "delete"),
         ("roles", "read"), ("roles", "create"), ("roles", "update"), ("roles", "delete"),
-        ("settings", "manage"),
-        ("api_tokens", "manage"),
+        ("settings", "read"), ("settings", "update"),
+        ("api_tokens", "read"), ("api_tokens", "create"), ("api_tokens", "delete"),
         ("customers", "read"), ("customers", "create"), ("customers", "update"), ("customers", "delete"),
+        ("customers", "export"),
     ]:
         e.add_policy("owner", tenant_id, obj, act)
-    # admin: manage users + read-mostly elsewhere (no agent delete, no billing).
+    # admin: manage users + read-mostly elsewhere (no agent/customer delete).
     for obj, act in [
         ("agents", "read"), ("agents", "create"), ("agents", "update"),
+        ("agents", "export"),
         ("conversations", "read"), ("conversations", "create"),
         ("conversations", "chat"),
         ("users", "read"), ("users", "create"), ("users", "update"),
         ("roles", "read"),
-        ("settings", "manage"),
-        ("api_tokens", "manage"),
+        ("settings", "read"), ("settings", "update"),
+        ("api_tokens", "read"), ("api_tokens", "create"), ("api_tokens", "delete"),
         ("customers", "read"), ("customers", "create"), ("customers", "update"),
+        ("customers", "export"),
     ]:
         e.add_policy("admin", tenant_id, obj, act)
     for obj, act in [
         ("agents", "read"), ("conversations", "read"),
         ("conversations", "create"), ("conversations", "chat"),
+        ("roles", "read"),
         ("customers", "read"),
     ]:
         e.add_policy("member", tenant_id, obj, act)

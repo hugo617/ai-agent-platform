@@ -6,13 +6,17 @@ Two scopes, deliberately separate:
     every tenant. Only platform super admins may read/write it — no
     tenant-scoped permission grants this, on purpose.
   - **tenant** (``/settings/llm/tenant``): an optional override for the
-    caller's own tenant. Requires the ``settings:manage`` permission
-    (seeded for owner/admin); super admins also pass via the short-circuit in
-    ``permission_service.check``.
+    caller's own tenant. Requires ``settings:read`` (GET) or ``settings:update``
+    (PUT), seeded for owner/admin; super admins also pass via the short-circuit
+    in ``permission_service.check``.
 
 A read endpoint for the effective model list (``/settings/models``) is open to
 any authenticated user — it backs the agent-creation dropdown and leaks no
 secrets (just model names).
+
+Permission granularity: the tenant endpoints use ``settings:read`` (GET) and
+``settings:update`` (PUT) — the coarse ``settings:manage`` was split in the
+permission-unified-model task so a role can be granted read-only settings.
 
 API keys are *never* returned in plaintext: GET responses carry a masked hint
 (``sk-***wxyz``), and PUT accepts an empty/null key to mean "keep the stored
@@ -64,7 +68,7 @@ async def update_platform_llm_config(
 @router.get(
     "/llm/tenant",
     response_model=LlmConfigRead | None,
-    dependencies=[Depends(require_permission("settings", "manage"))],
+    dependencies=[Depends(require_permission("settings", "read"))],
 )
 async def get_tenant_llm_config(
     user: CurrentUser = Depends(get_current_user),
@@ -77,7 +81,7 @@ async def get_tenant_llm_config(
 @router.put(
     "/llm/tenant",
     response_model=LlmConfigRead,
-    dependencies=[Depends(require_permission("settings", "manage"))],
+    dependencies=[Depends(require_permission("settings", "update"))],
 )
 async def update_tenant_llm_config(
     payload: LlmConfigUpdate,

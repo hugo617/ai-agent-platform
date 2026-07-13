@@ -209,7 +209,7 @@ async def test_expired_token_rejected(app_client, db_session, tenant_owner):
 
 @pytest.mark.asyncio
 async def test_member_cannot_issue(member_client):
-    """Members lack api_tokens:manage and get 403."""
+    """Members lack api_tokens:create and get 403."""
     resp = await member_client.post(
         "/api/v1/api-tokens", json={"name": "forbidden"}, headers=AUTH
     )
@@ -218,6 +218,7 @@ async def test_member_cannot_issue(member_client):
 
 @pytest.mark.asyncio
 async def test_member_cannot_list(member_client):
+    """member lacks api_tokens:read → 403."""
     resp = await member_client.get("/api/v1/api-tokens", headers=AUTH)
     assert resp.status_code == 403
 

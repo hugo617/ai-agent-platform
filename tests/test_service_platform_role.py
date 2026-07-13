@@ -9,7 +9,7 @@ The router-layer ``require_permission`` dependency forwarded it (so the
 HTTP guard passed), then the Service re-checked *without* it and raised
 ``PermissionError`` → 403. The bug was invisible for permissions seeded
 into the test casbin enforcer (owner/admin already had them) and only
-surfaced for newly-added ones like ``api_tokens:manage``.
+surfaced for newly-added ones like ``api_tokens:create``.
 
 Test strategy (two layers):
 1. **Service-layer isolation test** — calls a Service method directly
@@ -200,7 +200,7 @@ async def test_super_admin_can_list_conversations(super_admin_client):
 
 @pytest.mark.asyncio
 async def test_owner_can_issue_api_token(app_client):
-    """owner (no platform_role) has api_tokens:manage in casbin → 201."""
+    """owner (no platform_role) has api_tokens:create in casbin → 201."""
     resp = await app_client.post(
         "/api/v1/api-tokens", json={"name": "owner-token"}, headers=AUTH
     )
@@ -210,7 +210,7 @@ async def test_owner_can_issue_api_token(app_client):
 
 @pytest.mark.asyncio
 async def test_member_denied_api_token(member_client):
-    """member lacks api_tokens:manage in casbin and has no platform_role → 403."""
+    """member lacks api_tokens:create in casbin and has no platform_role → 403."""
     resp = await member_client.post(
         "/api/v1/api-tokens", json={"name": "m-token"}, headers=AUTH
     )

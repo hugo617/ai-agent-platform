@@ -1,7 +1,7 @@
 {
   "project": "ai-agent-platform",
   "description": "多租户 AI 智能体 SaaS 平台脚手架(FastAPI + React + pycasbin + LangGraph)",
-  "last_updated": "2026-07-12",
+  "last_updated": "2026-07-13",
   "harness_version": "stage1-clean-state",
   "rules": {
     "single_active_feature": true,
@@ -1015,7 +1015,7 @@
       "area": "权限",
       "title": "权限目录统一 + 操作权限细化(权限重构系列 1/4)",
       "user_visible_behavior": "权限矩阵展示完整、细化的操作权限目录(settings/api_tokens 的 manage 拆细,补全缺失项),前端中文标签从后端 catalogue 读取不再硬编码,权限目录三处漂移消除,后端 Permission 表成为唯一真相源",
-      "status": "not_started",
+      "status": "passing",
       "plan": "harness/docs/plan-permission-unified-model.md",
       "verification": [
         "DEFAULT_*_PERMS 重写:settings 拆 read/update、api_tokens 拆 read/create/delete、补 conversations:delete + agents/customers:export 预留",
@@ -1025,7 +1025,18 @@
         "权限目录三处(常量/路由守卫/前端显示)一致,无 drift",
         "./init.sh 全绿 + cd frontend && npm run build 通过"
       ],
-      "evidence": [],
+      "evidence": [
+        "./init.sh 全绿:ruff check → All checks passed!;pytest → 299 passed(基线 294 + 新增 5:1 catalogue 中文 label 集成 + 4 DEFAULT 目录完整性单元测试)(2026-07-13)",
+        "cd frontend && npm run build 通过:tsc -b + vite build 成功,0 类型错误;npx oxlint src/ 全仓库(43 文件)→ 0 warnings 0 errors(2026-07-13)",
+        "Step 1 DEFAULT_*_PERMS 重写(permission_service.py):owner 补 conversations:update/delete + agents:export + customers:export;settings:manage 拆 read/update;api_tokens:manage 拆 read/create/delete。加 OBJ_CN/ACT_CN 中文映射常量(seed + catalogue 共用单一真相源)",
+        "Step 2 路由守卫 + Service 层改细:settings.py GET→read/PUT→update(2 处);api_tokens.py POST→create/GET→read/DELETE→delete(3 处);api_token_service.py ACT_MANAGE 拆为 ACT_CREATE/ACT_READ/ACT_DELETE(issue→create/list→read/revoke→delete,消除路由守卫与 Service 层 require 不一致)",
+        "Step 3 中文名 + label:_upsert_permission 写 name=f'{OBJ_CN}-{ACT_CN}'(如「智能体-查看」);get_catalogue 填 obj_label/act_label + order_by(code) 稳定排序;rbac.py PermissionItem 加 obj_label/act_label 字段",
+        "Step 4 conftest 同步:_make_casbin owner/admin 策略对齐新 DEFAULT(拆 manage + 补 update/delete/export);修复既有 drift —— conftest member 原缺 roles:read(与 DEFAULT_MEMBER_PERMS 不一致),现对齐;test_permissions_api 的 test_member_without_roles_read_is_forbidden 改为 test_member_with_roles_read_can_view_matrix(反映 drift 消除后正确行为);3 测试文件 docstring 字面量更新(:manage→细化项)",
+        "Step 5 前端消除漂移:permissions-page.tsx 删 OBJ_LABELS(4 obj)+ ACT_ORDER 硬编码,分组逻辑改用 catalogue 返回的 obj_label(组标题)+ act_label(动作列);types.ts PermissionItem 加 obj_label/act_label;无新 hook(复用 usePermissionMatrix 的 permissions 数组已含 label)",
+        "Step 6 backfill 脚本 + 测试:新建 scripts/backfill_permissions.py(遍历租户→grant 缺失项 + revoke 旧 manage grant + 回填中文 name,走 rbac_service.grant_permission/revoke_permission 同步 SCD2+casbin,super_admin platform_role 绕过 require,idempotent,支持 --dry-run);test_permissions_api +test_catalogue_returns_chinese_labels(断言 obj_label=智能体/act_label=查看/name=智能体-查看);test_permission_service +4 单元测试(DEFAULT_OWNER 完整目录、manage 已拆、member 无 settings/api_tokens、OBJ_CN/ACT_CN 覆盖全目录)",
+        "三处漂移消除确认:① 路由守卫无 settings:manage/api_tokens:manage 残留(grep 确认全 read/update/create/delete)② Service 层无 ACT_MANAGE(grep 确认)③ 前端无 OBJ_LABELS/ACT_ORDER(grep 确认);DEFAULT_*_PERMS 无 manage(只剩 ACT_CN 映射表 legacy 条目供 backfill 老行)",
+        "实现差异 vs plan:① plan §Step2「Permission 表拆 obj/act 实列」按边界判断降级,保持 code 编码,catalogue 解析返回(降低风险,无 migration)② 发现 plan 未提及的 Service 层 ACT_MANAGE(api_token_service 3 处 require 用统一 manage),窄范围修复对齐路由守卫拆分 ③ 用户决策:中文 name 写进 DB + backfill 老数据;PermissionItem 加 obj_label/act_label;backfill 用 scripts/ 运维脚本(走 enforcer 不直接写 casbin 表)"
+      ],
       "notes": "权限重构系列地基任务。用户痛点(2026-07-12 Session 045):权限目录散在三处(DEFAULT_*_PERMS 常量/路由 require_permission/前端 OBJ_LABELS)且已 drift(conversations:delete 有校验无 seed;customers/settings/api_tokens 前端无中文标签);settings/api_tokens 的 manage 粒度过粗(一勾全勾)。本任务统一目录为后端 Permission 表 + catalogue 端点单一真相源,细化操作粒度。系列总纲见 plan-permission-redesign-overview.md。不做:menu 权限(任务 40)、data_scope(任务 41)、矩阵 UI 重写(任务 42)。Permission 表是否拆 obj/act 实列:第一版建议降级保持 code 编码,降低风险,实施时评估。"
     },
     {
