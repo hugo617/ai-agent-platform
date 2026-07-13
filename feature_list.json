@@ -987,7 +987,7 @@
       "area": "演示案例",
       "title": "演示数据全量补全(清理重建 --reset + 覆盖所有业务实体)",
       "user_visible_behavior": "跑 `python scripts/seed_demo.py --reset` 一键清空旧演示数据并重建全量业务数据(对话/消息/LLM配置/API Token/自定义角色权限/审计日志/多登录方式/Agent推理参数差异化),让演示覆盖项目全部业务表而不只是组织客户门店三域",
-      "status": "not_started",
+      "status": "passing",
       "plan": "harness/docs/plan-demo-seed-full.md",
       "verification": [
         "python scripts/seed_demo.py --reset 一键清空全部演示数据(按 FK 反向顺序)+ 全量重建,无报错",
@@ -997,7 +997,16 @@
         "登录验证自定义角色:朝阳店李师傅(senior_therapist)能改客户档案(customers:update)但不能删(无 customers:delete)",
         "./init.sh 全绿(纯脚本任务,无 app/ 代码改动,基线不回归)"
       ],
-      "evidence": [],
+      "evidence": [
+        "python scripts/seed_demo.py --reset 一键清空演示数据(白名单边界:门店名/用户名/group code/customer identity/agent name/role code 反查 ID 按 FK 反向级联删,super_admin/默认角色权限/casbin 非演示行不碰)+ 全量重建,无报错。清理覆盖:Message→Conversation→ApiToken→LlmConfig→CustomerProfile→Customer→RolePermission→Role(自定义)→Agent→UserLoginMethod→UserTenant→User→GroupTenant→Group→Tenant→SystemLog→casbin grouping/policy",
+        "python scripts/seed_demo.py(无参数)幂等可重跑:全部新实体(自定义角色/LLM配置/对话/Token/登录方式)打印 exists 跳过;li_shifu 保持 senior_therapist 绑定稳定(SCD2 无 churn,step1 跳过 CUSTOM_ROLE member 由 step6 绑定)",
+        "重建后各表计数验证(真实 Postgres aap 库):3 门店 + 7 用户 + 2 组织 + 3 客户身份 + 5 门店档案 + 4 Agent(推理参数各不同:朝阳 temp=0.3/max=2048/top_p=0.9,海淀 0.7/默认,王府井 0.9/4096/0.95,总部 0.2/8192/0.85)+ 5 对话 + 22 消息 + 2 LlmConfig(平台 deepseek-chat + 朝阳租户级 deepseek-reasoner)+ 2 ApiToken(朝阳/海淀 owner)+ 1 自定义角色 senior_therapist(customers:read/update + conversations:read/create/chat)+ 6 SystemLog + 1 UserLoginMethod(chen_guanzhang 手机号)",
+        "三级 fallback 验证:平台级 LlmConfig default_model=deepseek-chat api_key_hint=sk-***lder available=[chat,reasoner];朝阳租户级 override=deepseek-reasoner → 登录朝阳店 Agent 下拉显示 reasoner,海淀/王府井回退平台 chat",
+        "自定义角色生效验证:li_shifu 当前角色=senior_therapist(SCD2 1 行 valid_to=NULL),角色权限=[conversations:read/create/chat, customers:read/update],无 customers:delete → 能改客户不能删",
+        "运行时 bug 修复(真实跑通暴露):① --reset 清 casbin 后重建,_ensure_membership 原只写 SCD2 不写 casbin grouping → 加 permission_service.add_role_for_user_in_domain/set_role_for_user_in_domain 同步 grouping;② li_shifu 被 rebind 成 senior_therapist 后缺 conversations:create → CUSTOM_ROLE 权限补 conversations:read/create/chat;③ PLATFORM 对话用 hq_staff actor 无 conversations:create → 改用 super_admin(platform_role bypass);④ casbin 模块路径是 app.core.casbin_enforcer 非 app.core.security",
+        "./init.sh 全绿:ruff All checks passed! + 294 passed(纯脚本+文档任务,app/ 零改动,基线不回归)",
+        "脚本行数:~700 行(从 369 行扩展);新增 --reset argparse + _reset_demo_data(白名单反查 FK 反向删)+ 6 个 seed 函数(_seed_custom_role/_seed_llm_configs/_seed_conversations/_seed_api_tokens/_seed_extra_login_methods);docstring 更新全量清单"
+      ],
       "notes": "demo-seed(37)只覆盖了组织/客户/门店三域 8 张表,用户要求覆盖全面。本任务在 seed_demo.py 基础上扩:① 加 --reset 清理重建(按 FK 反向删除 + 演示白名单边界,不误伤 super_admin/非演示数据);② 补全缺口表(Conversation/Message/LlmConfig/ApiToken/SystemLog/自定义Role+Permission+RolePermission/UserLoginMethod)+ Agent 推理参数差异化。关键设计:清理用演示白名单(门店名/用户名/code/identity_key)反查行ID级联删,绝不用裸 DELETE FROM;Conversation 用 create_or_get + append_message、LlmConfig 用 upsert_platform/upsert_tenant、ApiToken 用 issue(明文只展示一次)、自定义角色用 RbacService.create+grant_permission——全调真实 Service 让 casbin/SCD2/审计副作用正确触发。不种 UserSession/VerificationCode(运行时态);不调真实 LLM(assistant 消息写死文本);LlmConfig api_key 用占位符(真实 key 由用户在 settings 页填)。前置 demo-seed(37)已 passing。纯脚本+文档任务,不改 app/ 功能代码。"
     },
     {

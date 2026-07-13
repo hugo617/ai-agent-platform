@@ -147,3 +147,10 @@
 - `docs/db-schema.mmd`:从 16 表补全到 22 表,删除废弃的 organizations/user_organizations,新增 groups/group_tenants/customers/customer_profiles/api_tokens/llm_configs
 - `项目指南/附录/关系图.md`:第三章断言修正(平台级 vs 租户级三类实体)+ 新增第十章(业务实体全景图 mermaid + 三核心概念 + 权限模型)+ 第十一章(演示案例说明)
 - `./init.sh` 全绿:纯文档+脚本任务,`app/` 零改动,基线不回归
+
+---
+
+> **续篇**:本任务种下了组织/客户/门店三域基础数据。后续 `demo-seed-full`(priority 38)
+> 在此基础上扩 `seed_demo.py` 加 `--reset` 清理重建 + 补全全部缺口业务表
+> (对话/消息/LLM配置/API Token/自定义角色权限/审计日志/多登录方式/Agent推理参数差异化)。
+> 全量补全详见 [`plan-demo-seed-full.md`](plan-demo-seed-full.md)。
