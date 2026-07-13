@@ -8,7 +8,7 @@
 - **标准启动路径**: `./init.sh`(装依赖 + ruff + pytest)
 - **标准验证路径**: `./init.sh`(同上,后端快速验证,SQLite 内存库)
 - **完整验证路径**(需 docker): `alembic upgrade head && alembic check` + `cd frontend && npm run build`
-- **当前最高优先级未完成功能**: **`token-billing-ui`(priority 46,Token 费用管理系列 4/4 收官)** —— customer-conversation-link(45)✅ 已 passing(待合并 main;Conversation 加 customer_id + UsageEvent 透传 + GET /customers/{id}/usage 聚合 + 客户 360 AI 服务维度 + 聊天页关联客户 + 客户详情 AI 用量 Dialog)。46 做门店级看板(余额/消耗/流水)+ 总部级看板(门店汇总/充值/定价)+ 余额预警 + 用量钻取。前置 customer-conversation-link(45)✅。
+- **当前最高优先级未完成功能**: **`token-billing-ui`(priority 46,Token 费用管理系列 4/4 收官)** —— customer-conversation-link(45)✅ 已 passing 并入 main(05c7106,PR #48 squash;Conversation 加 customer_id + UsageEvent 透传 + GET /customers/{id}/usage 聚合 + 客户 360 AI 服务维度 + 聊天页关联客户 + 客户详情 AI 用量 Dialog)。46 做门店级看板(余额/消耗/流水)+ 总部级看板(门店汇总/充值/定价)+ 余额预警 + 用量钻取。前置 customer-conversation-link(45)✅。
 - **当前 blocker**: 无
 
 ## 后续任务规划
@@ -672,11 +672,31 @@
   - **_record_usage 单元测试降级为 API 端到端**:原计划直接调 `_record_usage` 单元测试,但 db_session fixture 的 expire 行为(commit 后 ORM 对象 expire,访问 conv.customer_id 触发 lazy load 在 async 测试上下文失败)导致测试脆弱。改为通过 API mock(POST /chat/stream with customer_id)端到端验证全链路 —— 更真实,覆盖 ChatRequest→create_or_get→Conversation→_record_usage→UsageEvent
   - **GET /usage 权限守卫内联**:双视角端点(门店 customers:read + 总部 cross_tenant_viewer)无法用单一 router dependencies 表达,改为函数体内 `is_cross_tenant_viewer` 分流 + 手动 `permission_service.require`(super_admin 在 check 里 bypass)
   - **CustomerUsageDialog 双视角复用**:StoreView 传 storeScoped=true(customer_id 来自 profile.customer_id)+ HqView 传 storeScoped=false(customer_id 来自外层 Customer.id),后端按调用者 role 自动返回门店/全局聚合
-  - **聊天页客户选择器仅 StoreView**:super_admin 的 useCustomerProfiles 会 403(HQ 端点),且总部视角不需要关联门店客户 —— 用 isSuperAdmin 判断隐藏选择器
+  - **聊天页客户选择器仅 StoreView**:总部视角不需要关联门店客户,用 isSuperAdmin 判断隐藏选择器。注:super_admin 并不会 403(permission_service.check 对 super_admin bypass,返回 200 + 全量档案),ship-it(Session 079)据此修正 chat-page 注释 + 给 useCustomerProfiles 加 enabled 开关避免 super_admin 空跑查询
 - **提交记录**: 待用户决定是否提交 + 是否走 PR + CI 守门(15 文件改动:4 后端实现 + 1 迁移新建 + 3 repository/service + 2 schema + 1 测试新建 + 5 前端 + feature_list.json + progress.md)
 - **已知风险**: 无功能风险。迁移未在真实 Postgres 手动跑(CI Migrations job 覆盖);手动浏览器验证未跑(需前后端启动),pytest 356 + npm build + oxlint 已覆盖行为/类型/规范/不回归
 - **下一步最佳动作**:
   - (a) 清理废代码 + 代码质量审查 + commit + PR + CI 守门 + 合并 customer-conversation-link 到 main;
   - (b) 执行 `token-billing-ui`(priority 46,Token 费用管理系列 4/4 收官,现为最高优先级 not_started)—— 门店级看板 + 总部级看板 + 余额预警 + 用量钻取
+
+---
+
+### Session 079 — 2026-07-14
+- **本轮目标**: 清理废代码 + 代码质量审查 + commit + PR + CI 守门 + 合并 customer-conversation-link(45)到 main(ship-it 全自动流水线)
+- **代码审查结论**(diff 通读 + grep 全面验证,4 后端实现 + 1 迁移 + 3 repository/service + 2 schema + 1 测试 + 5 前端 + 2 meta 共 17 文件):
+  - 🐛 **1 处代码质量问题(已修)**:
+    - **chat-page.tsx 注释事实错误 + 空跑查询**:注释称「super_admin 的 GET /customers/profiles/ 是 HQ-scoped 会 403」,实际 `permission_service.check` 对 super_admin bypass(返回 True),端点返回 200 + 全量档案。picker 虽用 `!isSuperAdmin` 正确隐藏,但 `useCustomerProfiles()` 无条件查询,super_admin 仍会空跑取全量档案。修:`useCustomerProfiles` 加可选 `enabled` 开关(默认 true,保持 customers-page StoreView 调用不变),chat-page 传 `!isSuperAdmin` 禁用空查询;注释改对
+  - 清理验证通过(无需改):本次改动文件 grep 无 `print/breakpoint/pdb/debugger/console.log/TODO/FIXME/HACK` 残留;无死代码(所有新文件/方法都有调用链:`list_for_customer` 被 customer 360 / `sum_tokens_for_customer` 被 GET /usage 端点 / `fetchCustomerUsage`+`useCustomerUsage`+`CustomerUsageDialog` 链路完整)
+  - 架构合规:Controller→Service→Repository→Model 单向不变(GET /usage 只读聚合直接用 Repository,与 auth.py/chat.py 既有只读端点同款;无写操作绕过 Service);多租户过滤在 Repository 层(`sum_tokens_for_customer`/`list_for_customer` 内 tenant_id 过滤);软删除语义(`CustomerProfile.is_deleted` 与本归因指向 `Customer.id` 正交,hard-delete SET NULL 保历史)
+  - 迁移合规:`f9a0b1c2d4e5` down_revision 正确指向 `e8f9a0b1c2d3`,up/down 对称,纯 additive(add_column + index + FK SET NULL)
+- **执行**:
+  - 修 1 处代码质量问题 → `./init.sh` 全绿(ruff + **356 passed**)+ `npm run build` 成功(0 类型错误)+ `npx oxlint src/` 0 warnings 0 errors(44 文件)
+  - 在 `feat/customer-conversation-link` 分支(已是 feature 分支,未另建)→ commit(17 文件,1032 insertions)→ push → 建 PR #48
+  - CI 4 job 全绿:Migrations(43s) + Frontend(28s) + E2E(1m56s) + Backend(2m50s),**0 次修红**
+  - `gh pr merge 48 --squash --delete-branch` → GitHub 端 squash 合并成功(2026-07-13T16:32:27Z,commit 05c7106),远程分支已删;本地 main fast-forward 同步(05c7106);`git fetch --prune` 清理远程残留引用;本地仅 main 分支
+- **提交记录**: PR #48 已合并(squash),commit `05c7106 feat(billing): 客户-会话归因 customer_id 透传链路 (Token 费用管理 3/4) (#48)`(squash message 干净,无重复 `(#48)`)
+- **当前状态**: main 干净、与 origin/main 同步(均 05c7106)、本地仅 main 分支。customer-conversation-link(45)✅ 已 passing 并入 main
+- **已知风险**: 无功能风险。真实 DeepSeek stream_usage 计费链路需真实 key 端到端验证(plan 风险表标注);手动浏览器验证未跑(需前后端启动),pytest 356 + CI 4 job 已覆盖行为/迁移链/类型/不回归
+- **下一步最佳动作**: 执行 `token-billing-ui`(priority 46,Token 费用管理系列 4/4 收官,现为最高优先级 not_started)—— 门店级看板 + 总部级看板 + 余额预警 + 用量钻取
 
 ---

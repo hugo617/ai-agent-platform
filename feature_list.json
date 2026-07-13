@@ -1,7 +1,7 @@
 {
   "project": "ai-agent-platform",
   "description": "多租户 AI 智能体 SaaS 平台脚手架(FastAPI + React + pycasbin + LangGraph)",
-  "last_updated": "2026-07-13",
+  "last_updated": "2026-07-14",
   "harness_version": "stage1-clean-state",
   "rules": {
     "single_active_feature": true,
@@ -1091,7 +1091,8 @@
         "前端 customers-page:StoreView 操作菜单加「AI 用量」项 + CustomerUsageDialog(对话次数/token/费用/最近活跃 + 为客户咨询按钮)+ HqView 表格加 AI 用量列(全局视角)",
         "types.ts Conversation 加 customer_id + CustomerUsage interface;endpoints.ts ChatStreamPayload 加 customer_id + fetchCustomerUsage;queries.ts useCustomerUsage + qk.customerUsage",
         "测试 tests/test_customer_conversation.py 11 测试:Conversation.customer_id 可空 + chat 端到端 customer_id 透传(Conversation+UsageEvent)+ 无 customer_id 向后兼容 + sum_tokens_for_customer 门店/全局/无归因 + list_for_customer + API GET /usage(门店/member/super_admin 全局)",
-        "验证:./init.sh → ruff All checks passed + 356 passed(基线 345 + 新增 11);npm run build 0 类型错误;npx oxlint 0 warnings 0 errors"
+        "验证:./init.sh → ruff All checks passed + 356 passed(基线 345 + 新增 11);npm run build 0 类型错误;npx oxlint 0 warnings 0 errors",
+        "PR #48 已合并(squash)入 main,commit 05c7106;CI 4 job 全绿(Migrations 43s + Frontend 28s + E2E 1m56s + Backend 2m50s),0 次修红;ship-it 审查修正 1 处:chat-page 注释事实错误(super_admin 并非 403,permission_service.check bypass)+ useCustomerProfiles 加 enabled 开关避免 super_admin 空跑查询"
       ],
       "notes": "解决 token 消耗无法归因到客户。现状:Conversation 只绑(tenant,agent,user)不绑 Customer。用户 2026-07-12 决策做客户归因。设计:customer_id 可空(不是所有对话关联客户)+ 对话级关联(非消息级)+ 前端聊天页可选关联/客户详情「为客户咨询」直达。前置 token-usage-tracking(43,UsageEvent 有 customer_id 可空列)。复用 customers-api(已 passing)的 Customer 全局身份做跨店归因。不做:消息级关联、自动客户识别(AI 提取)、前端看板(任务46)。客户软删后对话 customer_id 保留(历史可追溯)或 SET NULL(FK ondelete)——实施时定。"
     },
