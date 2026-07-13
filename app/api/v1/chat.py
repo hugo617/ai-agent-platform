@@ -17,9 +17,12 @@ from app.agents.graph import stream_agent
 from app.agents.token_budget import truncate_history
 from app.api.deps import CurrentUser, get_current_user, require_permission
 from app.core.database import get_db
-from app.models.agent import Agent
+from app.models.agent import Agent, Conversation
+from app.models.message import Message
+from app.models.usage_event import UsageEvent
 from app.repositories.agent import AgentRepository
 from app.repositories.conversation import MessageRepository
+from app.repositories.usage_event import UsageEventRepository
 from app.schemas.conversation import ChatRequest
 from app.services.conversation_service import ConversationService
 from app.services.errors import NotFoundError
@@ -44,6 +47,63 @@ async def _load_agent(db: AsyncSession, tenant_id: str, agent_id: str) -> Agent:
             detail=f"agent {agent_id} not found in tenant {tenant_id}",
         )
     return agent
+
+
+def _u(usage_data: dict | None, key: str) -> int | None:
+    """Read a token count from the usage payload, None-safe.
+
+    Returns None when there's no usage (e.g. a stubbed stream in tests or a
+    provider that didn't return usage) so the Message column stays NULL.
+    """
+    if usage_data is None:
+        return None
+    val = usage_data.get("usage", {}).get(key)
+    return int(val) if val is not None else None
+
+
+async def _record_usage(
+    db: AsyncSession,
+    conv: Conversation,
+    msg: Message,
+    agent: Agent,
+    user: CurrentUser,
+    usage_data: dict | None,
+) -> None:
+    """Append a UsageEvent ledger row for this assistant turn.
+
+    No-op when there's no usage data (stubbed streams / provider didn't
+    return usage). Wrapped in try/except so a ledger write failure never
+    surfaces to the user — the chat already succeeded, losing one usage
+    record is preferable to erroring the whole reply.
+    """
+    if usage_data is None:
+        return
+    total = _u(usage_data, "total_tokens")
+    if total is None:
+        return
+    try:
+        repo = UsageEventRepository(db)
+        await repo.add(
+            UsageEvent(
+                tenant_id=conv.tenant_id,
+                conversation_id=conv.id,
+                message_id=msg.id,
+                agent_id=agent.id,
+                customer_id=None,  # filled by task 3 (customer-conversation-link)
+                user_id=user.user_id,
+                model=usage_data.get("model") or "",
+                prompt_tokens=_u(usage_data, "input_tokens") or 0,
+                completion_tokens=_u(usage_data, "output_tokens") or 0,
+                total_tokens=total,
+                cost=None,  # filled by task 2 (token-wallet-billing)
+            )
+        )
+        await db.commit()
+    except Exception:  # noqa: BLE001 - ledger is best-effort
+        # Drop the pending usage_events insert only — the assistant message
+        # was already committed by ``append_message``, so it survives the
+        # rollback. We swallow the error to keep the chat reply intact.
+        await db.rollback()
 
 
 @router.post(
@@ -92,6 +152,7 @@ async def chat_stream(
 
     async def event_source():
         full_reply: list[str] = []
+        usage_data: dict | None = None
         try:
             # Resolve the LLM config (tenant > platform > env) and pick the
             # model: the agent's chosen model wins if it's in the available
@@ -104,7 +165,7 @@ async def chat_stream(
                 if agent.model in llm_cfg.available_models
                 else llm_cfg.default_model
             )
-            async for chunk in stream_agent(
+            async for item in stream_agent(
                 user_id=user.user_id,
                 tenant_id=user.tenant_id,
                 db=db,
@@ -118,29 +179,55 @@ async def chat_stream(
                 max_tokens=agent.max_tokens,
                 top_p=agent.top_p,
             ):
-                full_reply.append(chunk)
-                yield f"data: {json.dumps({'delta': chunk}, ensure_ascii=False)}\n\n"
+                # stream_agent yields str chunks during streaming and a
+                # single {"usage": {...}, "model": str} dict at the end.
+                if isinstance(item, str):
+                    full_reply.append(item)
+                    yield f"data: {json.dumps({'delta': item}, ensure_ascii=False)}\n\n"
+                elif isinstance(item, dict) and "usage" in item:
+                    usage_data = item
         except Exception as e:  # noqa: BLE001 - surface to client then close
             yield f"data: {json.dumps({'error': str(e)}, ensure_ascii=False)}\n\n"
             # Fault tolerance: if the stream produced a partial reply before
             # failing, persist what we have (marked interrupted) so the
             # conversation history stays continuous — otherwise the user sees
             # their question with no answer on reload. An empty reply is
-            # skipped to avoid storing a blank assistant message.
+            # skipped to avoid storing a blank assistant message. Token usage
+            # (if any was captured before the failure) is still recorded.
             partial = "".join(full_reply)
             if partial.strip():
-                await conv_service.append_message(
+                msg = await conv_service.append_message(
                     conv.tenant_id,
                     conv.id,
                     "assistant",
                     partial + "\n\n[生成中断]",
+                    prompt_tokens=_u(usage_data, "input_tokens"),
+                    completion_tokens=_u(usage_data, "output_tokens"),
+                    total_tokens=_u(usage_data, "total_tokens"),
+                    model=usage_data.get("model") if usage_data else None,
+                )
+                await _record_usage(
+                    db, conv, msg, agent, user, usage_data
                 )
             return
 
-        # Persist the assistant reply once streaming completes.
-        await conv_service.append_message(
-            conv.tenant_id, conv.id, "assistant", "".join(full_reply)
+        # Persist the assistant reply once streaming completes, carrying the
+        # aggregated token usage + serving model so each message is
+        # self-describing for billing/reporting.
+        msg = await conv_service.append_message(
+            conv.tenant_id,
+            conv.id,
+            "assistant",
+            "".join(full_reply),
+            prompt_tokens=_u(usage_data, "input_tokens"),
+            completion_tokens=_u(usage_data, "output_tokens"),
+            total_tokens=_u(usage_data, "total_tokens"),
+            model=usage_data.get("model") if usage_data else None,
         )
+        # Append a usage ledger entry. Wrapped in try/except so a ledger
+        # write failure never breaks an otherwise-successful chat — losing
+        # one usage record is preferable to losing the whole reply.
+        await _record_usage(db, conv, msg, agent, user, usage_data)
         yield "data: [DONE]\n\n"
 
     return StreamingResponse(event_source(), media_type="text/event-stream")

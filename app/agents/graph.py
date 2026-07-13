@@ -83,6 +83,11 @@ def _build_llm_kwargs(
         "api_key": api_key,
         "base_url": base_url,
         "streaming": True,
+        # Ask the provider to aggregate usage in streaming mode. OpenAI-
+        # compatible APIs (incl. DeepSeek) only return usage in the *final*
+        # SSE chunk, and only when this flag is set — without it the real
+        # token counts are silently dropped and we can't bill/report usage.
+        "stream_usage": True,
         "temperature": temperature,
     }
     if max_tokens is not None:
@@ -136,8 +141,20 @@ async def stream_agent(
     temperature: float = 0.7,
     max_tokens: int | None = None,
     top_p: float | None = None,
-) -> AsyncIterator[str]:
-    """Run the agent and yield text chunks for SSE streaming.
+) -> AsyncIterator[str | dict[str, Any]]:
+    """Run the agent and yield text chunks for SSE streaming, then usage.
+
+    Yields ``str`` text chunks while streaming (forwarded to the client as
+    SSE ``delta`` frames). After the stream ends, yields a single ``dict``
+    with the aggregated token usage and the model that actually served the
+    request — callers persist this so the platform knows how many tokens a
+    chat consumed (the foundation of billing/quotas).
+
+    The usage dict shape: ``{"usage": {...}, "model": str}`` where usage has
+    ``input_tokens``/``output_tokens``/``total_tokens``. Usage is accumulated
+    across every ``on_chat_model_end`` event: a ReAct agent may invoke the
+    LLM more than once per turn (think → tool → think again), so we sum
+    every call's ``usage_metadata`` rather than taking the last one.
 
     Tool calls are awaited; only ``AIMessageChunk`` text content is forwarded
     to the client. The LLM (key/base_url/model) is resolved by the caller and
@@ -163,6 +180,11 @@ async def stream_agent(
     # ReAct agent expects a state dict (``{"messages": [...]}``), not a bare
     # list — passing the list directly raises INVALID_GRAPH_NODE_RETURN_VALUE.
     inputs = {"messages": [*history, HumanMessage(content=user_message)]}
+    # Accumulate token usage across every LLM call in this turn. A ReAct
+    # agent can call the model several times (reasoning → tool → reasoning),
+    # and each ``on_chat_model_end`` carries that call's ``usage_metadata`` —
+    # we sum them so the recorded total reflects the real cost of the turn.
+    usage_acc = {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
     # Guard the whole stream against a stalled upstream: if the provider
     # hangs (network black-hole, over-long prompt rejected silently, etc.)
     # ``asyncio.timeout`` cancels the generator and raises ``TimeoutError``,
@@ -175,3 +197,14 @@ async def stream_agent(
                 chunk = event["data"].get("chunk")
                 if isinstance(chunk, AIMessageChunk) and chunk.content:
                     yield chunk.content
+            elif kind == "on_chat_model_end":
+                output = event["data"].get("output")
+                um = getattr(output, "usage_metadata", None)
+                if um:
+                    usage_acc["input_tokens"] += um.get("input_tokens", 0)
+                    usage_acc["output_tokens"] += um.get("output_tokens", 0)
+                    usage_acc["total_tokens"] += um.get("total_tokens", 0)
+    # Hand the aggregated usage + serving model to the caller so it can be
+    # persisted on the assistant Message and in the UsageEvent ledger. Yielded
+    # last, after all text chunks — callers distinguish via isinstance.
+    yield {"usage": usage_acc, "model": model}

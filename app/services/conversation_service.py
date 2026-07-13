@@ -90,13 +90,32 @@ class ConversationService:
         return [MessageRead.model_validate(m) for m in msgs]
 
     async def append_message(
-        self, tenant_id: str, conversation_id: str, role: str, content: str
+        self,
+        tenant_id: str,
+        conversation_id: str,
+        role: str,
+        content: str,
+        *,
+        prompt_tokens: int | None = None,
+        completion_tokens: int | None = None,
+        total_tokens: int | None = None,
+        model: str | None = None,
     ) -> Message:
+        """Append a message and optionally record its token usage.
+
+        The token/model kwargs are only meaningful for assistant messages
+        produced by an LLM call; user messages and older callers that don't
+        pass them simply leave the columns NULL (backward compatible).
+        """
         msg = Message(
             conversation_id=conversation_id,
             tenant_id=tenant_id,
             role=role,
             content=content,
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            total_tokens=total_tokens,
+            model=model,
         )
         await self.messages.add(msg)
         # Bump the conversation's updated_at so the list ordering reflects

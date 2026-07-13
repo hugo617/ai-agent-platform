@@ -25,6 +25,7 @@ from app.models import (  # noqa: F401
     rbac,
     security,
     tenant,
+    usage_event,
 )
 
 config = context.config
