@@ -109,7 +109,7 @@ async def test_owner_can_write_and_read_tenant_config(app_client):
 
 @pytest.mark.asyncio
 async def test_member_cannot_write_tenant_config(member_client):
-    """member lacks settings:manage → 403."""
+    """member lacks settings:update → 403."""
     put = await member_client.put(
         "/api/v1/settings/llm/tenant",
         json={"api_key": "sk-x", "base_url": "u", "default_model": "m"},

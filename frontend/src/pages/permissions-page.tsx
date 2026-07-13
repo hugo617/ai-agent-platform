@@ -30,18 +30,6 @@ import {
 } from "@/hooks/queries";
 import { cn } from "@/lib/utils";
 
-// Friendly Chinese names for the seeded resource objects. Unknown objects fall
-// back to their raw code so custom permission units still render.
-const OBJ_LABELS: Record<string, string> = {
-  agents: "智能体",
-  conversations: "对话",
-  users: "用户",
-  roles: "角色",
-};
-
-// Stable action ordering within a resource group.
-const ACT_ORDER = ["read", "create", "update", "delete", "chat"];
-
 export function PermissionsPage() {
   const { me } = useAuth();
   const canManage = canManageUsers(me);
@@ -55,38 +43,26 @@ export function PermissionsPage() {
   // a spinner and block double-clicks.
   const [pendingCell, setPendingCell] = useState<string | null>(null);
 
-  // Group permissions by obj (stable order: seed objects first, then any custom
-  // ones alphabetically); within a group sort by ACT_ORDER.
+  // Group permissions by obj. Labels and ordering both come from the backend
+  // catalogue (GET /permissions/matrix returns permissions ordered by code, and
+  // each item carries its own obj_label/act_label), so the frontend keeps no
+  // hardcoded label/sort table — the drift that existed here is gone.
   const grouped = useMemo(() => {
     const perms = data?.permissions ?? [];
     const byObj = new Map<string, PermissionItem[]>();
+    const labelByObj = new Map<string, string>();
     for (const p of perms) {
       const list = byObj.get(p.obj) ?? [];
       list.push(p);
       byObj.set(p.obj, list);
+      if (!labelByObj.has(p.obj)) labelByObj.set(p.obj, p.obj_label);
     }
-    const objOrder = [
-      ...["agents", "conversations", "users", "roles"].filter((o) =>
-        byObj.has(o)
-      ),
-      ...[...byObj.keys()]
-        .filter(
-          (o) => !["agents", "conversations", "users", "roles"].includes(o)
-        )
-        .sort(),
-    ];
-    return objOrder.map((obj) => ({
+    // Preserve catalogue order (already sorted by code on the backend); only
+    // group, don't re-sort within a group.
+    return [...byObj.keys()].map((obj) => ({
       obj,
-      label: OBJ_LABELS[obj] ?? obj,
-      items: (byObj.get(obj) ?? []).sort(
-        (a, b) =>
-          (ACT_ORDER.indexOf(a.act) === -1
-            ? ACT_ORDER.length
-            : ACT_ORDER.indexOf(a.act)) -
-          (ACT_ORDER.indexOf(b.act) === -1
-            ? ACT_ORDER.length
-            : ACT_ORDER.indexOf(b.act))
-      ),
+      label: labelByObj.get(obj) ?? obj,
+      items: byObj.get(obj) ?? [],
     }));
   }, [data?.permissions]);
 
@@ -195,7 +171,7 @@ export function PermissionsPage() {
                             </span>
                           )}
                           <span className="text-muted-foreground">
-                            {perm.act}
+                            {perm.act_label}
                           </span>
                         </TableCell>
                         {roles.map((role) => {

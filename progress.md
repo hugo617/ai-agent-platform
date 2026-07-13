@@ -8,7 +8,7 @@
 - **标准启动路径**: `./init.sh`(装依赖 + ruff + pytest)
 - **标准验证路径**: `./init.sh`(同上,后端快速验证,SQLite 内存库)
 - **完整验证路径**(需 docker): `alembic upgrade head && alembic check` + `cd frontend && npm run build`
-- **当前最高优先级未完成功能**: **`permission-unified-model`(priority 39,权限重构系列 1/4)** —— demo-seed-full(38)✅ 已完成后,按任务规划表顺序执行权限重构系列。本任务消除 DEFAULT_*_PERMS/路由守卫/前端 OBJ_LABELS 三处漂移,Permission 表成唯一真相源。
+- **当前最高优先级未完成功能**: **`permission-menu-view`(priority 40,权限重构系列 2/4)** —— permission-unified-model(39)✅ 已完成后,按系列顺序执行。本任务新增 type=menu 权限类型,前端导航/路由由权限驱动(消除 needsSuperAdmin/needsUserManagement 硬编码)。前置 39 ✅ 已合入。
 - **当前 blocker**: 无
 
 ## 后续任务规划(2026-07-10 制定,2026-07-12 追加 MVP 业务模块 17-24,共 24 条,WIP=1 顺序执行)
@@ -1892,5 +1892,35 @@
 - **提交记录**: PR #41 已合并(squash),commit `4b81d78 feat(demo-seed): 演示数据全量补全 + --reset 清理重建(修复审计日志泄漏) (#41)`
 - **当前状态**: main 干净、与 origin/main 同步、本地仅 main 分支。demo-seed-full(38)✅ 已 passing 并入 main
 - **下一步最佳动作**: 执行 `permission-unified-model`(priority 39,权限重构系列 1/4 地基,现为最高优先级 not_started)
+
+---
+
+### Session 066 — 2026-07-13
+- **本轮目标**: 执行 `permission-unified-model`(priority 39,权限重构系列 1/4 地基)—— 消除权限目录三处漂移(DEFAULT_*_PERMS 常量/路由守卫/前端 OBJ_LABELS),Permission 表 + catalogue 端点成唯一真相源;细化 settings/api_tokens 的 manage 粒度
+- **已完成**(对照 plan §6 步,后端为主 + 前端配合):
+  - **Step 1 DEFAULT_*_PERMS 重写**(`permission_service.py`):owner 补 `conversations:update`/`conversations:delete`(原缺 delete)+ `agents:export`/`customers:export`;`settings:manage` 拆 `read`/`update`;`api_tokens:manage` 拆 `read`/`create`/`delete`;admin 同步拆分 + export;member 不变(无 settings/api_tokens)。新增 `OBJ_CN`/`ACT_CN` 中文映射常量(seed + catalogue 共用)
+  - **Step 2 路由守卫 + Service 层改细**:settings.py GET→read / PUT→update(2 处);api_tokens.py POST→create / GET→read / DELETE→delete(3 处)。**发现 plan 未提及的 Service 层不一致**:`api_token_service.py` 用统一 `ACT_MANAGE="manage"` 在 issue/list/revoke 3 处 require(路由守卫改细后两者矛盾)→ 拆为 `ACT_CREATE`/`ACT_READ`/`ACT_DELETE`,issue→create / list→read / revoke→delete(窄范围修复,消除路由守卫与 Service 层 require 的二次拦截不一致)
+  - **Step 3 中文名 + label**:`_upsert_permission` 写 `name=f"{OBJ_CN}-{ACT_CN}"`(如「智能体-查看」);`get_catalogue` 填 `obj_label`/`act_label` + `order_by(Permission.code)` 稳定排序(前端删硬编码后排序移到后端);`rbac.py` PermissionItem 加 `obj_label`/`act_label` 字段
+  - **Step 4 conftest 同步 + drift 修复**:`_make_casbin` owner/admin 策略对齐新 DEFAULT(拆 manage + 补 update/delete/export)。**修复既有 drift**:conftest member 原缺 `roles:read`(与 DEFAULT_MEMBER_PERMS 不一致,permission-matrix-api 任务 notes 提过)→ 现对齐;`test_permissions_api::test_member_without_roles_read_is_forbidden` 改为 `test_member_with_roles_read_can_view_matrix`(反映 drift 消除后 member 持有 roles:read 的正确行为);3 测试文件 docstring 字面量更新(:manage → 细化项)
+  - **Step 5 前端消除漂移**(`permissions-page.tsx` + `types.ts`):删 `OBJ_LABELS`(仅 4 obj,漏 customers/settings/api_tokens)+ `ACT_ORDER` 硬编码;分组逻辑改用 catalogue 返回的 `obj_label`(组标题)+ `act_label`(动作列);types.ts PermissionItem 加 `obj_label`/`act_label`;**无新 hook**(复用 usePermissionMatrix 的 permissions 数组已含 label,endpoints.ts 的「不加 catalogue」注释保留)
+  - **Step 6 backfill 脚本 + 测试**:新建 `scripts/backfill_permissions.py`(遍历租户→grant 缺失项 + revoke 旧 manage grant + 回填中文 name,走 rbac_service.grant_permission/revoke_permission 同步 SCD2+casbin,super_admin platform_role 绕过 require,idempotent,支持 --dry-run);补 `test_permissions_api::test_catalogue_returns_chinese_labels`(断言 obj_label=智能体/act_label=查看/name=智能体-查看)+ `test_permission_service` 4 单元测试(DEFAULT_OWNER 完整目录 / manage 已拆 / member 无 settings/api_tokens / OBJ_CN/ACT_CN 覆盖全目录)
+- **运行过的验证**(全过):
+  - `./init.sh` → ruff `All checks passed!` + **299 passed**(基线 294 + 新增 5:1 catalogue 中文 label 集成 + 4 DEFAULT 目录完整性单元测试)
+  - `cd frontend && npm run build` → tsc -b + vite build 成功,0 类型错误
+  - `npx oxlint src/` 全仓库(43 文件)→ 0 warnings 0 errors
+  - `scripts/backfill_permissions.py --help` → 正常;ruff check → All checks passed
+  - 三处漂移消除确认:① 路由守卫无 settings:manage/api_tokens:manage 残留(grep)② Service 层无 ACT_MANAGE(grep)③ 前端无 OBJ_LABELS/ACT_ORDER(grep)
+- **已记录证据**: `feature_list.json` 的 `permission-unified-model.evidence` 字段(10 条),status 改为 passing
+- **技术要点**(与 plan 的实现差异):
+  - **plan §Step2「Permission 表拆 obj/act 实列」按边界判断降级**:保持 code 编码(`"<obj>:<act>"`),catalogue 端点解析返回 obj/act/obj_label/act_label。降低风险,无 migration,无 SCD2/casbin 同步逻辑改动
+  - **发现 plan 未提及的 Service 层 ACT_MANAGE bug**:`api_token_service.py` 3 处 require 用统一 `ACT_MANAGE="manage"`,路由守卫改细后两者矛盾(路由放行 create 但 Service 层 require manage → 403)。这是 atoa-service-require-missing-platform-role 任务之后的窄范围修复:拆为 ACT_CREATE/ACT_READ/ACT_DELETE 对齐路由守卫
+  - **既有 drift 修复**:conftest member 缺 roles:read(与 DEFAULT_MEMBER_PERMS 不一致,permission-matrix-api notes 提过的既有偏差),本次对齐。test_permissions_api 的 member 403 测试改为 200(反映 drift 消除)
+  - **用户决策(3 项)**:① 中文 name 写进 DB + backfill 老数据(DB 完全真相源)② PermissionItem 加 obj_label/act_label(前端零硬编码)③ backfill 用 scripts/ 运维脚本(走 enforcer 不直接写 casbin 表,casbin 表被 Alembic _EXCLUDED_TABLES 排除)
+  - **向后兼容**:OBJ_CN/ACT_CN 含 legacy `"manage":"管理"` 条目,backfill 老的 manage Permission 行时中文名不崩;新 seed 的租户不会有 manage 行
+- **提交记录**: 待用户决定是否提交 + 是否走 PR + CI 守门(14 文件改动:5 后端 + 2 前端 + 5 测试 + 1 脚本新建 + feature_list.json + progress.md)
+- **已知风险**: 无功能风险。backfill 脚本未在真实 Postgres 跑(需 docker 环境),--dry-run + 单元测试 + idempotent 设计已覆盖核心逻辑;真实部署时跑 `python scripts/backfill_permissions.py --dry-run` 预览再正式跑。手动浏览器验证未跑(需前后端启动),build(tsc)+ oxlint + pytest 已覆盖类型/规范/行为
+- **下一步最佳动作**:
+  - (a) commit + PR + CI 守门 + 合并 permission-unified-model 到 main;
+  - (b) 执行 `permission-menu-view`(priority 40,权限重构系列 2/4,现为最高优先级 not_started)
 
 ---

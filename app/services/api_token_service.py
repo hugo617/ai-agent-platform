@@ -29,7 +29,13 @@ from app.services.errors import NotFoundError
 from app.services.permission_service import permission_service
 
 OBJECT = "api_tokens"
-ACT_MANAGE = "manage"
+# Fine-grained actions (split from the coarse ``manage`` in
+# permission-unified-model): issue→create, list→read, revoke→delete. The router
+# guards in api_tokens.py use the same verbs, and these Service-layer requires
+# mirror them so the two checks never disagree.
+ACT_CREATE = "create"
+ACT_READ = "read"
+ACT_DELETE = "delete"
 
 
 @dataclass
@@ -70,7 +76,7 @@ class ApiTokenService:
     ) -> ApiTokenCreateResponse:
         """Create a token and return its plaintext exactly once."""
         await permission_service.require(
-            user_id, tenant_id, OBJECT, ACT_MANAGE, platform_role=platform_role
+            user_id, tenant_id, OBJECT, ACT_CREATE, platform_role=platform_role
         )
         plaintext = API_TOKEN_PREFIX + secrets.token_urlsafe(32)
         prefix = _extract_prefix(plaintext)
@@ -138,7 +144,7 @@ class ApiTokenService:
         platform_role: str | None = None,
     ) -> list[ApiTokenRead]:
         await permission_service.require(
-            user_id, tenant_id, OBJECT, ACT_MANAGE, platform_role=platform_role
+            user_id, tenant_id, OBJECT, ACT_READ, platform_role=platform_role
         )
         rows = await ApiTokenRepository(db).list_for_tenant(tenant_id)
         # Mask revoked/deleted tokens out of the default listing.
@@ -153,7 +159,7 @@ class ApiTokenService:
         platform_role: str | None = None,
     ) -> None:
         await permission_service.require(
-            user_id, tenant_id, OBJECT, ACT_MANAGE, platform_role=platform_role
+            user_id, tenant_id, OBJECT, ACT_DELETE, platform_role=platform_role
         )
         repo = ApiTokenRepository(db)
         row = await repo.get_for_tenant(token_id, tenant_id)

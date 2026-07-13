@@ -72,6 +72,27 @@ async def test_catalogue_lists_permission_items(app_client):
 
 
 @pytest.mark.asyncio
+async def test_catalogue_returns_chinese_labels(app_client):
+    """Catalogue items carry Chinese obj_label/act_label + a Chinese name.
+
+    The friendly names come from OBJ_CN/ACT_CN on the backend, so the frontend
+    renders the matrix without keeping its own label map (permission-unified-
+    model removed the OBJ_LABELS/ACT_ORDER drift).
+    """
+    role = await _create_role(app_client, "labelprobe")
+    # Use a seeded resource (agents) so the known OBJ_CN/ACT_CN entries apply.
+    await _grant(app_client, role["id"], "agents", "read")
+
+    resp = await app_client.get("/api/v1/permissions/catalogue", headers=AUTH)
+    assert resp.status_code == 200, resp.text
+    item = next(p for p in resp.json() if p["code"] == "agents:read")
+    assert item["obj_label"] == "智能体"
+    assert item["act_label"] == "查看"
+    # name is the combined Chinese label, not the old "agents read" English form.
+    assert item["name"] == "智能体-查看"
+
+
+@pytest.mark.asyncio
 async def test_matrix_updates_after_grant(app_client):
     """Granting a second permission flips its matrix cell to True."""
     role = await _create_role(app_client, "auditor")
@@ -144,13 +165,15 @@ async def test_matrix_isolated_across_tenants(app_client, db_session, tenant_own
 
 
 @pytest.mark.asyncio
-async def test_member_without_roles_read_is_forbidden(member_client):
+async def test_member_with_roles_read_can_view_matrix(member_client):
     """The matrix/catalogue are guarded by roles:read.
 
-    The conftest member lacks roles:read (only agents/conversations perms), so
-    both endpoints return 403 — the guard fires before the handler runs.
+    The conftest member holds roles:read (aligned with DEFAULT_MEMBER_PERMS —
+    previously a drift where the test fixture omitted it; the drift was fixed
+    in the permission-unified-model task), so both endpoints return 200. The
+    403 path is exercised by roles lacking the grant in test_rbac_api.
     """
     resp = await member_client.get("/api/v1/permissions/matrix", headers=AUTH)
-    assert resp.status_code == 403
+    assert resp.status_code == 200
     resp = await member_client.get("/api/v1/permissions/catalogue", headers=AUTH)
-    assert resp.status_code == 403
+    assert resp.status_code == 200
