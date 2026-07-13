@@ -8,13 +8,13 @@
 - **标准启动路径**: `./init.sh`(装依赖 + ruff + pytest)
 - **标准验证路径**: `./init.sh`(同上,后端快速验证,SQLite 内存库)
 - **完整验证路径**(需 docker): `alembic upgrade head && alembic check` + `cd frontend && npm run build`
-- **当前最高优先级未完成功能**: **`permission-data-scope`(priority 41,权限重构系列 3/4)** —— permission-unified-model(39)✅ + permission-menu-view(40)✅ 已合入 main 后,按系列顺序执行。本任务给 Role 加 data_scope 四档(all/tenant/group/self)+ DataScopeResolver + Repository 自动过滤。前置 39 ✅ 已合入。
+- **当前最高优先级未完成功能**: **`permission-matrix-redesign`(priority 42,权限重构系列 4/4 收官)** —— permission-unified-model(39)✅ + permission-menu-view(40)✅ + permission-data-scope(41)✅ 已合入 main 后,收官任务重写矩阵 UI(超管锁定行 + 菜单/操作两区并列 + data_scope 选择器 + 系统角色徽章)。前置 41 ✅ 已合入。
 - **当前 blocker**: 无
 
 ## 后续任务规划
 
 任务全景与依赖关系见 `feature_list.json`(priority/depends_on 字段为真相源)。三个系列总纲:
-- **权限重构系列**(39-42):`harness/docs/plan-permission-redesign-overview.md` —— 39 ✅ → 40 ✅ → 41(data-scope,当前)→ 42(matrix-redesign 收官)
+- **权限重构系列**(39-42):`harness/docs/plan-permission-redesign-overview.md` —— 39 ✅ → 40 ✅ → 41 ✅ → 42(matrix-redesign 收官,当前)
 - **Token 费用管理系列**(43-46):`harness/docs/plan-token-billing-overview.md` —— 43(usage-tracking)→ 32(wallet-billing)→ 33(customer-link)→ 34(billing-ui)
 - **MVP 补全系列**(47-58):`harness/docs/plan-mvp-completion-overview.md` —— 12 个缺口分三梯队(SaaS 体面/配套/V2)
 
@@ -62,11 +62,12 @@
 | demo-seed-full(演示数据全量补全) | passing | 294 tests + seed_demo.py 加 --reset 清理重建 + 全量补全(对话/消息/LLM配置/API Token/自定义角色权限/审计日志/多登录方式/Agent推理参数差异化)+ 修复审计日志泄漏 bug(SystemLog 删除顺序) |
 | permission-unified-model(权限目录统一+操作细化 1/4) | passing | 299 tests + DEFAULT_*_PERMS 重写(manage 拆细)+ catalogue 端点中文 label + 前端删 OBJ_LABELS 硬编码 + backfill 脚本 + conftest drift 修复 |
 | permission-menu-view(菜单/视图权限 2/4) | passing | 306 tests + Permission.type='menu' 启用 + DEFAULT_MENU_PERMS + MeResponse.menus + 前端导航/路由改 canViewMenu 驱动 + 删 needsSuperAdmin/needsUserManagement 硬编码 + 修孤儿测试 bug |
+| permission-data-scope(角色级数据范围 3/4) | passing | 315 tests + Role.data_scope 四档(all/tenant/group/self)+ DataScopeService(service 层,多角色取最宽)+ CustomerProfile.list_for_scope + 迁移 4708b3fbf2e7(server_default 回填免 backfill)+ 仅 CustomerProfile 接入(会话不接入,用户决策) |
 
 > ✅ AI 内核(agents + chat)已全部纳管并 passing。
 > ✅ **真实对话已跑通**:real-chat-llm-config(Session 017)用真实 DeepSeek key 端到端验证 SSE 流式对话。
 > ✅ **质量护栏已建立**:e2e-and-coverage(Session 019)加了覆盖率门槛(93% ≥ 80%)+ Playwright E2E + oxlint 0 warning。
-> ✅ **权限重构系列推进中**:39(unified-model)✅ + 40(menu-view)✅ 已合入 main,41(data-scope)为当前任务。
+> ✅ **权限重构系列推进中**:39(unified-model)✅ + 40(menu-view)✅ + 41(data-scope)✅ 已合入 main,42(matrix-redesign 收官)为当前任务。
 
 ## 会话记录
 
@@ -462,5 +463,25 @@
 - **下一步最佳动作**:
   - (a) commit + PR + CI 守门 + 合并 permission-data-scope 到 main;
   - (b) 执行 `permission-matrix-redesign`(priority 42,权限重构系列 4/4 收官,现为最高优先级 not_started)
+
+---
+
+### Session 071 — 2026-07-13
+- **本轮目标**: 清理废代码 + 代码质量审查 + commit + PR + CI 守门 + 合并 permission-data-scope(41)到 main
+- **代码审查结论**(已用 ruff/pytest/grep 全面验证):
+  - ✅ **无 bug、无需修改**:本轮代码质量高 —— diff 10 文件全部 review(rbac 模型/schema/service diff + data_scope.py 全文 + customer repository/service diff + 测试全文 + 迁移全文),docstring 完整(模块/类/方法三层覆盖,边界说明 group 降级/self 回退/多角色聚合),无逻辑错误
+  - 清理验证通过(无需改):全仓库 grep 确认无 `print/breakpoint/pdb/debugger` 残留(仅 `config.py:68` 注释里的 `print(` 示例命令);`TODO` 仅命中既有 reserved 注释(rbac.py/permission_service.py,非本次引入,且都是「预留给未来 UI」说明性注释,保留合理);无死代码(10 个新增/修改文件全部有调用链)
+  - 架构合规:Controller→Service→Repository 单向不变(DataScopeService 放 service 层 + Repository 收原始参数非 ResolvedScope 对象);多租户过滤在 Repository 层(`list_for_scope` 内 `is_deleted=False` + tenant_id 过滤);迁移 `server_default='tenant'` 回填与既有行为等价
+- **执行**:
+  - 审查通过无需修改 → `./init.sh` 全绿(ruff + **315 passed**)+ `cd frontend && npm run build` 成功 + `npx oxlint src/` 0 warnings 0 errors(前端零改动,schema 加字段不影响)
+  - 切 `feat/permission-data-scope` 分支 → commit(10 文件,657 insertions)→ push → 建 PR #44
+  - **环境插曲**(沿用 Session 069):git 配置的 `http.proxy=http://127.0.0.1:9910` 未运行,push 用 `git -c http.proxy= -c https.proxy=` 临时覆盖;gh 命令用 `HTTPS_PROXY= HTTP_PROXY=` 空覆盖(注意:`git -c ... gh` 会被当成 git 子命令,要用环境变量方式)
+  - CI 4 job 全绿:Migrations(53s) + Frontend(28s) + E2E(1m56s) + Backend(2m24s),无需修复
+  - `HTTPS_PROXY= gh pr merge 44 --squash --delete-branch` → GitHub 端 squash 合并成功(11:38:18Z,commit c90c7bd),远程分支已删
+  - **本地 main diverge 处理**:本地 main 落后 origin/main 1 commit、又有本地 1 commit(0a0533b docs 归档),`git pull origin main` rebase 时自动丢弃重复 commit(已 upstream),成功同步;`git fetch --prune` 清理远程残留引用
+- **提交记录**: PR #44 已合并(squash),commit `c90c7bd feat(permission): 角色级数据范围 data_scope (权限重构 3/4) (#44)`
+- **当前状态**: main 干净、与 origin/main 同步、本地仅 main 分支。permission-data-scope(41)✅ 已 passing 并入 main
+- **已知风险**: 无功能风险。迁移未手动跑真实 Postgres(CI Migrations job 已覆盖 53s 全绿);手动浏览器验证未跑(需前后端启动),build(tsc)+ oxlint + pytest + CI 已覆盖类型/规范/行为/迁移链
+- **下一步最佳动作**: 执行 `permission-matrix-redesign`(priority 42,权限重构系列 4/4 收官,现为最高优先级 not_started)—— 矩阵 UI 重写:超管锁定行 + 菜单/操作两区并列 + data_scope 选择器 + 系统角色徽章
 
 ---
