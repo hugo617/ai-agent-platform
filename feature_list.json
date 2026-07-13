@@ -999,6 +999,390 @@
       ],
       "evidence": [],
       "notes": "demo-seed(37)只覆盖了组织/客户/门店三域 8 张表,用户要求覆盖全面。本任务在 seed_demo.py 基础上扩:① 加 --reset 清理重建(按 FK 反向删除 + 演示白名单边界,不误伤 super_admin/非演示数据);② 补全缺口表(Conversation/Message/LlmConfig/ApiToken/SystemLog/自定义Role+Permission+RolePermission/UserLoginMethod)+ Agent 推理参数差异化。关键设计:清理用演示白名单(门店名/用户名/code/identity_key)反查行ID级联删,绝不用裸 DELETE FROM;Conversation 用 create_or_get + append_message、LlmConfig 用 upsert_platform/upsert_tenant、ApiToken 用 issue(明文只展示一次)、自定义角色用 RbacService.create+grant_permission——全调真实 Service 让 casbin/SCD2/审计副作用正确触发。不种 UserSession/VerificationCode(运行时态);不调真实 LLM(assistant 消息写死文本);LlmConfig api_key 用占位符(真实 key 由用户在 settings 页填)。前置 demo-seed(37)已 passing。纯脚本+文档任务,不改 app/ 功能代码。"
+    },
+    {
+      "id": "permission-unified-model",
+      "priority": 39,
+      "area": "权限",
+      "title": "权限目录统一 + 操作权限细化(权限重构系列 1/4)",
+      "user_visible_behavior": "权限矩阵展示完整、细化的操作权限目录(settings/api_tokens 的 manage 拆细,补全缺失项),前端中文标签从后端 catalogue 读取不再硬编码,权限目录三处漂移消除,后端 Permission 表成为唯一真相源",
+      "status": "not_started",
+      "plan": "harness/docs/plan-permission-unified-model.md",
+      "verification": [
+        "DEFAULT_*_PERMS 重写:settings 拆 read/update、api_tokens 拆 read/create/delete、补 conversations:delete + agents/customers:export 预留",
+        "前端 permissions-page.tsx 删除 OBJ_LABELS/ACT_ORDER 硬编码,改从 usePermissionCatalogue 读真实目录",
+        "catalogue 端点 PermissionItem.name 返回中文友好名(如「智能体-查看」)",
+        "现有租户通过 backfill 脚本补齐新拆的权限项(casbin 策略 + SCD2 当前态同步)",
+        "权限目录三处(常量/路由守卫/前端显示)一致,无 drift",
+        "./init.sh 全绿 + cd frontend && npm run build 通过"
+      ],
+      "evidence": [],
+      "notes": "权限重构系列地基任务。用户痛点(2026-07-12 Session 045):权限目录散在三处(DEFAULT_*_PERMS 常量/路由 require_permission/前端 OBJ_LABELS)且已 drift(conversations:delete 有校验无 seed;customers/settings/api_tokens 前端无中文标签);settings/api_tokens 的 manage 粒度过粗(一勾全勾)。本任务统一目录为后端 Permission 表 + catalogue 端点单一真相源,细化操作粒度。系列总纲见 plan-permission-redesign-overview.md。不做:menu 权限(任务 40)、data_scope(任务 41)、矩阵 UI 重写(任务 42)。Permission 表是否拆 obj/act 实列:第一版建议降级保持 code 编码,降低风险,实施时评估。"
+    },
+    {
+      "id": "permission-menu-view",
+      "priority": 40,
+      "area": "权限",
+      "title": "菜单/视图权限(type=menu)(权限重构系列 2/4)",
+      "user_visible_behavior": "管理员能在权限矩阵里配置每个角色可见哪些菜单/页面,角色用户登录后侧边栏菜单随之变化;前端菜单可见性不再硬编码 needsSuperAdmin/needsUserManagement,改由 menu 权限驱动",
+      "status": "not_started",
+      "plan": "harness/docs/plan-permission-menu-view.md",
+      "verification": [
+        "Permission.type='menu' 启用,seed 生成全部菜单权限项(menu:dashboard/menu:agents/menu:chat/menu:customers/menu:groups/menu:members/menu:users/menu:roles/menu:permissions/menu:settings)",
+        "GET /permissions/catalogue?type=menu 返回菜单项;矩阵端点 permissions[].type 字段就绪",
+        "MeResponse 暴露当前用户 menu 权限清单(menus 字段)",
+        "前端 dashboard-layout.tsx NAV_ITEMS 删除 needsSuperAdmin/needsUserManagement,改用 canViewMenu(me, menuCode);member 登录只看业务菜单,owner 看全部(除 tenants),super_admin 看全部",
+        "menu:tenants 按 platform_role='super_admin' 显示(平台级,不进租户 seed)",
+        "menu 权限只驱动前端 UX,后端 require_permission 保持 api 校验不变(menu 是 UX 影子,真正拦的是 api 权限)",
+        "权限矩阵页可配置 menu 权限(完整 UI 美化留给任务 42)",
+        "./init.sh 全绿 + npm run build 通过"
+      ],
+      "evidence": [],
+      "notes": "解决用户核心痛点「只有增删改查没有视图权限」。关键设计:menu 权限是 UX 层非安全边界,后端真正拦截靠 api 权限(require_permission);menu + 对应 api read 通常一起 grant 但允许独立配。前置 permission-unified-model(39)。不做:data_scope(任务 41)、矩阵 UI 完整重写(任务 42)、后端 menu 校验(menu 不进 require_permission)、按钮级权限(只页面/菜单级)。老用户 menu 权限缺失由 backfill 补(可并入任务 39 的 backfill 脚本)。"
+    },
+    {
+      "id": "permission-data-scope",
+      "priority": 41,
+      "area": "权限",
+      "title": "数据权限(data_scope 角色级数据范围四档)(权限重构系列 3/4)",
+      "user_visible_behavior": "角色可配置数据范围(all全部/tenant本租户/group本组织/self仅自己),该角色用户查询业务数据时按范围自动过滤(业务员只看自己客户、店长看全店、区域经理看本组织多门店)",
+      "status": "not_started",
+      "plan": "harness/docs/plan-permission-data-scope.md",
+      "verification": [
+        "Role 表加 data_scope 字段(四档 all/tenant/group/self),默认 tenant,alembic 迁移无 drift",
+        "DataScopeResolver 实现四档过滤(all 不过滤/tenant 本租户/group 本组织门店 IN/self created_by=)+ 多角色聚合取最宽",
+        "CustomerRepository/ConversationRepository 接入数据范围过滤(Service 层从当前 user 解析传给 Repository)",
+        "group 范围:复用 Group+GroupTenant 解析门店列表;tenant 不属于任何 Group 时降级 tenant",
+        "角色 CRUD(RoleCreate/RoleUpdate/RoleRead)暴露 data_scope 字段",
+        "pytest tests/test_data_scope.py 覆盖:self 只看自己/tenant 看全店/group 看跨店/多角色聚合取最宽/group 降级 tenant/跨租户隔离不变",
+        "./init.sh 全绿 + npm run build 通过"
+      ],
+      "evidence": [],
+      "notes": "数据权限 B 层:角色级 data_scope 四档(用户 2026-07-12 拍板,非 ABAC 行级表达式)。data_scope 挂角色上(非权限项上),一个角色一种数据范围;super_admin/hq_staff 走 bypass 不进 data_scope;group 依赖现有 Group 模型(任务 groups-api 已有);self 需业务表有 created_by 列(核实 customers/conversations,缺失要补)。前置 permission-unified-model(39)+ groups-api(已 passing)。首批只接 Customer/Conversation 两域,Agent 暂不接(租户共享语义)。不做:列级数据权限、权限项粒度 data_scope、data_scope 的 SCD2 历史。"
+    },
+    {
+      "id": "permission-matrix-redesign",
+      "priority": 42,
+      "area": "权限",
+      "title": "权限矩阵 UI 重写(超管锁定行 + 菜单/操作分区 + data_scope 选择器)(权限重构系列 4/4)",
+      "user_visible_behavior": "权限矩阵页统一管理三类权限:顶部超管锁定行(全选不可配)+ 菜单权限区 + 操作权限区并列 + 每角色 data_scope 选择器,管理员一处配全角色×菜单×操作×数据范围",
+      "status": "not_started",
+      "plan": "harness/docs/plan-permission-matrix-redesign.md",
+      "verification": [
+        "矩阵页顶部显示超管锁定行(全选 + 🔒 图标,不可编辑,语义「平台级全权」);非超管登录不显示",
+        "菜单权限区 + 操作权限区并列(或 tab 切换),列按 obj 分组,均可编辑",
+        "每个角色行有 data_scope 下拉(全部/本租户/本组织/仅自己),改值调 role update 生效",
+        "系统角色(owner/admin/member)标「系统」徽章;member 矩阵只读(无 roles:update)",
+        "改角色菜单权限 → 该角色用户登录菜单变化(联动任务 40);改 data_scope=self → 该角色用户查客户只看自己(联动任务 41)",
+        "图例(✅/❌/🔒)+ 快捷操作(全选本组/授权查看联动)+ 编辑 loading/toast 反馈",
+        "cd frontend && npm run build 通过 + oxlint 0 warning + ./init.sh 不回归"
+      ],
+      "evidence": [],
+      "notes": "权限重构系列收官任务。用户明确诉求(2026-07-12):① 超管全选且锁定(后端 bypass 语义不变,只让超管权限 UI 可见可理解);② 菜单+操作两类权限并列;③ data_scope 可配。前置 permission-unified-model(39)+ permission-menu-view(40)+ permission-data-scope(41)三者全 passing。矩阵列较多(7 obj×5 act + 12 menu ≈ 47 列)用分组+横向滚动/tab 缓解。不做:按钮级权限配置、权限模板、审批流、data_scope 自定义范围。完成后整个权限重构系列收官,更新 plan-permission-redesign-overview.md 系列状态。"
+    },
+    {
+      "id": "token-usage-tracking",
+      "priority": 43,
+      "area": "计费",
+      "title": "Token 用量采集(用量事件层)(Token 费用管理系列 1/4)",
+      "user_visible_behavior": "每次 AI 对话后系统记录真实的 token 用量(输入/输出/合计)+ 实际服务的模型名,为后续计费提供数据基础;目前对话消耗的 token 完全没被采集(stream_agent 丢弃 usage_metadata)",
+      "status": "not_started",
+      "plan": "harness/docs/plan-token-usage-tracking.md",
+      "verification": [
+        "_build_llm_kwargs 开启 stream_usage: True(DeepSeek 流式末尾返回 usage)",
+        "stream_agent 事件循环加 on_chat_model_end 分支,累加 usage_metadata(ReAct 多轮累加非覆盖),流末尾 yield usage 汇总",
+        "Message 加 4 列(prompt_tokens/completion_tokens/total_tokens/model,均可空向后兼容)+ alembic 迁移无 drift",
+        "append_message 扩展关键字参数接收 token 数据(向后兼容)",
+        "event_source 消费 usage 传给 append_message,记录实际服务的 model(chat.py L102-106 解析后的 model,非 agent.model)",
+        "新建 UsageEvent 表 + Repository(追加式账本,customer_id/cost 暂可空留任务2/3填)+ alembic 注册迁移",
+        "对话成功后写一条 UsageEvent",
+        "pytest tests/test_usage_tracking.py 覆盖:采集正确性/多轮累加/落库/向后兼容/中断路径/跨租户隔离",
+        "./init.sh 全绿 + alembic upgrade head && alembic check 无 drift"
+      ],
+      "evidence": [],
+      "notes": "Token 费用管理系列地基任务。现状(2026-07-12 精确取证):stream_agent(L125-178)事件循环只处理 on_chat_model_stream 只 yield 文本,从不读 chunk.usage_metadata(LangChain 流末尾暴露的真实用量);Message 只有 5 列无 token/model;全项目搜 quota/credit/balance/wallet 零命中。关键技术点:① DeepSeek 流式需 stream_usage=True 才返回 usage;② ReAct agent 多轮 on_chat_model_end 需累加;③ yield 契约从 AsyncIterator[str] 改为 str|dict。系列总纲 plan-token-billing-overview.md。不做:钱包扣费(任务44)、客户归因(customer_id 留空,任务45)、定价(cost 留空,任务44)、改 ReAct 工具链。UsageEvent 写入失败用 try/except 包裹不阻断对话(用量丢失<对话失败)。"
+    },
+    {
+      "id": "token-wallet-billing",
+      "priority": 44,
+      "area": "计费",
+      "title": "Token 钱包计费(预付钱包 + 扣减 + 充值 + 余额拦截)(Token 费用管理系列 2/4)",
+      "user_visible_behavior": "门店有 token 钱包余额(预付制),对话消耗实时扣减,余额不足拒绝对话;总部(super_admin)能给门店充值划拨额度;按模型真实 token + 单价表计费。实现「门店向总部购买 token,token 用于门店和门店客户」的商业闭环",
+      "status": "not_started",
+      "plan": "harness/docs/plan-token-wallet-billing.md",
+      "verification": [
+        "Wallet 表(一门店一钱包,balance 整数 token 数,total_recharged/consumed,low_balance_threshold,部分唯一索引)+ WalletTransaction 流水表(recharge/consume/refund/adjust)+ 迁移无 drift",
+        "ModelPricing 表(平台级 tenant_id NULL + 租户覆盖,input/output_price_per_1k,currency)+ 迁移",
+        "BillingService:charge(SELECT FOR UPDATE 防并发双扣)/recharge(has_balance)/calc_cost(租户覆盖>平台默认,未配置 cost=0)",
+        "event_source 余额预检(不足返回 SSE error 不开始对话)+ 对话成功后同事务扣减(with_for_update)",
+        "create_tenant 末尾同事务初始化零余额 wallet(原子性)",
+        "API:/billing/wallet(查余额)/recharge(充值 super_admin)/transactions(流水)/usage(用量)/pricing(定价 CRUD),权限 wallet:read/billing:read 门店级、recharge/pricing:manage super_admin",
+        "DEFAULT_*_PERMS 加 wallet:read/billing:read(owner/admin 持有)",
+        "pytest tests/test_billing.py 覆盖:扣减原子性/并发双扣防护(PG FOR UPDATE)/余额不足拦截/充值流水/定价计算覆盖优先级/租户隔离/wallet 初始化",
+        "./init.sh 全绿 + alembic check 无 drift"
+      ],
+      "evidence": [],
+      "notes": "Token 费用管理核心任务。用户 2026-07-12 拍板:预付钱包制(实时扣减余额为0拦截)+ 模型真实 token 单价表(总部可加价)+ 纯额度划拨(不接支付)。关键设计:① 余额用整数 token 数非金额(定价变化余额不变,扣减时算 cost 快照);② 扣减用 with_for_update(PG 行锁防并发双扣,SQLite no-op 测试够用);③ 扣减在 append_message 同事务(原子性);④ 定价快照(算完写死进 UsageEvent.cost 和 WalletTransaction)。前置 token-usage-tracking(43)。不做:前端看板(任务46)、客户归因(customer_id 留空,任务45)、接支付网关、退款、预警通知。扣减失败 try/except 不阻断已完成的对话(差异靠对账补)。"
+    },
+    {
+      "id": "customer-conversation-link",
+      "priority": 45,
+      "area": "客户域",
+      "title": "客户维度 Token 归因(Conversation 绑 customer_id)(Token 费用管理系列 3/4)",
+      "user_visible_behavior": "门店员工发起 AI 对话时可选关联某客户(为张先生咨询),系统把对话消耗的 token 归因到该客户;客户详情页显示「AI 服务」维度(对话次数/token 消耗/最近活跃);总部可看跨店客户汇总",
+      "status": "not_started",
+      "plan": "harness/docs/plan-customer-conversation-link.md",
+      "verification": [
+        "Conversation 加 customer_id(可空 FK→customers.id, ondelete=SET NULL, 向后兼容)+ 迁移无 drift",
+        "UsageEvent.customer_id 从 Conversation 透传填充(任务43建的列填值)",
+        "对话创建接受可选 customer_id;列表支持 ?customer_id=xxx 过滤",
+        "GET /customers/{id}/usage 聚合(对话次数/SUM tokens/SUM cost/MAX created_at),门店视角加 tenant_id 过滤、总部视角不加",
+        "聊天页加关联客户下拉(可选)+ 对话标题显示客户名;客户详情加 AI 服务维度 + 「为客户咨询」按钮直达带 customer_id 新对话",
+        "跨店归因:同客户在多门店对话,总部视角全局汇总,门店视角各算各",
+        "向后兼容:旧对话 customer_id=NULL 不报错;无归因客户用量为 0",
+        "pytest 覆盖:带 customer_id 创建/UsageEvent 透传/聚合/跨店/向后兼容/客户软删 SET NULL",
+        "./init.sh 全绿 + npm run build 通过"
+      ],
+      "evidence": [],
+      "notes": "解决 token 消耗无法归因到客户。现状:Conversation 只绑(tenant,agent,user)不绑 Customer。用户 2026-07-12 决策做客户归因。设计:customer_id 可空(不是所有对话关联客户)+ 对话级关联(非消息级)+ 前端聊天页可选关联/客户详情「为客户咨询」直达。前置 token-usage-tracking(43,UsageEvent 有 customer_id 可空列)。复用 customers-api(已 passing)的 Customer 全局身份做跨店归因。不做:消息级关联、自动客户识别(AI 提取)、前端看板(任务46)。客户软删后对话 customer_id 保留(历史可追溯)或 SET NULL(FK ondelete)——实施时定。"
+    },
+    {
+      "id": "token-billing-ui",
+      "priority": 46,
+      "area": "计费",
+      "title": "Token 计费前端看板(门店/总部两级 + 充值 + 用量明细)(Token 费用管理系列 4/4)",
+      "user_visible_behavior": "门店用户看到自己的 token 余额/消耗趋势/流水明细/用量钻取;总部(super_admin)看各门店余额消耗汇总、给门店充值、维护模型定价表;余额不足时对话被拦前端有提示",
+      "status": "not_started",
+      "plan": "harness/docs/plan-token-billing-ui.md",
+      "verification": [
+        "billing-page.tsx(门店级):余额卡片 + 消耗趋势(近7/30天)+ 流水表(TanStack Table)+ 用量明细 tab(按客户/Agent 钻取),有 wallet:read 可见",
+        "billing-admin-page.tsx(总部级 super_admin):门店汇总表 + 充值 Dialog(金额+备注)+ ModelPricing 维护 CRUD",
+        "侧边栏加「费用管理」/billing(门店级)、「计费管理」/billing/admin(needsSuperAdmin);路由守卫正确",
+        "充值操作生效(调 wallet:recharge → 余额增加 → 列表 invalidate 刷新)",
+        "余额预警(余额 < low_balance_threshold 卡片变红提示「联系总部充值」)",
+        "用量明细按客户钻取联动任务45归因数据",
+        "对话消耗后门店余额实时减少;余额为0对话被拦前端显示余额不足",
+        "cd frontend && npm run build 通过 + oxlint 0 warning + ./init.sh 不回归"
+      ],
+      "evidence": [],
+      "notes": "Token 费用管理系列收官任务。前置 token-usage-tracking(43)+ token-wallet-billing(44)+ customer-conversation-link(45)三者全 passing。两级看板:门店级(余额/消耗/流水/用量,有 wallet:read)+ 总部级(门店汇总/充值/定价,super_admin)。消耗趋势用轻量方案(纯CSS柱状或 recharts 若已在依赖,不引重型图表库)。充值金额单位是 token 数(整数),提示换算参考。member 有 wallet:read 只读看余额不可充值。不做:支付集成、导出CSV、实时余额推送、月度限额。完成后整个 Token 费用管理系列收官,更新 plan-token-billing-overview.md 系列状态。"
+    },
+    {
+      "id": "dashboard-analytics",
+      "priority": 47,
+      "area": "看板",
+      "title": "Dashboard 数据看板(真实统计 + 趋势,门店/总部双视角)",
+      "user_visible_behavior": "登录后看到真实业务数据看板:用户/Agent/对话/客户统计卡片 + 近期活跃趋势;(token 计费上线后)消耗趋势 + 余额。替代当前 4 个硬编码占位卡片",
+      "status": "not_started",
+      "plan": "harness/docs/plan-dashboard-analytics.md",
+      "verification": [
+        "dashboard-page.tsx 接入真实统计数据(复用已有 /users/statistics + 新增 agent/conversation/customer stats 端点)",
+        "统计卡片:用户数/Agent数/对话数/客户数(门店级);门店汇总(总部级)",
+        "趋势图:近 7/30 天活跃趋势(轻量图表,纯CSS柱状或 recharts)",
+        "总部视角(super_admin):跨租户汇总;门店视角:本租户数据",
+        "cd frontend && npm run build 通过 + oxlint 0 warning"
+      ],
+      "evidence": [],
+      "notes": "第一梯队 SaaS 体面。现状:dashboard-page.tsx 是占位页(4硬编码卡片),后端已有 /users/statistics 但前端没用。成本最低的首胜。详细 plan 执行到时再写(本条 plan 暂指总纲 plan-mvp-completion-overview.md)。依赖:token计费(43-46)完成后可加消耗维度,可先做基础统计。"
+    },
+    {
+      "id": "audit-log-ui",
+      "priority": 48,
+      "area": "审计",
+      "title": "审计日志查询 UI(SystemLog 暴露 API + 前端页面)",
+      "user_visible_behavior": "管理员能在审计日志页查看系统操作记录(谁在何时做了什么),按操作人/时间/操作类型/资源过滤;super_admin 看全平台,owner 看本租户",
+      "status": "not_started",
+      "plan": "harness/docs/plan-audit-log-ui.md",
+      "verification": [
+        "新增 SystemLog 查询端点 GET /logs(分页 + 过滤:operator/action/resource_type/date_range)",
+        "权限:super_admin 看全平台,owner 看本租户(logging_service.record 已记 tenant_id)",
+        "前端 logs-page.tsx:TanStack Table + 过滤器(操作人/类型/时间范围)",
+        "侧边栏加「审计日志」菜单(owner/admin 可见)",
+        "pytest 覆盖查询/过滤/租户隔离 + npm run build 通过"
+      ],
+      "evidence": [],
+      "notes": "第一梯队。现状:SystemLog 模型在写(logging_service.record)但无查询 API 无前端页,数据在黑暗里。补查询端点+前端审计页。详细 plan 执行到时写。独立无依赖。"
+    },
+    {
+      "id": "user-profile-account",
+      "priority": 49,
+      "area": "用户管理",
+      "title": "用户个人中心(改密码/改资料/我的会话)",
+      "user_visible_behavior": "用户能自助管理个人账号:修改密码、编辑资料(姓名/头像)、查看我的会话和用量;不必找管理员改密码",
+      "status": "not_started",
+      "plan": "harness/docs/plan-user-profile-account.md",
+      "verification": [
+        "新增 PUT /auth/me 端点(改自己密码/资料,需验证旧密码)",
+        "前端 profile-page.tsx:改密码表单 + 资料编辑 + 我的会话列表",
+        "侧边栏/头像下拉加「个人中心」入口",
+        "pytest 覆盖改密码(旧密码校验)/改资料/越权防护(不能改别人)",
+        "npm run build 通过"
+      ],
+      "evidence": [],
+      "notes": "第一梯队 SaaS 体面。现状:无个人中心页,GET /auth/me 只读,用户改不了自己信息。头像上传依赖 file-upload(56),可先做改密码/资料文字字段。详细 plan 执行到时写。"
+    },
+    {
+      "id": "conversation-management",
+      "priority": 50,
+      "area": "AI 内核",
+      "title": "对话管理增强(搜索/重命名/标签/收藏/批量删除)",
+      "user_visible_behavior": "用户能搜索历史对话(按标题/内容)、重命名对话、打标签/收藏分类、置顶常用、批量清理;不只列表/读/删",
+      "status": "not_started",
+      "plan": "harness/docs/plan-conversation-management.md",
+      "verification": [
+        "Conversation 模型加字段:tags(JSON)/is_pinned/is_starred(可空向后兼容)+ 迁移无 drift",
+        "后端:对话搜索端点(标题/content ILIKE)+ 重命名 + 标签 + 置顶 + 批量删除",
+        "前端 chat-page.tsx:搜索框 + 右键菜单(重命名/标签/收藏/置顶/删除)+ 标签筛选",
+        "pytest 覆盖搜索/重命名/标签/置顶/批量删除/租户隔离",
+        "npm run build 通过 + alembic check 无 drift"
+      ],
+      "evidence": [],
+      "notes": "第一梯队。现状:对话只有列表/读/删,Conversation 模型只有 6 列无 tags/pinned。补搜索+管理交互让聊天体验完整。详细 plan 执行到时写。被 global-search(51)弱依赖。"
+    },
+    {
+      "id": "global-search",
+      "priority": 51,
+      "area": "看板",
+      "title": "全局搜索(跨 Agent/客户/对话/用户)",
+      "user_visible_behavior": "用户在顶部搜索框输入关键词,跨实体(Agent/客户/对话/用户)搜索,结果分类展示,点击直达对应详情",
+      "status": "not_started",
+      "plan": "harness/docs/plan-global-search.md",
+      "verification": [
+        "新增 GET /search?q= 全局搜索端点(聚合 agents/customers/conversations/users,各自 ILIKE,按类型分组返回)",
+        "单实体搜索:agents/customers/conversations 各加 search 参数(目前只有 users 有)",
+        "前端顶部全局搜索框 + 结果下拉分类展示 + 点击跳转",
+        "权限:按当前用户可访问范围过滤(super_admin 全局,门店用户本租户)",
+        "pytest 覆盖跨实体搜索/权限过滤/租户隔离 + npm run build 通过"
+      ],
+      "evidence": [],
+      "notes": "第一梯队。现状:只有 users 有 search 参数,其他实体无搜索,无跨实体全局搜索。详细 plan 执行到时写。依赖 conversation-management(50)的对话搜索。"
+    },
+    {
+      "id": "tenant-branding-config",
+      "priority": 52,
+      "area": "管理控制台",
+      "title": "租户品牌配置(logo/名称/主题色/登录文案,白标 SaaS)",
+      "user_visible_behavior": "门店 owner 能配置本租户品牌:上传 logo、设置显示名称、主题色、登录页文案;用户登录看到的是该门店品牌而非通用界面",
+      "status": "not_started",
+      "plan": "harness/docs/plan-tenant-branding-config.md",
+      "verification": [
+        "新增 TenantConfig 表或 Tenant 加字段:logo_url/display_name/theme_color/login_text",
+        "API:GET/PUT /tenants/config(owner 编辑本租户)",
+        "前端:settings 加品牌配置 Card + 主题色全局应用(CSS 变量)+ logo 注入顶栏/登录页",
+        "pytest 覆盖配置读写/租户隔离/权限(owner 可改) + npm run build 通过"
+      ],
+      "evidence": [],
+      "notes": "第一梯队。现状:settings 只有 LLM+API Token,无品牌配置,多租户白标能力缺失。logo 上传依赖 file-upload(56),可先做名称/主题色/文案。详细 plan 执行到时写。"
+    },
+    {
+      "id": "health-monitoring",
+      "priority": 53,
+      "area": "工程化",
+      "title": "健康检查/监控(/ready + Prometheus metrics)",
+      "user_visible_behavior": "运维侧:平台提供 /ready(检查 DB 连接的就绪探针)+ /metrics(Prometheus 格式指标:请求量/延迟/错误率),支持生产级监控告警",
+      "status": "not_started",
+      "plan": "harness/docs/plan-health-monitoring.md",
+      "verification": [
+        "GET /ready:检查 DB 连通性(SELECT 1)+ LLM 配置存在性,失败返回 503",
+        "GET /metrics:Prometheus 格式(http_requests_total/request_duration_seconds/db_connections 等)",
+        "增强 /health:加 DB 检查(现状只返回 ok 不碰 DB)",
+        "pytest 覆盖 /ready(DB 正常/断开)、/metrics 格式",
+        "./init.sh 全绿"
+      ],
+      "evidence": [],
+      "notes": "第一梯队 工程化。现状:只有 /health 返回 ok 不检查 DB,无 /ready 无 metrics。生产部署必需的运维能力。详细 plan 执行到时写。独立无依赖。"
+    },
+    {
+      "id": "notification-scheduler",
+      "priority": 54,
+      "area": "通知",
+      "title": "通知系统 + 定时任务框架(in-app 通知 + APScheduler)",
+      "user_visible_behavior": "用户在站内消息中心看到通知(余额预警/充值到账/权限变更/用量月报);系统有定时任务框架支持余额扫描、日报、清理等周期任务",
+      "status": "not_started",
+      "plan": "harness/docs/plan-notification-scheduler.md",
+      "verification": [
+        "Notification 模型(type/title/content/is_read/tenant_id/user_id)+ GET/PUT /notifications(列表/标记已读)",
+        "前端:顶栏铃铛组件 + 通知下拉 + 未读计数 badge + 通知中心页",
+        "APScheduler 集成:定时任务(余额预警扫描/用量日报/过期清理),worker 启动注册",
+        "通知触发点:余额<阈值(token计费44)/充值到账/角色变更",
+        "pytest 覆盖通知创建/查询/已读/定时任务触发 + npm run build 通过"
+      ],
+      "evidence": [],
+      "notes": "第二梯队。Token 计费的配套——余额预警/充值到账/月报都需要通知+定时任务。不做的话 token 计费体验不完整(用户得自己刷页面)。成本中(APScheduler集成+通知模型+铃铛)。详细 plan 执行到时写。依赖 token计费(44)用于余额预警触发场景。"
+    },
+    {
+      "id": "data-export",
+      "priority": 55,
+      "area": "工程化",
+      "title": "数据导出 CSV(客户/对话/用量/审计,门店+总部级)",
+      "user_visible_behavior": "管理员能导出业务数据为 CSV:客户清单/对话记录/用量明细/审计日志;门店导本店数据,总部导全平台。月度经营分析必备",
+      "status": "not_started",
+      "plan": "harness/docs/plan-data-export.md",
+      "verification": [
+        "后端 CSV 生成端点:GET /export/{entity}(customers/conversations/usage/logs),StreamingResponse + csv.writer",
+        "权限:门店级导本租户(wallet:read/billing:read),总部级 super_admin 导全平台",
+        "前端:各列表页加「导出 CSV」按钮 + 时间范围/过滤参数透传",
+        "pytest 覆盖导出内容正确/权限/租户隔离 + 大数据量 streaming 不 OOM",
+        "npm run build 通过"
+      ],
+      "evidence": [],
+      "notes": "第二梯队。现状:无任何导出能力。复用 TanStack Table 数据,加后端 CSV streaming。门店月度经营分析 + 数据可携带性基本要求。详细 plan 执行到时写。用量导出依赖 token计费(43)。"
+    },
+    {
+      "id": "file-upload-storage",
+      "priority": 56,
+      "area": "基础设施",
+      "title": "文件上传 + 对象存储抽象(头像/照片/文档,本地/S3/OSS 可切)",
+      "user_visible_behavior": "用户能上传文件(头像/客户照片/知识库文档),系统存到对象存储;本地开发用本地磁盘,生产可切 S3/OSS",
+      "status": "not_started",
+      "plan": "harness/docs/plan-file-upload-storage.md",
+      "verification": [
+        "存储抽象层 StorageBackend(LocalStorage/AmazonS3/AliyunOSS),config.py 配置切换",
+        "上传端点 POST /upload(multipart,文件大小/类型限制,返回访问 URL)",
+        "前端上传组件(FileInput + 预览 + 进度)",
+        "pytest 覆盖上传/存储后端切换/文件类型校验 + 大文件处理",
+        "npm run build 通过"
+      ],
+      "evidence": [],
+      "notes": "第二梯队 地基。现状:无上传能力,Customer.avatar 是死字段,无对象存储。是多个功能的前置:用户头像(49)/租户logo(52)/RAG文档(57)。存储抽象本地dev/S3生产可切。详细 plan 执行到时写。被依赖:49/52/57。"
+    },
+    {
+      "id": "knowledge-base-rag",
+      "priority": 57,
+      "area": "AI 内核",
+      "title": "知识库/RAG(激活 pgvector,文档检索增强 Agent)",
+      "user_visible_behavior": "门店能上传业务文档(产品手册/FAQ/话术库),Agent 对话时自动检索相关知识注入回答;从「能聊」升级到「懂业务」",
+      "status": "not_started",
+      "plan": "harness/docs/plan-knowledge-base-rag.md",
+      "verification": [
+        "激活 pgvector:Document + DocumentChunk 模型(chunk 带 embedding 向量列)+ 迁移",
+        "Embedding 管线:文档上传→分块→调 embedding 模型→向量入库",
+        "检索:Agent 工具加 retrieve_knowledge(用户消息→embedding→向量相似度检索 top-k→注入 prompt)",
+        "知识库管理 UI:文档 CRUD + 检索调试(输入 query 看召回 chunks)",
+        "pytest 覆盖分块/embedding/检索/注入 + 端到端(带知识的问答)",
+        "./init.sh 全绿 + npm run build 通过 + alembic check 无 drift"
+      ],
+      "evidence": [],
+      "notes": "第三梯队 V2 大投入。现状:pgvector 声明了(requirements.txt:19 + docker-compose)但从没用过,无 embedding/分块/检索。这是让 AI 真正有用的核心能力。成本高(embedding管线+向量存储+检索调优+知识库UI)。详细 plan 执行到时写。依赖 file-upload(56,文档上传)。"
+    },
+    {
+      "id": "multi-agent-orchestration",
+      "priority": 58,
+      "area": "AI 内核",
+      "title": "多 Agent 编排(LangGraph 多节点图,Agent 协作/转交)",
+      "user_visible_behavior": "复杂场景下多个 Agent 协作:客服 Agent 遇专业问题转交专家 Agent;编排 Agent 分派子任务给子 Agent。从单 agent 升级到智能体协作",
+      "status": "not_started",
+      "plan": "harness/docs/plan-multi-agent-orchestration.md",
+      "verification": [
+        "LangGraph 多节点图:orchestrator agent 路由/分派 + 多个 specialist agent + 状态传递",
+        "Agent 转交能力:Agent A 可调用 Agent B(handoff 模式),保留对话上下文",
+        "Agent 配置:agent 可声明可调用的子 agent 列表 + 转交条件",
+        "前端:Agent 编辑页加「可转交 Agent」配置 + 对话中显示当前服务 agent 切换",
+        "pytest 覆盖转交/上下文保留/多轮协作 + ./init.sh 全绿",
+        "npm run build 通过"
+      ],
+      "evidence": [],
+      "notes": "第三梯队 V2 大投入。现状:单 ReAct agent(create_react_agent),一个 agent 调不了另一个,无工作流编排。差异化卖点(复杂业务智能体协作)。成本高(重写编排层+多agent状态管理+调试)。详细 plan 执行到时写。独立模块。"
     }
   ]
 }
