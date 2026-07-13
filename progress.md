@@ -776,3 +776,22 @@
 
 ---
 
+### Session 083 — 2026-07-14
+- **本轮目标**: ship-it 收尾 —— 把 Session 082 的 dashboard-analytics(47,全栈)改动一路推到合并入 main
+- **执行**(在 `feat/dashboard-analytics` 分支,基线 main):
+  - **Phase 1 清理废代码**:实测实现 agent「无未用新符号」声明属实 —— 全部新增 Repository 方法(AgentRepository.count_for_tenant/count_all、ConversationRepository.count_for_tenant/count_all/daily_trend_for_tenant/daily_trend_all/conversation_count_by_tenant、CustomerProfileRepository.statistics_for_tenant、CustomerRepository.statistics_all_global、DashboardRepository.tenant_count/user_count)、endpoint(/agents|/conversations|/customers/statistics + /dashboard/trends|/overview)、schema(AgentStatistics/ConversationStatistics/CustomerStatistics/TrendPoint/DashboardTrends/PlatformTotals/TenantActivityItem/DashboardOverview)、前端 hook/endpoint(use*Statistics/useDashboardTrends/useDashboardOverview + fetch*/qk.*)均有调用方;新文件无 console/print/TODO/FIXME/注释死码;**0 删除**
+  - **Phase 2 质量复审**:对照项目铁律逐项核 —— ① 依赖单向(Controller→Service→Repository→Model)全栈无反向;② 多租户隔离全在 Repository 层(TenantScopedRepository / 显式 WHERE tenant_id),DashboardRepository 跨租户聚合由 API 层 require_super_admin 守卫;③ soft-delete 语义(User/Customer/CustomerProfile 计数带 is_deleted=False;Agent/Conversation 硬删除无该列,正确省略);④ 迁移 2026_07_14_0900 单 head a1b2c3d4e5f6,down_revision f9a0b1c2d4e5 链式正确,up/down 对称(各 2 个 create/drop index);⑤ customers/statistics 内联 dual-view 守卫与既有 get_customer_usage 模式一致
+  - **Phase 3 提交**:commit 3fdb49b `feat(dashboard): 真实数据看板(统计端点 + 趋势 + 门店/总部双视角)`,25 文件 +1813/-65
+  - **Phase 4 推送 + 开 PR**:推 feat/dashboard-analytics;PR #51 https://github.com/hugo617/ai-agent-platform/pull/51
+  - **Phase 5 守 CI(1 次修红)**:
+    - 首轮:Migrations **红**(45s)—— `alembic check`(autogenerate drift 检测)报 `Detected removed index 'ix_conversations_tenant_created_at' on 'conversations'` + `ix_messages_tenant_created_at on 'messages'`。根因:迁移 add_trend_indexes 在 DB 建了这两个复合索引,但 ORM 模型 Conversation/Message 的 `__table_args__` 未声明,导致 alembic 认为模型方会移除它们 → drift。Backend/Frontend/E2E 三任务首轮全绿
+    - 修复:在 `app/models/agent.py` 的 Conversation + `app/models/message.py` 的 Message 各加 `__table_args__ = (Index("ix_*_tenant_created_at", "tenant_id", "created_at"),)`,索引名与迁移完全一致;commit 0ad4ed0 `fix(dashboard): 在 ORM 模型声明 trend 复合索引,修复 alembic check drift`;本地复验 pytest **371 passed**(测试从 ORM 模型建 schema,Index 声明合法)
+    - 第二轮:四任务全绿 —— Migrations **pass** 41s / Backend(pytest+ruff)**pass** 2m59s / Frontend(typecheck+build+oxlint)**pass** 33s / E2E(Playwright)**pass** 1m41s
+  - **Phase 6 合并**:squash 合并入 main 为 0b0d397(`(#51)` 后缀,符合项目提交风格),远端 feat/dashboard-analytics 分支已删
+- **环境备注**:AGENTS.md 记载的 git proxy(127.0.0.1:9910)「未运行」已过时(同 Session 081)—— 端口 OPEN 且网络需走 proxy,push/gh 用默认 config(带 proxy)成功。gh 已认证(hugo617)
+- **当前状态**: dashboard-analytics(47)✅ 已入 main(0b0d397),真实数据看板正式上线
+- **已知风险**: 无新增。继承 082:HQ overview 的 conversation_count_by_tenant 在门店量大时是全表 GROUP BY(Top N cap=10 + 30 天窗口缓解);Agent/Conversation 硬删除(无 is_deleted),统计无软删除谓词 —— 均为设计内已知项
+- **下一步最佳动作**: 选优先级最高的 not_started —— audit-log-ui(48)可复用本轮 dual-view + 纯 CSS 柱状模式;或回头补 dashboard token 消耗维度(待 43 落地)
+
+---
+
