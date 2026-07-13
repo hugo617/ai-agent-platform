@@ -20,31 +20,37 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useAuth } from "@/components/auth/auth-context";
-import { canManageUsers } from "@/lib/permission";
+import { canViewMenu } from "@/lib/permission";
 import { logout } from "@/api/endpoints";
 
 interface NavItem {
   to: string;
   label: string;
   icon: React.ComponentType<{ className?: string }>;
-  /** When true, the item is hidden for users who can't manage users (members). */
-  needsUserManagement?: boolean;
-  /** When true, the item is visible only to platform super admins. */
-  needsSuperAdmin?: boolean;
+  /**
+   * The menu permission code that gates this item's visibility (e.g.
+   * "menu:agents"). When set, the item shows iff `canViewMenu(me, menuCode)`.
+   */
+  menuCode?: string;
+  /**
+   * Platform-level items have no tenant-scoped menu permission (super_admin
+   * bypass covers them); gate purely on platform_role === "super_admin".
+   */
+  platformOnly?: boolean;
 }
 
 const NAV_ITEMS: NavItem[] = [
-  { to: "/", label: "概览", icon: LayoutDashboard },
-  { to: "/agents", label: "智能体", icon: Bot },
-  { to: "/chat", label: "对话", icon: MessageSquare },
-  { to: "/groups", label: "组织", icon: Building2 },
-  { to: "/customers", label: "客户", icon: Contact },
-  { to: "/tenants", label: "门店", icon: Store, needsSuperAdmin: true },
-  { to: "/members", label: "成员", icon: UserCog, needsUserManagement: true },
-  { to: "/users", label: "用户", icon: Users, needsUserManagement: true },
-  { to: "/roles", label: "角色", icon: Shield, needsUserManagement: true },
-  { to: "/permissions", label: "权限矩阵", icon: ShieldCheck, needsUserManagement: true },
-  { to: "/settings", label: "设置", icon: Settings, needsUserManagement: true },
+  { to: "/", label: "概览", icon: LayoutDashboard, menuCode: "menu:dashboard" },
+  { to: "/agents", label: "智能体", icon: Bot, menuCode: "menu:agents" },
+  { to: "/chat", label: "对话", icon: MessageSquare, menuCode: "menu:chat" },
+  { to: "/groups", label: "组织", icon: Building2, menuCode: "menu:groups" },
+  { to: "/customers", label: "客户", icon: Contact, menuCode: "menu:customers" },
+  { to: "/tenants", label: "门店", icon: Store, platformOnly: true },
+  { to: "/members", label: "成员", icon: UserCog, menuCode: "menu:members" },
+  { to: "/users", label: "用户", icon: Users, menuCode: "menu:users" },
+  { to: "/roles", label: "角色", icon: Shield, menuCode: "menu:roles" },
+  { to: "/permissions", label: "权限矩阵", icon: ShieldCheck, menuCode: "menu:permissions" },
+  { to: "/settings", label: "设置", icon: Settings, menuCode: "menu:settings" },
 ];
 
 export function DashboardLayout() {
@@ -79,9 +85,11 @@ export function DashboardLayout() {
         </div>
         <nav className="flex flex-col gap-1 p-4">
           {NAV_ITEMS.filter((item) => {
-            if (item.needsSuperAdmin) return me?.platform_role === "super_admin";
-            if (item.needsUserManagement) return canManageUsers(me);
-            return true;
+            // Platform-level items (e.g. /tenants) have no tenant menu perm —
+            // show them purely on platform_role.
+            if (item.platformOnly) return me?.platform_role === "super_admin";
+            // Otherwise visibility is driven by the menu permission code.
+            return canViewMenu(me, item.menuCode ?? "");
           }).map((item) => (
             <NavLink
               key={item.to}

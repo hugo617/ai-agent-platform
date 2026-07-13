@@ -179,10 +179,13 @@ export interface PermissionItem {
   name: string;
   obj: string;
   act: string;
-  // Chinese display labels sourced from the backend (OBJ_CN/ACT_CN), so the
-  // frontend renders the matrix without keeping its own label map.
+  // Chinese display labels sourced from the backend (OBJ_CN/ACT_CN/MENU_CN), so
+  // the frontend renders the matrix without keeping its own label map.
   obj_label: string; // e.g. "智能体"
   act_label: string; // e.g. "查看"
+  // "api" = real backend authorization unit (e.g. customers:read);
+  // "menu" = UX-layer visibility (e.g. menu:agents). The matrix groups by it.
+  type: string; // "api" | "menu"
 }
 
 export interface PermissionMatrix {
@@ -281,6 +284,11 @@ export interface MeResponse {
   email: string | null;
   platform_role: string | null;
   roles: string[];
+  // All currently-effective permission codes (api like "customers:read" + menu
+  // like "menu:agents"), aggregated by the backend from the user's roles.
+  // Drives nav visibility + button guards. Empty for super_admin (frontend
+  // bypasses on platform_role === "super_admin").
+  permissions: string[];
 }
 
 export interface Conversation {

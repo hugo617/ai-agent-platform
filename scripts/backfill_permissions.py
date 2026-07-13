@@ -9,6 +9,11 @@ What changed in that task (why this script exists):
     were added for agents/customers.
   * Permission.name is now a Chinese friendly label (e.g. ``"智能体-查看"``).
 
+What changed in permission-menu-view (the second wave this script also covers):
+  * Menu-visibility permissions (``type="menu"``, codes like ``menu:agents``)
+    were added to ``DEFAULT_MENU_PERMS``. Existing tenants need them granted to
+    each system role so the frontend nav becomes permission-driven.
+
 Existing tenants created before the change still carry the old ``manage`` grants
 and English names. This script, run once after deploying the new code:
 
@@ -54,7 +59,9 @@ from app.services.permission_service import (  # noqa: E402
     ACT_CN,
     DEFAULT_ADMIN_PERMS,
     DEFAULT_MEMBER_PERMS,
+    DEFAULT_MENU_PERMS,
     DEFAULT_OWNER_PERMS,
+    MENU_CN,
     OBJ_CN,
 )
 from app.services.rbac_service import RbacService  # noqa: E402
@@ -123,6 +130,26 @@ async def _backfill_tenant(session, tenant_id: str, *, dry_run: bool) -> dict:
                 )
                 stats["granted"] += 1
 
+        # 1b. Grant every missing menu permission (type="menu") for this role.
+        # DEFAULT_MENU_PERMS maps role_code → list of menu codes (e.g.
+        # "agents"); each is granted as ("menu", <code>). grant_permission
+        # auto-sets perm_type="menu" when obj == "menu".
+        for menu_code in DEFAULT_MENU_PERMS.get(role_code, []):
+            code = f"menu:{menu_code}"
+            if code in existing_codes:
+                continue
+            if dry_run:
+                stats["granted"] += 1
+            else:
+                await rbac.grant_permission(
+                    BACKFILL_ACTOR,
+                    tenant_id,
+                    role.id,
+                    RolePermissionGrant(obj="menu", act=menu_code),
+                    platform_role=PLATFORM_ROLE,
+                )
+                stats["granted"] += 1
+
         # 2. Revoke legacy coarse ``manage`` grants no longer in the catalogue.
         # Re-read the current grants (step 1 may have just added rows) so the
         # legacy check reflects the post-grant state.
@@ -168,7 +195,11 @@ async def _backfill_tenant(session, tenant_id: str, *, dry_run: bool) -> dict:
             obj, act = p.code.split(":", 1)
         else:
             obj, act = p.code, ""
-        new_name = f"{OBJ_CN.get(obj, obj)}-{ACT_CN.get(act, act)}"
+        # menu perms use MENU_CN for the act label; api perms use ACT_CN.
+        if p.type == "menu" or obj == "menu":
+            new_name = f"{OBJ_CN.get(obj, obj)}-{MENU_CN.get(act, act)}"
+        else:
+            new_name = f"{OBJ_CN.get(obj, obj)}-{ACT_CN.get(act, act)}"
         if p.name != new_name:
             if dry_run:
                 stats["renamed"] += 1

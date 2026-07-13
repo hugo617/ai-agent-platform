@@ -50,7 +50,7 @@ import {
 import { useToast } from "@/components/ui/toast";
 import { apiErrorMessage } from "@/api/client";
 import { useAuth } from "@/components/auth/auth-context";
-import { canManageUsers } from "@/lib/permission";
+import { hasPermission } from "@/lib/permission";
 import type { ApiToken, ApiTokenCreated, LlmConfig, LlmConfigUpdate } from "@/api/types";
 import {
   useApiTokens,
@@ -65,7 +65,12 @@ import {
 export function SettingsPage() {
   const { me } = useAuth();
   const isSuperAdmin = me?.platform_role === "super_admin";
-  const canManage = canManageUsers(me);
+  // The tenant LLM card requires settings:update; the API Token card requires
+  // api_tokens:read. Both gate on the caller's effective api permissions
+  // (super_admin bypasses via hasPermission).
+  const canManageLlm = hasPermission(me, "settings", "update");
+  const canManageTokens = hasPermission(me, "api_tokens", "read");
+  const canManage = canManageLlm || canManageTokens;
 
   return (
     <div className="space-y-6">
@@ -79,9 +84,9 @@ export function SettingsPage() {
 
       {isSuperAdmin && <PlatformLlmCard />}
 
-      {canManage && <TenantLlmCard />}
+      {canManageLlm && <TenantLlmCard />}
 
-      {canManage && <ApiTokenCard />}
+      {canManageTokens && <ApiTokenCard />}
 
       {!isSuperAdmin && !canManage && (
         <Card>

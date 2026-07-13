@@ -210,6 +210,26 @@ class PermissionService:
                     if rid:
                         await rp_repo.grant(rid, pid, tenant_id)
 
+        # Menu permissions (type="menu") — UX-layer menu/page visibility. Same
+        # grant path as api perms (casbin policy + SCD2 + catalogue row) so the
+        # matrix can grant/revoke them uniformly. ``menu:tenants`` is platform-
+        # level and intentionally NOT seeded here — super_admin shows it via
+        # bypass (see DEFAULT_MENU_PERMS docstring).
+        for role_code, menu_codes in DEFAULT_MENU_PERMS.items():
+            for menu_code in menu_codes:
+                await self.add_policy(role_code, tenant_id, "menu", menu_code)
+                if rp_repo is not None:
+                    key = f"menu:{menu_code}"
+                    pid = perm_ids.get(key)
+                    if pid is None:
+                        pid = await self._upsert_permission(
+                            db, tenant_id, "menu", menu_code, perm_type="menu"
+                        )
+                        perm_ids[key] = pid
+                    rid = role_ids.get(role_code)
+                    if rid:
+                        await rp_repo.grant(rid, pid, tenant_id)
+
     async def sync_role_permissions_to_casbin(
         self, db: AsyncSession, role_id: str, tenant_id: str
     ) -> None:
@@ -246,7 +266,10 @@ class PermissionService:
     # ----------------------------------------------------- aggregated reads
 
     async def get_catalogue(
-        self, db: AsyncSession, tenant_id: str
+        self,
+        db: AsyncSession,
+        tenant_id: str,
+        perm_type: str | None = None,
     ) -> list[PermissionItem]:
         """All permission catalogue items for a tenant.
 
@@ -254,22 +277,28 @@ class PermissionService:
         ``grant`` (one row per ``<obj>:<act>`` unit). Tenant scoping happens in
         the query (is_deleted=False), per the multi-tenant rule.
 
+        ``perm_type`` optionally filters by ``Permission.type`` (``"api"`` or
+        ``"menu"``); when None (default) all types are returned.
+
         Ordered by ``code`` so the matrix renders in a stable order without the
         frontend having to keep its own sort table.
         """
-        rows = (
-            await db.execute(
-                select(Permission)
-                .where(
-                    Permission.tenant_id == tenant_id,
-                    Permission.is_deleted.is_(False),
-                )
-                .order_by(Permission.code)
-            )
-        ).scalars().all()
+        stmt = select(Permission).where(
+            Permission.tenant_id == tenant_id,
+            Permission.is_deleted.is_(False),
+        )
+        if perm_type is not None:
+            stmt = stmt.where(Permission.type == perm_type)
+        rows = (await db.execute(stmt.order_by(Permission.code))).scalars().all()
         items: list[PermissionItem] = []
         for p in rows:
             obj, act = p.code.split(":", 1) if ":" in p.code else (p.code, "")
+            if p.type == "menu":
+                # menu perms: obj is always "menu"; the act (e.g. "agents")
+                # should be labelled via MENU_CN, not ACT_CN.
+                act_label = MENU_CN.get(act, act)
+            else:
+                act_label = ACT_CN.get(act, act)
             items.append(
                 PermissionItem(
                     id=p.id,
@@ -278,7 +307,8 @@ class PermissionService:
                     obj=obj,
                     act=act,
                     obj_label=OBJ_CN.get(obj, obj),
-                    act_label=ACT_CN.get(act, act),
+                    act_label=act_label,
+                    type=p.type,
                 )
             )
         return items
@@ -311,15 +341,27 @@ class PermissionService:
     # ----------------------------------------------------------- seed helpers
 
     async def _upsert_permission(
-        self, db: AsyncSession, tenant_id: str, obj: str, act: str
+        self,
+        db: AsyncSession,
+        tenant_id: str,
+        obj: str,
+        act: str,
+        perm_type: str = "api",
     ) -> str:
         """Insert a catalogue Permission row for ``(obj, act)`` if absent.
 
-        ``code == "<obj>:<act>"`` (e.g. ``"agents:delete"``) so each row is a
-        single permission unit and role_permissions can point at exactly the
-        pair that casbin reasons about. Idempotent across re-seeds. The
-        ``name`` is a Chinese friendly label (e.g. ``"智能体-查看"``) sourced
-        from ``OBJ_CN``/``ACT_CN`` so the catalogue is self-describing.
+        ``code == "<obj>:<act>"`` (e.g. ``"agents:delete"`` or ``"menu:agents"``)
+        so each row is a single permission unit and role_permissions can point
+        at exactly the pair that casbin reasons about. Idempotent across
+        re-seeds. The ``name`` is a Chinese friendly label (e.g. ``"智能体-查看"``
+        for api perms, ``"菜单-智能体"`` for menu perms) sourced from
+        ``OBJ_CN``/``ACT_CN``/``MENU_CN`` so the catalogue is self-describing.
+
+        ``perm_type`` selects the row's ``type`` column: ``"api"`` (the default,
+        real backend authorization units like ``customers:read``) or
+        ``"menu"`` (UX-layer menu visibility like ``menu:agents`` — see the
+        ``DEFAULT_MENU_PERMS`` block below). Callers that grant ``("menu",
+        <code>)`` pass ``perm_type="menu"`` explicitly (see ``grant_permission``).
         """
         code = f"{obj}:{act}"
         existing = (
@@ -333,11 +375,16 @@ class PermissionService:
         ).scalar_one_or_none()
         if existing is not None:
             return existing.id
+        if perm_type == "menu":
+            # menu perms use MENU_CN for the act part ("菜单-智能体").
+            name = f"{OBJ_CN.get(obj, obj)}-{MENU_CN.get(act, act)}"
+        else:
+            name = f"{OBJ_CN.get(obj, obj)}-{ACT_CN.get(act, act)}"
         perm = Permission(
-            name=f"{OBJ_CN.get(obj, obj)}-{ACT_CN.get(act, act)}",
+            name=name,
             code=code,
             tenant_id=tenant_id,
-            type="api",
+            type=perm_type,
             is_system=True,
         )
         db.add(perm)
@@ -431,6 +478,35 @@ DEFAULT_MEMBER_PERMS: list[tuple[str, str]] = [
 ]
 
 # ---------------------------------------------------------------------------
+# Menu permissions (type="menu") — UX-layer menu/page visibility. These are the
+# "can I see this nav item / enter this route" codes, as opposed to api perms
+# which are the real backend authorization ("can I actually call this endpoint").
+# Menu perms are the UX shadow of api perms: the frontend reads them via
+# /me.permissions to decide nav/route visibility; the backend never enforces
+# them (require_permission keeps checking api perms). A role may hold
+# menu:customers without customers:read (sees the menu, gets 403 on the page) or
+# vice versa — independent, though usually granted together.
+#
+# ``menu:tenants`` is platform-level (super_admin only) and intentionally NOT in
+# any role's list: it is never seeded into a tenant, and the frontend shows it
+# purely on platform_role === "super_admin" (super_admin bypasses everything, so
+# it has no need for a menu perm row).
+# ---------------------------------------------------------------------------
+DEFAULT_MENU_PERMS: dict[str, list[str]] = {
+    "owner": [
+        "dashboard", "agents", "chat", "groups", "customers",
+        "members", "users", "roles", "permissions", "settings",
+    ],
+    "admin": [
+        "dashboard", "agents", "chat", "groups", "customers",
+        "members", "users", "roles", "permissions", "settings",
+    ],
+    "member": [
+        "dashboard", "agents", "chat", "groups", "customers",
+    ],
+}
+
+# ---------------------------------------------------------------------------
 # Chinese display labels — shared by ``_upsert_permission`` (seed writes them
 # into Permission.name) and ``get_catalogue`` (returns them as obj_label /
 # act_label). This is the single source of truth for friendly names so the
@@ -444,6 +520,7 @@ OBJ_CN: dict[str, str] = {
     "settings": "设置",
     "api_tokens": "API令牌",
     "customers": "客户",
+    "menu": "菜单",
 }
 ACT_CN: dict[str, str] = {
     "read": "查看",
@@ -453,6 +530,24 @@ ACT_CN: dict[str, str] = {
     "chat": "对话",
     "export": "导出",
     "manage": "管理",  # legacy, kept for backfill of old rows
+}
+
+# Chinese labels for the *menu code* part of a menu permission (the ``act`` of
+# ``menu:<code>``). Used by ``_upsert_permission`` so menu perms get friendly
+# names like "菜单-智能体" instead of "菜单-agents". Keys mirror the act half of
+# the codes in ``DEFAULT_MENU_PERMS`` (and the frontend NAV_ITEMS paths).
+MENU_CN: dict[str, str] = {
+    "dashboard": "概览",
+    "agents": "智能体",
+    "chat": "对话",
+    "groups": "组织",
+    "customers": "客户",
+    "members": "成员",
+    "users": "用户",
+    "roles": "角色",
+    "permissions": "权限矩阵",
+    "settings": "设置",
+    "tenants": "门店",
 }
 
 

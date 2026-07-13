@@ -40,12 +40,26 @@ async def me(
     if platform_role is None:
         db_user = await UserRepository(db).get(user.user_id)
         platform_role = db_user.platform_role if db_user else None
+
+    # Aggregate every currently-effective permission code (api + menu) for the
+    # frontend's nav/button guards. super_admin bypasses all checks, so we skip
+    # the casbin walk and return [] — the frontend short-circuits on
+    # platform_role === "super_admin".
+    permissions: list[str] = []
+    if platform_role != "super_admin" and user.tenant_id is not None:
+        implicit = await permission_service.get_implicit_permissions_for_user(
+            user.user_id, user.tenant_id
+        )
+        # Each row is [sub, dom, obj, act]; collapse to "<obj>:<act>" codes.
+        permissions = [f"{row[2]}:{row[3]}" for row in implicit if len(row) >= 4]
+
     return MeResponse(
         user_id=user.user_id,
         tenant_id=user.tenant_id,
         email=user.email,
         platform_role=platform_role,
         roles=roles,
+        permissions=permissions,
     )
 
 

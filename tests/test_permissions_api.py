@@ -93,6 +93,62 @@ async def test_catalogue_returns_chinese_labels(app_client):
 
 
 @pytest.mark.asyncio
+async def test_catalogue_type_filter(app_client, db_session, tenant_owner):
+    """?type= filters by Permission.type; items carry a `type` field.
+
+    api perms (the default) come from the grant endpoint; a menu perm is seeded
+    directly here. ?type=menu returns only menu items, ?type=api only api items,
+    and omitted returns both.
+    """
+    from app.models.rbac import Permission
+
+    tenant_id = tenant_owner["tenant_id"]
+    # An api perm via the grant endpoint (type defaults to "api").
+    role = await _create_role(app_client, "typeprobe")
+    await _grant(app_client, role["id"], "documents", "read")
+    # A menu perm directly (grant endpoint always creates api rows).
+    db_session.add(
+        Permission(
+            tenant_id=tenant_id,
+            name="菜单-智能体",
+            code="menu:agents",
+            type="menu",
+            is_system=True,
+        )
+    )
+    await db_session.commit()
+
+    # No filter → both types present, each carrying its type field.
+    resp = await app_client.get("/api/v1/permissions/catalogue", headers=AUTH)
+    assert resp.status_code == 200, resp.text
+    by_code = {p["code"]: p for p in resp.json()}
+    assert "documents:read" in by_code
+    assert "menu:agents" in by_code
+    assert by_code["documents:read"]["type"] == "api"
+    assert by_code["menu:agents"]["type"] == "menu"
+    # menu perm uses MENU_CN for the act label.
+    assert by_code["menu:agents"]["act_label"] == "智能体"
+
+    # ?type=menu → only menu items.
+    resp = await app_client.get(
+        "/api/v1/permissions/catalogue?type=menu", headers=AUTH
+    )
+    assert resp.status_code == 200
+    codes = [p["code"] for p in resp.json()]
+    assert "menu:agents" in codes
+    assert "documents:read" not in codes
+
+    # ?type=api → only api items.
+    resp = await app_client.get(
+        "/api/v1/permissions/catalogue?type=api", headers=AUTH
+    )
+    assert resp.status_code == 200
+    codes = [p["code"] for p in resp.json()]
+    assert "documents:read" in codes
+    assert "menu:agents" not in codes
+
+
+@pytest.mark.asyncio
 async def test_matrix_updates_after_grant(app_client):
     """Granting a second permission flips its matrix cell to True."""
     role = await _create_role(app_client, "auditor")

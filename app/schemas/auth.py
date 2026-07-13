@@ -11,6 +11,13 @@ class MeResponse(BaseModel):
     email: str | None = None
     platform_role: str | None = None
     roles: list[str] = []
+    # All currently-effective permission codes (both "api" units like
+    # "customers:read" and "menu" UX codes like "menu:agents"), aggregated from
+    # the user's roles via casbin's implicit-permissions walk. Drives the
+    # frontend's nav visibility + button-level guards so they no longer hardcode
+    # role sets. super_admin gets an empty list here and the frontend bypasses
+    # (platform_role === "super_admin" short-circuits every check).
+    permissions: list[str] = []
 
 
 class LoginRequest(BaseModel):

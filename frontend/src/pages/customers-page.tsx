@@ -56,7 +56,7 @@ import {
 import { useToast } from "@/components/ui/toast";
 import { apiErrorMessage } from "@/api/client";
 import { useAuth } from "@/components/auth/auth-context";
-import { canManageUsers } from "@/lib/permission";
+import { hasPermission } from "@/lib/permission";
 import type {
   CustomerProfileCreate,
   CustomerProfileRead,
@@ -141,10 +141,10 @@ function StoreView() {
     null,
   );
 
-  // member is read-only; owner can delete, admin cannot. canManageUsers covers
-  // owner/admin/super_admin — we additionally gate delete on the owner role.
-  const canCreate = canManageUsers(me);
-  const canDelete = me?.roles?.includes("owner") ?? false;
+  // Button-level guards are driven by the caller's effective api permissions
+  // (aggregated in /me.permissions). super_admin bypasses via hasPermission.
+  const canCreate = hasPermission(me, "customers", "create");
+  const canDelete = hasPermission(me, "customers", "delete");
 
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
