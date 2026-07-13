@@ -3,7 +3,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, Float, ForeignKey, Integer, String, Text, func
+from sqlalchemy import DateTime, Float, ForeignKey, Index, Integer, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
@@ -48,6 +48,17 @@ class Conversation(Base):
     """A chat conversation with an agent."""
 
     __tablename__ = "conversations"
+    __table_args__ = (
+        # Composite (tenant_id, created_at) backs the dashboard trends GROUP BY
+        # date scan: turns the store-level "WHERE tenant_id=? AND created_at>=?"
+        # into an index range scan. Name mirrors the alembic migration
+        # (add_trend_indexes) so ``alembic check`` sees model/DB in sync.
+        Index(
+            "ix_conversations_tenant_created_at",
+            "tenant_id",
+            "created_at",
+        ),
+    )
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
     tenant_id: Mapped[str] = mapped_column(
