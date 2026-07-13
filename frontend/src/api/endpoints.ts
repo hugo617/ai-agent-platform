@@ -3,16 +3,21 @@ import { api, getStoredToken, setStoredToken, AUTH_EXPIRED_EVENT } from "./clien
 import type {
   Agent,
   AgentCreate,
+  AgentStatistics,
   AgentUpdate,
   ApiToken,
   ApiTokenCreate,
   ApiTokenCreated,
   Conversation,
+  ConversationStatistics,
   CustomerProfileCreate,
   CustomerProfileRead,
   CustomerProfileUpdate,
   CustomerRead,
+  CustomerStatistics,
   CustomerUsage,
+  DashboardOverview,
+  DashboardTrends,
   Group,
   GroupCreate,
   GroupUpdate,
@@ -236,6 +241,14 @@ export async function fetchCustomerUsage(
   return data;
 }
 
+// Customer count for the dashboard card. Store scope = this store's profile
+// counts; HQ scope (super_admin) = global identity counts. Mirrors the
+// list_profiles dual-view split.
+export async function fetchCustomerStatistics(): Promise<CustomerStatistics> {
+  const { data } = await api.get<CustomerStatistics>("/customers/statistics");
+  return data;
+}
+
 // ---------- billing (Token 费用管理系列 4/4) ----------
 // Wallet read is split by scope, mirroring the backend:
 // - fetchWallet:          GET /billing/wallet        (caller's own tenant)
@@ -340,6 +353,13 @@ export async function updateAgent(id: string, payload: AgentUpdate): Promise<Age
 
 export async function deleteAgent(id: string): Promise<void> {
   await api.delete(`/agents/${id}`);
+}
+
+// Agent count for the dashboard card. Store users count their tenant; super_admin
+// counts every tenant (the service splits on platform_role).
+export async function fetchAgentStatistics(): Promise<AgentStatistics> {
+  const { data } = await api.get<AgentStatistics>("/agents/statistics");
+  return data;
 }
 
 // ---------- members (tenant membership) ----------
@@ -581,6 +601,32 @@ export async function fetchMessages(conversationId: string): Promise<Message[]> 
 
 export async function deleteConversation(conversationId: string): Promise<void> {
   await api.delete(`/conversations/${conversationId}`);
+}
+
+// Conversation counts (total + 7d/30d windows) for the dashboard card. Store
+// users are scoped to their tenant; super_admin aggregates across tenants.
+export async function fetchConversationStatistics(): Promise<ConversationStatistics> {
+  const { data } = await api.get<ConversationStatistics>(
+    "/conversations/statistics",
+  );
+  return data;
+}
+
+// ---------- dashboard analytics ----------
+// /dashboard/trends backs the activity bar chart on both the store and HQ
+// dashboards; /dashboard/overview is super_admin-only (platform totals +
+// per-tenant activity Top N). Trends reuses conversations:read; overview is
+// require_super_admin on the backend.
+export async function fetchDashboardTrends(days: number): Promise<DashboardTrends> {
+  const { data } = await api.get<DashboardTrends>("/dashboard/trends", {
+    params: { days },
+  });
+  return data;
+}
+
+export async function fetchDashboardOverview(): Promise<DashboardOverview> {
+  const { data } = await api.get<DashboardOverview>("/dashboard/overview");
+  return data;
 }
 
 export interface ChatStreamChunk {

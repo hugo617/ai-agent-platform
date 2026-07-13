@@ -1134,7 +1134,7 @@
       "area": "看板",
       "title": "Dashboard 数据看板(真实统计 + 趋势,门店/总部双视角)",
       "user_visible_behavior": "登录后看到真实业务数据看板:用户/Agent/对话/客户统计卡片 + 近期活跃趋势;(token 计费上线后)消耗趋势 + 余额。替代当前 4 个硬编码占位卡片",
-      "status": "not_started",
+      "status": "passing",
       "plan": "harness/docs/plan-dashboard-analytics.md",
       "verification": [
         "dashboard-page.tsx 接入真实统计数据(复用已有 /users/statistics + 新增 agent/conversation/customer stats 端点)",
@@ -1143,7 +1143,14 @@
         "总部视角(super_admin):跨租户汇总;门店视角:本租户数据",
         "cd frontend && npm run build 通过 + oxlint 0 warning"
       ],
-      "evidence": [],
+      "evidence": [
+        "后端新增端点:GET /agents/statistics、/conversations/statistics、/customers/statistics(门店/HQ 双视角,service 按 platform_role 分流)、GET /dashboard/trends?days=N(每日对话/消息计数,零填充连续时间线)、GET /dashboard/overview(super_admin 专属:平台总数 + 门店活跃 Top 10)",
+        "后端文件:app/repositories/{agent,conversation,customer,dashboard}.py(count/aggregate/daily_trend/conversation_count_by_tenant)、app/services/{agent,conversation,customer,dashboard}_service.py、app/schemas/{agent,conversation,customer,dashboard}.py、app/api/v1/{agents,conversations,customers,dashboard}.py、app/main.py(注册 dashboard 路由)",
+        "前端文件:frontend/src/api/types.ts(AgentStatistics/ConversationStatistics/CustomerStatistics/TrendPoint/DashboardTrends/PlatformTotals/DashboardOverview)、endpoints.ts(fetchAgentStatistics/fetchConversationStatistics/fetchCustomerStatistics/fetchDashboardTrends/fetchDashboardOverview)、queries.ts(useAgentStatistics/useConversationStatistics/useCustomerStatistics/useDashboardTrends/useDashboardOverview)、pages/dashboard-page.tsx 重写为 StoreView(4 统计卡 + 纯CSS柱状趋势)+ HqView(5 平台总数 + 门店活跃 Top10 纯CSS柱状),按 me.platform_role === 'super_admin' 分流",
+        "alembic 迁移:2026_07_14_0900_a1b2c3d4e5f6_add_trend_indexes.py(给 conversations/messages 加 (tenant_id, created_at) 复合索引,把门店级趋势 GROUP BY 扫描降为索引范围扫描;down_revision f9a0b1c2d4e5 链式正确,单 head)",
+        "验证命令与输出:./init.sh → ruff check 全绿 + pytest -ra --strict-markers → 371 passed(基线 356 + 本任务新增 15 个 tests/test_dashboard_api.py:门店/HQ stats 隔离、super_admin 跨租户、trends 零填充+clamp、overview super_admin-only 403);cd frontend && npm run build → tsc -b + vite build 0 错误;npx oxlint src/ → Found 0 warnings and 0 errors",
+        "依赖方向遵守:Controller→Service→Repository→Model 单向;多租户隔离全在 Repository 层(TenantScopedRepository / 显式 WHERE tenant_id);soft-delete 语义在 Customer/CustomerProfile 计数中保留 is_deleted=False"
+      ],
       "notes": "第一梯队 SaaS 体面。现状:dashboard-page.tsx 是占位页(4硬编码卡片),后端已有 /users/statistics 但前端没用。成本最低的首胜。详细 plan 执行到时再写(本条 plan 暂指总纲 plan-mvp-completion-overview.md)。依赖:token计费(43-46)完成后可加消耗维度,可先做基础统计。"
     },
     {

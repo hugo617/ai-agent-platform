@@ -17,6 +17,7 @@ from app.api.v1 import (
     chat,
     conversations,
     customers,
+    dashboard,
     groups,
     members,
     permissions,
@@ -76,6 +77,7 @@ def create_app() -> FastAPI:
     app.include_router(customers.router, prefix=prefix)
     app.include_router(groups.router, prefix=prefix)
     app.include_router(billing.router, prefix=prefix)
+    app.include_router(dashboard.router, prefix=prefix)
 
     @app.get("/health", tags=["meta"])
     async def health() -> dict:

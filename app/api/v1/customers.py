@@ -28,6 +28,7 @@ from app.schemas.customer import (
     CustomerProfileRead,
     CustomerProfileUpdate,
     CustomerRead,
+    CustomerStatistics,
     CustomerUsageRead,
 )
 from app.services.customer_service import CustomerService
@@ -146,6 +147,38 @@ async def list_profiles(
 ) -> list[CustomerProfileRead]:
     """List customer profiles. Store users see their tenant; super_admin sees all."""
     return await CustomerService(db).list_profiles(
+        user.user_id, user.tenant_id, platform_role=user.platform_role
+    )
+
+
+# GET /customers/statistics — aggregate counts for the dashboard card. Dual view:
+# store users (customers:read) get this store's profile counts; cross-tenant
+# viewers (super_admin / hq_staff) get the global identity counts. The guard is
+# inlined (not a router ``dependencies=``) for the same reason as
+# ``get_customer_usage``: the two view modes need different guards.
+@router.get(
+    "/statistics",
+    response_model=CustomerStatistics,
+)
+async def customer_statistics(
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> CustomerStatistics:
+    """Aggregate customer counts (total / active / last_7d_new).
+
+    Store users count their tenant's profiles; cross-tenant viewers count global
+    identities. The service splits on ``is_cross_tenant_viewer``.
+    """
+    cross_tenant = is_cross_tenant_viewer(user.platform_role)
+    if not cross_tenant:
+        await permission_service.require(
+            user.user_id,
+            user.tenant_id,
+            "customers",
+            "read",
+            platform_role=user.platform_role,
+        )
+    return await CustomerService(db).statistics(
         user.user_id, user.tenant_id, platform_role=user.platform_role
     )
 

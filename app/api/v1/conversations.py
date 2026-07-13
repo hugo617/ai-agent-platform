@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import CurrentUser, get_current_user, require_permission
 from app.core.database import get_db
-from app.schemas.conversation import ConversationRead, MessageRead
+from app.schemas.conversation import ConversationRead, ConversationStatistics, MessageRead
 from app.services.conversation_service import ConversationService
 from app.services.errors import NotFoundError
 
@@ -38,6 +38,26 @@ async def list_conversations(
     """List the caller's conversations, most-recently-active first."""
     service = ConversationService(db)
     return await service.list_for_user(
+        user.user_id, user.tenant_id, platform_role=user.platform_role
+    )
+
+
+@router.get(
+    "/statistics",
+    response_model=ConversationStatistics,
+    dependencies=[Depends(require_permission("conversations", "read"))],
+)
+async def conversation_statistics(
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> ConversationStatistics:
+    """Aggregate conversation counts (total + 7d/30d) for the dashboard card.
+
+    Store users are scoped to their tenant; super_admin aggregates across every
+    tenant (the service splits on ``platform_role``).
+    """
+    service = ConversationService(db)
+    return await service.statistics(
         user.user_id, user.tenant_id, platform_role=user.platform_role
     )
 

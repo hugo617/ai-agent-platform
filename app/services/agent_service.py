@@ -4,7 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.agent import Agent
 from app.repositories.agent import AgentRepository
-from app.schemas.agent import AgentCreate, AgentRead, AgentUpdate
+from app.schemas.agent import AgentCreate, AgentRead, AgentStatistics, AgentUpdate
 from app.services.errors import NotFoundError
 from app.services.permission_service import permission_service
 
@@ -30,6 +30,30 @@ class AgentService:
         )
         agents = await self.repo.list_for_tenant(tenant_id)
         return [AgentRead.model_validate(a) for a in agents]
+
+    async def statistics(
+        self,
+        user_id: str,
+        tenant_id: str,
+        platform_role: str | None = None,
+    ) -> AgentStatistics:
+        """Agent count for the dashboard card.
+
+        Store users count their tenant's agents; super_admin counts every
+        tenant's agents. Agents carry no status column, so ``active`` mirrors
+        ``total`` (kept for a consistent card shape across entities).
+        """
+        is_super_admin = platform_role == "super_admin"
+        if not is_super_admin:
+            await permission_service.require(
+                user_id, tenant_id, self.OBJECT, "read", platform_role=platform_role
+            )
+        total = (
+            await self.repo.count_all()
+            if is_super_admin
+            else await self.repo.count_for_tenant(tenant_id)
+        )
+        return AgentStatistics(total=total, active=total)
 
     async def create(
         self,

@@ -37,3 +37,16 @@ class AgentRead(AgentBase):
     id: str
     tenant_id: str
     created_at: datetime
+
+
+class AgentStatistics(BaseModel):
+    """Aggregate agent counts for the dashboard card.
+
+    ``total`` = all agents in scope; ``active`` mirrors the other entity stats
+    for a consistent card shape (agents have no status column, so ``active``
+    always equals ``total`` — kept in the payload so the dashboard renders one
+    shape regardless of entity).
+    """
+
+    total: int
+    active: int
