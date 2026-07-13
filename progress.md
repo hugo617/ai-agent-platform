@@ -41,7 +41,7 @@
 | **24** | **`hq-platform-role`** | **权限** | **平台角色 hq_staff —— 总部业务员(各司其职)+ 跨租户只读。前置 22 ✅ 已完成** | **`harness/docs/plan-hq-platform-role.md`** |
 | **25** | **`demo-seed`** | **演示案例** | **大健康连锁演示案例 + 项目地图(种子脚本 scripts/seed_demo.py + db-schema.mmd 补全 + 关系图.md 第十/十一章)✅ 已完成** | **`harness/docs/plan-demo-seed.md`** |
 | **26** | **`demo-seed-full`** | **演示案例** | **演示数据全量补全 —— 扩 seed_demo.py 加 `--reset` 清理重建 + 补全全部缺口业务表(对话/消息/LLM配置/API Token/自定义角色权限/审计日志/多登录方式/Agent推理参数差异化)。前置 demo-seed(37)✅ 已完成** | **`harness/docs/plan-demo-seed-full.md`** |
-| **27** | **`permission-unified-model`** | **权限重构** | **权限目录统一 + 操作权限细化(系列 1/4)—— 消除 DEFAULT_*_PERMS/路由守卫/前端 OBJ_LABELS 三处漂移,settings/api_tokens 的 manage 拆细,后端 Permission 表成唯一真相源。用户痛点:只有增删改查无视图权限/超管不可见/目录漂移** | **`harness/docs/plan-permission-unified-model.md`** |
+| **27** | **`permission-unified-model`** | **权限重构** | **权限目录统一 + 操作权限细化(系列 1/4)—— 消除 DEFAULT_*_PERMS/路由守卫/前端 OBJ_LABELS 三处漂移,settings/api_tokens 的 manage 拆细,后端 Permission 表成唯一真相源。用户痛点:只有增删改查无视图权限/超管不可见/目录漂移。✅ 已完成** | **`harness/docs/plan-permission-unified-model.md`** |
 | **28** | **`permission-menu-view`** | **权限重构** | **菜单/视图权限 type=menu(系列 2/4)—— 启用 Permission.type='menu',前端导航/路由由 menu 权限驱动,删 needsSuperAdmin/needsUserManagement 硬编码。解决「没有视图权限」核心痛点。前置 27** | **`harness/docs/plan-permission-menu-view.md`** |
 | **29** | **`permission-data-scope`** | **权限重构** | **数据权限 data_scope 四档(系列 3/4)—— Role 加 data_scope(all/tenant/group/self)+ DataScopeResolver + Repository 自动过滤。业务员只看自己/店长看全店/区域经理看本组织。前置 27** | **`harness/docs/plan-permission-data-scope.md`** |
 | **30** | **`permission-matrix-redesign`** | **权限重构** | **权限矩阵 UI 重写(系列 4/4 收官)—— 超管锁定行(全选不可配)+ 菜单/操作两区并列 + data_scope 选择器,一处配全角色×菜单×操作×数据范围。前置 27/28/29** | **`harness/docs/plan-permission-matrix-redesign.md`** |
@@ -1922,5 +1922,23 @@
 - **下一步最佳动作**:
   - (a) commit + PR + CI 守门 + 合并 permission-unified-model 到 main;
   - (b) 执行 `permission-menu-view`(priority 40,权限重构系列 2/4,现为最高优先级 not_started)
+
+---
+
+### Session 067 — 2026-07-13
+- **本轮目标**: 清理废代码 + 代码质量审查 + commit + PR + CI 守门 + 合并 permission-unified-model(39)到 main
+- **代码审查结论**(已用 ruff/pytest/grep 全面验证):
+  - 🐛 **1 处 docstring drift(必修)**:`settings.py` 模块 docstring 第 9 行仍写「Requires the ``settings:manage`` permission」,与本任务第 17-19 行新增的拆分说明(settings:read/update)自相矛盾。修:第 9 行改为「Requires ``settings:read`` (GET) or ``settings:update`` (PUT)」
+  - 清理验证通过(无需改):全仓库 grep 确认无 ACT_MANAGE 残留、无 settings:manage/api_tokens:manage 残留(仅 ACT_CN legacy "manage":"管理" 条目供 backfill 老行)、前端无 OBJ_LABELS/ACT_ORDER 残留、无 print/breakpoint/pdb 调试残留(backfill 脚本的 print 是 CLI 输出,与 seed_demo.py 等脚本一致)
+  - 架构合规:Controller→Service→Repository 单向不变;路由守卫(require_permission)与 Service 层 require 对齐细化动作;多租户过滤在 Repository 层未动
+- **执行**:
+  - 修 docstring drift → `./init.sh` 全绿(ruff + **299 passed**)+ `cd frontend && npm run build` 成功
+  - 切 `feat/permission-unified-model` 分支(本就从该分支开始)→ commit(16 文件,506 insertions)→ push → 建 PR #42
+  - CI 4 job 全绿:Migrations(52s) + Backend(1m56s) + Frontend(32s) + E2E(1m46s),无需修复
+  - `gh pr merge 42 --squash --delete-branch` → squash 合并进 main(commit 5614094),分支已删
+- **提交记录**: PR #42 已合并(squash),commit `5614094 feat(permission): 权限目录统一 + 操作权限细化(权限重构 1/4) (#42)`
+- **当前状态**: main 干净、与 origin/main 同步、本地仅 main 分支。permission-unified-model(39)✅ 已 passing 并入 main
+- **已知风险**: 无。squash commit message 出现重复 `(#42) (#42)`(本地 commit message 已含 (#42),GitHub squash 又自动追加一次),纯外观问题不影响功能
+- **下一步最佳动作**: 执行 `permission-menu-view`(priority 40,权限重构系列 2/4,现为最高优先级 not_started)
 
 ---
