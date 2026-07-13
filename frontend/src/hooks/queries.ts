@@ -11,6 +11,7 @@ import {
   createApiToken,
   createCustomerProfile,
   createGroup,
+  createPricing,
   createRole,
   createTenant,
   createUser,
@@ -18,6 +19,7 @@ import {
   deleteConversation,
   deleteCustomerProfile,
   deleteGroup,
+  deletePricing,
   deleteRole,
   deleteUser,
   detachTenant,
@@ -35,15 +37,20 @@ import {
   fetchMessages,
   fetchPermissionMatrix,
   fetchPlatformLlmConfig,
+  fetchPricing,
   fetchRoleLabels,
   fetchRolePermissions,
   fetchRoles,
   fetchSessions,
   fetchTenantLlmConfig,
   fetchTenants,
+  fetchTransactions,
+  fetchUsage,
   fetchUserStatistics,
   fetchUsers,
+  fetchWallet,
   grantRolePermission,
+  recharge,
   removeMember,
   resetUserPassword,
   revokeApiToken,
@@ -53,6 +60,7 @@ import {
   updateCustomerProfile,
   updateGroup,
   updateMember,
+  updatePricing,
   updateTenant,
   updatePlatformLlmConfig,
   updateRole,
@@ -70,6 +78,8 @@ import type {
   LlmConfigUpdate,
   MemberCreate,
   MemberUpdate,
+  ModelPricingUpsert,
+  RechargeRequest,
   RoleCreate,
   RolePermissionGrant,
   RoleUpdate,
@@ -113,6 +123,13 @@ export const qk = {
   customers: ["customers"] as const,
   customer: (id: string) => ["customers", id] as const,
   customerUsage: (id: string) => ["customers", id, "usage"] as const,
+  // Token 费用管理系列 4/4 — wallet / ledger / usage / pricing.
+  wallet: ["billing", "wallet"] as const,
+  walletByTenant: (tenantId: string) =>
+    ["billing", "wallet", tenantId] as const,
+  transactions: ["billing", "transactions"] as const,
+  usage: ["billing", "usage"] as const,
+  pricing: ["billing", "pricing"] as const,
 };
 
 // ---------- tenants ----------
@@ -596,5 +613,73 @@ export function useRevokeApiToken() {
   return useMutation({
     mutationFn: (id: string) => revokeApiToken(id),
     onSuccess: () => qc.invalidateQueries({ queryKey: qk.apiTokens }),
+  });
+}
+
+// ---------- billing (Token 费用管理系列 4/4) ----------
+// Wallet reads are split by scope (own tenant vs. any tenant).
+// recharge + pricing writes invalidate the keys they touch so dashboards
+// refetch immediately after a mutation.
+
+/** The caller's own tenant wallet (null if the tenant has none yet). */
+export function useWallet() {
+  return useQuery({ queryKey: qk.wallet, queryFn: fetchWallet });
+}
+
+/** The caller's own tenant ledger (recharge/consume/refund/adjust). */
+export function useTransactions() {
+  return useQuery({
+    queryKey: qk.transactions,
+    queryFn: () => fetchTransactions(),
+  });
+}
+
+/** Usage detail (drill-down): raw usage rows + token totals in one call. */
+export function useUsage() {
+  return useQuery({ queryKey: qk.usage, queryFn: () => fetchUsage() });
+}
+
+/** Super-admin: credit a tenant's wallet. Invalidates wallet + ledger. */
+export function useRecharge() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: RechargeRequest) => recharge(payload),
+    onSuccess: (_data, { tenant_id }) => {
+      // Refresh the affected tenant's wallet + the global wallet list, plus the
+      // caller-side ledger (super_admin may be viewing transactions too).
+      qc.invalidateQueries({ queryKey: qk.walletByTenant(tenant_id) });
+      qc.invalidateQueries({ queryKey: qk.wallet });
+      qc.invalidateQueries({ queryKey: qk.transactions });
+    },
+  });
+}
+
+/** Effective pricing for the caller (tenant overrides + platform defaults). */
+export function useModelPricing() {
+  return useQuery({ queryKey: qk.pricing, queryFn: fetchPricing });
+}
+
+export function useCreatePricing() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: ModelPricingUpsert) => createPricing(payload),
+    onSuccess: () => qc.invalidateQueries({ queryKey: qk.pricing }),
+  });
+}
+
+export function useUpdatePricing() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, payload }: { id: string; payload: ModelPricingUpsert }) =>
+      updatePricing(id, payload),
+    onSuccess: () => qc.invalidateQueries({ queryKey: qk.pricing }),
+  });
+}
+
+export function useDeletePricing() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => deletePricing(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: qk.pricing }),
   });
 }

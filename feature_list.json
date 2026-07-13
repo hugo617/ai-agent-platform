@@ -1102,7 +1102,7 @@
       "area": "计费",
       "title": "Token 计费前端看板(门店/总部两级 + 充值 + 用量明细)(Token 费用管理系列 4/4)",
       "user_visible_behavior": "门店用户看到自己的 token 余额/消耗趋势/流水明细/用量钻取;总部(super_admin)看各门店余额消耗汇总、给门店充值、维护模型定价表;余额不足时对话被拦前端有提示",
-      "status": "not_started",
+      "status": "passing",
       "plan": "harness/docs/plan-token-billing-ui.md",
       "verification": [
         "billing-page.tsx(门店级):余额卡片 + 消耗趋势(近7/30天)+ 流水表(TanStack Table)+ 用量明细 tab(按客户/Agent 钻取),有 wallet:read 可见",
@@ -1114,7 +1114,17 @@
         "对话消耗后门店余额实时减少;余额为0对话被拦前端显示余额不足",
         "cd frontend && npm run build 通过 + oxlint 0 warning + ./init.sh 不回归"
       ],
-      "evidence": [],
+      "evidence": [
+        "types.ts 加 Wallet/WalletUpdate/WalletTransaction/ModelPricing/ModelPricingUpsert/RechargeRequest/UsageEventItem/UsageSummary/UsageDetail 接口(逐字段对齐 app/schemas/billing.py;amount 带符号注释、tenant_id 可空=平台默认、cost 来自 Decimal 快照)",
+        "endpoints.ts 加 fetchWallet/fetchWalletByTenant/updateMyWallet/fetchTransactions/fetchUsage/recharge/fetchPricing/createPricing/updatePricing/deletePricing(覆盖 plan §Step2 全部 9 端点 + wallet update;null 容错 GET /billing/wallet)",
+        "queries.ts 加 qk.wallet/walletByTenant/transactions/usage/pricing + useWallet/useWalletByTenant/useTransactions/useUsage/useRecharge/useModelPricing/useCreatePricing/useUpdatePricing/useDeletePricing;recharge.onSuccess invalidate 受影响 tenant wallet + 自有钱包 + transactions",
+        "billing-page.tsx(门店级,新建):余额卡片(balance < low_balance_threshold 卡片 + 数字 + banner 变 destructive 红提示「联系总部充值」)+ 累计充值/消耗/状态 3 计数卡 + 近7/30天纯CSS柱状消耗趋势(无图表库依赖,buildDailyTrend 按日桶聚合 UsageEvent.total_tokens)+ Prompt/Completion/Total token 累计汇总 + 最近流水表(类型图标 + 金额红绿 + 余额/模型/备注/相对时间)+ 用量明细钻取表(模型/Prompt/Completion/合计/¥费用/对话/时间);RefreshCw 一键 refetch 三个查询;fmtTokens 千分位 + fmtCost ¥四位小数 + fmtRelative 相对时间",
+        "billing-admin-page.tsx(总部级 super_admin,新建):全平台余额/累计充值/累计消耗 3 汇总卡(useQueries 扇出 GET /billing/wallet/{tenant_id} 逐店聚合,无汇总端点)+ 门店钱包表(余额/充值/消耗/阈值/状态 badge,余额不足标红 destructive)+ 充值 Dialog(react-hook-form + zod,amount 整数 ≥1 + remark,默认 10000 + 换算提示)+ ModelPricing CRUD 表(模型/输入单价/输出单价/币种/范围 badge/状态 + 新建/编辑 Dialog + 停用确认;PUT/POST/DELETE 对应 updatePricing/createPricing/deletePricing)",
+        "dashboard-layout.tsx 加「费用管理」/billing(permission:{obj:wallet,act:read},新 permission 字段走 hasPermission)+「计费管理」/billing/admin(platformOnly super_admin);NAV_ITEMS.filter 增加 permission 分支;图标 Wallet/Coins",
+        "require-permission.tsx 加 RequireApiPermission 守卫(PATH_API_PERM 映射 /billing→wallet:read)+ App.tsx 注册 /billing(RequireApiPermission)+ /billing/admin(RequireSuperAdmin 同 tenants 块)",
+        "偏差说明(对比 plan):① 无 menu:billing 权限种子,故 /billing 守卫与导航改用 api 权限 wallet:read(新增 NavItem.permission 字段 + RequireApiPermission 守卫,super_admin bypass);② 后端无聚合「全部门店钱包」端点,HQ 汇总用 useQueries 逐店扇出(已注释说明);③ zod v4 用 error 替代 invalid_type_error",
+        "验证:cd frontend && npm run build → tsc + vite 0 类型错误(chunk size 提示为既有非阻塞警告);npx oxlint src/ → Found 0 warnings and 0 errors(45 files / 102 rules);./init.sh → ruff All checks passed + 356 passed(后端未改动,纯前端任务)"
+      ],
       "notes": "Token 费用管理系列收官任务。前置 token-usage-tracking(43)+ token-wallet-billing(44)+ customer-conversation-link(45)三者全 passing。两级看板:门店级(余额/消耗/流水/用量,有 wallet:read)+ 总部级(门店汇总/充值/定价,super_admin)。消耗趋势用轻量方案(纯CSS柱状或 recharts 若已在依赖,不引重型图表库)。充值金额单位是 token 数(整数),提示换算参考。member 有 wallet:read 只读看余额不可充值。不做:支付集成、导出CSV、实时余额推送、月度限额。完成后整个 Token 费用管理系列收官,更新 plan-token-billing-overview.md 系列状态。"
     },
     {
