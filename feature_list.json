@@ -1068,7 +1068,7 @@
       "area": "客户域",
       "title": "客户维度 Token 归因(Conversation 绑 customer_id)(Token 费用管理系列 3/4)",
       "user_visible_behavior": "门店员工发起 AI 对话时可选关联某客户(为张先生咨询),系统把对话消耗的 token 归因到该客户;客户详情页显示「AI 服务」维度(对话次数/token 消耗/最近活跃);总部可看跨店客户汇总",
-      "status": "not_started",
+      "status": "passing",
       "plan": "harness/docs/plan-customer-conversation-link.md",
       "verification": [
         "Conversation 加 customer_id(可空 FK→customers.id, ondelete=SET NULL, 向后兼容)+ 迁移无 drift",
@@ -1081,7 +1081,18 @@
         "pytest 覆盖:带 customer_id 创建/UsageEvent 透传/聚合/跨店/向后兼容/客户软删 SET NULL",
         "./init.sh 全绿 + npm run build 通过"
       ],
-      "evidence": [],
+      "evidence": [
+        "Conversation 加 customer_id(可空 FK→customers.id,SET NULL,index)+ 迁移 f9a0b1c2d4e5(down_revision e8f9a0b1c2d3,add_column + index + FK)",
+        "透传链路:ChatRequest.customer_id → create_or_get(customer_id 仅新建生效,reuse 不覆盖)→ Conversation → _record_usage(customer_id=conv.customer_id 替换原 None 注释)→ UsageEvent",
+        "ConversationRepository.list_for_customer(tenant_id + customer_id 过滤,customer 360 用)",
+        "UsageEventRepository.sum_tokens_for_customer(门店/总部双视角:tenant_id 可选过滤;返回 prompt/completion/total/cost_sum/conv_count/last_active)+ list_for_customer",
+        "GET /customers/{id}/usage 端点(CustomerUsageRead schema):is_cross_tenant_viewer 分流——门店 customers:read + tenant 过滤;super_admin/hq_staff 全局",
+        "前端 chat-page:agent 选择器旁加客户选择器(非 super_admin,可选)+ URL ?customer_id= 预填(为客户咨询 deep link)+ 会话列表/标题显示客户名 + sendChatStream 仅新建时传 customer_id",
+        "前端 customers-page:StoreView 操作菜单加「AI 用量」项 + CustomerUsageDialog(对话次数/token/费用/最近活跃 + 为客户咨询按钮)+ HqView 表格加 AI 用量列(全局视角)",
+        "types.ts Conversation 加 customer_id + CustomerUsage interface;endpoints.ts ChatStreamPayload 加 customer_id + fetchCustomerUsage;queries.ts useCustomerUsage + qk.customerUsage",
+        "测试 tests/test_customer_conversation.py 11 测试:Conversation.customer_id 可空 + chat 端到端 customer_id 透传(Conversation+UsageEvent)+ 无 customer_id 向后兼容 + sum_tokens_for_customer 门店/全局/无归因 + list_for_customer + API GET /usage(门店/member/super_admin 全局)",
+        "验证:./init.sh → ruff All checks passed + 356 passed(基线 345 + 新增 11);npm run build 0 类型错误;npx oxlint 0 warnings 0 errors"
+      ],
       "notes": "解决 token 消耗无法归因到客户。现状:Conversation 只绑(tenant,agent,user)不绑 Customer。用户 2026-07-12 决策做客户归因。设计:customer_id 可空(不是所有对话关联客户)+ 对话级关联(非消息级)+ 前端聊天页可选关联/客户详情「为客户咨询」直达。前置 token-usage-tracking(43,UsageEvent 有 customer_id 可空列)。复用 customers-api(已 passing)的 Customer 全局身份做跨店归因。不做:消息级关联、自动客户识别(AI 提取)、前端看板(任务46)。客户软删后对话 customer_id 保留(历史可追溯)或 SET NULL(FK ondelete)——实施时定。"
     },
     {

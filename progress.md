@@ -8,14 +8,14 @@
 - **标准启动路径**: `./init.sh`(装依赖 + ruff + pytest)
 - **标准验证路径**: `./init.sh`(同上,后端快速验证,SQLite 内存库)
 - **完整验证路径**(需 docker): `alembic upgrade head && alembic check` + `cd frontend && npm run build`
-- **当前最高优先级未完成功能**: **`customer-conversation-link`(priority 45,Token 费用管理系列 3/4)** —— token-wallet-billing(44)✅ 已 passing 并入 main(PR #47,commit 2d7cf7d;钱包计费核心完成:Wallet/WalletTransaction/ModelPricing 三表 + BillingService charge FOR UPDATE 防双扣 + 余额预检拦截 + create_tenant 初始化 wallet + 计费 API + 权限项 + 代码质量审查修复 billing.py 局部 import 提顶层 + update_my_wallet 下沉 Service)。45 做 Conversation 加 customer_id + UsageEvent 透传 + 客户用量聚合 + 客户 360 AI 服务维度。前置 token-wallet-billing(44)✅。
+- **当前最高优先级未完成功能**: **`token-billing-ui`(priority 46,Token 费用管理系列 4/4 收官)** —— customer-conversation-link(45)✅ 已 passing(待合并 main;Conversation 加 customer_id + UsageEvent 透传 + GET /customers/{id}/usage 聚合 + 客户 360 AI 服务维度 + 聊天页关联客户 + 客户详情 AI 用量 Dialog)。46 做门店级看板(余额/消耗/流水)+ 总部级看板(门店汇总/充值/定价)+ 余额预警 + 用量钻取。前置 customer-conversation-link(45)✅。
 - **当前 blocker**: 无
 
 ## 后续任务规划
 
 任务全景与依赖关系见 `feature_list.json`(priority/depends_on 字段为真相源)。三个系列总纲:
 - **权限重构系列**(39-42):`harness/docs/plan-permission-redesign-overview.md` —— 39 ✅ → 40 ✅ → 41 ✅ → 42(matrix-redesign 收官,当前)
-- **Token 费用管理系列**(43-46):`harness/docs/plan-token-billing-overview.md` —— 43(usage-tracking)✅ → 44(wallet-billing)✅ → 45(customer-link,当前)→ 46(billing-ui)
+- **Token 费用管理系列**(43-46):`harness/docs/plan-token-billing-overview.md` —— 43(usage-tracking)✅ → 44(wallet-billing)✅ → 45(customer-link)✅ → 46(billing-ui 收官,当前)
 - **MVP 补全系列**(47-58):`harness/docs/plan-mvp-completion-overview.md` —— 12 个缺口分三梯队(SaaS 体面/配套/V2)
 
 > 历史任务规划表(顺序 1-46 的完整决策快照)已归档至 `harness/docs/archive/sessions-001-056.md`(随 Session 001-056 一并迁出)。
@@ -66,6 +66,7 @@
 | permission-matrix-redesign(矩阵 UI 重写 4/4 收官) | passing | npm build + oxlint 0 warning + 前端 types.ts 补 data_scope + permissions-page 重写(超管锁定行卡片 + 操作权限区 data_scope Select 行 + 增强图例 🔒)+ useUpdateRole invalidate matrix + 纯前端后端零改动基线 315 不回归 |
 | token-usage-tracking(Token 用量采集 1/4 地基) | passing | 321 tests + stream_agent 累加 on_chat_model_end usage(ReAct 多轮 sum)+ Message 加 4 列(prompt/completion/total/model 可空)+ UsageEvent 账本表 + 迁移 b739b2ae902b + _record_usage try/except 不阻断对话 |
 | token-wallet-billing(Token 钱包计费 2/4 核心) | passing | 345 tests + Wallet/WalletTransaction/ModelPricing 三表 + 迁移 e8f9a0b1c2d3 + BillingService(charge FOR UPDATE/calc_cost 租户覆盖>平台默认/recharge)+ event_source 余额预检(wallet 存在且<=0 拦截)+ create_tenant 同事务初始化零余额 wallet + /billing API + 权限 wallet:read/billing:read |
+| customer-conversation-link(客户维度 Token 归因 3/4) | passing | 356 tests + Conversation 加 customer_id(可空 FK SET NULL)+ 迁移 f9a0b1c2d4e5 + ChatRequest→create_or_get→_record_usage 全链路透传 + UsageEventRepository.sum_tokens_for_customer(门店/总部双视角)+ GET /customers/{id}/usage + 聊天页关联客户选择器 + 客户详情 AI 用量 Dialog + 为客户咨询 deep link |
 
 > ✅ AI 内核(agents + chat)已全部纳管并 passing。
 > ✅ **真实对话已跑通**:real-chat-llm-config(Session 017)用真实 DeepSeek key 端到端验证 SSE 流式对话。
@@ -646,5 +647,36 @@
 - **当前状态**: main 干净、与 origin/main 同步(均 2d7cf7d)、本地仅 main 分支。token-wallet-billing(44)✅ 已 passing 并入 main
 - **已知风险**: 无功能风险。真实 DeepSeek stream_usage 计费链路需真实 key 端到端验证(plan 风险表标注);手动浏览器验证未跑(需前后端启动),pytest 345 + CI 4 job 已覆盖行为/迁移链/类型/不回归
 - **下一步最佳动作**: 执行 `customer-conversation-link`(priority 45,Token 费用管理系列 3/4,现为最高优先级 not_started)—— Conversation 加 customer_id + UsageEvent 透传 + 客户用量聚合 + 客户 360 AI 服务维度
+
+---
+
+### Session 078 — 2026-07-14
+- **本轮目标**: 执行 `customer-conversation-link`(priority 45,Token 费用管理系列 3/4)—— 让系统能回答「服务张先生这个月用了多少 token」。Conversation 加 customer_id(可空),发起对话可选关联客户,UsageEvent.customer_id 从 Conversation 透传,客户 360 加「AI 服务」维度。前置 token-wallet-billing(44)✅ 已合入 main
+- **用户决策**(AskUserQuestion 三问,全选推荐项):① 聚合端点放 customers.py 的 `GET /customers/{id}/usage`(门店/总部双视角);② AI 用量展示在 customers-page 操作菜单弹 Dialog(StoreView「AI 用量」项 + HqView 表格列);③ 聊天页 agent 选择器旁加客户选择器(可选)
+- **已完成**(对照 plan §实施步骤):
+  - **Step 1-2 模型 + 迁移**(`app/models/agent.py` + 迁移 `f9a0b1c2d4e5`):Conversation 加 `customer_id: Mapped[str | None]`(可空 FK→customers.id,ondelete=SET NULL,index=True);迁移 down_revision 指向 `e8f9a0b1c2d3`(add_column + index + FK,up/down 对称);py_compile 通过
+  - **Step 3 透传链路**(`app/schemas/conversation.py` + `app/services/conversation_service.py`):ChatRequest/ConversationCreate/ConversationRead 加 customer_id;create_or_get 签名加 customer_id 参数(**仅新建对话生效**,reuse 路径 return 早期对话保持原绑定不变 —— 避免后续轮次意外覆盖)
+  - **Step 4 chat.py**(`app/api/v1/chat.py`):create_or_get 调用传 `customer_id=payload.customer_id`;`_record_usage` 第 95 行 `customer_id=None` → `customer_id=conv.customer_id`(透传,注释从 "filled by task 3" 改为 "透传")
+  - **Step 5 ConversationRepository**(`app/repositories/conversation.py`):加 `list_for_customer(tenant_id, customer_id)` 方法(customer 360 用,按 tenant + customer 过滤 + updated_at 倒序)
+  - **Step 6 UsageEventRepository 聚合**(`app/repositories/usage_event.py`):加 `sum_tokens_for_customer(customer_id, tenant_id=None)`(返回 prompt/completion/total/cost_sum/conv_count/last_active 六元组,tenant_id 可选过滤门店/总部双视角)+ `list_for_customer`;补 datetime/Decimal import
+  - **Step 7 客户用量端点**(`app/schemas/customer.py` + `app/api/v1/customers.py`):CustomerUsageRead schema;`GET /customers/{customer_id}/usage` 端点 —— is_cross_tenant_viewer 分流(门店 customers:read + tenant 过滤;super_admin/hq_staff 全局)。**设计**:权限守卫在函数体内手动调 permission_service.require(非 router dependencies,因为双视角需不同守卫)
+  - **Step 8-10 前端**(5 文件):types.ts(Conversation 加 customer_id + CustomerUsage interface)+ endpoints.ts(ChatStreamPayload 加 customer_id + fetchCustomerUsage)+ queries.ts(useCustomerUsage + qk.customerUsage)+ chat-page.tsx(agent 选择器旁加客户选择器非 super_admin + URL ?customer_id= 预填 + 会话列表/标题显示客户名 + sendChatStream 仅新建时传 customer_id + selectConversation 清空选择器)+ customers-page.tsx(StoreView 操作菜单「AI 用量」项 + CustomerUsageDialog 组件 Metric 卡 + HqView 表格加 AI 用量列 + 为客户咨询 deep link 跳 /chat?customer_id=)
+  - **Step 11 测试**(新建 `tests/test_customer_conversation.py` 11 测试):Conversation.customer_id 可空 + chat 端到端 customer_id 透传(POST /chat/stream with customer_id → Conversation.customer_id + UsageEvent.customer_id 全链路断言)+ 无 customer_id 向后兼容 + sum_tokens_for_customer 门店 scoped/全局 cross-tenant/无归因 zeros + list_for_customer + API GET /usage(门店 owner/member read/super_admin 全局)
+- **运行过的验证**(全过):
+  - `./init.sh` → ruff `All checks passed!` + **356 passed**(基线 345 + 新增 11)
+  - `cd frontend && npm run build` → tsc + vite build 成功,0 类型错误
+  - `npx oxlint src/` → 0 warnings 0 errors(43 文件)
+- **已记录证据**: `feature_list.json` 的 `customer-conversation-link.evidence` 字段(10 条),status 改为 passing
+- **技术要点**(与 plan 的实现差异):
+  - **create_or_get reuse 不覆盖 customer_id**:plan 说「只在创建新对话时生效」,实现时 reuse 路径(传 conversation_id)直接 return 已有对话,customer_id 参数被忽略 —— 避免后续轮次传不同 customer_id 意外重新绑定(语义:attribution 在创建时确定)
+  - **_record_usage 单元测试降级为 API 端到端**:原计划直接调 `_record_usage` 单元测试,但 db_session fixture 的 expire 行为(commit 后 ORM 对象 expire,访问 conv.customer_id 触发 lazy load 在 async 测试上下文失败)导致测试脆弱。改为通过 API mock(POST /chat/stream with customer_id)端到端验证全链路 —— 更真实,覆盖 ChatRequest→create_or_get→Conversation→_record_usage→UsageEvent
+  - **GET /usage 权限守卫内联**:双视角端点(门店 customers:read + 总部 cross_tenant_viewer)无法用单一 router dependencies 表达,改为函数体内 `is_cross_tenant_viewer` 分流 + 手动 `permission_service.require`(super_admin 在 check 里 bypass)
+  - **CustomerUsageDialog 双视角复用**:StoreView 传 storeScoped=true(customer_id 来自 profile.customer_id)+ HqView 传 storeScoped=false(customer_id 来自外层 Customer.id),后端按调用者 role 自动返回门店/全局聚合
+  - **聊天页客户选择器仅 StoreView**:super_admin 的 useCustomerProfiles 会 403(HQ 端点),且总部视角不需要关联门店客户 —— 用 isSuperAdmin 判断隐藏选择器
+- **提交记录**: 待用户决定是否提交 + 是否走 PR + CI 守门(15 文件改动:4 后端实现 + 1 迁移新建 + 3 repository/service + 2 schema + 1 测试新建 + 5 前端 + feature_list.json + progress.md)
+- **已知风险**: 无功能风险。迁移未在真实 Postgres 手动跑(CI Migrations job 覆盖);手动浏览器验证未跑(需前后端启动),pytest 356 + npm build + oxlint 已覆盖行为/类型/规范/不回归
+- **下一步最佳动作**:
+  - (a) 清理废代码 + 代码质量审查 + commit + PR + CI 守门 + 合并 customer-conversation-link 到 main;
+  - (b) 执行 `token-billing-ui`(priority 46,Token 费用管理系列 4/4 收官,现为最高优先级 not_started)—— 门店级看板 + 总部级看板 + 余额预警 + 用量钻取
 
 ---

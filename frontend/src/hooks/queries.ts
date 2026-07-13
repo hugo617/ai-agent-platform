@@ -27,6 +27,7 @@ import {
   fetchCustomerAggregate,
   fetchCustomerProfiles,
   fetchCustomers,
+  fetchCustomerUsage,
   fetchEffectiveModels,
   fetchGroups,
   fetchAllTenants,
@@ -111,6 +112,7 @@ export const qk = {
   customerProfiles: ["customers", "profiles"] as const,
   customers: ["customers"] as const,
   customer: (id: string) => ["customers", id] as const,
+  customerUsage: (id: string) => ["customers", id, "usage"] as const,
 };
 
 // ---------- tenants ----------
@@ -218,10 +220,11 @@ export function useDetachTenant() {
 // ---------- customers (global identity + per-store profile) ----------
 // Store view hooks: this tenant's profile CRUD. Writes also invalidate the HQ
 // list (customers) so a super_admin viewing the aggregate sees the change.
-export function useCustomerProfiles() {
+export function useCustomerProfiles(enabled: boolean = true) {
   return useQuery({
     queryKey: qk.customerProfiles,
     queryFn: fetchCustomerProfiles,
+    enabled,
   });
 }
 
@@ -273,6 +276,15 @@ export function useCustomerAggregate(id: string | null) {
   return useQuery({
     queryKey: qk.customer(id ?? ""),
     queryFn: () => fetchCustomerAggregate(id as string),
+    enabled: !!id,
+  });
+}
+
+// Token 费用管理系列 3/4: AI usage attributed to a customer (customer 360).
+export function useCustomerUsage(id: string | null) {
+  return useQuery({
+    queryKey: qk.customerUsage(id ?? ""),
+    queryFn: () => fetchCustomerUsage(id as string),
     enabled: !!id,
   });
 }

@@ -17,18 +17,22 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import (
     CurrentUser,
     get_current_user,
+    is_cross_tenant_viewer,
     require_cross_tenant_viewer,
     require_permission,
 )
 from app.core.database import get_db
+from app.repositories.usage_event import UsageEventRepository
 from app.schemas.customer import (
     CustomerProfileCreate,
     CustomerProfileRead,
     CustomerProfileUpdate,
     CustomerRead,
+    CustomerUsageRead,
 )
 from app.services.customer_service import CustomerService
 from app.services.errors import NotFoundError
+from app.services.permission_service import permission_service
 
 router = APIRouter(prefix="/customers", tags=["customers"])
 
@@ -69,6 +73,63 @@ async def get_customer_aggregate(
         return await CustomerService(db).get_customer_aggregate(customer_id)
     except ValueError as e:
         raise _http_exc(e) from e
+
+
+# ----------------------------------------------- AI usage attribution (3/4)
+# GET /customers/{id}/usage — aggregate AI consumption for a customer.
+# Dual view: store users (customers:read) see only this store's service of the
+# customer (tenant_id filter); cross-tenant viewers (super_admin / hq_staff)
+# see the global aggregate (no tenant filter). Mirrors the list_profiles split.
+#
+# The guard is inlined (not a router ``dependencies=``) because the two view
+# modes need different guards: store mode requires ``customers:read`` while HQ
+# mode requires a cross-tenant viewer role — a single dependency can't express
+# both. ``permission_service.require`` is called manually for store users;
+# super_admin bypasses inside ``check`` (its first-line return True), and
+# hq_staff takes the cross_tenant branch.
+
+
+@router.get(
+    "/{customer_id}/usage",
+    response_model=CustomerUsageRead,
+)
+async def get_customer_usage(
+    customer_id: str,
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> CustomerUsageRead:
+    """Aggregate token usage attributed to a customer (customer 360 "AI 服务").
+
+    Store users get their tenant's slice; cross-tenant viewers get the global
+    aggregate. Returns zeros when the customer has no attributed conversations.
+    """
+    cross_tenant = is_cross_tenant_viewer(user.platform_role)
+    if not cross_tenant:
+        # Store user: enforce customers:read (super_admin bypasses in check).
+        await permission_service.require(
+            user.user_id,
+            user.tenant_id,
+            "customers",
+            "read",
+            platform_role=user.platform_role,
+        )
+        scope: str | None = user.tenant_id
+    else:
+        # Cross-tenant viewer (super_admin / hq_staff): global aggregate.
+        scope = None
+    repo = UsageEventRepository(db)
+    prompt, completion, total, cost_sum, conv_count, last_active = (
+        await repo.sum_tokens_for_customer(customer_id, tenant_id=scope)
+    )
+    return CustomerUsageRead(
+        customer_id=customer_id,
+        conversation_count=conv_count,
+        prompt_tokens=prompt,
+        completion_tokens=completion,
+        total_tokens=total,
+        total_cost=float(cost_sum) if cost_sum else None,
+        last_active_at=last_active,
+    )
 
 
 # ---------------------------------------------------- store view (tenant-scoped)

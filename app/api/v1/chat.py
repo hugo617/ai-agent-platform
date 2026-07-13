@@ -92,7 +92,7 @@ async def _record_usage(
                 conversation_id=conv.id,
                 message_id=msg.id,
                 agent_id=agent.id,
-                customer_id=None,  # filled by task 3 (customer-conversation-link)
+                customer_id=conv.customer_id,  # Token 费用管理系列 3/4: 透传
                 user_id=user.user_id,
                 model=usage_data.get("model") or "",
                 prompt_tokens=_u(usage_data, "input_tokens") or 0,
@@ -152,6 +152,7 @@ async def chat_stream(
             conversation_id=payload.conversation_id,
             platform_role=user.platform_role,
             first_message=payload.message,
+            customer_id=payload.customer_id,
         )
     except ValueError as e:
         raise _http_exc(e) from e

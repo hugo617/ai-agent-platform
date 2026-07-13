@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import { useSearchParams } from "react-router-dom";
 import {
   Check,
   Copy,
@@ -9,6 +10,7 @@ import {
   Send,
   Square,
   Trash2,
+  User,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -25,12 +27,14 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useToast } from "@/components/ui/toast";
+import { useAuth } from "@/components/auth/auth-context";
 import { MarkdownView } from "@/components/chat/markdown-view";
 import { apiErrorMessage } from "@/api/client";
 import { sendChatStream } from "@/api/endpoints";
 import {
   useAgents,
   useConversations,
+  useCustomerProfiles,
   useDeleteConversation,
   useMessages,
 } from "@/hooks/queries";
@@ -59,14 +63,26 @@ function conversationLabel(c: Conversation, firstMessage?: Message): string {
 export function ChatPage() {
   const toast = useToast();
   const qc = useQueryClient();
+  const { me } = useAuth();
+  const [searchParams, setSearchParams] = useSearchParams();
 
+  const isSuperAdmin = me?.platform_role === "super_admin";
   const { data: agents, isLoading: agentsLoading } = useAgents();
   const { data: conversations, isLoading: convsLoading } = useConversations();
+  // Store customer profiles for the "关联客户" picker (store users only).
+  // super_admin doesn't serve individual store customers, so we disable the
+  // query for them (the endpoint permits super_admin, but the picker is hidden
+  // via !isSuperAdmin — no point fetching every store's profiles).
+  const { data: customerProfiles } = useCustomerProfiles(!isSuperAdmin);
 
   const [selectedAgentId, setSelectedAgentId] = useState<string>("");
   const [selectedConversationId, setSelectedConversationId] = useState<
     string | null
   >(null);
+  // Token 费用管理系列 3/4: optional customer attribution for a NEW chat.
+  // Cleared whenever an existing conversation is selected (attribution is set
+  // at creation time only — follow-up turns keep the original binding).
+  const [selectedCustomerId, setSelectedCustomerId] = useState<string>("");
 
   const { data: history, isLoading: historyLoading } = useMessages(
     selectedConversationId,
@@ -92,6 +108,28 @@ export function ChatPage() {
     }
   }, [agents, selectedAgentId]);
 
+  // "为客户咨询" deep link: arriving at /chat?customer_id=<id> pre-fills the
+  // customer picker so the next new conversation is attributed to them.
+  useEffect(() => {
+    const cid = searchParams.get("customer_id");
+    if (cid) {
+      setSelectedConversationId(null); // start a fresh conversation
+      setSelectedCustomerId(cid);
+      // Clear the param so a later manual "new chat" doesn't re-bind silently.
+      searchParams.delete("customer_id");
+      setSearchParams(searchParams, { replace: true });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
+
+  // A lookup from customer_id → display name, for showing attribution in the
+  // conversation header / list (falls back to the bare id if not loaded).
+  const customerNameOf = (cid: string | null): string | null => {
+    if (!cid) return null;
+    const p = customerProfiles?.find((x) => x.customer_id === cid);
+    return p?.customer.name ?? null;
+  };
+
   // Show loaded history unless we're streaming (then show localMessages).
   const messages = localMessages ?? history ?? [];
 
@@ -112,6 +150,7 @@ export function ChatPage() {
   const startNewConversation = () => {
     if (streaming) return;
     setSelectedConversationId(null);
+    setSelectedCustomerId("");
     setLocalMessages(null);
     setInput("");
   };
@@ -119,6 +158,9 @@ export function ChatPage() {
   const selectConversation = (id: string) => {
     if (streaming) return;
     setSelectedConversationId(id);
+    // Clear the customer picker — existing conversations keep their original
+    // attribution; the picker only drives NEW conversations.
+    setSelectedCustomerId("");
   };
 
   const handleDeleteConversation = async (conv: Conversation) => {
@@ -174,6 +216,11 @@ export function ChatPage() {
           agent_id: selectedAgentId,
           conversation_id: selectedConversationId ?? undefined,
           message: text,
+          // Only attribute a NEW conversation; follow-up turns reuse the
+          // existing conversation_id (whose customer_id was set at creation).
+          customer_id: selectedConversationId
+            ? undefined
+            : selectedCustomerId || undefined,
         },
         controller.signal,
       )) {
@@ -293,7 +340,16 @@ export function ChatPage() {
                         title={conversationLabel(conv)}
                       >
                         <span className="truncate">{conversationLabel(conv)}</span>
-                        <span className="text-[11px] text-muted-foreground">
+                        <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
+                          {conv.customer_id && (() => {
+                            const n = customerNameOf(conv.customer_id);
+                            return n ? (
+                              <span className="inline-flex items-center gap-0.5">
+                                <User className="h-2.5 w-2.5" />
+                                {n}
+                              </span>
+                            ) : null;
+                          })()}
                           {fmt(conv.created_at)}
                         </span>
                       </button>
@@ -338,6 +394,51 @@ export function ChatPage() {
                 ))}
               </SelectContent>
             </Select>
+
+            {/* Token 费用管理系列 3/4: optional customer attribution picker.
+                Store users can tag a NEW chat as "serving customer X". Hidden
+                for super_admin (they don't serve store customers) and disabled
+                when viewing an existing conversation (attribution is fixed at
+                creation). */}
+            {!isSuperAdmin && !selectedConversationId && (
+              <Select
+                value={selectedCustomerId || "_none"}
+                onValueChange={(v) =>
+                  setSelectedCustomerId(v === "_none" ? "" : v)
+                }
+                disabled={streaming}
+              >
+                <SelectTrigger className="h-8 w-44">
+                  <span className="flex items-center gap-1.5 text-muted-foreground">
+                    <User className="h-3.5 w-3.5" />
+                    <SelectValue placeholder="关联客户(可选)" />
+                  </span>
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="_none">不关联客户</SelectItem>
+                  {customerProfiles?.map((p) => (
+                    <SelectItem key={p.customer_id} value={p.customer_id}>
+                      {p.customer.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+            {/* When viewing an existing conversation that's attributed to a
+                customer, show a read-only badge so the staff member knows who
+                they're serving in this chat. */}
+            {!isSuperAdmin && selectedConversationId && (() => {
+              const conv = conversations?.find(
+                (c) => c.id === selectedConversationId,
+              );
+              const cname = customerNameOf(conv?.customer_id ?? null);
+              return cname ? (
+                <span className="flex items-center gap-1 rounded-md bg-accent px-2 py-1 text-xs">
+                  <User className="h-3 w-3" />
+                  {cname}
+                </span>
+              ) : null;
+            })()}
           </div>
           {selectedConversationId && (
             <span className="text-xs text-muted-foreground">

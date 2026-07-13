@@ -304,6 +304,9 @@ export interface Conversation {
   tenant_id: string;
   user_id: string;
   title: string | null;
+  // Optional customer attribution (Token 费用管理系列 3/4). Null = internal
+  // staff query (not tied to a customer).
+  customer_id: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -458,6 +461,21 @@ export interface CustomerRead {
   updated_at: string;
   profiles: CustomerProfileBrief[];
   profile_count: number;
+}
+
+/**
+ * Aggregate AI usage attributed to a customer (Token 费用管理系列 3/4).
+ * Powers the "AI 服务" dimension on the customer 360 view. Store-scoped for
+ * tenant users; global for cross-tenant viewers.
+ */
+export interface CustomerUsage {
+  customer_id: string;
+  conversation_count: number;
+  prompt_tokens: number;
+  completion_tokens: number;
+  total_tokens: number;
+  total_cost: number | null;
+  last_active_at: string | null;
 }
 
 export interface ApiError {
