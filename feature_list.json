@@ -946,7 +946,7 @@
       "area": "权限",
       "title": "数据权限(data_scope 角色级数据范围四档)(权限重构系列 3/4)",
       "user_visible_behavior": "角色可配置数据范围(all全部/tenant本租户/group本组织/self仅自己),该角色用户查询业务数据时按范围自动过滤(业务员只看自己客户、店长看全店、区域经理看本组织多门店)",
-      "status": "not_started",
+      "status": "passing",
       "plan": "harness/docs/plan-permission-data-scope.md",
       "verification": [
         "Role 表加 data_scope 字段(四档 all/tenant/group/self),默认 tenant,alembic 迁移无 drift",
@@ -957,8 +957,17 @@
         "pytest tests/test_data_scope.py 覆盖:self 只看自己/tenant 看全店/group 看跨店/多角色聚合取最宽/group 降级 tenant/跨租户隔离不变",
         "./init.sh 全绿 + npm run build 通过"
       ],
-      "evidence": [],
-      "notes": "数据权限 B 层:角色级 data_scope 四档(用户 2026-07-12 拍板,非 ABAC 行级表达式)。data_scope 挂角色上(非权限项上),一个角色一种数据范围;super_admin/hq_staff 走 bypass 不进 data_scope;group 依赖现有 Group 模型(任务 groups-api 已有);self 需业务表有 created_by 列(核实 customers/conversations,缺失要补)。前置 permission-unified-model(39)+ groups-api(已 passing)。首批只接 Customer/Conversation 两域,Agent 暂不接(租户共享语义)。不做:列级数据权限、权限项粒度 data_scope、data_scope 的 SCD2 历史。"
+      "evidence": [
+        "Step1-2: Role 模型加 data_scope(String(20) default='tenant',app 层校验四档,无 Enum/DB CHECK) + alembic 迁移 4708b3fbf2e7(down_revision 84605f063730,server_default='tenant' 回填,双库兼容);migration 文件 py_compile 通过",
+        "Step3: RoleRead 加 data_scope='tenant';RoleCreate/RoleUpdate 加 data_scope + pattern '^(all|tenant|group|self)$'(RoleLabel 不加,保持下拉最小化)",
+        "Step4: 新建 app/services/data_scope.py DataScopeService + ResolvedScope(dataclass);resolve 入口 is_cross_tenant_viewer→all;_widest_role_scope 多角色取最宽(all>group>tenant>self,无角色行降级 tenant 安全默认);group→_resolve_group_tenants(GroupRepository.list_for_tenant + GroupTenantRepository.list_for_group 取并集,空则降级 tenant);self→owner_user_id",
+        "Step5-6: rbac_service create 写 data_scope=payload.data_scope;update 字段循环加 'data_scope';seed_defaults 三角色显式 data_scope='tenant'(defaults tuple 加第 4 元素)",
+        "Step7-8: CustomerProfileRepository 加 list_for_scope(scope/tenant_id/group_tenant_ids/owner_user_id 原始参数,保持 Repository 不反向依赖 service);CustomerService.list_profiles 接入 DataScopeService.resolve 替换旧 is_cross_tenant 二分",
+        "Step9: tests/test_data_scope.py 新建 9 测试全过(self 只看自己/tenant 看全店/group 看跨店/group 降级 tenant/多角色取最宽/跨租户隔离/super_admin bypass=all/角色 CRUD 暴露 data_scope + 更新/无效 data_scope 422)",
+        "验证命令全过:./init.sh → ruff 'All checks passed!' + 315 passed(基线 306 + 新增 9);cd frontend && npm run build → tsc+vite 成功 0 错误;npx oxlint src/ → 0 warnings 0 errors(43 文件)",
+        "既有测试不破:CustomerProfile tenant 分支与旧 list_for_tenant 等价;test_customers_api/test_chat 全绿;Conversation 不接入(用户决策)"
+      ],
+      "notes": "数据权限 B 层:角色级 data_scope 四档(用户 2026-07-12 拍板,非 ABAC 行级表达式)。data_scope 挂角色上(非权限项上),一个角色一种数据范围;super_admin/hq_staff 走 bypass 不进 data_scope;group 依赖现有 Group 模型(任务 groups-api 已有);self 需业务表有 created_by 列(核实 customers/conversations,缺失要补)。前置 permission-unified-model(39)+ groups-api(已 passing)。首批只接 Customer/Conversation 两域,Agent 暂不接(租户共享语义)。不做:列级数据权限、权限项粒度 data_scope、data_scope 的 SCD2 历史。| [Session 实施决策 2026-07-13] Conversation 不接入 data_scope(用户确认):会话本质个人数据,owner/admin 不应默认看全租户成员聊天,维持 ConversationService.list_for_user 的 user_id 过滤不变。故本任务 data_scope 仅对 CustomerProfile 生效,偏离 plan verification 的 ConversationRepository 项(经用户确认)。DataScopeResolver 实现为 app/services/data_scope.py DataScopeService(用户确认放 service 层,避免 Repository 反向依赖)。backfill 老角色 data_scope:迁移 server_default='tenant' 已回填,与旧行为等价,无需额外脚本。"
     },
     {
       "id": "permission-matrix-redesign",

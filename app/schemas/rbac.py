@@ -4,6 +4,10 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
+# Row-level data scope levels a role can carry (权限重构系列 3/4). See
+# app/models/rbac.py Role.data_scope and app/services/data_scope.py.
+DATA_SCOPE_PATTERN = r"^(all|tenant|group|self)$"
+
 
 class RoleRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -14,6 +18,7 @@ class RoleRead(BaseModel):
     is_system: bool = False
     sort_order: int = 0
     status: str = "active"
+    data_scope: str = "tenant"
     created_at: datetime | None = None
 
 
@@ -30,6 +35,7 @@ class RoleCreate(BaseModel):
     code: str = Field(..., min_length=1, max_length=100)
     description: str | None = Field(default=None, max_length=255)
     sort_order: int = 0
+    data_scope: str = Field(default="tenant", pattern=DATA_SCOPE_PATTERN)
 
 
 class RoleUpdate(BaseModel):
@@ -37,6 +43,7 @@ class RoleUpdate(BaseModel):
     description: str | None = Field(default=None, max_length=255)
     sort_order: int | None = None
     status: str | None = None
+    data_scope: str | None = Field(default=None, pattern=DATA_SCOPE_PATTERN)
 
 
 # ----- role ↔ permission grants (SCD2, scenario ii) -----

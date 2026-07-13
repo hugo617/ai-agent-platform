@@ -434,3 +434,33 @@
 - **下一步最佳动作**: 执行 `permission-data-scope`(priority 41,权限重构系列 3/4,现为最高优先级 not_started)
 
 ---
+
+### Session 070 — 2026-07-13
+- **本轮目标**: 执行 `permission-data-scope`(priority 41,权限重构系列 3/4)—— Role 加 data_scope 四档(all/tenant/group/self),Repository 层按角色 data_scope 自动注入数据范围过滤(业务员只看自己客户、店长看全店、区域经理看本组织多门店)
+- **已完成**(对照 plan §实施步骤):
+  - **用户决策(2 项,影响设计)**:① **Conversation 不接入 data_scope** —— 会话本质个人数据,owner/admin 也不应默认看全租户成员聊天,维持 ConversationService.list_for_user 的 user_id 过滤不变。本任务 data_scope **仅对 CustomerProfile 生效**(偏离 plan verification 的 ConversationRepository 项,经用户确认);② **DataScopeResolver 放 `app/services/data_scope.py`**(用户选 service 层,避免 Repository 反向依赖多个 Repository + casbin)
+  - **Step 1-2 模型 + 迁移**(`app/models/rbac.py` + 新建 `alembic/versions/2026_07_13_1112_4708b3fbf2e7_add_data_scope_to_roles.py`):Role 加 `data_scope: Mapped[str] = mapped_column(String(20), default="tenant")`(镜像 status/platform_role 模式,无 Enum/DB CHECK,app 层校验);迁移 `4708b3fbf2e7`(down_revision `84605f063730`,`server_default='tenant'` 回填现有行,双库兼容,与 tenants.status 迁移同模式);migration 文件 py_compile 通过
+  - **Step 3 Schema**(`app/schemas/rbac.py`):RoleRead 加 `data_scope: str = "tenant"`;RoleCreate/RoleUpdate 加 `data_scope` + `pattern=DATA_SCOPE_PATTERN="^(all|tenant|group|self)$"`;RoleLabel 不加(保持下拉最小化)
+  - **Step 4 DataScopeService**(**新建** `app/services/data_scope.py`):`ResolvedScope` dataclass(scope/tenant_ids/owner_user_id)+ `DataScopeService.resolve()`:入口 `is_cross_tenant_viewer(platform_role)` → all(对齐 permission_service.check 的 bypass);`_widest_role_scope` 多角色取最宽(all>group>tenant>self,无角色行降级 tenant 安全默认,因 test_env 只 seed UserTenant 不 seed Role 行);group → `_resolve_group_tenants`(复用 GroupRepository.list_for_tenant + GroupTenantRepository.list_for_group 取并集,空则降级 tenant);self → owner_user_id
+  - **Step 5-6 rbac_service**(`app/services/rbac_service.py`):create 写 `data_scope=payload.data_scope`;update 字段循环加 `"data_scope"`;seed_defaults 三角色显式 data_scope='tenant'(defaults tuple 加第 4 元素)
+  - **Step 7-8 CustomerProfile 接入**(`app/repositories/customer.py` + `app/services/customer_service.py`):CustomerProfileRepository 加 `list_for_scope(scope/tenant_id/group_tenant_ids/owner_user_id)`(传原始参数非 ResolvedScope 对象,保持 Repository 不反向依赖 service 层);CustomerService.list_profiles 接入 DataScopeService.resolve 替换旧 `is_cross_tenant` 二分(all→无过滤/tenant→tenant_id==/group→tenant_id IN/self→created_by==)
+  - **Step 9 测试**(**新建** `tests/test_data_scope.py` 9 测试全过):self 只看自己(created_by 过滤)/tenant 看全店/group 看跨店(Group+GroupTenant)/group 降级 tenant(tenant 不属任何 Group)/多角色聚合取最宽(casbin 加第 2 角色)/跨租户隔离不变/super_admin bypass=all/角色 CRUD 暴露 data_scope + PUT 更新/无效 data_scope 422
+- **运行过的验证**(全过):
+  - `./init.sh` → ruff `All checks passed!` + **315 passed**(基线 306 + 新增 9)
+  - `cd frontend && npm run build` → tsc + vite build 成功,0 类型错误(前端无改动,schema 加字段不影响)
+  - `npx oxlint src/` → 0 warnings 0 errors(43 文件)
+  - 既有测试不破:CustomerProfile tenant 分支与旧 list_for_tenant 等价;test_customers_api/test_chat 全绿
+- **已记录证据**: `feature_list.json` 的 `permission-data-scope.evidence` 字段(8 条),status 改为 passing
+- **技术要点**(与 plan 的实现差异):
+  - **Conversation 不接入 data_scope(用户决策)**:plan verification 列了 ConversationRepository 接入,但用户拍板「会话始终只看自己」——会话是个人数据,owner/admin 默认 tenant 会暴露全租户成员聊天,语义不当。本任务 data_scope 仅对 CustomerProfile 生效,已在 feature notes 标注偏离
+  - **DataScopeResolver 放 service 层而非 plan 的 repository 层(用户决策)**:plan §Step3 写 `app/repositories/data_scope.py`,但它要跨 Role/Group/casbin 多源查询,放 repository 层会反向依赖(Repository 调 Repository + casbin),违反单向依赖。用户选 service 层 `app/services/data_scope.py`
+  - **ResolvedScope 传原始参数给 Repository**:Repository 方法收 `scope/tenant_id/group_tenant_ids/owner_user_id` 而非 ResolvedScope 对象,保持 Repository 不 import service 层(单向依赖干净)
+  - **多角色聚合实现**:用 casbin `get_roles_for_user_in_domain` 拿角色码 → 查 RoleRepository.list_for_tenant 匹配 → 取 WIDTH 最宽。test_env 只 seed UserTenant 不 seed Role 行 → resolver 无角色行时降级 tenant(安全默认,与旧行为等价)
+  - **server_default 回填 = 免 backfill 脚本**:迁移 `server_default='tenant'` 直接回填现有角色行为等价,无需像任务 39/40 那样写 backfill 脚本
+- **提交记录**: 待用户决定是否提交 + 是否走 PR + CI 守门(9 文件改动:5 后端实现 + 1 迁移新建 + 1 测试新建 + feature_list.json + progress.md)
+- **已知风险**: 无功能风险。迁移未在真实 Postgres 跑(CI Migrations job 覆盖),SQLite 测试用 Base.metadata.create_all 不走迁移(既有模式);手动浏览器验证未跑(需前后端启动),build(tsc)+ oxlint + pytest 已覆盖类型/规范/行为
+- **下一步最佳动作**:
+  - (a) commit + PR + CI 守门 + 合并 permission-data-scope 到 main;
+  - (b) 执行 `permission-matrix-redesign`(priority 42,权限重构系列 4/4 收官,现为最高优先级 not_started)
+
+---
