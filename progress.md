@@ -741,3 +741,38 @@
 
 ---
 
+### Session 082 — 2026-07-14
+- **本轮目标**: 实现 `dashboard-analytics`(优先级 47)—— 把占位 dashboard 页改成真实数据看板(门店/总部双视角 + 趋势),全栈任务(后端统计端点 + 前端重写)
+- **执行**(新分支 `feat/dashboard-analytics`,基线 main):
+  - **后端(Repository→Service→API 单向)**:
+    - Repository 层加 count/aggregate:`AgentRepository.count_for_tenant/count_all`、`ConversationRepository.count_for_tenant/count_all/daily_trend_for_tenant/daily_trend_all/conversation_count_by_tenant`、`CustomerProfileRepository.statistics_for_tenant`(门店档案计数)、`CustomerRepository.statistics_all_global`(HQ 身份计数)、新建 `DashboardRepository`(平台级 tenant/user 计数)
+    - Service 层:`AgentService/ConversationService/CustomerService.statistics`(按 platform_role 分流门店/HQ)、新建 `DashboardService.trends/overview`;权限校验放 service,多租户隔离全在 Repository(TenantScopedRepository / 显式 WHERE tenant_id)
+    - Schema:`AgentStatistics`、`ConversationStatistics`、`CustomerStatistics` 加到各实体 schema;新建 `app/schemas/dashboard.py`(TrendPoint/DashboardTrends/PlatformTotals/TenantActivityItem/DashboardOverview)
+    - API 端点:`GET /agents/statistics`、`/conversations/statistics`(conversations:read 守卫,service 内 super_admin 跨租户)、`/customers/statistics`(内联 dual-view 守卫,仿 get_customer_usage)、新建 `app/api/v1/dashboard.py`(`/trends` conversations:read 守卫 + `/overview` require_super_admin);main.py 注册 dashboard 路由
+    - Alembic 迁移 `2026_07_14_0900_a1b2c3d4e5f6_add_trend_indexes.py`:给 conversations/messages 加 `(tenant_id, created_at)` 复合索引(把门店级趋势 GROUP BY 扫描降为索引范围扫描);down_revision f9a0b1c2d4e5,单 head,链式正确
+    - 测试 `tests/test_dashboard_api.py`(15 个):各实体 stats 门店/HQ 隔离 + super_admin 跨租户、member read 权限、trends 门店 scoped + super_admin 跨租户聚合 + days clamp([1,90],超出 clamp 不 422)+ 零填充连续时间线、overview super_admin 平台总数 + 门店 Top N 排序、overview 对非 super_admin(app_client/member/hq_staff)403
+  - **前端**:
+    - types.ts:`AgentStatistics/ConversationStatistics/CustomerStatistics/TrendPoint/DashboardTrends/TenantActivityItem/PlatformTotals/DashboardOverview`
+    - endpoints.ts:`fetchAgentStatistics/fetchConversationStatistics/fetchCustomerStatistics/fetchDashboardTrends(days)/fetchDashboardOverview`
+    - queries.ts:`qk.agentStats/conversationStats/customerStats/dashboardTrends(days)/dashboardOverview` + 对应 use* hooks(useDashboardOverview 带 enabled 参数避免非 super_admin 触发 403)
+    - dashboard-page.tsx 重写:按 `me.platform_role === 'super_admin'` 分流 `StoreView`(4 统计卡 users/agents/conversations/customers + 7/30 天纯CSS柱状趋势,复用 billing-page.tsx 的 buildDailyTrend 视觉模式)+ `HqView`(5 平台总数 tenants/users/agents/conversations/customers + 门店活跃 Top 10 纯CSS横向柱状);保留创建租户 dialog(super_admin only);无图表库依赖
+- **验证**:
+  - `./init.sh` → ruff check 全绿 + pytest → **371 passed**(基线 356 + 本任务新增 15)
+  - `cd frontend && npm run build` → tsc -b + vite build **0 类型错误**
+  - `cd frontend && npx oxlint src/` → **Found 0 warnings and 0 errors**(45 文件 102 规则)
+  - `alembic heads` → 单 head `a1b2c3d4e5f6`;`feature_list.json` JSON 校验通过
+- **技术备注**:
+  - days clamp 策略:Query 不加 ge/le 约束,改由 service `max(1, min(days, 90))` clamp —— 超范围窗口静默截断而非 422,对调用方更友好(plan §风险:限制 days ≤ 90)
+  - 客户「active」语义门店/HQ 不同:门店 = profile.status='active';HQ = 该身份在任一门店有 active 档案(子查询 IN)
+  - Agent/Conversation 无 is_deleted 列(硬删除),计数无需 soft-delete 谓词;Customer/CustomerProfile 保留 is_deleted=False
+  - trends 的 conversations 计数按 Conversation.created_at、messages 按 Message.created_at 分别 GROUP BY date,服务层做日期对齐 + 零填充
+- **偏离 plan 处及原因**:
+  - plan 写「super_admin 跨租户用 require_super_admin」,但实体 /statistics 端点(plan Step 1)按 require_permission("<obj>", "read") + service 内 super_admin 分流(与现有 /users/statistics 完全一致的成熟模式),super_admin 在 permission_service.check 内短路放行 —— 不偏离语义,且与 users stats 端点对齐;只有 /dashboard/overview 用 require_super_admin(plan Step 3 明确要求 403)
+  - plan 提示 trends 可能引 recharts,实际复用 billing-page.tsx 的纯 CSS 柱状(零新依赖,符合 plan §风险「优先纯 CSS 柱状条」)
+  - 未做 token 消耗维度(plan §不做的事:依赖 43,本任务边界外)
+- **当前状态**: dashboard-analytics(47)✅ passing,改动留在 `feat/dashboard-analytics` 工作树未提交(交 ship-it 收尾)
+- **已知风险**: HQ overview 的 conversation_count_by_tenant 在门店量很大时是全表 GROUP BY(无 tenant_id 谓词),plan §风险已记;Top N cap=10 + 30 天窗口缓解,后续可加物化视图/缓存
+- **下一步最佳动作**: 交 ship-it 做 cleanup→review→commit→PR→CI→merge;之后可选 audit-log-ui(48)或回头补 dashboard token 消耗维度(待 43 落地)
+
+---
+

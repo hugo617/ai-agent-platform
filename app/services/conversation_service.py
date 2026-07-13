@@ -1,11 +1,13 @@
 """Conversation + message service."""
 
+from datetime import UTC, datetime, timedelta
+
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.agent import Conversation
 from app.models.message import Message
 from app.repositories.conversation import ConversationRepository, MessageRepository
-from app.schemas.conversation import ConversationRead, MessageRead
+from app.schemas.conversation import ConversationRead, ConversationStatistics, MessageRead
 from app.services.errors import NotFoundError
 from app.services.permission_service import permission_service
 
@@ -82,6 +84,35 @@ class ConversationService:
         )
         convs = await self.conversations.list_for_user(tenant_id, user_id)
         return [ConversationRead.model_validate(c) for c in convs]
+
+    async def statistics(
+        self,
+        user_id: str,
+        tenant_id: str,
+        platform_role: str | None = None,
+    ) -> ConversationStatistics:
+        """Conversation counts (total + 7d/30d windows) for the dashboard card.
+
+        Store users are scoped to their tenant; super_admin aggregates across
+        every tenant. Windows are on ``created_at`` (when the chat started).
+        """
+        is_super_admin = platform_role == "super_admin"
+        if not is_super_admin:
+            await permission_service.require(
+                user_id, tenant_id, self.OBJECT, "read", platform_role=platform_role
+            )
+        now = datetime.now(UTC)
+        since_7d = now - timedelta(days=7)
+        since_30d = now - timedelta(days=30)
+        if is_super_admin:
+            total = await self.conversations.count_all()
+            last_7d = await self.conversations.count_all(since=since_7d)
+            last_30d = await self.conversations.count_all(since=since_30d)
+        else:
+            total = await self.conversations.count_for_tenant(tenant_id)
+            last_7d = await self.conversations.count_for_tenant(tenant_id, since=since_7d)
+            last_30d = await self.conversations.count_for_tenant(tenant_id, since=since_30d)
+        return ConversationStatistics(total=total, last_7d=last_7d, last_30d=last_30d)
 
     async def history(
         self,

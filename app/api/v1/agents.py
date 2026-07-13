@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import CurrentUser, get_current_user, require_permission
 from app.core.database import get_db
-from app.schemas.agent import AgentCreate, AgentRead, AgentUpdate
+from app.schemas.agent import AgentCreate, AgentRead, AgentStatistics, AgentUpdate
 from app.services.agent_service import AgentService
 from app.services.errors import NotFoundError
 
@@ -30,6 +30,26 @@ async def list_agents(
 ) -> list[AgentRead]:
     service = AgentService(db)
     return await service.list(
+        user.user_id, user.tenant_id, platform_role=user.platform_role
+    )
+
+
+@router.get(
+    "/statistics",
+    response_model=AgentStatistics,
+    dependencies=[Depends(require_permission("agents", "read"))],
+)
+async def agent_statistics(
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> AgentStatistics:
+    """Aggregate agent counts for the dashboard card.
+
+    Store users count their tenant's agents; super_admin counts every tenant's
+    agents (the service splits on ``platform_role``).
+    """
+    service = AgentService(db)
+    return await service.statistics(
         user.user_id, user.tenant_id, platform_role=user.platform_role
     )
 

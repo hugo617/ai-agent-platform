@@ -578,6 +578,71 @@ export interface UsageDetail {
   summary: UsageSummary;
 }
 
+// ============= dashboard analytics =============
+//
+// Aligns with app/schemas/dashboard.py + the per-entity statistics schemas
+// (AgentStatistics / ConversationStatistics / CustomerStatistics). The dashboard
+// page renders a store view (per-tenant stats + trend) and an HQ view
+// (super_admin platform totals + per-tenant activity Top N).
+
+/** GET /agents/statistics. Agents have no status column, so active === total. */
+export interface AgentStatistics {
+  total: number;
+  active: number;
+}
+
+/** GET /conversations/statistics. Windows are on created_at. */
+export interface ConversationStatistics {
+  total: number;
+  last_7d: number;
+  last_30d: number;
+}
+
+/**
+ * GET /customers/statistics. Store scope = live profile counts in this store;
+ * HQ scope (super_admin) = global identity counts (Customer table).
+ */
+export interface CustomerStatistics {
+  total: number;
+  active: number;
+  last_7d_new: number;
+}
+
+/** One day of activity in a DashboardTrends series. date is YYYY-MM-DD. */
+export interface TrendPoint {
+  date: string;
+  conversations: number;
+  messages: number;
+}
+
+/** GET /dashboard/trends?days=N. Points are oldest → newest, zero-filled. */
+export interface DashboardTrends {
+  days: number;
+  points: TrendPoint[];
+}
+
+/** One store's activity for the HQ overview "store Top N" panel. */
+export interface TenantActivityItem {
+  tenant_id: string;
+  tenant_name: string;
+  conversations: number;
+}
+
+/** Platform-wide counts for the HQ overview cards. */
+export interface PlatformTotals {
+  tenants: number;
+  users: number;
+  conversations: number;
+  agents: number;
+  customers: number;
+}
+
+/** GET /dashboard/overview (super_admin only). */
+export interface DashboardOverview {
+  totals: PlatformTotals;
+  top_tenants: TenantActivityItem[];
+}
+
 export interface ApiError {
   detail: string;
 }

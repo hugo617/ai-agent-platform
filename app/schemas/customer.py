@@ -139,3 +139,16 @@ class CustomerUsageRead(BaseModel):
     total_tokens: int = 0
     total_cost: float | None = None
     last_active_at: datetime | None = None
+
+
+class CustomerStatistics(BaseModel):
+    """Aggregate customer counts for the dashboard card.
+
+    Store scope counts live *profiles* (this store's view of its customers);
+    super_admin scope counts live *identities* (Customer table, cross-store).
+    ``active`` = status='active' (store) or has-an-active-profile (platform).
+    """
+
+    total: int
+    active: int
+    last_7d_new: int

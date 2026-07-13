@@ -24,12 +24,17 @@ import {
   deleteUser,
   detachTenant,
   fetchAgents,
+  fetchAgentStatistics,
   fetchApiTokens,
   fetchConversations,
+  fetchConversationStatistics,
   fetchCustomerAggregate,
   fetchCustomerProfiles,
   fetchCustomers,
+  fetchCustomerStatistics,
   fetchCustomerUsage,
+  fetchDashboardOverview,
+  fetchDashboardTrends,
   fetchEffectiveModels,
   fetchGroups,
   fetchAllTenants,
@@ -130,6 +135,12 @@ export const qk = {
   transactions: ["billing", "transactions"] as const,
   usage: ["billing", "usage"] as const,
   pricing: ["billing", "pricing"] as const,
+  // dashboard analytics — per-entity stats + trend + HQ overview.
+  agentStats: ["agents", "statistics"] as const,
+  conversationStats: ["conversations", "statistics"] as const,
+  customerStats: ["customers", "statistics"] as const,
+  dashboardTrends: (days: number) => ["dashboard", "trends", days] as const,
+  dashboardOverview: ["dashboard", "overview"] as const,
 };
 
 // ---------- tenants ----------
@@ -306,9 +317,22 @@ export function useCustomerUsage(id: string | null) {
   });
 }
 
+// Customer count for the dashboard card (store profiles vs. HQ identities).
+export function useCustomerStatistics() {
+  return useQuery({
+    queryKey: qk.customerStats,
+    queryFn: fetchCustomerStatistics,
+  });
+}
+
 // ---------- agents ----------
 export function useAgents() {
   return useQuery({ queryKey: qk.agents, queryFn: fetchAgents });
+}
+
+// Agent count for the dashboard card (store-scoped or HQ aggregate).
+export function useAgentStatistics() {
+  return useQuery({ queryKey: qk.agentStats, queryFn: fetchAgentStatistics });
 }
 
 export function useCreateAgent() {
@@ -579,6 +603,14 @@ export function useConversations() {
   return useQuery({ queryKey: qk.conversations, queryFn: fetchConversations });
 }
 
+// Conversation counts (total + 7d/30d) for the dashboard card.
+export function useConversationStatistics() {
+  return useQuery({
+    queryKey: qk.conversationStats,
+    queryFn: fetchConversationStatistics,
+  });
+}
+
 export function useMessages(conversationId: string | null) {
   return useQuery({
     queryKey: qk.messages(conversationId ?? ""),
@@ -681,5 +713,28 @@ export function useDeletePricing() {
   return useMutation({
     mutationFn: (id: string) => deletePricing(id),
     onSuccess: () => qc.invalidateQueries({ queryKey: qk.pricing }),
+  });
+}
+
+// ---------- dashboard analytics ----------
+// Trends backs the activity bar chart on both the store and HQ dashboards
+// (store-scoped vs. cross-tenant aggregate — the backend splits on platform_role,
+// so one hook serves both views). Overview is super_admin-only; callers gate it
+// with `enabled` so a tenant user never fires a 403-guaranteed request.
+
+/** Daily conversation + message counts for the last `days` days. */
+export function useDashboardTrends(days: number) {
+  return useQuery({
+    queryKey: qk.dashboardTrends(days),
+    queryFn: () => fetchDashboardTrends(days),
+  });
+}
+
+/** super_admin HQ overview: platform totals + per-tenant activity Top N. */
+export function useDashboardOverview(enabled = true) {
+  return useQuery({
+    queryKey: qk.dashboardOverview,
+    queryFn: fetchDashboardOverview,
+    enabled,
   });
 }

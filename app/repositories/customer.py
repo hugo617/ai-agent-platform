@@ -10,7 +10,9 @@ view. The super_admin cross-store aggregation uses a separate unscoped query
 (JOIN Customer) that ignores ``tenant_id``.
 """
 
-from sqlalchemy import select
+from datetime import datetime
+
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import Base
@@ -50,6 +52,50 @@ class CustomerRepository(BaseRepository[Customer]):
             .order_by(Customer.created_at.desc())
         )
         return list((await self.db.execute(stmt)).scalars().all())
+
+    async def statistics_all_global(
+        self, *, since_7d: datetime
+    ) -> dict[str, int]:
+        """Platform-level customer identity stats (super_admin overview).
+
+        Counts live identities (Customer table, cross-store):
+        - ``total``         — all-time live identities
+        - ``active``        — identities with at least one active profile
+        - ``last_7d_new``   — identities created in the last 7 days
+        """
+        total_stmt = select(func.count()).select_from(Customer).where(
+            Customer.is_deleted.is_(False)
+        )
+        total = int((await self.db.execute(total_stmt)).scalar_one())
+        # "Active" customers = those with at least one live active profile.
+        active_subq = (
+            select(CustomerProfile.customer_id)
+            .where(
+                CustomerProfile.is_deleted.is_(False),
+                CustomerProfile.status == "active",
+            )
+            .distinct()
+            .subquery()
+        )
+        active_stmt = (
+            select(func.count())
+            .select_from(Customer)
+            .where(
+                Customer.is_deleted.is_(False),
+                Customer.id.in_(select(active_subq.c.customer_id)),
+            )
+        )
+        active = int((await self.db.execute(active_stmt)).scalar_one())
+        new_7d_stmt = (
+            select(func.count())
+            .select_from(Customer)
+            .where(
+                Customer.is_deleted.is_(False),
+                Customer.created_at >= since_7d,
+            )
+        )
+        new_7d = int((await self.db.execute(new_7d_stmt)).scalar_one())
+        return {"total": total, "active": active, "last_7d_new": new_7d}
 
 
 class CustomerProfileRepository(TenantScopedRepository[CustomerProfile]):
@@ -157,6 +203,39 @@ class CustomerProfileRepository(TenantScopedRepository[CustomerProfile]):
             .order_by(CustomerProfile.created_at.desc())
         )
         return list((await self.db.execute(stmt)).scalars().all())
+
+    async def statistics_for_tenant(
+        self, tenant_id: str, *, since_7d: datetime
+    ) -> dict[str, int]:
+        """Store-level customer profile stats (dashboard card).
+
+        Counts live profiles in this store:
+        - ``total``         — all-time live profiles
+        - ``active``        — profiles with ``status='active'``
+        - ``last_7d_new``   — profiles created in the last 7 days
+        """
+        base = CustomerProfile.is_deleted.is_(False)
+
+        def _count(extra):
+            # Build a COUNT(*) already — return it directly (do NOT wrap in
+            # another count(): that would count the single result row = 1).
+            stmt = (
+                select(func.count())
+                .select_from(CustomerProfile)
+                .where(base, CustomerProfile.tenant_id == tenant_id)
+            )
+            if extra is not None:
+                stmt = stmt.where(extra)
+            return stmt
+
+        total = int((await self.db.execute(_count(None))).scalar_one())
+        active = int(
+            (await self.db.execute(_count(CustomerProfile.status == "active"))).scalar_one()
+        )
+        new_7d = int(
+            (await self.db.execute(_count(CustomerProfile.created_at >= since_7d))).scalar_one()
+        )
+        return {"total": total, "active": active, "last_7d_new": new_7d}
 
 
 async def batch_tenant_info(

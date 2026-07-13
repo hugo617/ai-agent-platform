@@ -16,7 +16,7 @@ Core create logic: "create-or-reuse identity, then attach a profile".
   raise BizError(400) — one profile per store.
 """
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -33,6 +33,7 @@ from app.schemas.customer import (
     CustomerProfileRead,
     CustomerProfileUpdate,
     CustomerRead,
+    CustomerStatistics,
 )
 from app.schemas.group import TenantBrief
 from app.services.data_scope import DataScopeService
@@ -156,6 +157,34 @@ class CustomerService:
                 continue
             result.append(await self._to_profile_read(p, c))
         return result
+
+    async def statistics(
+        self,
+        actor_id: str,
+        tenant_id: str,
+        platform_role: str | None = None,
+    ) -> CustomerStatistics:
+        """Customer counts for the dashboard card.
+
+        Store scope = live profiles in this store (total / active / last_7d_new);
+        super_admin scope = live identities across stores (total / with-active-
+        profile / last_7d_new). Mirrors the dual read pattern of ``list_profiles``.
+        """
+        is_cross_tenant = is_cross_tenant_viewer(platform_role)
+        if not is_cross_tenant:
+            await permission_service.require(
+                actor_id,
+                tenant_id,
+                self.OBJECT,
+                "read",
+                platform_role=platform_role,
+            )
+        since_7d = datetime.now(UTC) - timedelta(days=7)
+        if is_cross_tenant:
+            data = await self.customers.statistics_all_global(since_7d=since_7d)
+        else:
+            data = await self.profiles.statistics_for_tenant(tenant_id, since_7d=since_7d)
+        return CustomerStatistics(**data)
 
     # ------------------------------------------------------- store-scoped write
 

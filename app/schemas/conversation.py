@@ -33,6 +33,19 @@ class MessageRead(BaseModel):
     created_at: datetime
 
 
+class ConversationStatistics(BaseModel):
+    """Aggregate conversation counts for the dashboard card.
+
+    ``total`` = all-time conversations in scope; ``last_7d`` / ``last_30d`` are
+    rolling windows on ``created_at`` (when the conversation started), matching
+    the plan's store/HQ card shape.
+    """
+
+    total: int
+    last_7d: int
+    last_30d: int
+
+
 class ChatRequest(BaseModel):
     """Body of a streaming chat request."""
 
