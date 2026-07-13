@@ -8,7 +8,7 @@
 - **标准启动路径**: `./init.sh`(装依赖 + ruff + pytest)
 - **标准验证路径**: `./init.sh`(同上,后端快速验证,SQLite 内存库)
 - **完整验证路径**(需 docker): `alembic upgrade head && alembic check` + `cd frontend && npm run build`
-- **当前最高优先级未完成功能**: **`demo-seed-full`(priority 38,演示数据全量补全)** —— MVP 业务模块(29-37)全部收官后,用户要求演示数据「覆盖全面」。本任务在 `demo-seed`(37)基础上扩 `scripts/seed_demo.py`:加 `--reset` 清理重建 + 补全缺口业务表(对话/消息/LLM配置/API Token/自定义角色权限/审计日志/多登录方式/Agent推理参数差异化)。**feature_list 38 条:37 passing + 1 not_started(demo-seed-full)**。
+- **当前最高优先级未完成功能**: **`permission-unified-model`(priority 39,权限重构系列 1/4)** —— demo-seed-full(38)✅ 已完成后,按任务规划表顺序执行权限重构系列。本任务消除 DEFAULT_*_PERMS/路由守卫/前端 OBJ_LABELS 三处漂移,Permission 表成唯一真相源。
 - **当前 blocker**: 无
 
 ## 后续任务规划(2026-07-10 制定,2026-07-12 追加 MVP 业务模块 17-24,共 24 条,WIP=1 顺序执行)
@@ -40,7 +40,7 @@
 | **23** | **`customers-ui`** | **客户域** | **Customer(客户)前端 —— 门店档案 + 跨店聚合视图(双视角按 platform_role 切换)。前置 22 ✅ 已完成** | **`harness/docs/plan-customers-ui.md`** |
 | **24** | **`hq-platform-role`** | **权限** | **平台角色 hq_staff —— 总部业务员(各司其职)+ 跨租户只读。前置 22 ✅ 已完成** | **`harness/docs/plan-hq-platform-role.md`** |
 | **25** | **`demo-seed`** | **演示案例** | **大健康连锁演示案例 + 项目地图(种子脚本 scripts/seed_demo.py + db-schema.mmd 补全 + 关系图.md 第十/十一章)✅ 已完成** | **`harness/docs/plan-demo-seed.md`** |
-| **26** | **`demo-seed-full`** | **演示案例** | **演示数据全量补全 —— 扩 seed_demo.py 加 `--reset` 清理重建 + 补全全部缺口业务表(对话/消息/LLM配置/API Token/自定义角色权限/审计日志/多登录方式/Agent推理参数差异化)。前置 demo-seed(37)✅** | **`harness/docs/plan-demo-seed-full.md`** |
+| **26** | **`demo-seed-full`** | **演示案例** | **演示数据全量补全 —— 扩 seed_demo.py 加 `--reset` 清理重建 + 补全全部缺口业务表(对话/消息/LLM配置/API Token/自定义角色权限/审计日志/多登录方式/Agent推理参数差异化)。前置 demo-seed(37)✅ 已完成** | **`harness/docs/plan-demo-seed-full.md`** |
 | **27** | **`permission-unified-model`** | **权限重构** | **权限目录统一 + 操作权限细化(系列 1/4)—— 消除 DEFAULT_*_PERMS/路由守卫/前端 OBJ_LABELS 三处漂移,settings/api_tokens 的 manage 拆细,后端 Permission 表成唯一真相源。用户痛点:只有增删改查无视图权限/超管不可见/目录漂移** | **`harness/docs/plan-permission-unified-model.md`** |
 | **28** | **`permission-menu-view`** | **权限重构** | **菜单/视图权限 type=menu(系列 2/4)—— 启用 Permission.type='menu',前端导航/路由由 menu 权限驱动,删 needsSuperAdmin/needsUserManagement 硬编码。解决「没有视图权限」核心痛点。前置 27** | **`harness/docs/plan-permission-menu-view.md`** |
 | **29** | **`permission-data-scope`** | **权限重构** | **数据权限 data_scope 四档(系列 3/4)—— Role 加 data_scope(all/tenant/group/self)+ DataScopeResolver + Repository 自动过滤。业务员只看自己/店长看全店/区域经理看本组织。前置 27** | **`harness/docs/plan-permission-data-scope.md`** |
@@ -1839,5 +1839,41 @@
 - **下一步最佳动作**:
   - 21 个 not_started 任务现在全部有详细 plan(demo-seed-full + 权限重构4 + Token计费4 + MVP补全12),由用户排定执行顺序
   - 全部 plan 已就绪,可随时开工任一任务
+
+---
+
+### Session 064 — 2026-07-13
+- **本轮目标**: 执行 `demo-seed-full`(priority 38,演示数据全量补全)—— 纯脚本+文档任务,扩 `scripts/seed_demo.py` 加 `--reset` 清理重建 + 补全全部缺口业务表。前置 demo-seed(37)✅ 已 passing
+- **已完成**(对照 plan §4 的 12 步):
+  - **Step 1 --reset 清理逻辑**:加 argparse(`--reset` 开关)+ `_reset_demo_data` 函数。用演示白名单(门店名/用户名/group code/customer identity/agent name/role code/token name/login identifier)反查行 ID,按 FK 反向顺序级联删(Message→Conversation→ApiToken→LlmConfig→CustomerProfile→Customer→RolePermission→Role自定义→Agent→UserLoginMethod→UserTenant→User→GroupTenant→Group→Tenant→SystemLog→casbin grouping/policy)。绝不裸 DELETE FROM,super_admin/默认角色权限/casbin 非演示行不碰
+  - **Step 2 Agent 推理参数差异化**:AGENTS 常量从 4 元组扩成 7 元组(+temperature/max_tokens/top_p)。朝阳 0.3/2048/0.9(严谨)、海淀 0.7/None/None(默认)、王府井 0.9/4096/0.95(发散)、总部 0.2/8192/0.85(保守)。AgentCreate 已支持三字段
+  - **Step 3 自定义角色 + 权限**:`_seed_custom_role` 调 RbacService.create + grant_permission 建「资深理疗师」(senior_therapist),授 customers:read/update + conversations:read/create/chat。李师傅 rebind 成该角色(演示自定义角色生效)。会产生 SystemLog(role.create/role.grant)
+  - **Step 4 LLM 配置**:`_seed_llm_configs` 调 llm_config_service.upsert_platform(平台级 deepseek-chat,api_key 占位符)+ upsert_tenant(朝阳店 deepseek-reasoner)。演示三级 fallback。检测到真实 key 时不覆盖(api_key_hint != 占位符掩码则跳过)
+  - **Step 5 对话历史**:`_seed_conversations` 用 ConversationService.create_or_get + append_message 建 5 段对话(朝阳2/海淀1/王府井1/平台1),共 22 条消息。内容贴大健康场景(颈椎理疗/艾灸/针灸/经营汇总)。按 (tenant,agent,user,title) 查重幂等
+  - **Step 6 API Token**:`_seed_api_tokens` 调 api_token_service.issue 给朝阳/海淀 owner 各 1 个。按 (tenant,name) 查重跳过(明文无法幂等重建,已存在则不重复颁发)。脚本打印明文仅一次
+  - **Step 7 多登录方式**:`_seed_extra_login_methods` 给 chen_guanzhang 加手机号 13800001111(login_type=phone)。按 (user,login_type,identifier) 查重幂等
+  - **Step 8 幂等补全**:全部新实体都有查重逻辑,默认模式(无 --reset)重跑打印 exists 跳过
+  - **Step 9 文档更新**:plan-demo-seed.md 末尾加续篇引用;关系图.md 第十一章数据全景表扩 12 类(含对话/消息/LLM/Token/角色/日志/登录方式)+ 验证点从 4 条扩到 9 条(三级 fallback/自定义角色/对话历史/AtoA/推理参数);feature_list.json evidence 8 条;progress.md 当前最高优先级改为 permission-unified-model(39)
+- **运行过的验证**(全过):
+  - `./init.sh` → ruff `All checks passed!` + **294 passed**(纯脚本+文档,app/ 零改动,基线不回归)
+  - `python scripts/seed_demo.py --reset`(真实 Postgres aap 库)→ 一键清空演示数据 + 全量重建,无报错
+  - `python scripts/seed_demo.py`(无参数)→ 幂等重跑,全部新实体打印 exists 跳过
+  - 各表计数验证:3 门店 + 7 用户 + 2 组织 + 3 客户身份 + 5 档案 + 4 Agent(参数各异)+ 5 对话 + 22 消息 + 2 LLM 配置 + 2 Token + 1 自定义角色 + 6 SystemLog + 1 多登录方式
+  - 三级 fallback 验证:平台 deepseek-chat + 朝阳租户级 deepseek-reasoner
+  - 自定义角色验证:li_shifu 当前角色 senior_therapist,权限含 customers:update 不含 customers:delete
+- **已记录证据**: `feature_list.json` 的 `demo-seed-full.evidence` 字段(8 条),status 改为 passing
+- **技术要点**(与 plan 的实现差异):
+  - **运行时 bug ①(最大发现)**:`_ensure_membership` 原只写 SCD2 UserTenant 行,不写 casbin grouping(`g` 策略)。`--reset` 清了 casbin 后重建,owner 的 grouping 由 seed_tenant_defaults 重建,但 member 们的 grouping 丢失 → 调 ConversationService(需 conversations:create)时 PermissionError。修复:`_ensure_membership` 加 `permission_service.add_role_for_user_in_domain`/`set_role_for_user_in_domain` 同步 casbin grouping。这个 bug 在原 demo-seed 未暴露(原脚本所有 Service 调用用 owner/platform_role bypass,member 从不直接调 Service)
+  - **运行时 bug ②**:李师傅 rebind 成 senior_therapist 后,CONVERSATIONS 里用 li_shifu 作 actor 创建对话 → senior_therapist 原只有 customers 权限缺 conversations:create。修复:CUSTOM_ROLE 权限补 conversations:read/create/chat(资深理疗师该能和顾问对话)
+  - **运行时 bug ③**:PLATFORM 对话用 hq_staff 作 actor → hq_staff 是跨租户只读(check 里 hq_staff+read 短路),create 不是 read,无 conversations:create。修复:PLATFORM 对话 actor 改用 super_admin(platform_role bypass)
+  - **运行时 bug ④**:casbin enforcer 模块路径是 `app.core.casbin_enforcer`(非 plan 假设的 `app.core.security`)
+  - **SCD2 churn 消除**:step1 绑定 staff 时跳过 CUSTOM_ROLE 的 member(li_shifu),由 step6 唯一绑定,避免重跑时 member↔senior_therapist 反复切换产生 SCD2 历史行
+  - **LlmConfig 不覆盖真实 key**:`_seed_llm_configs` 检测现有平台级配置的 api_key_hint,若非占位符掩码(sk-***lder)说明用户填了真实 key → 跳过不覆盖。这保护了用户的真实配置
+  - **清理边界铁律**:`--reset` 全部用白名单常量(DEMO_STORE_NAMES/DEMO_USERNAMES/...)反查 ID 再 `delete(Model).where(Model.id.in_(ids))`,绝不用裸 `DELETE FROM table`。验证:重置前后非演示租户(8-3=5 个其他租户)数据不变
+- **提交记录**: 待用户决定是否提交(5 个文件改动:scripts/seed_demo.py 重写 + harness/docs/plan-demo-seed.md 引用 + 项目指南/附录/关系图.md 第十一章 + feature_list.json + progress.md)
+- **已知风险**: 无功能风险(纯脚本+文档,app/ 零改动)。`--reset` 只删演示白名单内数据,非演示数据(其他租户/super_admin/默认角色权限)安全。LlmConfig api_key 占位符导致真实对话需用户在 settings 页填真实 key(预期行为,plan 已标注)。手动浏览器验证未跑(需前后端启动),脚本层端到端验证 + 各表计数 + 权限验证已覆盖核心行为
+- **下一步最佳动作**:
+  - (a) 清理废代码 + 代码质量审查 + PR + CI 守门 + 合并 demo-seed-full 到 main;
+  - (b) 执行 `permission-unified-model`(priority 39,权限重构系列 1/4 地基,现为最高优先级 not_started)
 
 ---
