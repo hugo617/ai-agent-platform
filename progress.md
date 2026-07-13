@@ -518,3 +518,27 @@
   - (b) 执行 `token-usage-tracking`(priority 43,Token 费用管理系列 1/4 地基,现为最高优先级 not_started)
 
 ---
+
+### Session 073 — 2026-07-13
+- **本轮目标**: 清理废代码 + 代码质量审查 + commit + PR + CI 守门 + 合并 permission-matrix-redesign(42)到 main
+- **代码审查结论**(已用 diff 通读 + grep 全面验证):
+  - ✅ **无 bug、无需修改**:本轮代码质量高 —— diff 6 文件全部 review(types.ts/queries.ts/permissions-page.tsx 全文 + feature_list.json + plan 总纲 + progress.md),逻辑正确:
+    - `changeScope` 有早退防抖(`next === role.data_scope`)+ 防双击(`pendingScope`)+ toast 反馈 + finally 清理
+    - data_scope 行仅 api 区显示(`section.type === "api"` 守卫),menu 区不重复
+    - 超管锁定行仅 super_admin 可见,后端 bypass 语义不变(纯前端信息展示)
+    - `DataScope` 前端联合类型 `all|tenant|group|self` 与后端 `DATA_SCOPE_PATTERN`(`app/schemas/rbac.py:9`)完全对齐
+    - imports 全部使用(Check/Loader2/Lock/Minus/RefreshCw/Shield + 全部 hooks/类型)
+  - 清理验证通过(无需改):本次改动文件 grep 无 `console/debugger/breakpoint/TODO/FIXME/HACK` 残留;无死代码;架构合规(纯前端任务,后端零改动,Controller→Service→Repository 单向不变)
+- **执行**:
+  - 审查通过无需修改 → `./init.sh` 全绿(ruff + **315 passed**)+ `npm run build` 成功(0 类型错误)+ `npx oxlint src/` 0 warnings 0 errors(43 文件)
+  - 切 `feat/permission-matrix-redesign` 分支 → commit(6 文件,293 insertions)→ push → 建 PR #45
+  - **环境插曲**(与 Session 069/071 相反):本轮 geph4-cli 代理**正在运行**(9910 端口监听中),直连 GitHub 失败(HTTP 000 超时),必须走代理 → 直接 `git push`(保留全局 proxy 配置)成功,无需临时覆盖
+  - CI 4 job 全绿:Migrations(47s) + Frontend(29s) + Backend(2m19s) + E2E(1m54s),无需修复
+  - `gh pr merge 45 --squash --delete-branch` → GitHub 端 squash 合并成功(commit bb7fa2c),远程分支已删;本地 main fast-forward 同步
+- **提交记录**: PR #45 已合并(squash),commit `bb7fa2c feat(permission): 权限矩阵 UI 重写,统一三类权限 (权限重构 4/4 收官) (#45)`(squash message 出现重复 `(#45) (#45)`,与 PR #42 同现象,纯外观问题不影响功能)
+- **当前状态**: main 干净、与 origin/main 同步(均 bb7fa2c)、本地仅 main 分支。permission-matrix-redesign(42)✅ 已 passing 并入 main
+- **系列收官**: 权限重构系列(39-42)全部合入 main。39(unified-model,PR #42)+ 40(menu-view,PR #43)+ 41(data-scope,PR #44)+ 42(matrix-redesign,PR #45)
+- **已知风险**: 无功能风险。手动浏览器验证未跑(需前后端启动),build(tsc 类型检查)+ oxlint + pytest + CI 4 job 已覆盖类型/规范/行为/迁移链/不回归
+- **下一步最佳动作**: 执行 `token-usage-tracking`(priority 43,Token 费用管理系列 1/4 地基,现为最高优先级 not_started)—— stream_agent 加 on_chat_model_end 累加 usage + Message 加 4 列 + UsageEvent 账本表
+
+---
