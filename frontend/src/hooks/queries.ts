@@ -415,7 +415,13 @@ export function useUpdateRole() {
   return useMutation({
     mutationFn: ({ id, payload }: { id: string; payload: RoleUpdate }) =>
       updateRole(id, payload),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["roles"] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["roles"] });
+      // data_scope lives on the role and the matrix endpoint returns roles[],
+      // so refresh the matrix too (the permissions-page data_scope selector
+      // goes through this hook).
+      qc.invalidateQueries({ queryKey: qk.permissionMatrix });
+    },
   });
 }
 

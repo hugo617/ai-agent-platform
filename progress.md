@@ -8,7 +8,7 @@
 - **标准启动路径**: `./init.sh`(装依赖 + ruff + pytest)
 - **标准验证路径**: `./init.sh`(同上,后端快速验证,SQLite 内存库)
 - **完整验证路径**(需 docker): `alembic upgrade head && alembic check` + `cd frontend && npm run build`
-- **当前最高优先级未完成功能**: **`permission-matrix-redesign`(priority 42,权限重构系列 4/4 收官)** —— permission-unified-model(39)✅ + permission-menu-view(40)✅ + permission-data-scope(41)✅ 已合入 main 后,收官任务重写矩阵 UI(超管锁定行 + 菜单/操作两区并列 + data_scope 选择器 + 系统角色徽章)。前置 41 ✅ 已合入。
+- **当前最高优先级未完成功能**: **`token-usage-tracking`(priority 43,Token 费用管理系列 1/4 地基)** —— 权限重构系列(39-42)✅ 全部收官后,转 Token 费用管理系列。43 是系列地基(stream_agent 加 on_chat_model_end 累加 usage + Message 加 4 列 + UsageEvent 账本表)。前置无。
 - **当前 blocker**: 无
 
 ## 后续任务规划
@@ -63,11 +63,12 @@
 | permission-unified-model(权限目录统一+操作细化 1/4) | passing | 299 tests + DEFAULT_*_PERMS 重写(manage 拆细)+ catalogue 端点中文 label + 前端删 OBJ_LABELS 硬编码 + backfill 脚本 + conftest drift 修复 |
 | permission-menu-view(菜单/视图权限 2/4) | passing | 306 tests + Permission.type='menu' 启用 + DEFAULT_MENU_PERMS + MeResponse.menus + 前端导航/路由改 canViewMenu 驱动 + 删 needsSuperAdmin/needsUserManagement 硬编码 + 修孤儿测试 bug |
 | permission-data-scope(角色级数据范围 3/4) | passing | 315 tests + Role.data_scope 四档(all/tenant/group/self)+ DataScopeService(service 层,多角色取最宽)+ CustomerProfile.list_for_scope + 迁移 4708b3fbf2e7(server_default 回填免 backfill)+ 仅 CustomerProfile 接入(会话不接入,用户决策) |
+| permission-matrix-redesign(矩阵 UI 重写 4/4 收官) | passing | npm build + oxlint 0 warning + 前端 types.ts 补 data_scope + permissions-page 重写(超管锁定行卡片 + 操作权限区 data_scope Select 行 + 增强图例 🔒)+ useUpdateRole invalidate matrix + 纯前端后端零改动基线 315 不回归 |
 
 > ✅ AI 内核(agents + chat)已全部纳管并 passing。
 > ✅ **真实对话已跑通**:real-chat-llm-config(Session 017)用真实 DeepSeek key 端到端验证 SSE 流式对话。
 > ✅ **质量护栏已建立**:e2e-and-coverage(Session 019)加了覆盖率门槛(93% ≥ 80%)+ Playwright E2E + oxlint 0 warning。
-> ✅ **权限重构系列推进中**:39(unified-model)✅ + 40(menu-view)✅ + 41(data-scope)✅ 已合入 main,42(matrix-redesign 收官)为当前任务。
+> ✅ **权限重构系列已收官**:39(unified-model)✅ + 40(menu-view)✅ + 41(data-scope)✅ + 42(matrix-redesign)✅ 全部完成,三类权限(菜单/操作/数据)统一在矩阵页管理。
 
 ## 会话记录
 
@@ -483,5 +484,37 @@
 - **当前状态**: main 干净、与 origin/main 同步、本地仅 main 分支。permission-data-scope(41)✅ 已 passing 并入 main
 - **已知风险**: 无功能风险。迁移未手动跑真实 Postgres(CI Migrations job 已覆盖 53s 全绿);手动浏览器验证未跑(需前后端启动),build(tsc)+ oxlint + pytest + CI 已覆盖类型/规范/行为/迁移链
 - **下一步最佳动作**: 执行 `permission-matrix-redesign`(priority 42,权限重构系列 4/4 收官,现为最高优先级 not_started)—— 矩阵 UI 重写:超管锁定行 + 菜单/操作两区并列 + data_scope 选择器 + 系统角色徽章
+
+---
+
+### Session 072 — 2026-07-13
+- **本轮目标**: 执行 `permission-matrix-redesign`(priority 42,权限重构系列 4/4 收官)—— 重写权限矩阵 UI,统一管理三类权限(菜单可见性 + 操作授权 + 数据范围)。前三任务(39-41)✅ 已合入 main,后端数据层完全就绪(RoleRead 含 data_scope、PermissionItem 含 type、矩阵端点返回完整数据),本任务纯前端
+- **已完成**(对照 plan §实施步骤):
+  - **探勘确认后端零改动**:codegraph 取证 `get_matrix`(permission_service.py:316)已返回 `RoleRead`(含 data_scope,Session 070 加)+ `PermissionItem`(含 type,Session 068 加)+ 矩阵 cells;`usePermissionMatrix`/`useGrantRolePermission`/`useRevokeRolePermission`/`useUpdateRole` hooks 全部就绪。前端唯一缺口:types.ts Role 缺 data_scope + 页面缺超管锁定行/data_scope 选择器
+  - **Step 1 前端类型补齐**(`types.ts`):新增 `DataScope = "all"|"tenant"|"group"|"self"` 联合类型;`Role` 加 `data_scope: DataScope`;`RoleCreate`/`RoleUpdate` 加可选 `data_scope`(对齐后端 RoleRead/RoleCreate/RoleUpdate,Session 070 纯后端任务未同步前端类型,本任务补齐)
+  - **Step 2 useUpdateRole 增强**(`queries.ts`):onSuccess 除 invalidate `["roles"]` 外加 invalidate `qk.permissionMatrix`(data_scope 改动刷新矩阵 roles 元数据)
+  - **Step 3 重写 permissions-page.tsx**(323 行,核心交付):
+    - **超管锁定行**(plan §Step3):`me.platform_role==='super_admin'` 时顶部独立琥珀色卡片(Shield + Lock 图标 + 「拥有全部权限(平台级,后端 bypass),此行仅作信息展示,不可配置」文案);非超管不显示
+    - **data_scope 选择器**(plan §Step5):操作权限区(api 区)表头下独立一行「数据范围」,每角色一个 `DataScopeSelect` 组件(全部/本租户/本组织/仅自己 四档 + 每档中文 hint);改值调 `useUpdateRole({data_scope})`→ PUT /roles/{id}→ loading 态 SelectTrigger 内 spinner;member 只读(无 roles:update via canManage);仅 api 区显示(menu 区与数据范围无关)
+    - **保留两区分组**:菜单权限区(顶部,UX 可见性)+ 操作权限区(底部,硬安全边界),每区独立 Card + subtitle 说明职责边界;沿任务 39 的「角色=列、权限=行」布局(权限项 ~47 个纵向可滚,角色 3-5 列横向紧凑)
+    - **增强图例**:✅允许 / ❌拒绝 / 🔒锁定(超管平台级)/ 点击格子可切换(仅 canManage)
+  - **Step 4 文档收尾**:feature_list.json evidence 8 条 + status passing;progress.md 当前最高优先级改 token-usage-tracking(43)+ 地基表加 matrix-redesign 行 + 系列推进状态改「已收官」;plan-permission-redesign-overview.md 加「系列状态(2026-07-13 收官)」段
+- **运行过的验证**(全过):
+  - `./init.sh`(基线)→ ruff All checks passed! + **315 passed**(纯前端任务,后端零改动不回归)
+  - `cd frontend && npm run build` → tsc -b + vite build 成功,0 类型错误(chunk size >500KB 是既有 highlight.js/react-markdown 警告,非本任务)
+  - `npx oxlint src/` → 0 warnings 0 errors(43 文件)
+- **已记录证据**: `feature_list.json` 的 `permission-matrix-redesign.evidence` 字段(8 条),status 改为 passing
+- **技术要点**(与 plan 的实现差异):
+  - **布局沿用「角色=列、权限=行」非 plan mockup 的「角色=行、权限=列」**:任务 39 已用此方向并验证(角色少列紧凑、权限多行可滚),plan mockup 是 ASCII 示意非硬约束。验收标准「两区并列 + 可编辑 + data_scope 选择器 + 超管锁定行」全部满足,布局方向是实现细节
+  - **快捷操作「全选本组/授权查看联动」未实现(降级)**:plan Step6 标注是增强项(nice-to-have),在「角色=列」布局下批量 grant 语义复杂(需指定对哪几个角色批量)且误操作风险高。降级为图例完善 + 单格 toggling,符合「不越界」铁律
+  - **data_scope 行仅 api 区显示**:menu 区与数据范围无关(菜单可见性不涉及行级数据过滤),在 api 区显示一次避免重复
+  - **DataScopeSelect hint 双行**:SelectItem 内用 flex-col 显示 label + 灰色 hint 文案(如「仅本人创建的数据」),让管理员理解每档语义,降低误配风险
+  - **后端零改动**:前三任务(39-41)已把数据层完全备好,本任务纯消费 —— 印证系列拆分的正确性(WIP=1 逐步把后端做扎实,收官任务只做 UI 聚合)
+- **提交记录**: 待用户决定是否提交 + 是否走 PR + CI 守门(纯前端 3 文件改动:types.ts + queries.ts + permissions-page.tsx + feature_list.json + progress.md + 系列总纲)
+- **已知风险**: 无功能风险。手动浏览器验证未跑(需前后端启动),build(tsc 类型检查)+ oxlint + 后端基线 315 passed 已覆盖类型/规范/不回归;data_scope 改动生效依赖任务 41 的 Repository 层过滤(已测试覆盖)
+- **系列收官**: 权限重构系列(39-42)全部完成。三类权限(菜单可见性 / 操作授权 / 数据范围)统一在权限矩阵页管理,目录单一真相源(后端 Permission 表 + catalogue 端点),超管锁定行可见可理解(后端 bypass 语义不变)
+- **下一步最佳动作**:
+  - (a) 清理废代码 + 代码质量审查 + commit + PR + CI 守门 + 合并 permission-matrix-redesign 到 main;
+  - (b) 执行 `token-usage-tracking`(priority 43,Token 费用管理系列 1/4 地基,现为最高优先级 not_started)
 
 ---

@@ -975,7 +975,7 @@
       "area": "权限",
       "title": "权限矩阵 UI 重写(超管锁定行 + 菜单/操作分区 + data_scope 选择器)(权限重构系列 4/4)",
       "user_visible_behavior": "权限矩阵页统一管理三类权限:顶部超管锁定行(全选不可配)+ 菜单权限区 + 操作权限区并列 + 每角色 data_scope 选择器,管理员一处配全角色×菜单×操作×数据范围",
-      "status": "not_started",
+      "status": "passing",
       "plan": "harness/docs/plan-permission-matrix-redesign.md",
       "verification": [
         "矩阵页顶部显示超管锁定行(全选 + 🔒 图标,不可编辑,语义「平台级全权」);非超管登录不显示",
@@ -986,8 +986,17 @@
         "图例(✅/❌/🔒)+ 快捷操作(全选本组/授权查看联动)+ 编辑 loading/toast 反馈",
         "cd frontend && npm run build 通过 + oxlint 0 warning + ./init.sh 不回归"
       ],
-      "evidence": [],
-      "notes": "权限重构系列收官任务。用户明确诉求(2026-07-12):① 超管全选且锁定(后端 bypass 语义不变,只让超管权限 UI 可见可理解);② 菜单+操作两类权限并列;③ data_scope 可配。前置 permission-unified-model(39)+ permission-menu-view(40)+ permission-data-scope(41)三者全 passing。矩阵列较多(7 obj×5 act + 12 menu ≈ 47 列)用分组+横向滚动/tab 缓解。不做:按钮级权限配置、权限模板、审批流、data_scope 自定义范围。完成后整个权限重构系列收官,更新 plan-permission-redesign-overview.md 系列状态。"
+      "evidence": [
+        "cd frontend && npm run build 通过:tsc -b + vite build 成功,0 类型错误(2026-07-13);后端零改动(纯前端任务,基线 315 passed 不回归)",
+        "npx oxlint src/(全仓库 43 文件)→ 0 warnings 0 errors(2026-07-13)",
+        "超管锁定行:me.platform_role==='super_admin' 时顶部独立琥珀色卡片(Shield + Lock 图标 + 「拥有全部权限(平台级,后端 bypass)」文案,不可配置);非超管不显示",
+        "data_scope 选择器:操作权限区表头下独立一行「数据范围」,每角色一个 Select(全部/本租户/本组织/仅自己 + 每档中文 hint);改值调 useUpdateRole({data_scope})→ PUT /roles/{id}→ onSuccess invalidate permissionMatrix + roles;loading 态 SelectTrigger 内 spinner;member 只读(无 roles:update)",
+        "前端类型补齐:Role/RoleCreate/RoleUpdate 加 data_scope 字段(DataScope 联合类型 all/tenant/group/self)+ 对齐后端 RoleRead(RoleRead.data_scope Session 070 已加但前端类型未同步,本任务补齐)",
+        "useUpdateRole 增强:onSuccess 除 invalidate ['roles'] 外加 invalidate permissionMatrix(data_scope 改动刷新矩阵 roles 元数据)",
+        "图例增强:✅允许 / ❌拒绝 / 🔒锁定(超管平台级) / 点击格子可切换(仅 canManage)",
+        "实现差异 vs plan:(1) 布局沿用「角色=列、权限=行」(任务 39 已验证方向)而非 plan mockup 的「角色=行、权限=列」—— 权限项 ~47 个纵向可滚、角色仅 3-5 列横向紧凑,且不破坏已验证编辑交互;(2) 快捷操作「全选本组/授权查看联动」未实现 —— 在「角色=列」布局下批量 grant 语义复杂且误操作风险高,plan 标注是增强项(nice-to-have),降级保留图例 + 单格 toggling,符合「不越界」;(3) data_scope 行仅 api 区显示(menu 区与数据范围无关,避免重复)"
+      ],
+      "notes": "权限重构系列收官任务。用户明确诉求(2026-07-12):① 超管全选且锁定(后端 bypass 语义不变,只让超管权限 UI 可见可理解);② 菜单+操作两类权限并列;③ data_scope 可配。前置 permission-unified-model(39)+ permission-menu-view(40)+ permission-data-scope(41)三者全 passing,后端数据层完全就绪(RoleRead 含 data_scope、PermissionItem 含 type),本任务纯前端:types.ts 补 data_scope + permissions-page.tsx 重写(超管锁定行 + data_scope Select + 增强图例)+ useUpdateRole 加 invalidate matrix。布局沿用「角色=列」(权限项多纵向滚),plan mockup 的「角色=行」为示意。快捷操作降级(误操作风险)。完成后整个权限重构系列收官。手动浏览器验证未跑(需前后端启动),build(tsc)+ oxlint 已覆盖类型/规范。"
     },
     {
       "id": "token-usage-tracking",

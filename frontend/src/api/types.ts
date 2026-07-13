@@ -124,6 +124,10 @@ export interface UserStatistics {
 
 // ============= roles =============
 
+// Row-level data scope levels a role can carry (权限重构系列 3/4). See
+// app/services/data_scope.py. The matrix UI exposes a selector for these.
+export type DataScope = "all" | "tenant" | "group" | "self";
+
 export interface Role {
   id: string;
   name: string;
@@ -132,6 +136,7 @@ export interface Role {
   is_system: boolean;
   sort_order: number;
   status: string;
+  data_scope: DataScope; // 权限重构系列 3/4,矩阵页可配置
   created_at: string | null;
 }
 
@@ -146,6 +151,7 @@ export interface RoleCreate {
   code: string;
   description?: string;
   sort_order?: number;
+  data_scope?: DataScope;
 }
 
 export interface RoleUpdate {
@@ -153,6 +159,7 @@ export interface RoleUpdate {
   description?: string;
   sort_order?: number;
   status?: string;
+  data_scope?: DataScope;
 }
 
 // role ↔ permission grants (SCD2; aligns with app/schemas/rbac.py)
