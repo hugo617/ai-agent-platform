@@ -68,22 +68,25 @@ async def _record_usage(
     agent: Agent,
     user: CurrentUser,
     usage_data: dict | None,
-) -> None:
+) -> UsageEvent | None:
     """Append a UsageEvent ledger row for this assistant turn.
 
     No-op when there's no usage data (stubbed streams / provider didn't
     return usage). Wrapped in try/except so a ledger write failure never
     surfaces to the user — the chat already succeeded, losing one usage
     record is preferable to erroring the whole reply.
+
+    Returns the persisted ``UsageEvent`` (so the caller can pass it to
+    ``BillingService.charge``), or None when nothing was recorded.
     """
     if usage_data is None:
-        return
+        return None
     total = _u(usage_data, "total_tokens")
     if total is None:
-        return
+        return None
     try:
         repo = UsageEventRepository(db)
-        await repo.add(
+        event = await repo.add(
             UsageEvent(
                 tenant_id=conv.tenant_id,
                 conversation_id=conv.id,
@@ -95,14 +98,36 @@ async def _record_usage(
                 prompt_tokens=_u(usage_data, "input_tokens") or 0,
                 completion_tokens=_u(usage_data, "output_tokens") or 0,
                 total_tokens=total,
-                cost=None,  # filled by task 2 (token-wallet-billing)
+                cost=None,  # filled by BillingService.charge below
             )
         )
         await db.commit()
+        return event
     except Exception:  # noqa: BLE001 - ledger is best-effort
         # Drop the pending usage_events insert only — the assistant message
         # was already committed by ``append_message``, so it survives the
         # rollback. We swallow the error to keep the chat reply intact.
+        await db.rollback()
+        return None
+
+
+async def _charge_usage(
+    db: AsyncSession, tenant_id: str, event: UsageEvent | None
+) -> None:
+    """Debit the wallet for a usage event (best-effort, never blocks).
+
+    Runs after the assistant message + usage event are committed, so a billing
+    failure is logged and swallowed — we never break a finished chat over a
+    bookkeeping error. Discrepancies are reconciled from the usage_events
+    ledger (which is the authoritative record of consumption).
+    """
+    if event is None:
+        return
+    try:
+        from app.services.billing_service import BillingService
+
+        await BillingService(db).charge(tenant_id, event, operator_id=None)
+    except Exception:  # noqa: BLE001 - billing is best-effort
         await db.rollback()
 
 
@@ -153,6 +178,25 @@ async def chat_stream(
     async def event_source():
         full_reply: list[str] = []
         usage_data: dict | None = None
+        # Balance pre-check: when a wallet EXISTS and its balance has hit zero,
+        # block new chats with an SSE ``error`` event (HTTP 200 is already
+        # sent, so switching to an error code mid-stream is not SSE-friendly).
+        # A missing wallet is intentionally NOT blocked — it covers tenants
+        # created before billing was enabled (and the test environment), so the
+        # platform degrades gracefully instead of locking everyone out.
+        # super_admin bypasses the gate entirely (platform-level, never billed).
+        if user.platform_role != "super_admin":
+            try:
+                from app.services.billing_service import BillingService
+
+                wallet = await BillingService(db).get_wallet(user.tenant_id)
+                if wallet is not None and wallet.balance <= 0:
+                    yield f"data: {json.dumps({'error': 'token 余额不足,请联系总部充值'}, ensure_ascii=False)}\n\n"
+                    return
+            except Exception:  # noqa: BLE001 - billing must never block chat
+                # If the billing lookup itself fails, do not punish the user —
+                # let the chat proceed. The discrepancy is reconciled later.
+                pass
         try:
             # Resolve the LLM config (tenant > platform > env) and pick the
             # model: the agent's chosen model wins if it's in the available
@@ -206,9 +250,12 @@ async def chat_stream(
                     total_tokens=_u(usage_data, "total_tokens"),
                     model=usage_data.get("model") if usage_data else None,
                 )
-                await _record_usage(
+                event = await _record_usage(
                     db, conv, msg, agent, user, usage_data
                 )
+                # Debit the wallet for the consumed tokens (best-effort: a
+                # billing error never breaks an otherwise-completed reply).
+                await _charge_usage(db, user.tenant_id, event)
             return
 
         # Persist the assistant reply once streaming completes, carrying the
@@ -227,7 +274,11 @@ async def chat_stream(
         # Append a usage ledger entry. Wrapped in try/except so a ledger
         # write failure never breaks an otherwise-successful chat — losing
         # one usage record is preferable to losing the whole reply.
-        await _record_usage(db, conv, msg, agent, user, usage_data)
+        event = await _record_usage(db, conv, msg, agent, user, usage_data)
+        # Debit the wallet for the consumed tokens (best-effort). Runs after
+        # the usage event is committed so a billing failure doesn't roll back
+        # the message/usage we just persisted.
+        await _charge_usage(db, user.tenant_id, event)
         yield "data: [DONE]\n\n"
 
     return StreamingResponse(event_source(), media_type="text/event-stream")

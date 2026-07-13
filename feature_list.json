@@ -1036,7 +1036,7 @@
       "area": "计费",
       "title": "Token 钱包计费(预付钱包 + 扣减 + 充值 + 余额拦截)(Token 费用管理系列 2/4)",
       "user_visible_behavior": "门店有 token 钱包余额(预付制),对话消耗实时扣减,余额不足拒绝对话;总部(super_admin)能给门店充值划拨额度;按模型真实 token + 单价表计费。实现「门店向总部购买 token,token 用于门店和门店客户」的商业闭环",
-      "status": "not_started",
+      "status": "passing",
       "plan": "harness/docs/plan-token-wallet-billing.md",
       "verification": [
         "Wallet 表(一门店一钱包,balance 整数 token 数,total_recharged/consumed,low_balance_threshold,部分唯一索引)+ WalletTransaction 流水表(recharge/consume/refund/adjust)+ 迁移无 drift",
@@ -1049,7 +1049,17 @@
         "pytest tests/test_billing.py 覆盖:扣减原子性/并发双扣防护(PG FOR UPDATE)/余额不足拦截/充值流水/定价计算覆盖优先级/租户隔离/wallet 初始化",
         "./init.sh 全绿 + alembic check 无 drift"
       ],
-      "evidence": [],
+      "evidence": [
+        "./init.sh 全绿:ruff All checks passed! + 345 passed(基线 321 + 新增 24 test_billing)(2026-07-13)",
+        "迁移 e8f9a0b1c2d3(三新表 wallets/wallet_transactions/model_pricing)+ 真实 Postgres alembic upgrade head 成功 + alembic check 无 drift(env.py + conftest.py 两处 model import 同步)",
+        "BillingService 实现:charge(SELECT FOR UPDATE 防并发双扣 + cost 快照 stamp 到 UsageEvent.cost)/recharge(正整数校验 + 流水)/calc_cost(租户覆盖>平台默认>未配置=0)/create_wallet_for_tenant(幂等)",
+        "event_source 余额预检:wallet 存在且 balance<=0 → SSE error 拦截;无 wallet 放行(优雅降级);super_admin bypass;对话成功后 _charge_usage 扣减(try/except 不阻断)",
+        "create_tenant 末尾同事务初始化零余额 wallet(TenantService 步骤 6),测试 POST /tenants/ 后新租户有零余额钱包",
+        "API 端点:/billing/wallet(wallet:read)/wallet/{id}(super_admin)/wallet PUT(wallet:update)/transactions(wallet:read)/usage(billing:read)/recharge(super_admin)/pricing GET(billing:read)+POST/PUT/DELETE(super_admin)",
+        "权限 seed:DEFAULT_OWNER/ADMIN_PERMS 加 wallet:read/wallet:update/billing:read;DEFAULT_MEMBER_PERMS 加 billing:read(只读);OBJ_CN 加 wallet=钱包/billing=计费;conftest _make_casbin 三角色同步",
+        "test_billing.py 24 测试:calc_cost 三档(租户覆盖/平台默认/未配置=0)/charge 原子性(balance+total_consumed+流水+cost 快照)/charge 无 wallet 安全返回 None/recharge 正数校验+无 wallet 报错/钱包初始化幂等/create_tenant 零余额钱包/余额=0 拦截/有余额扣减/无 wallet 放行/API 权限边界(owner 读/member 403/super_admin 充值/pricing CRUD super_admin)/租户隔离",
+        "前端零改动(纯后端任务);cd frontend && npm run build 通过(0 类型错误);npx oxlint 无需跑(无前端改动)"
+      ],
       "notes": "Token 费用管理核心任务。用户 2026-07-12 拍板:预付钱包制(实时扣减余额为0拦截)+ 模型真实 token 单价表(总部可加价)+ 纯额度划拨(不接支付)。关键设计:① 余额用整数 token 数非金额(定价变化余额不变,扣减时算 cost 快照);② 扣减用 with_for_update(PG 行锁防并发双扣,SQLite no-op 测试够用);③ 扣减在 append_message 同事务(原子性);④ 定价快照(算完写死进 UsageEvent.cost 和 WalletTransaction)。前置 token-usage-tracking(43)。不做:前端看板(任务46)、客户归因(customer_id 留空,任务45)、接支付网关、退款、预警通知。扣减失败 try/except 不阻断已完成的对话(差异靠对账补)。"
     },
     {

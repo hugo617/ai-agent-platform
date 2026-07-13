@@ -13,6 +13,7 @@ from app.api.v1 import (
     agents,
     api_tokens,
     auth,
+    billing,
     chat,
     conversations,
     customers,
@@ -74,6 +75,7 @@ def create_app() -> FastAPI:
     app.include_router(conversations.router, prefix=prefix)
     app.include_router(customers.router, prefix=prefix)
     app.include_router(groups.router, prefix=prefix)
+    app.include_router(billing.router, prefix=prefix)
 
     @app.get("/health", tags=["meta"])
     async def health() -> dict:

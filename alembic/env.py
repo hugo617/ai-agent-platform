@@ -22,10 +22,12 @@ from app.models import (  # noqa: F401
     llm_config,
     log,
     message,
+    model_pricing,
     rbac,
     security,
     tenant,
     usage_event,
+    wallet,
 )
 
 config = context.config

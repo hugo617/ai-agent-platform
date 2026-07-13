@@ -49,6 +49,8 @@ def _make_casbin(owner_user: str, tenant_id: str):
         ("api_tokens", "read"), ("api_tokens", "create"), ("api_tokens", "delete"),
         ("customers", "read"), ("customers", "create"), ("customers", "update"), ("customers", "delete"),
         ("customers", "export"),
+        ("wallet", "read"), ("wallet", "update"),
+        ("billing", "read"),
     ]:
         e.add_policy("owner", tenant_id, obj, act)
     # Menu visibility perms for owner (all business menus; menu:tenants is
@@ -70,6 +72,8 @@ def _make_casbin(owner_user: str, tenant_id: str):
         ("api_tokens", "read"), ("api_tokens", "create"), ("api_tokens", "delete"),
         ("customers", "read"), ("customers", "create"), ("customers", "update"),
         ("customers", "export"),
+        ("wallet", "read"), ("wallet", "update"),
+        ("billing", "read"),
     ]:
         e.add_policy("admin", tenant_id, obj, act)
     for code in [
@@ -82,6 +86,7 @@ def _make_casbin(owner_user: str, tenant_id: str):
         ("conversations", "create"), ("conversations", "chat"),
         ("roles", "read"),
         ("customers", "read"),
+        ("billing", "read"),
     ]:
         e.add_policy("member", tenant_id, obj, act)
     # member: only the business menus (no user-management / settings menus).
@@ -115,9 +120,12 @@ async def test_env() -> AsyncIterator[_TestEnv]:
         llm_config,
         log,
         message,
+        model_pricing,
         rbac,
         security,
         tenant,
+        usage_event,
+        wallet,
     )
 
     engine = create_async_engine(
