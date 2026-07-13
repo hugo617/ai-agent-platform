@@ -574,3 +574,26 @@
   - (b) 执行 `token-wallet-billing`(priority 44,Token 费用管理系列 2/4 核心,现为最高优先级 not_started)—— Wallet/WalletTransaction/ModelPricing 三表 + BillingService charge FOR UPDATE 防双扣 + 余额预检拦截
 
 ---
+
+### Session 075 — 2026-07-13
+- **本轮目标**: 清理废代码 + 代码质量审查 + commit + PR + CI 守门 + 合并 token-usage-tracking(43)到 main
+- **代码审查结论**(已用 diff 通读 + grep 全面验证,10 文件全部 review):
+  - ✅ **无 bug、无需修改**:本轮代码质量高
+    - `_u` helper(chat.py:52)对 `usage_data=None` 有早退保护(L58-61),两处 `usage_data.get("model")` 都有 `if usage_data else None` 短路保护(L207/L225)
+    - `_record_usage`(chat.py:64)双重 no-op 守卫(`usage_data is None` + `total is None` → return);try/except 失败时 rollback 仅丢 ledger 行,不丢已 commit 的 message(docstring 说明边界)
+    - `stream_agent`(graph.py:130)累加逻辑正确:ReAct 多轮 sum 非覆盖(L200-206 加法),`asyncio.timeout(LLM_STREAM_TIMEOUT_SECONDS)` 包裹整个流(L193)
+    - 迁移 `b739b2ae902b` down_revision 正确指向 `4708b3fbf2e7`,up/down 对称,FK CASCADE(conversation/message)/SET NULL(agent)+ 4 索引(3 单列 + 1 复合 idx_usage_events_tenant_created)齐全
+    - `UsageEventRepository.list_for_tenant` 故意重写基类(加 `order_by(desc(created_at))` 账本时间倒序,docstring 说明)
+    - 架构合规:Controller→Service→Repository→Model 单向不变;多租户过滤在 Repository 层(`list_for_tenant`/`sum_tokens_for_tenant` 内 `where tenant_id`)
+  - 清理验证通过(无需改):本次改动文件 grep 无 `print/breakpoint/pdb/debugger/TODO/FIXME/HACK` 残留;无死代码(所有新文件都有调用链:UsageEvent 被 _record_usage 用、UsageEventRepository 被 _record_usage + 测试用、list_for_conversation 留给任务 46 看板但已被测试覆盖)
+- **执行**:
+  - 审查通过无需修改 → `./init.sh` 全绿(ruff + **321 passed**)+ `npm run build` 成功(0 类型错误,纯后端任务前端零改动)+ `npx oxlint src/` 0 warnings 0 errors(43 文件)
+  - 在 `feat/token-usage-tracking` 分支 → commit(11 文件,776 insertions)→ push → 建 PR #46
+  - CI 4 job 全绿:Migrations(49s) + Frontend(30s) + E2E(1m52s) + Backend(2m21s),无需修复
+  - `gh pr merge 46 --squash --delete-branch` → GitHub 端 squash 合并成功(commit 3531d5b),远程分支已删;本地 main fast-forward 同步;`git fetch --prune` 清理远程残留引用
+- **提交记录**: PR #46 已合并(squash),commit `3531d5b feat(billing): Token 用量采集地基 (Token 费用管理 1/4) (#46)`(squash message 出现重复 `(#46) (#46)`,与 PR #42/#45 同现象,纯外观问题不影响功能)
+- **当前状态**: main 干净、与 origin/main 同步(均 3531d5b)、本地仅 main 分支。token-usage-tracking(43)✅ 已 passing 并入 main
+- **已知风险**: 无功能风险。迁移 CI Migrations job 已覆盖 PG(49s 全绿);DeepSeek stream_usage 是否生效需真实 key 验证(plan 风险表已标注,不生效则降级非流式取 usage);手动浏览器验证未跑(需前后端启动),build(tsc)+ oxlint + pytest 321 + CI 4 job 已覆盖类型/规范/行为/迁移链/不回归
+- **下一步最佳动作**: 执行 `token-wallet-billing`(priority 44,Token 费用管理系列 2/4 核心,现为最高优先级 not_started)—— Wallet/WalletTransaction/ModelPricing 三表 + BillingService charge FOR UPDATE 防双扣 + 余额预检拦截 + create_tenant 初始化 wallet + 计费 API + 权限项
+
+---
