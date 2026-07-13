@@ -49,10 +49,23 @@
 | **32** | **`token-wallet-billing`** | **计费** | **Token 钱包计费(系列 2/4 核心)—— 预付钱包制 + 扣减(FOR UPDATE 防双扣)+ 充值(总部划拨)+ 余额不足拦截 + ModelPricing 定价表。实现「门店向总部购买 token」商业闭环。前置 31** | **`harness/docs/plan-token-wallet-billing.md`** |
 | **33** | **`customer-conversation-link`** | **客户域/计费** | **客户维度 Token 归因(系列 3/4)—— Conversation 绑 customer_id + UsageEvent 透传 + 客户 360 AI 服务维度 + 跨店汇总。让消耗可分摊到客户。前置 31** | **`harness/docs/plan-customer-conversation-link.md`** |
 | **34** | **`token-billing-ui`** | **计费** | **Token 计费前端看板(系列 4/4 收官)—— 门店级(余额/消耗/流水/用量)+ 总部级(门店汇总/充值/定价维护)+ 余额预警。前置 31/32/33** | **`harness/docs/plan-token-billing-ui.md`** |
+| **35** | **`dashboard-analytics`** | **看板** | **Dashboard 数据看板 —— 真实统计(用户/Agent/对话/客户)+ 趋势图 + 门店/总部双视角。替代 4 个硬编码占位卡片。后端已有 /users/statistics 但前端没用,首胜成本低** | **`harness/docs/plan-dashboard-analytics.md`** |
+| **36** | **`audit-log-ui`** | **审计** | **审计日志查询 UI —— SystemLog 暴露查询 API + 前端审计页(操作人/时间/类型/资源过滤)。现状数据在写但无 API 无页面,数据在黑暗里** | **`harness/docs/plan-audit-log-ui.md`** |
+| **37** | **`user-profile-account`** | **用户管理** | **用户个人中心 —— 改密码/改资料/我的会话。现状用户改不了自己信息只能找管理员,无个人中心页,GET /auth/me 只读** | **`harness/docs/plan-user-profile-account.md`** |
+| **38** | **`conversation-management`** | **AI 内核** | **对话管理增强 —— 搜索/重命名/标签/收藏/置顶/批量删除。现状对话只有列表/读/删,聊天体验不完整** | **`harness/docs/plan-conversation-management.md`** |
+| **39** | **`global-search`** | **看板** | **全局搜索 —— 顶部搜索框跨 Agent/客户/对话/用户,结果分类。现状只有 users 有 search,无跨实体搜索。依赖 38** | **`harness/docs/plan-global-search.md`** |
+| **40** | **`tenant-branding-config`** | **管理控制台** | **租户品牌配置 —— logo/名称/主题色/登录文案,白标 SaaS。现状 settings 只有 LLM+API Token 无品牌。logo 依赖 45** | **`harness/docs/plan-tenant-branding-config.md`** |
+| **41** | **`health-monitoring`** | **工程化** | **健康检查/监控 —— /ready(DB 连通检查)+ /metrics(Prometheus)。现状 /health 只返回 ok 不碰 DB。生产部署必需** | **`harness/docs/plan-health-monitoring.md`** |
+| **42** | **`notification-scheduler`** | **通知** | **通知系统 + 定时任务 —— in-app 通知 + APScheduler。Token 计费配套(余额预警/充值到账/月报)。现状无通知无定时框架** | **`harness/docs/plan-notification-scheduler.md`** |
+| **43** | **`data-export`** | **工程化** | **数据导出 CSV —— 客户/对话/用量/审计,门店+总部级。月度经营分析必备。现状无任何导出能力** | **`harness/docs/plan-data-export.md`** |
+| **44** | **`file-upload-storage`** | **基础设施** | **文件上传 + 对象存储 —— 头像/照片/文档,本地/S3/OSS 可切。被 37/40/46 依赖。现状 Customer.avatar 是死字段** | **`harness/docs/plan-file-upload-storage.md`** |
+| **45** | **`knowledge-base-rag`** | **AI 内核** | **知识库/RAG —— 激活 pgvector,文档检索增强 Agent。从「能聊」到「懂业务」的核心能力。V2 大投入。依赖 44** | **`harness/docs/plan-knowledge-base-rag.md`** |
+| **46** | **`multi-agent-orchestration`** | **AI 内核** | **多 Agent 编排 —— LangGraph 多节点图,Agent 协作/转交。差异化卖点(复杂业务智能体协作)。V2 大投入** | **`harness/docs/plan-multi-agent-orchestration.md`** |
 
 > 依赖链:1 → 2 → 3(对话主线);4 → 5(权限矩阵);6 独立;7 暂停;8 ✅;**AtoA 系列:9(地基) → 10(CLI 骨架) → 11(CLI 对话+CRUD) → 12(Skill);13(前端)依赖 9,可与 10-12 并行但 WIP=1 仍顺序执行**。
 > **权限重构系列(2026-07-12 规划,Session 060):27(unified-model,目录统一+操作细化,地基) → 28(menu-view,菜单权限) → 29(data-scope,数据权限) → 30(matrix-redesign,矩阵 UI 收官)。依赖:27 是地基,28/29 依赖 27,30 依赖 27/28/29。WIP=1 顺序执行。系列总纲:`harness/docs/plan-permission-redesign-overview.md`。背景:用户调研后拍板做满三类权限(菜单+操作+数据),超管矩阵显示锁定行,操作权限适度细化,数据权限用角色级 data_scope 四档(非 ABAC)。**
 > **Token 费用管理系列(2026-07-12 规划,Session 061):31(usage-tracking,用量采集地基) → 32(wallet-billing,钱包计费核心) → 33(customer-link,客户归因) → 34(billing-ui,前端看板收官)。依赖:31 是地基,32/33 依赖 31,34 依赖 31/32/33。执行顺序 31→32→33→34(后端先前端后)。系列总纲:`harness/docs/plan-token-billing-overview.md`。背景:用户提出「门店向总部购买 token,token 用于门店和门店客户」—— 这是平台从「能跑」到「能卖」的商业闭环。全量排查确认商业层完全缺失(stream_agent 丢弃 usage_metadata、无 wallet/quota/balance、Conversation 不绑 Customer)。用户拍板:预付钱包制 + 模型真实 token 单价表 + 纯额度划拨(不接支付)+ 做客户归因。**
+> **MVP 补全系列(2026-07-12 规划,Session 062):全面 15 维度扫描后识别 12 个能力缺口,分三梯队登记。第一梯队 SaaS 体面(35-41):dashboard/audit-log/profile/conversation-mgmt/global-search/tenant-branding/health-monitoring;第二梯队配套(42-44):notification-scheduler/data-export/file-upload;第三梯队 V2(45-46):knowledge-base-rag/multi-agent-orchestration。粒度:先总纲登记(plan 暂指 plan-mvp-completion-overview.md),执行到时再写详细 plan。依赖:file-upload(44)是地基被 profile/logo/RAG 依赖;notification(42)是 token 计费配套;RAG(45)依赖 file-upload。系列总纲:`harness/docs/plan-mvp-completion-overview.md`。背景:扫描结论「地基扎实、能力扎实但表面层薄」—— RBAC/多租户生产级但大量用户可见 SaaS 能力真空(dashboard 占位、审计日志无 UI、无个人中心、pgvector 声明未用等)。**
 > **AI 内核深化(2026-07-11 规划,Session 031):14(context-engineering,长对话截断/超时,纯后端)→ 15(chat-markdown-rendering,Markdown+交互,纯前端)→ 16(agent-config-depth,推理参数,全栈)。三者独立可任意顺序,但 WIP=1 仍顺序执行。**
 > **MVP 业务模块(2026-07-12 规划,Session 042/043):17(org-cleanup,删旧 Organization)✅ → 18-19(门店管理后端+前端,Session 043 核实租户太弱补齐)→ 20(groups-api,Group 后端)✅ → 21(groups-ui,Group 前端)✅ → 22(customers-api,Customer 后端)✅ → 23(customers-ui,Customer 前端)✅ → 24(hq-platform-role,总部角色)✅。依赖链:17 → 18 → 19(门店线);19 → 20 → 21(Group 线,门店下拉依赖 tenants-admin);20 → 22 → 23(Customer 线);22 → 24(hq_staff 用 Customer 域验证)。核心模块拆后端+前端(门店/组织/客户各 2 任务),遵循「后端先、前端后」约定。第一批 6 条(17/20-24)已 passing,门店线 18(tenants-admin-api)✅ 已完成,仅剩 19(tenants-admin-ui)。WIP=1 顺序执行。**
 > AtoA = Agent-to-Agent:让任意外部 AI Agent(Claude Code/Cursor/Codex)在授权后通过 CLI+Skill 使用本平台。对标 Apifox CLI+Skill 打法 + google/agents-cli。鉴权选 PAT 先做+OAuth 预留;CLI 选 Python typer;首发能力全选(对话+只读+历史读写+CRUD)。
@@ -1759,5 +1772,72 @@
 - **下一步最佳动作**:
   - (a) 由用户决定先执行哪个 not_started 任务(当前 9 个:demo-seed-full 38 / 权限重构 39-42 / Token 计费 43-46)。Token 计费系列建议从 43(usage-tracking 地基)开始
   - (b) 或用户先审阅 plan 文档,调整范围后再执行
+
+---
+
+### Session 062 — 2026-07-12
+- **本轮目标**: MVP 全局缺口扫描 + 补全任务登记 —— **仅调研+登记不实现**(用户要求)。用户问「除了 token 管理,其他还有哪些需要新增或优化改进」。对平台做 15 维度全面扫描,识别 SaaS 能力真空,登记补全任务
+- **调研完成**(Explore agent 全面扫描 15 维度):
+  - **真空能力(10项)**:① Dashboard 占位(4硬编码卡片,后端有 /users/statistics 没用);② 审计日志无 API 无 UI(SystemLog 在写但数据在黑暗里);③ 无用户个人中心(改不了自己密码);④ 无文件上传(Customer.avatar 死字段);⑤ 无通知系统;⑥ 无数据导出;⑦ pgvector 声明未用(无 RAG);⑧ 单 ReAct agent(无多 agent 编排);⑨ 无定时任务框架;⑩ 无 Webhook 外发
+  - **部分缺失(3项)**:对话管理(只列表/读/删,无搜索/标签/导出)、全局搜索(只有 users 有 search)、租户配置(只有 LLM 无品牌)
+  - **核心结论**:地基扎实(RBAC/多租户/认证生产级)、能力扎实(AI内核/AtoA/客户域)、但表面层薄——大量用户可见 SaaS 能力真空
+- **已完成**(任务登记):
+  - **写 MVP 补全总纲** `harness/docs/plan-mvp-completion-overview.md`:15 维度扫描结果 + 12 个缺口分三梯队(第一梯队 SaaS 体面 35-41 / 第二梯队配套 42-44 / 第三梯队 V2 45-46)+ 每个缺口的现状/目标/成本/依赖 + 优先级依赖全景图 + 规划粒度说明(先总纲登记按需细化)+ 不做边界(i18n/Webhook/支付暂不登记)
+  - **feature_list.json 追加** 12 任务(priority 47-58,plan 暂指总纲,各 verification + notes 含现状/目标/依赖)—— JSON 校验合法,58 features(37 passing + 21 not_started),无 in_progress(WIP=1 不冲突)
+  - **progress.md 更新**:任务规划表加第 35-46 行(MVP 补全 12 任务)+ 依赖链说明段 + 本 Session 记录
+- **运行过的验证**:
+  - `python3 -c "import json; json.load(open('feature_list.json'))"` → ✅ JSON 合法(58 features,12 新任务 not_started,in_progress=0)
+- **已记录证据**: 无(本任务是调研+登记,evidence 留给执行会话填)
+- **技术要点**(扫描关键发现):
+  - **最高杠杆首胜**:dashboard —— 后端已有 /users/statistics 端点但前端没用,接入即从占位变真实看板,成本最低
+  - **三个「幽灵能力」(声明了但死的)**:pgvector(requirements 有但 0 使用)、Customer.avatar(字段在但无上传)、SystemLog(在写但无 API/UI)
+  - **file-upload 是多个功能的地基**:用户头像/租户 logo/RAG 文档都依赖它,是第二梯队的枢纽
+  - **notification 是 token 计费的配套**:余额预警/充值到账需要通知+定时任务,不做的话 token 计费体验不完整
+  - **RAG 和多 agent 是 V2 大投入**:RAG 要建 embedding 管线(分块/向量/检索/注入),多 agent 要重写 LangGraph 编排层。建议 MVP 地基(权限+计费+体面)稳固后再做
+- **提交记录**: 未提交(登记类任务,2 个文件改动:plan 总纲新建 + feature_list.json + progress.md;待用户决定是否单独 commit)
+- **已知风险**: 无。纯调研+登记,不改 app/ 功能代码,`./init.sh` 不受影响
+- **下一步最佳动作**:
+  - 当前共 21 个 not_started(demo-seed-full + 权限重构4 + Token计费4 + MVP补全12),由用户按业务需要排定执行顺序。WIP=1 仍一次只做一个
+  - 建议:先做权限重构(39-42,地基)+ Token 计费(43-46,商业闭环)这两个已细化 plan 的系列,再做 MVP 补全里优先级高的(dashboard 35 / 审计日志 36 等执行到时细化 plan)
+
+---
+
+### Session 063 — 2026-07-13
+- **本轮目标**: MVP 补全系列 12 个任务全部细化详细 plan —— 用户要求「MVP 补全系列(47-58)这个也细化一下计划」。Session 062 只写了总纲登记(plan 暂指 overview),本次为每个任务写独立详细 plan 文档
+- **已完成**(12 份详细 plan + 文档更新):
+  - **第一梯队 SaaS 体面(4 份)**:
+    - `plan-dashboard-analytics.md`(47):补 agents/conversations/customers stats 端点 + /dashboard/trends + /dashboard/overview + 重写 dashboard-page(门店/总部双视角 + 轻量图表);接入已有但未用的 /users/statistics
+    - `plan-audit-log-ui.md`(48):SystemLogRepository 查询 + GET /logs(多维过滤) + logs-page(TanStack Table + before/after diff)+ logs:read 权限
+    - `plan-user-profile-account.md`(49):PUT /auth/me(改资料防越权)+ PUT /me/password(旧密码校验)+ profile-page(资料/密码/我的会话)+ 头像下拉入口
+    - `plan-conversation-management.md`(50):Conversation 加 tags(JSONB)/is_pinned/is_starred + 搜索(标题+内容) + 重命名/标签/置顶/收藏/批量删除 + chat-page 右键菜单
+  - **第一梯队 续(3 份)**:
+    - `plan-global-search.md`(51):各实体加 search 参数 + GET /search?q= 跨实体聚合 + 顶部搜索框(防抖下拉分类)
+    - `plan-tenant-branding-config.md`(52):TenantConfig 表(display_name/logo_url/theme_color/login_text)+ 主题色 CSS 变量全局应用 + 登录页/顶栏品牌注入
+    - `plan-health-monitoring.md`(53):/ready(DB 连通检查 503)+ /metrics(Prometheus http_requests_total/duration)+ 中间件记录指标
+  - **第二梯队 配套(3 份)**:
+    - `plan-notification-scheduler.md`(54):Notification 模型 + API + 铃铛组件 + APScheduler(余额扫描/日报/清理)+ 触发点(余额预警/充值/角色变更)
+    - `plan-data-export.md`(55):GET /exports/{entity} StreamingResponse CSV(customers/conversations/usage/logs)+ 各列表页导出按钮 + 大数据量 streaming
+    - `plan-file-upload-storage.md`(56):StorageBackend 抽象(Local/S3/OSS)+ POST /upload(multipart 校验)+ /static 服务 + 前端 FileUpload 组件;是 49/52/57 的地基
+  - **第三梯队 V2(2 份)**:
+    - `plan-knowledge-base-rag.md`(57):激活 pgvector + Document/DocumentChunk(Vector 列)+ Embedding 管线(分块/embed/ingest)+ retrieve_knowledge 工具 + 知识库管理 UI(文档 CRUD + 检索调试)
+    - `plan-multi-agent-orchestration.md`(58):Supervisor 编排模式(LangGraph 多节点图)+ specialist 路由 + handoff 转交(上下文保留)+ Agent 加 is_orchestrator/specialty + 前端 agent 切换显示
+  - **feature_list.json 更新**:12 个任务的 plan 字段从总纲(plan-mvp-completion-overview.md)改为各自详细文档
+  - **progress.md 更新**:任务表 47-58 行的 plan 列指向各自详细文档 + 本 Session 记录
+- **每份 plan 的结构**(统一):背景现状(精确取证)→ 目标 → 前置条件 → 实施步骤(分阶段 Step,每步改什么文件+检查)→ 验收标准 → 风险/注意事项 → 不做的事边界 → 参考文件
+- **运行过的验证**:
+  - `python3 -c "import json; json.load(open('feature_list.json'))"` → ✅ JSON 合法(58 features,12 个 plan 字段已更新指向详细文档)
+- **已记录证据**: 无(本任务是写 plan,evidence 留给执行会话填)
+- **技术要点**(跨任务的关键设计):
+  - **dashboard 首胜**:/users/statistics 已存在但前端没用,接入即从占位变真实,成本最低
+  - **三个幽灵能力激活**:pgvector(RAG 57)/Customer.avatar(file-upload 56)/SystemLog(audit-log 48)—— 都在 schema 里但无消费路径,本系列激活
+  - **file-upload 是枢纽**:被 user-profile 头像(49)/tenant-branding logo(52)/RAG 文档(57)依赖,第二梯队地基
+  - **notification 是 token 计费配套**:余额预警/充值到账需要通知+定时扫描
+  - **RAG/多 agent 是 V2 大投入**:RAG 要建 embedding 管线,多 agent 要重写 LangGraph 编排,建议 MVP 地基稳固后做
+  - **向后兼容贯穿**:所有加列/改端点都保持旧路径不崩(Message 加可空列、Conversation 加默认值列、stream_agent 单 agent 兼容)
+- **提交记录**: 未提交(登记类任务,12 plan 文档新建 + feature_list.json + progress.md;待用户决定是否单独 commit)
+- **已知风险**: 无。纯写 plan 文档,不改 app/ 功能代码,`./init.sh` 不受影响
+- **下一步最佳动作**:
+  - 21 个 not_started 任务现在全部有详细 plan(demo-seed-full + 权限重构4 + Token计费4 + MVP补全12),由用户排定执行顺序
+  - 全部 plan 已就绪,可随时开工任一任务
 
 ---
