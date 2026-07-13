@@ -84,6 +84,16 @@ Role.data_scope:                       ← 新增(数据权限)
 
 > 依赖关系:任务 1 是地基(目录统一 + 操作细化),任务 2/3 可并行但 WIP=1 仍顺序执行,任务 4 依赖前三者。
 
+### 系列状态(2026-07-13 收官)
+
+✅ **全部完成**。四任务顺序合入 main:
+- 39 `permission-unified-model` ✅(PR #42,commit 5614094)
+- 40 `permission-menu-view` ✅(PR #43,commit f9e8c35)
+- 41 `permission-data-scope` ✅(PR #44,commit c90c7bd)
+- 42 `permission-matrix-redesign` ✅(Session 072 实现完成,待 PR)
+
+权限体系三类维度(菜单可见性 / 操作授权 / 数据范围)统一在权限矩阵页管理,目录单一真相源(后端 Permission 表 + catalogue 端点),超管锁定行可见可理解(后端 bypass 语义不变)。
+
 ---
 
 ## 不做的事(系列边界)
