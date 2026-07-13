@@ -1877,3 +1877,20 @@
   - (b) 执行 `permission-unified-model`(priority 39,权限重构系列 1/4 地基,现为最高优先级 not_started)
 
 ---
+
+### Session 065 — 2026-07-13
+- **本轮目标**: 清理废代码 + 代码质量审查 + commit + PR + CI 守门 + 合并 demo-seed-full(38)到 main
+- **代码审查结论**(已用 ruff/pytest/grep 验证):
+  - 🐛 **1 个真 bug(必修)**:`_reset_demo_data` 删 SystemLog 顺序错误。`SystemLog.tenant_id` 是 `FK(ondelete=SET NULL)`(app/models/log.py:62),原 step10 先删租户 → tenant_id 被置 NULL → step11 的 `in_(demo_tenant_ids)` 匹配不到 → **演示审计日志泄漏**。修:SystemLog 删除块上移到删租户之前
+  - 清理:删 seed_demo.py:282-283 死注释;`UserTenant` 局部 import 提到顶层(与 line 54 合并,无循环依赖);feature_list.json 末尾补换行
+  - 质量良好(无需改):无 print/breakpoint/pdb/debugger 残留、无 TODO/FIXME/HACK、8 个派生白名单常量全用、ruff F-rules 全过、294 tests pass
+- **执行**:
+  - 修 bug + 清理 → `./init.sh` 全绿(ruff + 294 passed)
+  - 切 `feat/demo-seed-full` 分支 → commit(5 文件)→ push → 建 PR #41
+  - CI 4 job 全绿:Migrations(49s) + Backend(1m58s) + Frontend(29s) + E2E(2m2s),无需修复
+  - `gh pr merge 41 --squash --delete-branch` → squash 合并进 main(commit 4b81d78),分支已删
+- **提交记录**: PR #41 已合并(squash),commit `4b81d78 feat(demo-seed): 演示数据全量补全 + --reset 清理重建(修复审计日志泄漏) (#41)`
+- **当前状态**: main 干净、与 origin/main 同步、本地仅 main 分支。demo-seed-full(38)✅ 已 passing 并入 main
+- **下一步最佳动作**: 执行 `permission-unified-model`(priority 39,权限重构系列 1/4 地基,现为最高优先级 not_started)
+
+---
