@@ -27,6 +27,7 @@ class ConversationService:
         conversation_id: str | None = None,
         platform_role: str | None = None,
         first_message: str | None = None,
+        customer_id: str | None = None,
     ) -> Conversation:
         """Return an existing conversation or create a new one (after permission check).
 
@@ -35,6 +36,11 @@ class ConversationService:
         chars + ellipsis. This keeps the conversation list legible without a
         separate title-generation step. Matches the frontend's
         ``conversationLabel`` snippet length.
+
+        ``customer_id`` only applies when creating a NEW conversation — reusing
+        an existing one (via ``conversation_id``) keeps its original attribution
+        intact, so a follow-up turn never silently re-binds the chat to a
+        different customer. Token 费用管理系列 3/4.
         """
         await permission_service.require(
             user_id, tenant_id, self.OBJECT, "create", platform_role=platform_role
@@ -59,6 +65,7 @@ class ConversationService:
             agent_id=agent_id,
             user_id=user_id,
             title=derived_title,
+            customer_id=customer_id,
         )
         await self.conversations.add(conv)
         await self.db.commit()

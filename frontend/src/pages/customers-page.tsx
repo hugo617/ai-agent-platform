@@ -1,11 +1,14 @@
 import { Fragment, useState } from "react";
 import { useForm } from "react-hook-form";
+import { useNavigate } from "react-router-dom";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import {
+  Activity,
   ChevronDown,
   ChevronRight,
   Contact,
+  MessageSquare,
   MoreHorizontal,
   Pencil,
   Plus,
@@ -66,6 +69,7 @@ import type {
 import {
   useCreateCustomerProfile,
   useCustomerProfiles,
+  useCustomerUsage,
   useCustomers,
   useDeleteCustomerProfile,
   useUpdateCustomerProfile,
@@ -138,6 +142,10 @@ function StoreView() {
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<CustomerProfileRead | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<CustomerProfileRead | null>(
+    null,
+  );
+  // Token 费用管理系列 3/4: the profile whose AI-usage dialog is open.
+  const [usageTarget, setUsageTarget] = useState<CustomerProfileRead | null>(
     null,
   );
 
@@ -333,6 +341,9 @@ function StoreView() {
                             <DropdownMenuItem onClick={() => openEdit(p)}>
                               <Pencil className="mr-2 h-4 w-4" /> 编辑
                             </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => setUsageTarget(p)}>
+                              <Activity className="mr-2 h-4 w-4" /> AI 用量
+                            </DropdownMenuItem>
                             {canDelete && (
                               <>
                                 <DropdownMenuSeparator />
@@ -498,6 +509,129 @@ function StoreView() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Token 费用管理系列 3/4: AI usage attribution dialog. */}
+      <CustomerUsageDialog
+        customerId={usageTarget?.customer_id ?? null}
+        customerName={usageTarget?.customer.name ?? ""}
+        storeScoped
+        onClose={() => setUsageTarget(null)}
+      />
+    </div>
+  );
+}
+
+// ---------------- AI usage dialog (Token 费用管理系列 3/4) ----------------
+// Shows a customer's aggregate AI service consumption (chats + tokens + cost)
+// and a "为客户咨询" deep link that opens a new attributed chat. Takes the
+// GLOBAL customer id (Customer.id), not the profile id — the backend returns
+// store-scoped or global totals based on the caller's role.
+function CustomerUsageDialog({
+  customerId,
+  customerName,
+  storeScoped,
+  onClose,
+}: {
+  customerId: string | null;
+  customerName: string;
+  storeScoped: boolean;
+  onClose: () => void;
+}) {
+  const navigate = useNavigate();
+  const { data: usage, isLoading } = useCustomerUsage(customerId);
+
+  const openNewChatForCustomer = () => {
+    if (!customerId) return;
+    onClose();
+    navigate(`/chat?customer_id=${encodeURIComponent(customerId)}`);
+  };
+
+  return (
+    <Dialog open={!!customerId} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>AI 服务 · {customerName}</DialogTitle>
+          <DialogDescription>
+            {storeScoped
+              ? "本店为该客户提供 AI 服务的用量统计"
+              : "跨全部门店为该客户提供 AI 服务的用量统计"}
+          </DialogDescription>
+        </DialogHeader>
+        {isLoading ? (
+          <div className="py-8 text-center text-sm text-muted-foreground">
+            加载中…
+          </div>
+        ) : usage && usage.total_tokens > 0 ? (
+          <div className="space-y-3">
+            <div className="grid grid-cols-2 gap-3">
+              <Metric
+                label="AI 对话次数"
+                value={String(usage.conversation_count)}
+                icon={<MessageSquare className="h-4 w-4" />}
+              />
+              <Metric
+                label="Token 总消耗"
+                value={usage.total_tokens.toLocaleString()}
+                icon={<Activity className="h-4 w-4" />}
+              />
+              <Metric
+                label="输入 Token"
+                value={usage.prompt_tokens.toLocaleString()}
+              />
+              <Metric
+                label="输出 Token"
+                value={usage.completion_tokens.toLocaleString()}
+              />
+            </div>
+            {usage.total_cost !== null && (
+              <div className="rounded-md border bg-muted/30 px-3 py-2 text-sm">
+                累计费用：
+                <span className="font-medium">
+                  ¥{usage.total_cost.toFixed(4)}
+                </span>
+              </div>
+            )}
+            <div className="text-xs text-muted-foreground">
+              最近 AI 咨询：{fmt(usage.last_active_at)}
+            </div>
+          </div>
+        ) : (
+          <div className="flex flex-col items-center gap-2 py-6 text-center">
+            <Activity className="h-8 w-8 text-muted-foreground" />
+            <p className="text-sm text-muted-foreground">
+              该客户暂无 AI 服务记录
+            </p>
+          </div>
+        )}
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>
+            关闭
+          </Button>
+          <Button onClick={openNewChatForCustomer}>
+            <MessageSquare className="mr-2 h-4 w-4" /> 为客户咨询
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function Metric({
+  label,
+  value,
+  icon,
+}: {
+  label: string;
+  value: string;
+  icon?: React.ReactNode;
+}) {
+  return (
+    <div className="rounded-md border bg-background p-3">
+      <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+        {icon}
+        {label}
+      </div>
+      <div className="mt-1 text-lg font-semibold">{value}</div>
     </div>
   );
 }
@@ -509,6 +643,11 @@ function StoreView() {
 function HqView() {
   const { data: customers, isLoading } = useCustomers();
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  // Token 费用管理系列 3/4: customer whose global AI-usage dialog is open.
+  const [usageTarget, setUsageTarget] = useState<{
+    id: string;
+    name: string;
+  } | null>(null);
 
   const toggle = (id: string) => {
     setExpanded((prev) => {
@@ -557,6 +696,7 @@ function HqView() {
                   <TableHead>性别</TableHead>
                   <TableHead>到店数</TableHead>
                   <TableHead>创建时间</TableHead>
+                  <TableHead className="text-right">操作</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -590,13 +730,26 @@ function HqView() {
                         <TableCell className="text-muted-foreground">
                           {fmt(c.created_at)}
                         </TableCell>
+                        <TableCell className="text-right">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setUsageTarget({ id: c.id, name: c.name });
+                            }}
+                          >
+                            <Activity className="mr-1.5 h-3.5 w-3.5" />
+                            AI 用量
+                          </Button>
+                        </TableCell>
                       </TableRow>
                       {isOpen && (
                         <TableRow
                           className="bg-muted/30 hover:bg-muted/30"
                         >
                           <TableCell />
-                          <TableCell colSpan={5}>
+                          <TableCell colSpan={6}>
                             <div className="space-y-2 py-2">
                               <p className="text-xs font-medium text-muted-foreground">
                                 跨店档案明细（{c.profiles.length} 条）
@@ -640,6 +793,14 @@ function HqView() {
           )}
         </CardContent>
       </Card>
+
+      {/* Token 费用管理系列 3/4: global AI usage dialog (cross-store). */}
+      <CustomerUsageDialog
+        customerId={usageTarget?.id ?? null}
+        customerName={usageTarget?.name ?? ""}
+        storeScoped={false}
+        onClose={() => setUsageTarget(null)}
+      />
     </div>
   );
 }

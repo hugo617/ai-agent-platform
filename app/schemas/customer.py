@@ -115,3 +115,27 @@ class CustomerRead(BaseModel):
     updated_at: datetime
     profiles: list[CustomerProfileBrief] = Field(default_factory=list)
     profile_count: int = 0
+
+
+# ----------------------------------------------- AI usage attribution
+# Token 费用管理系列 3/4 (customer-conversation-link): a customer's aggregate
+# AI service consumption — chats attributed to them + the tokens those chats
+# consumed. Powers the "AI 服务" dimension on the customer 360 view.
+
+
+class CustomerUsageRead(BaseModel):
+    """Aggregate AI usage attributed to a customer.
+
+    Returned by ``GET /customers/{id}/usage``. Store-scoped for tenant users
+    (only this store's service of the customer); global for cross-tenant
+    viewers (super_admin / hq_staff). ``conversation_count`` is the number of
+    distinct chats tied to the customer; zeros / None mean no attributed usage.
+    """
+
+    customer_id: str
+    conversation_count: int = 0
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    total_tokens: int = 0
+    total_cost: float | None = None
+    last_active_at: datetime | None = None

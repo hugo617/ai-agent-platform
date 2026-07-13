@@ -12,6 +12,7 @@ import type {
   CustomerProfileRead,
   CustomerProfileUpdate,
   CustomerRead,
+  CustomerUsage,
   Group,
   GroupCreate,
   GroupUpdate,
@@ -217,6 +218,15 @@ export async function fetchCustomers(): Promise<CustomerRead[]> {
 
 export async function fetchCustomerAggregate(id: string): Promise<CustomerRead> {
   const { data } = await api.get<CustomerRead>(`/customers/${id}/aggregate`);
+  return data;
+}
+
+// Token 费用管理系列 3/4: aggregate AI usage attributed to a customer.
+// Store users get their tenant's slice; cross-tenant viewers get the global sum.
+export async function fetchCustomerUsage(
+  id: string,
+): Promise<CustomerUsage> {
+  const { data } = await api.get<CustomerUsage>(`/customers/${id}/usage`);
   return data;
 }
 
@@ -495,6 +505,10 @@ export interface ChatStreamPayload {
   agent_id: string;
   conversation_id?: string;
   message: string;
+  // Optional customer attribution (Token 费用管理系列 3/4). Only takes
+  // effect when creating a new conversation (no conversation_id). Lets a
+  // staff member tag a chat as "serving customer X" for usage attribution.
+  customer_id?: string;
 }
 
 /**
