@@ -45,7 +45,7 @@ import {
 import { useToast } from "@/components/ui/toast";
 import { apiErrorMessage } from "@/api/client";
 import { useAuth } from "@/components/auth/auth-context";
-import { canManageUsers } from "@/lib/permission";
+import { hasPermission } from "@/lib/permission";
 import type { Member } from "@/api/types";
 import {
   useAddMember,
@@ -68,7 +68,9 @@ const ROLE_VARIANT: Record<string, "default" | "success" | "secondary"> = {
 export function MembersPage() {
   const toast = useToast();
   const { me } = useAuth();
-  const canManage = canManageUsers(me);
+  // Managing members (add / change role / remove) requires users:create;
+  // super_admin bypasses.
+  const canManage = hasPermission(me, "users", "create");
 
   const { data: members, isLoading } = useMembers();
   const addMut = useAddMember();

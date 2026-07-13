@@ -72,9 +72,11 @@ class PermissionItem(BaseModel):
     """A single permission catalogue entry (one ``<obj>:<act>`` unit).
 
     ``obj``/``act`` are parsed from ``code``; ``obj_label``/``act_label`` carry
-    Chinese display names (sourced from ``OBJ_CN``/``ACT_CN`` in
+    Chinese display names (sourced from ``OBJ_CN``/``ACT_CN``/``MENU_CN`` in
     ``permission_service``) so the frontend renders the matrix without keeping
-    its own label map.
+    its own label map. ``type`` is ``"api"`` (real backend authorization units
+    like ``customers:read``) or ``"menu"`` (UX-layer menu visibility like
+    ``menu:agents``); the matrix UI groups by it.
     """
 
     model_config = ConfigDict(from_attributes=True)
@@ -85,6 +87,7 @@ class PermissionItem(BaseModel):
     act: str  # action part parsed from code
     obj_label: str  # Chinese display name for the resource (e.g. "智能体")
     act_label: str  # Chinese display name for the action (e.g. "查看")
+    type: str = "api"  # "api" (backend auth) or "menu" (UX visibility)
 
 
 class PermissionMatrix(BaseModel):

@@ -216,7 +216,13 @@ class RbacService:
         role = await self._require_role(tenant_id, role_id)
 
         pid = await permission_service._upsert_permission(
-            self.db, tenant_id, payload.obj, payload.act
+            self.db,
+            tenant_id,
+            payload.obj,
+            payload.act,
+            # A grant of ("menu", <code>) creates a UX-visibility permission
+            # row (type="menu"); everything else is a real api auth unit.
+            perm_type="menu" if payload.obj == "menu" else "api",
         )
         await self.role_perms.grant(role.id, pid, tenant_id)
         await permission_service.sync_role_permissions_to_casbin(

@@ -55,7 +55,7 @@ import {
 import { useToast } from "@/components/ui/toast";
 import { apiErrorMessage } from "@/api/client";
 import { useAuth } from "@/components/auth/auth-context";
-import { canManageUsers } from "@/lib/permission";
+import { hasPermission } from "@/lib/permission";
 import type { Role, RolePermissionGrant } from "@/api/types";
 import {
   useCreateRole,
@@ -89,7 +89,8 @@ const EMPTY_FORM: FormValues = {
 export function RolesPage() {
   const toast = useToast();
   const { me } = useAuth();
-  const canManage = canManageUsers(me);
+  // Creating/editing roles requires roles:create; super_admin bypasses.
+  const canManage = hasPermission(me, "roles", "create");
 
   const { data: roles, isLoading } = useRoles();
   const createMut = useCreateRole();

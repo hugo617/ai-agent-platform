@@ -12,7 +12,7 @@ Access requires ``roles:read`` — anyone who can see roles can see the matrix
 (owner/admin/member all hold it). Tenant scoping happens in the repositories.
 """
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import CurrentUser, get_current_user, require_permission
@@ -42,8 +42,18 @@ async def get_permission_matrix(
     dependencies=[Depends(require_permission("roles", "read"))],
 )
 async def get_permission_catalogue(
+    perm_type: str | None = Query(
+        default=None,
+        alias="type",
+        description='Filter by permission type: "api" (backend auth units) or "menu" (UX visibility). Omit for all.',
+    ),
     user: CurrentUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> list[PermissionItem]:
-    """All permission catalogue items for the caller's tenant."""
-    return await permission_service.get_catalogue(db, user.tenant_id)
+    """All permission catalogue items for the caller's tenant.
+
+    ``?type=menu`` returns only menu-visibility perms (``menu:agents`` etc.);
+    ``?type=api`` returns only backend-authorization perms (``agents:read`` etc.);
+    omitted returns both.
+    """
+    return await permission_service.get_catalogue(db, user.tenant_id, perm_type=perm_type)

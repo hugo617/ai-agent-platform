@@ -8,7 +8,7 @@
 - **标准启动路径**: `./init.sh`(装依赖 + ruff + pytest)
 - **标准验证路径**: `./init.sh`(同上,后端快速验证,SQLite 内存库)
 - **完整验证路径**(需 docker): `alembic upgrade head && alembic check` + `cd frontend && npm run build`
-- **当前最高优先级未完成功能**: **`permission-menu-view`(priority 40,权限重构系列 2/4)** —— permission-unified-model(39)✅ 已完成后,按系列顺序执行。本任务新增 type=menu 权限类型,前端导航/路由由权限驱动(消除 needsSuperAdmin/needsUserManagement 硬编码)。前置 39 ✅ 已合入。
+- **当前最高优先级未完成功能**: **`permission-data-scope`(priority 41,权限重构系列 3/4)** —— permission-menu-view(40)✅ 已完成后,按系列顺序执行。本任务给 Role 加 data_scope(all/tenant/group/self)+ DataScopeResolver + Repository 自动过滤。前置 27 ✅ 已合入。
 - **当前 blocker**: 无
 
 ## 后续任务规划(2026-07-10 制定,2026-07-12 追加 MVP 业务模块 17-24,共 24 条,WIP=1 顺序执行)
@@ -107,6 +107,7 @@
 | hq-platform-role(平台角色 hq_staff 总部业务员) | passing | 281 tests + check() 加 hq_staff+read 短路 + is_cross_tenant_viewer helper + Customer/Group Service 跨租户分支扩展 + Customer HQ 读端点守卫扩展(require_cross_tenant_viewer)+ hq_staff 只读跨店(super_admin 不回归)+ 无迁移(platform_role 自由字符串) |
 | tenants-admin-api(门店管理后端补齐) | passing | 294 tests + Tenant 加 status/created_by/description/address + 迁移 84605f063730 + GET /tenants/all + GET/PUT /tenants/{id} + POST 收紧 super_admin + member_count 运行时聚合(LEFT JOIN _ACTIVE)+ alembic check 无 drift |
 | tenants-admin-ui(门店管理前端) | passing | npm build 通过 + oxlint 0 warning + 独立门店页(super_admin 列表/创建/编辑 Dialog)+ RequireSuperAdmin 路由守卫 + 侧边栏「门店」项(needsSuperAdmin)+ dashboard 创建按钮收紧 + groups-page 门店挂载下拉改用 useAllTenants(修复 super_admin 只能看自己租户的 UX 缺陷) |
+| permission-menu-view(菜单/视图权限 type=menu) | passing | 305 tests + npm build + oxlint 0 warning + DEFAULT_MENU_PERMS(owner/admin 10 业务菜单,member 5)+ type=menu seed + catalogue?type= 过滤 + MeResponse.permissions 聚合(menu+api)+ 前端 canViewMenu/hasPermission 驱动导航/路由守卫/按钮(删 needsSuperAdmin/needsUserManagement + canManageUsers 全调用点迁移)+ 矩阵按 type 分两区 + backfill 补 menu 权限 |
 
 > ✅ AI 内核(agents + chat)已全部纳管并 passing:agents-api-hardening / chat-conversation-api / chat-frontend 三任务端到端完成。
 > ✅ **真实对话已跑通**:real-chat-llm-config(Session 017)用真实 DeepSeek key 端到端验证 SSE 流式对话,修了 3 个 bug(Agent.model 失效 / 前端模型脱节 / 无 LLM 配置 UI)。
@@ -1940,5 +1941,34 @@
 - **当前状态**: main 干净、与 origin/main 同步、本地仅 main 分支。permission-unified-model(39)✅ 已 passing 并入 main
 - **已知风险**: 无。squash commit message 出现重复 `(#42) (#42)`(本地 commit message 已含 (#42),GitHub squash 又自动追加一次),纯外观问题不影响功能
 - **下一步最佳动作**: 执行 `permission-menu-view`(priority 40,权限重构系列 2/4,现为最高优先级 not_started)
+
+---
+
+### Session 068 — 2026-07-13
+- **本轮目标**: 执行 `permission-menu-view`(priority 40,权限重构系列 2/4)—— 引入 type=menu 权限类型,前端菜单/页面可见性由权限驱动;同时把 canManageUsers 硬编码(菜单可见性 + 按钮级判断)全部迁移到基于权限码的判断
+- **已完成**(对照 plan §实施步骤,全栈):
+  - **Step 1 后端 seed**(`permission_service.py`):新增 `DEFAULT_MENU_PERMS`(owner/admin 10 业务菜单,member 5 业务菜单,menu:tenants 不进 seed)+ `MENU_CN`(11 项中文映射);`seed_tenant_defaults` 扩展 seed menu 权限循环(obj='menu',走 casbin + SCD2 + catalogue 同路径);`_upsert_permission` 加 `perm_type` 参数(type='menu' 时用 MENU_CN 生成 name「菜单-智能体」);`OBJ_CN` 补 `"menu":"菜单"` 条目
+  - **Step 2-3 catalogue type 过滤**(`permission_service.py` + `schemas/rbac.py` + `api/v1/permissions.py`):`get_catalogue` 加 `perm_type` 参数按 Permission.type 过滤;PermissionItem schema 加 `type` 字段;catalogue 端点加 `?type=`(Query alias='type' 解决 query string 参数名映射)
+  - **Step 4-5 MeResponse 聚合权限**(`schemas/auth.py` + `api/v1/auth.py`):MeResponse 加 `permissions: list[str]` 字段;/me 端点调 `get_implicit_permissions_for_user` 聚合当前用户全部生效权限码(menu+api);super_admin 返 [](前端按 platform_role bypass)
+  - **Step 6-7 前端权限函数**(`types.ts` + `lib/permission.ts`):MeResponse 加 permissions;新增 `hasPermission(me,obj,act)` + `canViewMenu(me,menuCode)`;canManageUsers 标 @deprecated(本任务替换全部调用点)
+  - **Step 8 前端改造**(6 文件):dashboard-layout NAV_ITEMS 改 menuCode/platformOnly(删 needsSuperAdmin/needsUserManagement);require-permission 改 PATH_MENU 按路径查对应 menu 权限;permissions-page 矩阵按 type 分两区(菜单权限/操作权限)+ canManage 改 roles:update;customers(canCreate=customers:create,canDelete=customers:delete)/roles(roles:create)/members(users:create)/settings(settings:update + api_tokens:read)按钮全部迁移到 hasPermission
+  - **Step 9 测试**:`conftest.py` _make_casbin 补 menu 策略(owner/admin 10 项,member 5 项);test_permissions_api 加 catalogue?type= 过滤测试;test_auth 加 3 个 /me permissions 测试(owner/member/super_admin);test_permission_service 加 3 个 DEFAULT_MENU_PERMS 单元测试
+  - **Step 10 backfill + 验证**:backfill 脚本扩展补 grant menu 权限 + Permission.name 重写兼容 MENU_CN;修 bug:`_upsert_permission` 的 perm_type 判断 + `grant_permission` 传 perm_type(obj='menu'→type='menu');修前端 JSX 结构错误(permissions-page 重复 </Card> + 括号配对)
+- **运行过的验证**(全过):
+  - `./init.sh` → ruff `All checks passed!` + **305 passed**(基线 299 + 新增 6)
+  - `cd frontend && npm run build` → tsc -b + vite build 成功,0 类型错误
+  - `npx oxlint src/` → 0 warnings 0 errors(43 文件)
+  - 代码质量审查:无 print/breakpoint/debug 残留;前端无 needsSuperAdmin/needsUserManagement 残留;canManageUsers 无调用点(只剩 deprecated 定义)
+- **已记录证据**: `feature_list.json` 的 `permission-menu-view.evidence` 字段(11 条),status 改为 passing
+- **技术要点**(与 plan 的实现差异):
+  - **MeResponse 用 permissions(含 menu+api 统一字段)而非 plan 的 menus(只 menu)**:用户决策「全部改用 api 权限」——按钮级判断也迁移到 hasPermission,统一一个 permissions 字段同时驱动菜单(canViewMenu)+ 按钮(hasPermission),比分两个字段更简洁
+  - **catalogue ?type= 的 Query alias**:端点参数名 perm_type 但 query string 用 type(前端约定),用 FastAPI Query(alias='type') 映射。测试发现的 bug:初版无 alias 导致 ?type=menu 不过滤
+  - **grant_permission 的 perm_type 自动判断**:obj=='menu' 时传 perm_type='menu',让矩阵页 grant menu 权限时 Permission 行 type 正确
+  - **menu 权限复用 casbin 隐式聚合**:menu 权限正常进 role_permissions SCD2 + casbin p 策略,/me 用 get_implicit_permissions_for_user 一次聚合出 menu+api 全部码,零新机制
+- **提交记录**: 待用户决定是否提交 + 是否走 PR + CI 守门(20 文件改动:7 后端 + 8 前端 + 1 脚本 + 4 测试 + feature_list.json + progress.md)
+- **已知风险**: 无功能风险。backfill 脚本未在真实 Postgres 跑(需 docker 环境),--dry-run + 单元测试 + idempotent 设计已覆盖;手动浏览器验证未跑(需前后端启动),build(tsc)+ oxlint + pytest 已覆盖类型/规范/行为
+- **下一步最佳动作**:
+  - (a) commit + PR + CI 守门 + 合并 permission-menu-view 到 main;
+  - (b) 执行 `permission-data-scope`(priority 41,权限重构系列 3/4,现为最高优先级 not_started)
 
 ---

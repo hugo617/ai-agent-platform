@@ -21,7 +21,7 @@ import {
 import { useToast } from "@/components/ui/toast";
 import { apiErrorMessage } from "@/api/client";
 import { useAuth } from "@/components/auth/auth-context";
-import { canManageUsers } from "@/lib/permission";
+import { hasPermission } from "@/lib/permission";
 import type { PermissionItem, Role } from "@/api/types";
 import {
   useGrantRolePermission,
@@ -32,7 +32,9 @@ import { cn } from "@/lib/utils";
 
 export function PermissionsPage() {
   const { me } = useAuth();
-  const canManage = canManageUsers(me);
+  // Editing the matrix requires roles:update (the same perm the backend's
+  // grant/revoke endpoints check). super_admin bypasses via hasPermission.
+  const canManage = hasPermission(me, "roles", "update");
   const toast = useToast();
 
   const { data, isLoading, refetch, isFetching } = usePermissionMatrix();
@@ -43,27 +45,32 @@ export function PermissionsPage() {
   // a spinner and block double-clicks.
   const [pendingCell, setPendingCell] = useState<string | null>(null);
 
-  // Group permissions by obj. Labels and ordering both come from the backend
-  // catalogue (GET /permissions/matrix returns permissions ordered by code, and
-  // each item carries its own obj_label/act_label), so the frontend keeps no
-  // hardcoded label/sort table — the drift that existed here is gone.
-  const grouped = useMemo(() => {
+  // Group permissions into two sections — menu (UX visibility) on top, api
+  // (backend authorization) below — and within each by obj. Labels and ordering
+  // come from the backend catalogue (GET /permissions/matrix returns perms
+  // ordered by code, each carrying its own obj_label/act_label/type), so the
+  // frontend keeps no hardcoded label/sort table.
+  const sections = useMemo(() => {
     const perms = data?.permissions ?? [];
-    const byObj = new Map<string, PermissionItem[]>();
-    const labelByObj = new Map<string, string>();
-    for (const p of perms) {
-      const list = byObj.get(p.obj) ?? [];
-      list.push(p);
-      byObj.set(p.obj, list);
-      if (!labelByObj.has(p.obj)) labelByObj.set(p.obj, p.obj_label);
-    }
-    // Preserve catalogue order (already sorted by code on the backend); only
-    // group, don't re-sort within a group.
-    return [...byObj.keys()].map((obj) => ({
-      obj,
-      label: labelByObj.get(obj) ?? obj,
-      items: byObj.get(obj) ?? [],
-    }));
+    const buildGroups = (items: PermissionItem[]) => {
+      const byObj = new Map<string, PermissionItem[]>();
+      const labelByObj = new Map<string, string>();
+      for (const p of items) {
+        const list = byObj.get(p.obj) ?? [];
+        list.push(p);
+        byObj.set(p.obj, list);
+        if (!labelByObj.has(p.obj)) labelByObj.set(p.obj, p.obj_label);
+      }
+      return [...byObj.keys()].map((obj) => ({
+        obj,
+        label: labelByObj.get(obj) ?? obj,
+        items: byObj.get(obj) ?? [],
+      }));
+    };
+    return [
+      { type: "menu", title: "菜单权限", groups: buildGroups(perms.filter((p) => p.type === "menu")) },
+      { type: "api", title: "操作权限", groups: buildGroups(perms.filter((p) => p.type !== "menu")) },
+    ];
   }, [data?.permissions]);
 
   const roles: Role[] = data?.roles ?? [];
@@ -134,66 +141,83 @@ export function PermissionsPage() {
               暂无角色数据。
             </p>
           ) : (
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="sticky left-0 bg-background">
-                      资源 / 动作
-                    </TableHead>
-                    {roles.map((r) => (
-                      <TableHead key={r.id} className="text-center">
-                        <div className="flex flex-col items-center gap-1">
-                          <span>{r.name}</span>
-                          {r.is_system && (
-                            <Badge variant="secondary" className="text-[10px]">
-                              系统
-                            </Badge>
+            <div className="space-y-6">
+              {sections.map((section) =>
+                section.groups.length === 0 ? null : (
+                  <div key={section.type}>
+                    <h3 className="mb-2 text-sm font-semibold text-foreground">
+                      {section.title}
+                    </h3>
+                    <div className="overflow-x-auto">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead className="sticky left-0 bg-background">
+                              资源 / 动作
+                            </TableHead>
+                            {roles.map((r) => (
+                              <TableHead key={r.id} className="text-center">
+                                <div className="flex flex-col items-center gap-1">
+                                  <span>{r.name}</span>
+                                  {r.is_system && (
+                                    <Badge
+                                      variant="secondary"
+                                      className="text-[10px]"
+                                    >
+                                      系统
+                                    </Badge>
+                                  )}
+                                </div>
+                              </TableHead>
+                            ))}
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {section.groups.map((group) =>
+                            group.items.map((perm, idx) => (
+                              <TableRow key={perm.code}>
+                                <TableCell
+                                  className={cn(
+                                    "sticky left-0 bg-background font-medium",
+                                    idx === 0 && "border-t-2",
+                                  )}
+                                >
+                                  {idx === 0 && (
+                                    <span className="mr-2 font-semibold text-foreground">
+                                      {group.label}
+                                    </span>
+                                  )}
+                                  <span className="text-muted-foreground">
+                                    {perm.act_label}
+                                  </span>
+                                </TableCell>
+                                {roles.map((role) => {
+                                  const granted =
+                                    data?.matrix[role.code]?.[perm.code] ??
+                                    false;
+                                  const cellKey = `${role.id}:${perm.code}`;
+                                  const busy = pendingCell === cellKey;
+                                  return (
+                                    <PermCell
+                                      key={role.id}
+                                      granted={granted}
+                                      busy={busy}
+                                      editable={canManage}
+                                      onClick={() =>
+                                        toggle(role, perm, granted)
+                                      }
+                                    />
+                                  );
+                                })}
+                              </TableRow>
+                            )),
                           )}
-                        </div>
-                      </TableHead>
-                    ))}
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {grouped.map((group) =>
-                    group.items.map((perm, idx) => (
-                      <TableRow key={perm.code}>
-                        <TableCell
-                          className={cn(
-                            "sticky left-0 bg-background font-medium",
-                            idx === 0 && "border-t-2"
-                          )}
-                        >
-                          {idx === 0 && (
-                            <span className="mr-2 font-semibold text-foreground">
-                              {group.label}
-                            </span>
-                          )}
-                          <span className="text-muted-foreground">
-                            {perm.act_label}
-                          </span>
-                        </TableCell>
-                        {roles.map((role) => {
-                          const granted =
-                            data?.matrix[role.code]?.[perm.code] ?? false;
-                          const cellKey = `${role.id}:${perm.code}`;
-                          const busy = pendingCell === cellKey;
-                          return (
-                            <PermCell
-                              key={role.id}
-                              granted={granted}
-                              busy={busy}
-                              editable={canManage}
-                              onClick={() => toggle(role, perm, granted)}
-                            />
-                          );
-                        })}
-                      </TableRow>
-                    ))
-                  )}
-                </TableBody>
-              </Table>
+                        </TableBody>
+                      </Table>
+                    </div>
+                  </div>
+                ),
+              )}
             </div>
           )}
         </CardContent>

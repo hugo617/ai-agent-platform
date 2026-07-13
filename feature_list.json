@@ -1045,19 +1045,31 @@
       "area": "权限",
       "title": "菜单/视图权限(type=menu)(权限重构系列 2/4)",
       "user_visible_behavior": "管理员能在权限矩阵里配置每个角色可见哪些菜单/页面,角色用户登录后侧边栏菜单随之变化;前端菜单可见性不再硬编码 needsSuperAdmin/needsUserManagement,改由 menu 权限驱动",
-      "status": "not_started",
+      "status": "passing",
       "plan": "harness/docs/plan-permission-menu-view.md",
       "verification": [
         "Permission.type='menu' 启用,seed 生成全部菜单权限项(menu:dashboard/menu:agents/menu:chat/menu:customers/menu:groups/menu:members/menu:users/menu:roles/menu:permissions/menu:settings)",
         "GET /permissions/catalogue?type=menu 返回菜单项;矩阵端点 permissions[].type 字段就绪",
-        "MeResponse 暴露当前用户 menu 权限清单(menus 字段)",
+        "MeResponse 暴露当前用户 menu 权限清单(permissions 字段,含 menu+api)",
         "前端 dashboard-layout.tsx NAV_ITEMS 删除 needsSuperAdmin/needsUserManagement,改用 canViewMenu(me, menuCode);member 登录只看业务菜单,owner 看全部(除 tenants),super_admin 看全部",
         "menu:tenants 按 platform_role='super_admin' 显示(平台级,不进租户 seed)",
         "menu 权限只驱动前端 UX,后端 require_permission 保持 api 校验不变(menu 是 UX 影子,真正拦的是 api 权限)",
         "权限矩阵页可配置 menu 权限(完整 UI 美化留给任务 42)",
         "./init.sh 全绿 + npm run build 通过"
       ],
-      "evidence": [],
+      "evidence": [
+        "305 tests passed(ruff All checks passed + pytest 全绿,基线 299 + 新增 6:3 个 /me permissions 聚合测试 + 1 个 catalogue?type= 过滤 + 3 个 DEFAULT_MENU_PERMS 单元测试;conftest _make_casbin 补 menu 策略对齐)",
+        "npm run build 通过(tsc -b + vite build 成功,0 类型错误)",
+        "npx oxlint src/ 全仓库 43 文件 0 warnings 0 errors",
+        "后端:DEFAULT_MENU_PERMS(owner/admin 10 业务菜单,member 5 业务菜单,menu:tenants 不进 seed)+ MENU_CN 11 项中文映射 + seed_tenant_defaults 扩展 seed menu 权限 + _upsert_permission 加 perm_type 参数(obj='menu' 时 type='menu')",
+        "catalogue:?type=menu/?type=api 过滤(Query alias='type')+ PermissionItem schema 加 type 字段 + get_catalogue 按 Permission.type 过滤",
+        "MeResponse 加 permissions 字段(全部生效码 menu+api,走 get_implicit_permissions_for_user 聚合);super_admin 返 [](前端 bypass);3 测试覆盖 owner/member/super_admin",
+        "前端:lib/permission.ts 加 hasPermission(me,obj,act) + canViewMenu(me,menuCode);canManageUsers 标 @deprecated(无调用点)",
+        "前端:dashboard-layout NAV_ITEMS 改 menuCode/platformOnly(删 needsSuperAdmin/needsUserManagement);require-permission 改 PATH_MENU 按路径查 menu 权限",
+        "前端:permissions-page 矩阵按 type 分两区(菜单权限/操作权限)+ canManage 改 roles:update;customers/roles/members/settings 按钮改用 hasPermission(customers:create/roles:create/users:create/settings:update/api_tokens:read)",
+        "backfill 脚本扩展:补 grant menu 权限(DEFAULT_MENU_PERMS)+ Permission.name 重写兼容 menu 用 MENU_CN;--help 正常",
+        "实现决策(与 plan 差异):MeResponse 用 permissions(含 menu+api 统一字段)而非 plan 的 menus(只 menu);用户选择「全部改用 api 权限」——按钮级判断也迁移到 hasPermission(超出 plan 原边界但消除 canManageUsers 全部硬编码)"
+      ],
       "notes": "解决用户核心痛点「只有增删改查没有视图权限」。关键设计:menu 权限是 UX 层非安全边界,后端真正拦截靠 api 权限(require_permission);menu + 对应 api read 通常一起 grant 但允许独立配。前置 permission-unified-model(39)。不做:data_scope(任务 41)、矩阵 UI 完整重写(任务 42)、后端 menu 校验(menu 不进 require_permission)、按钮级权限(只页面/菜单级)。老用户 menu 权限缺失由 backfill 补(可并入任务 39 的 backfill 脚本)。"
     },
     {

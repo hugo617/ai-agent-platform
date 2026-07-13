@@ -170,3 +170,55 @@ def test_cn_label_maps_cover_catalogue():
     acts = {act for _, act in DEFAULT_OWNER_PERMS}
     assert objs <= set(OBJ_CN), f"OBJ_CN missing: {objs - set(OBJ_CN)}"
     assert acts <= set(ACT_CN), f"ACT_CN missing: {acts - set(ACT_CN)}"
+
+
+# ---------------------------------------------------------------------------
+# Menu permission catalogue (permission-menu-view).
+#
+# DEFAULT_MENU_PERMS is the single source of truth for which nav items each
+# system role sees. These tests pin the shape so a future edit can't silently
+# hide a business menu from members or leak a management menu to them.
+# ---------------------------------------------------------------------------
+
+# The 10 business menus every full-trust role (owner/admin) sees.
+_ALL_BUSINESS_MENUS = {
+    "dashboard", "agents", "chat", "groups", "customers",
+    "members", "users", "roles", "permissions", "settings",
+}
+
+
+def test_default_menu_perms_owner_and_admin_see_all_business_menus():
+    """owner + admin see all 10 business menus; menu:tenants is NOT among them."""
+    from app.services.permission_service import DEFAULT_MENU_PERMS
+
+    assert set(DEFAULT_MENU_PERMS["owner"]) == _ALL_BUSINESS_MENUS
+    assert set(DEFAULT_MENU_PERMS["admin"]) == _ALL_BUSINESS_MENUS
+    # menu:tenants is platform-level — never seeded into any tenant role.
+    assert "tenants" not in DEFAULT_MENU_PERMS["owner"]
+    assert "tenants" not in DEFAULT_MENU_PERMS["admin"]
+    assert "tenants" not in DEFAULT_MENU_PERMS["member"]
+
+
+def test_default_menu_perms_member_only_sees_business_menus():
+    """member sees only the 5 business menus (no management/settings menus)."""
+    from app.services.permission_service import DEFAULT_MENU_PERMS
+
+    member_menus = set(DEFAULT_MENU_PERMS["member"])
+    assert member_menus == {
+        "dashboard", "agents", "chat", "groups", "customers"
+    }
+    # management menus hidden from member
+    assert member_menus.isdisjoint(
+        {"members", "users", "roles", "permissions", "settings"}
+    )
+
+
+def test_menu_cn_covers_all_seeded_menu_codes():
+    """MENU_CN has a Chinese label for every menu code in DEFAULT_MENU_PERMS."""
+    from app.services.permission_service import DEFAULT_MENU_PERMS, MENU_CN
+
+    all_codes: set[str] = set()
+    for codes in DEFAULT_MENU_PERMS.values():
+        all_codes.update(codes)
+    missing = all_codes - set(MENU_CN)
+    assert not missing, f"MENU_CN missing labels for: {missing}"
