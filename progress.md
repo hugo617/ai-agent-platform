@@ -725,3 +725,19 @@
 
 ---
 
+### Session 081 — 2026-07-14
+- **本轮目标**: ship-it 收尾 —— 把 Session 080 的 token-billing-ui(46,纯前端)改动一路推到合并入 main
+- **执行**(在 `feat/token-billing-ui` 分支,基线 main):
+  - **Phase 1 清理废代码**:核实实现 agent「无未用新符号」声明,实测有 2 个无调用方死符号 —— 删 `updateMyWallet` endpoint(endpoints.ts)+ 其专属类型 `WalletUpdate`(types.ts,本轮 UI 无 PUT wallet 入口);删 `useWalletByTenant` hook 包装(queries.ts;admin 页直接用 `fetchWalletByTenant` via `useQueries`),`qk.walletByTenant` key factory 保留(`useRecharge` 仍用它做 invalidation);连带删 queries.ts 中孤立 import `fetchWalletByTenant`。新文件无 console/TODO/注释死码
+  - **Phase 2 质量复审**:全 changeset 无 `any`;super_admin 判断(`me?.platform_role === "super_admin"`)与 customers-page 参考一致;多租户隔离 —— 门店页仅调 own-tenant 端点(客户端不传 tenant_id),总部页写操作后端 `require_super_admin` + 前端 `RequireSuperAdmin` 双重隔离;`wallet:read` 后端 seed 给 owner/admin(member 持 billing:read 非 wallet:read,前后端一致,member 不进 /billing —— 此为 2/4 后端 seed 决定,非本前端任务范畴)
+  - **Phase 3 提交**:commit badc3dd `feat(billing): Token 计费前端看板(门店/总部两级 + 充值 + 用量明细)(Token 费用管理 4/4)`,10 文件 +1634/-7
+  - **Phase 4 推送 + 开 PR**:推 feat/token-billing-ui;PR #49 https://github.com/hugo617/ai-agent-platform/pull/49
+  - **Phase 5 守 CI**:四任务首轮全绿(0 修红)—— Migrations 42s / Backend(pytest+ruff)2m5s / Frontend(typecheck+build+oxlint)31s / E2E(Playwright)2m2s
+  - **Phase 6 合并**:squash 合并入 main 为 fb64b98(`(#49)` 后缀,符合项目提交风格),远端 feat/token-billing-ui 分支已删
+- **环境备注**:AGENTS.md 记载的 git proxy(127.0.0.1:9910)「未运行」已过时 —— 实测端口 OPEN 且直连 github 失败,网络需走 proxy;故 push 用默认 git config(带 proxy)成功,`-c http.proxy=` 反而连不上。gh 已认证(hugo617)
+- **当前状态**: token-billing-ui(46)✅ 已入 main(fb64b98),Token 费用管理系列 4/4 正式收官
+- **已知风险**: 无新增。继承 080:HQ 逐店扇出在门店量大时偏慢;真实充值/对话扣费联调需前后端启动 + 真实 key
+- **下一步最佳动作**: 选优先级最高的 not_started —— 看板类 `dashboard-analytics`(47)可复用本轮 buildDailyTrend 纯 CSS 柱状模式
+
+---
+
