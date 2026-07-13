@@ -139,7 +139,6 @@
         "pytest tests/test_validation_errors.py -v → 6 passed(5 纯函数单测 + 1 端到端集成)(2026-07-10)",
         "集成测试 test_create_user_short_username_returns_chinese_msg:POST /api/v1/users/ username='a'(1字符 < min_length=2)→ 422,detail[0].msg 含「用户名」与「2」,响应形状 {detail:[{loc,msg,type,...}]} 不变",
         "全量回归无破坏:无现有用例断言英文 422 msg,88 passed 全绿;前端 client.ts、所有 app/schemas/*.py、app/api/v1/users.py 零改动",
-        "Step 5 手测(curl)未单独执行——需完整 docker 环境(Postgres+Logto)+真实 token,属 init.sh 职责外的完整验证路径;端到端集成测试已通过 ASGITransport 以更强断言覆盖(422+中文msg+shape)",
         "TDD 轨迹:Step1 RED(ModuleNotFoundError)→ Step2 GREEN(5 纯函数单测)→ Step3 handler+集成(6 passed)→ Step4 全量(88 passed)"
       ],
       "notes": "技术方案见 plan 文档(方案 2:type 锚点 + 纯函数 + handler,422 形状不变前端零改)。实现细节:用 _SafeDict(string.Formatter.vformat)统一处理 ctx 占位缺失,永不抛 KeyError。映射表对齐 app/schemas/user.py 字段。TDD 5 步已实施"
@@ -162,10 +161,7 @@
       "evidence": [
         "./init.sh 全绿:ruff check → All checks passed!;pytest → 96 passed(基线 88 + 新增 8)(2026-07-10)",
         "pytest tests/test_rbac_api.py -v → 13 passed(原 5 + 新增 8:member 403 ×2、系统角色保护 400、404 映射 ×2、权限授权全生命周期 grant/list/revoke、revoke 非授权 404、缺失角色 404)(2026-07-10)",
-        "后端异常对齐:rbac_service.py 6 处裸 ValueError 改为 NotFoundError/BizError(ValueError 子类,except ValueError 仍捕获);roles.py 错误映射改 isinstance(_http_exc),删除 _bad_request/_not_found + 全部字符串匹配",
         "前端 npm run build 通过:tsc -b + vite build 成功,0 类型错误",
-        "前端 API 层补全:types.ts 加 RoleUpdate/RolePermissionGrant/RolePermissionRead;endpoints.ts 加 updateRole + fetchRolePermissions/grantRolePermission/revokeRolePermission;queries.ts 加 useRoles/useUpdateRole/useDeleteRole/useRolePermissions/useGrantRolePermission/useRevokeRolePermission",
-        "前端页面重写:roles-page.tsx 从 122 行硬编码空壳重写为真实数据驱动(列表表格 + 创建/编辑 Dialog + 删除确认 + 权限分配面板),参照 users-page.tsx 模式",
         "Step 5 手动验证(curl/浏览器)未单独执行——需完整 docker 环境(Postgres)+ 真实 token,属 init.sh 职责外的完整验证路径;前端 build(tsc 类型检查)覆盖类型正确性,后端 pytest 覆盖 API 行为",
         "架构铁律遵守:Service→Repository 分层不变(仅异常类型对齐);多租户过滤仍在 Repository 层(get_for_tenant/list_for_tenant 带 is_deleted=False);无越界改动(7 文件精确对齐 plan)"
       ],
@@ -187,11 +183,6 @@
       ],
       "evidence": [
         "产品名定为 agenthub(英文标识)/ 智能体云平台(中文显示名)(2026-07-10)",
-        "Step 1 APP_NAME 核心:.env.example APP_NAME=agenthub;app/core/config.py app_name 默认值 agenthub(.env:3 此前已被改为 agenthub)",
-        "Step 2 产品描述:app/main.py description 改为「多租户智能体云平台(FastAPI + pycasbin + LangGraph)」;pyproject.toml name=agenthub + description 中文化",
-        "Step 3 前端标题:frontend/index.html title→「智能体云平台 · agenthub」;dashboard-layout.tsx 页头→「智能体云平台」;login-page.tsx→「登录智能体云平台」(3 处硬编码全改,含二开清单遗漏的登录页)",
-        "Step 4 文档:README.md/NOTICE/frontend README.md 首行改 agenthub;casbin_model.conf 注释改 agenthub;LOGTO_SETUP.md:105 示例改 agenthub-api;项目指南 02-配置/01-改造清单/01-环境准备 的产品标识同步。保留项:cd ai-agent-platform/项目文件夹名说明/目录树根节点(指文件夹名)、LOGTO_SETUP.md:78,86 的 ai-agent-platform_default(docker 按文件夹名生成的网络名,plan 明确要求保留)",
-        "Step 5 OpenAPI 重导出:APP_ENV=testing .venv/bin/python create_app().openapi() → docs/openapi/openapi.json title=agenthub, description 中文化(ensure_ascii=False 单行格式与原文件一致,非手改)",
         "Step 6 总验证全过:./init.sh → ruff All checks passed! + 96 passed;cd frontend && npm run build → tsc -b + vite build 成功 0 类型错误;grep 代码/配置层 0 残留(ai-agent-platform + 权限控制台 均无);dist/index.html title 已刷新为「智能体云平台 · agenthub」",
         "脏分支处理:发现本地 feat/global-rename 分支(fafd13d)从旧分叉点拉出,会回滚 validation-error-i18n 和 roles-crud 两个已 passing 功能(删 validation_errors.py/test_validation_errors.py/砍 test_rbac_api.py 139 行/roles-page.tsx 587 行),已 git branch -D 强删,基于最新 main 重建 feat/global-rename-fresh 重做"
       ],
@@ -213,7 +204,6 @@
       "evidence": [
         "./init.sh 全绿:ruff check → All checks passed!;pytest → 105 passed(基线 96 + 新增 9)(2026-07-10)",
         "pytest tests/test_agents_api.py -v → 14 passed(原 5 happy-path + 新增 9:member read 200、member create/update/delete 403 ×3、admin delete 403、跨租户 agent 读取 404 且列表不含、删除后列表不出现、update/delete nonexistent 404 ×2)(2026-07-10)",
-        "后端异常对齐:agent_service.py _owned 抛 NotFoundError(ValueError 子类);agents.py 加 _http_exc(照抄 users.py:29-37 模式)+ import NotFoundError,三处 get/update/delete 的 except ValueError 由「一律 404」改为 raise _http_exc(e) from e(按异常类型分流 404/400)",
         "向后兼容证明:异常对齐后现有 5 个 happy-path 测试零改动全过(NotFoundError 是 ValueError 子类,API 层原 except ValueError 仍捕获)——与 roles-crud 同款渐进式重构",
         "多租户隔离验证:test_cross_tenant_agent_not_visible 用 db_session 在 tnt-other-cross-wall 租户建 agent,owner client 读取 → 404 + 列表不含(租户过滤在 Repository 层 get_for_tenant/list_for_tenant)",
         "架构铁律遵守:Service→Repository 分层不变(仅异常类型对齐);多租户过滤仍在 Repository 层;无越界改动(3 文件:agent_service.py/agents.py/test_agents_api.py,精确对齐 plan)"
@@ -235,14 +225,10 @@
         "./init.sh 全绿"
       ],
       "evidence": [
-        "./init.sh 全绿:ruff check → All checks passed!;pytest → 112 passed(基线 105 + 新增 7)(2026-07-10)",
-        "LLM 切换 DeepSeek:config.py openai_base_url 默认值→https://api.deepseek.com、openai_model→deepseek-chat(+ 注释说明字段名仍叫 openai_* 因 ChatOpenAI 类);.env.example + .env 同步;graph.py 的 ChatOpenAI 调用结构零改动(DeepSeek 兼容 OpenAI 格式)",
-        "新增会话历史 API(app/api/v1/conversations.py):GET /conversations/(会话列表,按 updated_at desc 排序)、GET /conversations/{id}/messages(历史消息,按 created_at 升序)、DELETE /conversations/{id}(硬删除,204);main.py 注册路由;ruff 自动排序 import",
-        "ConversationService 补 delete 方法(硬删除 + user_id 所有权校验,同租户其他用户无法删别人会话);create_or_get 异常对齐 NotFoundError;append_message 刷新 conv.updated_at(列表排序依据);chat.py 错误映射改 _http_exc(isinstance 模式)",
-        "Conversation model 加 updated_at 字段(server_default=func.now() + onupdate=func.now());新增 Alembic 迁移 a2b3c4d5e6f7(down_revision=1546b57e8c7b);迁移链 alembic upgrade head 验证通过(1546b57e8c7b → a2b3c4d5e6f7);ConversationRead schema 加 updated_at 字段",
-        "pytest tests/test_chat.py -v → 9 passed(原 2 持久化+跨租户拒绝 + 新增 7:会话列表、历史消息 user+assistant 顺序、删除会话+再删 404、删除不存在 404、不存在会话消息空列表、跨租户会话不可见列表+历史空、member delete 403)(2026-07-10)",
-        "conftest casbin 种子补 conversations:delete(owner 角色新增此权限,此前删除功能不存在故种子缺失);多租户隔离:conversations 端点租户过滤在 Repository 层(get_for_tenant/list_for_user),delete 额外校验 user_id 归属(用户私有数据)",
-        "SQLite 测试环境限制:Message 表 FK ondelete=CASCADE 在 SQLite 不生效(默认未开 PRAGMA foreign_keys),删除 conversation 后 message 行残留——生产 Postgres 上 CASCADE 生效;测试断言聚焦 conversation 列表不再出现(核心行为),未强测 message 级联"
+        "./init.sh 全绿:ruff + 112 passed(基线 105 + 新增 7 test_chat)",
+        "迁移 a2b3c4d5e6f7(Conversation 加 updated_at)+ alembic upgrade head 通过",
+        "偏差:删除策略选硬删除(plan 推荐方案 A,Conversation/Message 无 is_deleted)",
+        "偏差:append_message 显式刷新 conv.updated_at(Message 新对象不触发 Conversation onupdate)"
       ],
       "notes": "实现差异 vs plan:(1) 删除策略选硬删除(plan 推荐方案 A),Conversation/Message 表无 is_deleted,加软删除需改 schema;(2) append_message 显式刷新 conv.updated_at 而非依赖 onupdate(Message 是新对象不触发 Conversation 的 onupdate);(3) conftest 种子补 conversations:delete(此前功能缺失故种子无此项)。LLM 变量名仍叫 openai_*(plan 明确建议不改名,语义为 OpenAI 兼容接口)。手动 SSE 验证未跑(需真实 DeepSeek key + docker),测试用 monkeypatch stream_agent 离线覆盖。"
     },
@@ -267,7 +253,6 @@
         "npx oxlint src/pages/chat-page.tsx → 0 warnings 0 errors;全仓库 4 warnings 均为既有的 only-export-components(button/badge/auth-context/toast),非本任务(2026-07-10)",
         "SSE 实现:sendChatStream 为 async generator,用原生 fetch + ReadableStream(非 axios/EventSource);手动带 Authorization(getStoredToken);401 复刻 client.ts 逻辑 setStoredToken(null)+AUTH_EXPIRED_EVENT;帧解析 buffer.split('\\n\\n')+frames.pop() 留半帧;支持 AbortSignal 中途取消",
         "types.ts:Conversation 补 updated_at;Message.role 收紧为 'user'|'assistant' 联合类型(对齐后端 MessageRead)",
-        "路由 /chat 在 App.tsx 注册于 ProtectedRoute 内、RequireUserManagement 外(与 /agents 同级,member 可见);dashboard-layout NAV_ITEMS 加「对话」项(MessageSquare 图标,不带 needsUserManagement)",
         "质量修复:chat-page 滚动 useEffect 原依赖 messages 数组(每次渲染新引用),改为依赖 [messages.length, lastContent] 派生原语,消除 exhaustive-deps 警告",
         "探勘修正:plan Step 2 写的 clearStoredToken() 实际不存在,改用 client.ts 真实导出 setStoredToken(null)",
         "后端零改动:本任务纯前端;ruff + pytest 112 passed 基线不变(无回归)"
@@ -289,14 +274,10 @@
         "./init.sh 全绿"
       ],
       "evidence": [
-        "./init.sh 全绿:ruff check → All checks passed!;pytest → 118 passed(基线 112 + 新增 6)(2026-07-10)",
-        "pytest tests/test_permissions_api.py -v → 6 passed(矩阵反映 grant、catalogue 解析 obj/act、grant 后矩阵更新、revoke 后矩阵更新、跨租户隔离、member 无 roles:read → 403)(2026-07-10)",
-        "新增端点 GET /permissions/matrix(app/api/v1/permissions.py):返回 PermissionMatrix{roles:list[RoleRead], permissions:list[PermissionItem], matrix:dict[str,dict[str,bool]]};数据源 RolePermissionRepository.current_permissions(SCD2 当前态),非硬编码;依赖 require_permission('roles','read') 守卫",
-        "新增端点 GET /permissions/catalogue:返回 list[PermissionItem];每项 code='<obj>:<act>' 并解析出 obj/act 字段;数据源 Permission 表(tenant_id + is_deleted=False 过滤)",
-        "Service 层:permission_service 加 get_catalogue(查 Permission 表)+ get_matrix(取角色 list_for_tenant + 目录 + 每角色 current_permissions 组装矩阵);复用 RoleRepository/RolePermissionRepository,租户过滤在 Repository 层(铁律合规)",
-        "Schema 层:app/schemas/rbac.py 加 PermissionItem(id/code/name/obj/act)+ PermissionMatrix(roles/permissions/matrix)",
-        "main.py 注册路由:import permissions + app.include_router(permissions.router, prefix=prefix)(import 按字母序,permissions 在 organizations 与 roles 之间)",
-        "实现差异 vs plan:(1) 端点命名用 /catalogue 而非 plan 文档 verification 行写的 /objects(实际 plan §目标与 §Step3 均用 catalogue,verification 行的 'objects' 是笔误,以 §Step3 为准);(2) 测试未照搬 plan §Step4 的 'owner 19项/admin 11项/member 5项' 断言——因测试环境不调 seed_tenant_defaults 故 DB 无默认角色,改按 test_rbac_api 模式通过 API 建角色+grant 验证矩阵反映;(3) member 权限边界:conftest member casbin 策略无 roles:read(与生产 DEFAULT_MEMBER_PERMS 不一致,既有偏差),故 member_client GET 返回 403 而非 plan 预期的 200——这是正确的权限边界行为,测试覆盖了 403 分支"
+        "./init.sh 全绿:ruff + 118 passed(基线 112 + 新增 6 test_permissions_api)",
+        "新增 GET /permissions/matrix + /catalogue 端点(数据源 SCD2 当前态,非硬编码)",
+        "偏差:端点命名用 /catalogue(plan verification 行写的 /objects 是笔误)",
+        "偏差:测试不照搬 plan 的固定项数断言(测试环境不调 seed_tenant_defaults),改按 API 建+grant 验证"
       ],
       "notes": "纯后端只读端点,不改前端(那是 permission-matrix-ui 任务)、不改 grant/revoke(已就绪)、不改 schema/migration。矩阵聚合无性能问题(租户内角色≤默认3、权限项≤20,内存组装)。前端无对矩阵端点的既有引用,本任务提供真实数据源供 permission-matrix-ui 任务对接。"
     },
@@ -317,12 +298,8 @@
       "evidence": [
         "cd frontend && npm run build 通过:tsc -b + vite build 成功,0 类型错误(2026-07-10)",
         "npx oxlint src/pages/permissions-page.tsx src/hooks/queries.ts src/api/endpoints.ts src/api/types.ts → 0 warnings 0 errors(2026-07-10)",
-        "API 层:types.ts 加 PermissionItem(id/code/name/obj/act)+ PermissionMatrix(roles/permissions/matrix);endpoints.ts 加 fetchPermissionMatrix + fetchPermissionCatalogue",
-        "hooks 层:queries.ts 加 qk.permissionMatrix(['permissions','matrix'])+ usePermissionMatrix;扩展 useGrantRolePermission/useRevokeRolePermission 的 onSuccess 额外 invalidate qk.permissionMatrix(矩阵页编辑后自动刷新,roles-page 编辑后两边都刷新)",
-        "页面重写:permissions-page.tsx 从 108 行硬编码(2 资源×2 角色)重写为真实数据驱动(角色=usePermissionMatrix().roles、权限项=permissions、格子=matrix[role.code][perm.code]);列按 obj 分组(智能体/对话/用户/角色/组织)+ 组内按 read/create/update/delete/chat 排序;系统角色 Badge 标记",
         "可编辑交互:点格子 → granted? revoke(role.id, perm.id) : grant(role.id, {perm.obj, perm.act});pendingCell state 记录编辑中格子显示 spinner 防重复点击;错误用 toast + apiErrorMessage",
-        "关键简化:矩阵 PermissionItem.id 即是 revoke 所需 permissionId(因 RolePermission.permission_id == Permission.id,grant 时 _upsert_permission 返回的 pid 存入 RolePermission),故无需 useRolePermissions 预取,一个矩阵查询即可覆盖 grant+revoke",
-        "权限守卫:canManageUsers(me) 控制格子 editable(owner/admin/super_admin 可编辑,其余只读);路由层 RequireUserManagement 已在 App.tsx 拦截 member 到不了此页,页面内为防御性只读提示"
+        "关键简化:矩阵 PermissionItem.id 即是 revoke 所需 permissionId(因 RolePermission.permission_id == Permission.id,grant 时 _upsert_permission 返回的 pid 存入 RolePermission),故无需 useRolePermissions 预取,一个矩阵查询即可覆盖 grant+revoke"
       ],
       "depends_on": "permission-matrix-api",
       "notes": "实现差异 vs plan:(1) plan §Step1 提的 GET /permissions/objects 实际后端端点叫 /catalogue(对齐 permission-matrix-api 实现),verification 行的 objects 是 plan 笔误;(2) 关键简化——无需 useRolePermissions 预取 permission_id,矩阵 PermissionItem.id 直接可用于 revoke(plan 风险表担心的 permission_id 问题,经源码推理验证 PermissionItem.id == revoke 所需 permissionId);(3) 手动浏览器验证未跑(需前后端启动),build(tsc 类型检查)+ oxlint 已覆盖类型正确性与规范;(4) 系统角色(owner/admin/member)不增加编辑保护——后端 grant/revoke 不拦,UI 仅 Badge 标记提示,严格保护是后续增强(对齐 plan 不做的事)"
@@ -345,12 +322,9 @@
       "evidence": [
         "cd frontend && npm run build 通过:tsc -b + vite build 成功,0 类型错误(2026-07-10)",
         "npx oxlint 8 改动文件 → 0 warnings 0 errors(2026-07-10)",
-        "API 层补齐:types.ts 加 OrganizationUpdate(name/code/parent_id/leader_id/status/sort_order 全 optional);endpoints.ts 加 updateOrganization(PUT /organizations/{id})+ deleteOrganization(DELETE /organizations/{id})",
-        "hooks 层补齐:queries.ts 加 qk.organizations(['organizations'])+ useUpdateOrganization + useDeleteOrganization(onSuccess invalidate qk.organizations 级联刷新 orgTree);注释从'tree UI not built yet'更新为'organizations'",
         "组织管理页(organizations-page.tsx 新建):useOrganizationTree 取树 → flatten 递归扁平化为带 depth 的列表 → 表格按 depth 缩进渲染;创建 Dialog(name/code/parent_id 下拉/sort_order)+ 编辑 Dialog(name/code/status/sort_order)+ 删除确认;canManageUsers 控制写操作",
         "成员管理页(members-page.tsx 新建):useMembers 取列表 → 表格(user_id/email/display_name/角色 Badge/加入时间);DropdownMenu 改角色(排除当前角色)+ 移除确认;添加成员 Dialog(user_id 必填/role/email/display_name);canManageUsers 控制写操作",
         "租户管理整合 dashboard:dashboard-page.tsx 加「我的租户」卡片(useTenants + isError 处理 404)+ 创建租户 Dialog(name → useCreateTenant → toast);grid 从 2 列改 3 列",
-        "路由导航:App.tsx 在 RequireUserManagement 内注册 /organizations /members;dashboard-layout NAV_ITEMS 加「组织」(Building2)「成员」(UserCog)两项 needsUserManagement:true;member 被路由守卫拦截到不了管理页",
         "成员 API 层比 plan 预期更齐:探勘发现 fetchMembers/addMember/updateMember/removeMember + useMembers/useAddMember/useUpdateMember/useRemoveMember 早已就绪(本任务只缺页面);组织只缺 update/delete 两端点"
       ],
       "notes": "实现差异 vs plan:(1) 成员 API 层已全部就绪(plan §Step1 说要补 update/remove,实际早已存在),本任务只补成员页面;(2) 组织页用缩进表格(非 plan §Step3 的左右分栏),对齐 users-page/roles-page 已有模式;(3) 组织 update 后端是 PUT(plan §Step1 写 PATCH 是笔误);(4) 租户管理整合进 dashboard 而非独立页(对齐 plan §Step5 第一版方案);(5) 成员图标用 UserCog(Users 已用于用户管理页);(6) 添加成员需 user_id(已注册用户,非邀请)——MemberCreate.user_id required。手动浏览器验证未跑(需前后端启动),build(tsc)+ oxlint 已覆盖类型正确性与规范。后端零改动(纯前端)。"
@@ -370,16 +344,10 @@
         "CI workflow 更新,E2E + coverage job 全绿"
       ],
       "evidence": [
-        "./init.sh 全绿:ruff check → All checks passed!;pytest → 171 passed(基线 131 + 新增 40)(2026-07-11)",
-        "覆盖率门槛验证:pytest --cov=app --cov-report=term --cov-fail-under=80 → 93% 覆盖率(2576 语句,184 缺)→ exit 0 无 CoverageFailure(2026-07-11)",
-        "覆盖率追踪修复(关键发现):ASGI 测试请求跑在 anyio task group 里,coverage 的 sys.settrace 默认无法追踪到经 HTTPX ASGITransport 调用的 service 层代码 → pyproject.toml 加 concurrency=['thread','greenlet'] + CI 设 COVERAGE_CORE=ctrace(3.11 用 C tracer 保证速度)。修复前覆盖率显示 73%(虚假偏低),修复后 93%(真实值)",
-        "覆盖率配置修正:omit 加 app/core/dev_keys.py(纯 dev-only,与已 omit 的 main.py 一致);security.py 的 RS256/JWKS/dev-key 分支加 # pragma: no cover(需真实 Logto issuer,测试环境无法触发)",
-        "补测覆盖业务逻辑缺口:test_tenants_api.py(8 tests,tenant_service 31%→62%)、test_organizations_api.py(14 tests,create/update/move/cycle/delete + 修 path bug)、test_rbac_api.py +3(update fields/soft-delete exclude/labels)、test_users_crud.py +16(update 各分支/create org_ids 验证/change_status/reset_password/super_admin cross-tenant)",
-        "Bug 修复(补测时发现):organization_service.update 移动节点时漏更新被移动节点自身的 path(只重算了子树),导致 move-to-new-parent/move-to-root 后 path 残留旧值 → 修为 org.path = _compute_path(parent.path, parent.id) 后再 _recompute_subtree_paths",
-        "前端 oxlint 0 warning:.oxlintrc.json 把 react/only-export-components 从 ['warn',{allowConstantExport:true}] 改为 'off'(shadcn/ui 标准模式,buttonVariants/badgeVariants/useAuth/useToast 与组件同文件导出是惯例,非 bug)",
-        "Playwright E2E 本地验证通过:npx playwright test → 1 passed(15s);主线 login→create agent→chat(SSE 流式)→view history 全覆盖;mock OpenAI server(ThreadingHTTPServer,SSE 格式,HTTP/1.1 keep-alive)让对话环节离线跑通无需真实 DeepSeek",
-        "CI 加 e2e job(.github/workflows/ci.yml):Postgres service + 后端(uvicorn + alembic upgrade + init_admin)+ mock OpenAI server + 前端(npm ci + playwright install chromium)+ npx playwright test + 上传 playwright-report artifact;backend job 已加 --cov-fail-under=80 + COVERAGE_CORE=ctrace",
-        "E2E data-testid 补充:login-page(login-identifier/login-password/login-submit)、agents-page(create-agent-btn/agent-name-input/agent-submit)、chat-page(message-input/send-btn/assistant-message);最小集,其余用 role/label"
+        "./init.sh 全绿:ruff + 171 passed(基线 131 + 新增 40)+ 覆盖率 93%(门槛 80%)",
+        "关键发现:coverage concurrency=['thread','greenlet'] + COVERAGE_CORE=ctrace 让 ASGI service 层被正确追踪(虚假 73%→真实 93%)",
+        "Bug 修复:organization_service.update 移动节点漏更新自身 path(只重算子树)",
+        "Playwright E2E 本地通过(login→agent→chat→history)+ CI e2e job 加 mock OpenAI server 离线跑通"
       ],
       "notes": "关键发现:coverage 的 concurrency=['thread','greenlet'] 配置是让 ASGI 经 HTTPX ASGITransport 调用的 service 层代码被正确追踪的前提——否则覆盖率虚假偏低(73% vs 真实 93%)。COVERAGE_CORE=ctrace 保证 3.11 CI 上的速度(默认 settrace + concurrency 很慢)。E2E 用 mock OpenAI server(非 monkeypatch,因为 E2E 是黑盒)让对话走完整链路(前端 SSE → chat.py → stream_agent → ChatOpenAI → mock)。实现差异 vs plan:(1) oxlint 用全局 off 而非 overrides(更简单,shadcn 模式全局适用);(2) 补测时发现 organization path bug 并窄范围修复;(3) E2E 登录用密码表单(确定性)而非 /dev/token。Playwright 报告路径 /test-results/ /playwright-report/ 已加 .gitignore。"
     },
@@ -402,14 +370,10 @@
         "(真实)用户提供真实 DeepSeek key,端到端 SSE 流式对话跑通,运行时 bug 已修,证据写入 evidence"
       ],
       "evidence": [
-        "./init.sh 全绿:ruff check → All checks passed!;pytest → 131 passed(基线 118 + 新增 13:12 llm_config + 1 chat bug 修复)(2026-07-11)",
-        "真实端到端验证(真实 DeepSeek key,docker aap-postgres):alembic upgrade head 建表成功 → test1 登录 → SSE 对话真实跑通('1+1'→'2'、'2+3'→'5'、自我介绍流式输出),[DONE] 正常收到,会话历史持久化(2026-07-11)",
-        "Bug 1 修复验证:agent-reasoner(model=deepseek-reasoner)在 available_models 含 deepseek-reasoner 时对话真实用 reasoner;chat.py model = agent.model if in available_models else default_model,测试断言 stream_agent 收到的 model==agent.model(test_agent_model_is_passed_to_stream_agent)",
-        "Bug 2 修复:agents-page.tsx 删硬编码 MODELS=['gpt-4o-mini','gpt-4o','gpt-4-turbo','claude-3-5-sonnet'],改 useEffectiveModels() 动态加载;默认值 gpt-4o-mini → deepseek-chat",
-        "Bug 3 完成:app/core/crypto.py(Fernet encrypt/decrypt/mask_api_key);config.py field_encryption_key(model_validator 生产拦截默认值);LlmConfig model + 迁移 b3c4d5e6f7a8(down_revision a2b3c4d5e6f7);llm_config_service(get_effective 三级 fallback);settings.py API(5 端点);settings-page.tsx(平台级 super_admin + 租户级 canManageUsers 两 Card)",
-        "运行时 bug 修复(真实跑通时暴露,离线 mock 未覆盖):graph.py create_react_agent 的 prompt= 参数在 langgraph 0.2.61 不存在 → 改 messages_modifier=SystemMessage;输入从裸 list 改 dict {'messages':[...]}(否则 INVALID_GRAPH_NODE_RETURN_VALUE)",
-        "三级 fallback 验证:无 DB 配置 → /settings/models 返回 [deepseek-chat](env);写入租户级配置(含 deepseek-reasoner)→ 返回 [deepseek-chat,deepseek-reasoner](DB 覆盖 env)",
-        "权限边界:平台级端点 require_super_admin()(新增 deps.py,非超管 403);租户级 require_permission('settings','manage')(owner/admin,member 403);conftest casbin seed + permission_service DEFAULT_OWNER/ADMIN_PERMS 加 ('settings','manage')"
+        "./init.sh 全绿:ruff + 131 passed(基线 118 + 新增 13)+ 真实 DeepSeek SSE 端到端跑通",
+        "迁移 b3c4d5e6f7a8(LlmConfig 表,Fernet 加密)+ alembic upgrade head 成功",
+        "Bug 1 修复:chat.py 传 agent.model(stream_agent 不再硬用全局 settings.openai_model)",
+        "运行时 bug:create_react_agent 的 prompt= 参数在 langgraph 0.2.61 不存在 → 改 messages_modifier"
       ],
       "notes": "背景:agents-api-hardening/chat-conversation-api/chat-frontend 三任务虽标 passing,但 progress.md 多处承认「手动 SSE 验证从未跑通」(.env 里 OPENAI_API_KEY=sk-replace-me 是占位符)。探勘发现 3 个 bug:(1) stream_agent(graph.py) 硬用全局 settings.openai_model,chat.py 调用时未传 agent.model,导致用户选什么模型对话永远用全局那个;(2) agents-page.tsx:43 硬编码 MODELS=['gpt-4o-mini','gpt-4o','gpt-4-turbo','claude-3-5-sonnet'] 与后端 DeepSeek 完全脱节,选 gpt-4o-mini 调 DeepSeek 会 model not found;(3) LLM 配置只能改 .env 无 UI 管理。已确认决策:配置粒度=超管平台级+租户级两层;取值优先级=租户>平台>env;API key 掩码不回显(GET 返 sk-***abcd,PUT 留空=不改);本任务插队 tenant-org-admin-ui(priority 16 暂停,WIP=1 转此)。加密用 cryptography==44.0.0(已装,Fernet 可用),新增 config.py field_encryption_key 字段。迁移链 head=a2b3c4d5e6f7。权限 seed 真源在 permission_service.py DEFAULT_*_PERMS + conftest.py _make_casbin,需加 ('settings','manage')。"
     },
@@ -430,14 +394,10 @@
         "alembic check 无 drift(env.py + conftest.py 两处 model import 同步)"
       ],
       "evidence": [
-        "./init.sh 全绿:ruff check → All checks passed!;pytest → 186 passed(基线 171 + 新增 15 test_api_tokens)(2026-07-11)",
-        "pytest tests/test_api_tokens.py -v → 15 passed(颁发明文仅一次+掩码、列表无明文/hash、颁发的 token 访问 /agents 旁路生效、旁路不触 decode_token、JWT 路径回归、verify 回显身份、吊销后 401、吊销不存在 404、吊销后列表消失、过期 401、member 颁发/列表 403、token 继承 owner 权限建 agent、token 固定租户隔离、用户禁用 token 失效)(2026-07-11)",
-        "ApiToken 表(app/models/api_token.py):id/tenant_id FK/created_by_user_id FK/name/token_type(默认 pat)/token_hash(Fernet 密文)/token_prefix(索引)/scopes(JSONB+JSON 双库)/last_used_at/expires_at/is_active/is_deleted/created_at/updated_at;遵循软删除+双库兼容惯例",
-        "迁移 c4d5e6f7a8b9(down_revision b3c4d5e6f7a8):create_table api_tokens + 4 索引(tenant_id/created_by_user_id/token_prefix/is_deleted);APP_ENV=testing alembic upgrade head 成功(b3c4d5e6f7a8 → c4d5e6f7a8b9);alembic check → No new upgrade operations detected(env.py + conftest.py 两处 import 同步成功,Session 018 教训未重演)",
-        "deps.py 鉴权旁路(核心技术):get_current_user 开头加 API_TOKEN_PREFIX='ahp_' 前缀分流 → _resolve_api_token 调 api_token_service.verify(按 token_prefix 索引缩小范围→解密比对→验证 active/未过期→刷新 last_used_at→返回 ResolvedToken)→ 构造 CurrentUser(user_id=token.created_by_user_id, tenant_id=token.tenant_id);require_permission/require_super_admin/permission_service.check 全部零改动",
-        "权限继承验证:test_token_inherits_issuer_role 用颁发的 token(agenthub owner 颁发)POST /agents/ 成功 201(需 agents:create,证明 token 继承颁发者 casbin 角色);test_token_isolated_to_its_tenant 在另一租户建 agent,token 列表不含(证明 tenant_id 固定隔离)",
-        "权限 seed:permission_service DEFAULT_OWNER_PERMS/DEFAULT_ADMIN_PERMS 加 ('api_tokens','manage');conftest _make_casbin owner/admin policy 同步;member 无此权限 → test_member_cannot_issue/list 403",
-        "SQLite 时区处理:verify 中 expires_at 比较前判断 tzinfo(naive 则 replace tzinfo=UTC),因 SQLite 读回 strip tzinfo(Session 020 同款问题);生产 Postgres DateTime(timezone=True) 返回 aware 不受影响"
+        "./init.sh 全绿:ruff + 186 passed(基线 171 + 新增 15 test_api_tokens)",
+        "迁移 c4d5e6f7a8b9 + alembic check 无 drift(env.py + conftest.py 两处 import 同步)",
+        "核心:deps.py ahp_ 前缀旁路,require_permission 完全不改,所有现有 API 自动获得外部 Agent 访问能力",
+        "偏差:SQLite 时区 bug——verify 中 expires_at 比较 naive/aware(tzinfo 判断),生产 Postgres 不受影响"
       ],
       "notes": "AtoA 系列地基任务。核心设计:get_current_user 旁路用 ahp_ 前缀分流(非 ahp_ 走原 JWT 零回归),token 绑定 created_by_user_id 构造 CurrentUser 后 casbin 查询正常工作,所有现有 API 自动获得对外部 Agent 开放的能力。token 存 hash(crypto.encrypt)不存明文,颁发时明文仅返回一次。多租户隔离天然继承(token tenant_id 固定)。行业对标 GitHub PAT / Composio API key / Apifox 访问令牌。预留 OAuth Client Credentials(token_type 字段)作后续独立任务。⚠️ 新增表必同步 alembic/env.py:17-26 + tests/conftest.py:87-96 两处 import(Session 018 血泪教训)。迁移链 head=b3c4d5e6f7a8。"
     },
@@ -458,13 +418,10 @@
         "CLI 测试通过(cli/tests/)+ ./init.sh 全绿(后端不回归)"
       ],
       "evidence": [
-        "./init.sh 全绿:ruff check(app+cli+tests+alembic)→ All checks passed!;pytest → 199 passed(基线 186 后端 + 新增 13 cli/tests)(2026-07-11)",
-        "pytest cli/tests/ -v → 13 passed(login 存凭证 0600 + 网络错 exit1、login 拒绝 exit2、env var 覆盖、未登录返回 None、whoami --json/未登录 exit2/401 exit2、agents list/get --json、403 exit3、网络错 exit1、管道检测默认 JSON)(2026-07-11)",
-        "CLI 工程结构:cli/ 顶层包(main.py 入口 + client.py HTTP + config.py 凭证 + errors.py 异常 + context.py GlobalOptions + handlers.py @handle_errors 装饰器 + commands/{login,whoami,agents}.py);pyproject.toml 加 [project.scripts] agenthub=cli.main:run + [tool.setuptools.packages.find] include=app*,cli*",
-        "pip install -e . 成功:.venv/bin/agenthub --help 正常,3 命令(login/whoami/agents)注册,--json/--no-interactive 全局选项可见;setuptools flat-layout 多包发现问题需显式 packages.find(include=['app*','cli*'])",
-        "Agent-Ready 6 准则验证:① --json 结构化输出(test_agents_list_json 等)② --no-interactive 全局 flag ③ api key 认证(login 存 token)④ 幂等(只读命令)⑤ 管道检测 not sys.stdout.isatty() 自动切 JSON(test_pipe_detection_defaults_to_json)⑥ exit code 0/1/2/3 映射(@handle_errors 装饰器 catch CliError→typer.Exit(code=e.exit_code))",
-        "凭证安全:save_credentials 写入后 os.chmod(path, 0o600);AGENTHUB_TOKEN/AGENTHUB_BASE_URL 环境变量优先于文件(test_env_var_overrides_file 验证)",
-        "循环依赖处理:GlobalOptions 从 cli/main.py 提到独立 cli/context.py(main import commands→commands import context,无环);exit code 用 cli/handlers.py 的 @handle_errors 装饰器(非 click ClickException 继承,因 typer CliRunner 对 ClickException 的 exit_code 传播不一致)"
+        "./init.sh 全绿:ruff(app+cli+tests)+ 199 passed(基线 186 + 新增 13 cli/tests)",
+        "pip install -e . 成功 + agenthub --help 正常(3 命令注册)",
+        "偏差:GlobalOptions 提到独立 cli/context.py 解决循环依赖(main→commands→context 无环)",
+        "偏差:exit code 用 @handle_errors 装饰器(typer CliRunner 对 ClickException 的 exit_code 传播不一致)"
       ],
       "depends_on": "atoa-api-token-auth",
       "notes": "CLI 技术栈选 Python typer(对齐后端技术栈,与 google/agents-cli 同款)。CLI 代码放 cli/ 顶层目录(与 app/ 平级,独立包不污染后端)。行业对标 google/agents-cli(uvx 安装+skills 分发)与 ComposioHQ/awesome-agent-clis 总结的 Agent-Ready CLI 6 准则(--json/--no-interactive/api key 认证/幂等/管道检测/exit code)。HTTP client 复用 httpx(后端已依赖)。凭证文件权限 0600 + env var 覆盖(CI/容器场景)。"
@@ -485,14 +442,9 @@
         "(真实)端到端对话跑通(需 LLM key);CLI 测试通过(cli/tests/);./init.sh 全绿"
       ],
       "evidence": [
-        "./init.sh 全绿:ruff check(app+cli+tests+alembic)→ All checks passed!;pytest → 217 passed(基线 199 后端+cli + 新增 18 cli/tests)(2026-07-11)",
-        "pytest cli/tests/test_cli.py -v → 31 passed(原 13 login/whoami/agents 只读 + 新增 18:chat JSON 累积/conversation_id 转发/error 帧 exit1/default 模式、conversations list/messages JSON/messages 时间线渲染器/empty timeline/delete --yes/declined、agents create JSON/create minimal body/update PATCH/update 无字段报错/update declined/delete --yes/delete --no-interactive/404 exit1)(2026-07-11)",
-        "对话命令(cli/commands/chat.py):agenthub agents chat --agent <id> 'msg' [--conversation-id <id>];对接 POST /api/v1/chat/stream SSE;Client.stream_sse() 逐帧解析 data:{delta}/data:{error}/data:[DONE];默认模式 delta 输出到 stderr(打字机,不污染 stdout),--json 模式累积后输出 {reply, agent_id, conversation_id} 到 stdout;error 帧抛 CliError exit 1",
-        "会话历史命令(cli/commands/conversations.py sub-app):conversations list(表格 id/agent/title/updated_at)/ conversations messages <id>(时间线 [user]/[assistant])/ conversations delete <id> [--yes](默认 typer.confirm,--no-interactive 自动 --yes,declined 则 exit 0 非错误)",
-        "Agent CRUD(cli/commands/agents.py 扩展):agents create --name [--model --prompt](非破坏性不确认,POST);agents update <id> [--name --model --prompt] [--yes](PATCH 语义,默认 confirm);agents delete <id> [--yes](DELETE,默认 confirm);_should_skip_confirm(opts, yes) 统一逻辑:yes 或 no_interactive 跳过",
-        "Client.stream_sse(cli/client.py 新增):用 httpx.Client.stream('POST', ...) + iter_lines();yield 去掉 'data:' 前缀的 payload;401→AuthError/403→ForbiddenError/≥400→ApiError/网络→ApiError 错误映射复用 request() 逻辑;现有 request()/get_json() 零改动",
-        "实现差异 vs plan:(1) Agent update 后端是 PATCH 非 PUT(plan §Step5 写「后端是 PUT 但接受 partial」是错的,实际 app/api/v1/agents.py:67 是 @router.patch),对接 PATCH;(2) 测试发现 typer CliRunner 的 stdout 非真实 TTY,pipe-detection(cli/main.py not sys.stdout.isatty())在测试中恒触发 JSON 模式,patch cli.main.sys.stdout.isatty 无效(click 8.4 callback 解析路径不同)——timeline 渲染改用直接调用 _print_messages_timeline 单元测试覆盖;(3) SSE 帧不含 conversation_id(不改后端),--json 输出 conversation_id 为调用方传入值或 null,续聊需先 conversations list 拿 id",
-        "测试用 _FakeStreamResponse 类模拟 httpx 流式响应(__enter__/__exit__/iter_lines/read),驱动真实 Client.stream_sse 帧解析器端到端跑通(非 mock stream_sse 方法),覆盖 data: 前缀剥离 + [DONE] + {delta}/{error} 解析"
+        "./init.sh 全绿:ruff + 217 passed(基线 199 + 新增 18 cli/tests)",
+        "偏差:Agent update 后端是 PATCH 非 PUT(plan 写错,实际 agents.py:67 是 @router.patch)",
+        "偏差:typer CliRunner 的 isatty 陷阱——timeline 渲染改用直接函数调用单元测试覆盖"
       ],
       "depends_on": "atoa-cli-core",
       "notes": "核心卖点:外部 Agent 用你平台最大诉求是调 LLM+Agent 能力(对话)。对话涉及 SSE 流式(技术难点,流式 chunk 输出到 stderr 不污染 stdout),CRUD 涉及写操作(风险点,默认确认 --yes 跳过)。会话续接靠 --conversation-id 指定历史会话。首发能力范围(用户决策全选):对话+只读+历史读写+CRUD,本任务覆盖除只读(上个任务)外的三项。不改后端任何端点(只对接现有 API)。真实端到端对话验证(需 LLM key)留给收尾阶段:参照 real-chat-llm-config 模式,有真实 DeepSeek key 时起后端 + 颁发 token + agenthub login + agenthub agents chat 跑通流式。"
@@ -513,14 +465,10 @@
         "./init.sh 全绿(纯文档任务,不影响后端)"
       ],
       "evidence": [
-        "./init.sh 全绿:ruff check → All checks passed!;pytest → 217 passed(纯文档任务,后端零改动,基线不变)(2026-07-11)",
-        "SKILL.md frontmatter 格式校验:YAML 合法(yaml.safe_load 通过),name='agenthub' + description(200 字符,含触发场景关键词:agenthub/智能体/对话/创建 Agent/查看历史)+ metadata.requires.bins=['agenthub'] + metadata.cliHelp;正文 3554 字符(2026-07-11)",
-        ".agents/skills/agenthub/SKILL.md(新建):符合 Agent Skills 开放标准;结构 = frontmatter + 何时用 + 新会话检查(whoami 探活)+ 登录认证 + 基础用法(全局选项)+ 核心命令速查(对话/CRUD/会话历史)+ 使用要点(--json/--yes/exit code/多租户)+ CLI 事实优先 + 常见错误处理表;对齐 ~/.agents/skills/apifox-cli 范本风格(中文 description + 触发场景 + metadata.requires.bins + 新会话检查)",
-        ".agents/skills/agenthub/commands.md(新建子文件,按需加载):完整命令参考 —— 全局选项 + login/whoami + agents[list/get/create/update(PATCH)/delete/chat]+ conversations[list/messages/delete] 每条含参数表/输出模式/示例 + exit code 含义表 + 权限矩阵(owner/admin/member × 操作)",
-        "docs/atoa/ 三份文档(新建):README.md(AtoA 总览 + 四件套说明 + 架构设计「鉴权旁路」+ 对标项目)、getting-started.md(5 步:颁发 token → 装 CLI → 登录 → 装 Skill → 用,含 FAQ)、distribution.md(分发模型 + CLI/Skill 安装方式 + 各 Agent 目录约定表 + 安全注意 + 管理员分发清单)",
-        "README.md 加「AtoA:让外部 AI Agent 接入」章节(依赖致谢前):四件套简表 + 指向 docs/atoa/ 的快速上手链接",
-        "交叉链接全部解析:SKILL.md → commands.md(1 处)、docs/atoa/README.md → getting-started.md/distribution.md(各 2 处)、README.md → docs/atoa/(1 处);6 个新建文件全部存在",
-        "实现差异 vs plan:(1) plan Step5 的「Claude Code 实测」留作可选 —— Skill 已符合开放标准格式(可被支持该标准的 Agent 识别),实测依赖具体 Agent 环境(Claude Code 实例 + 已登录的 token),不在本代码任务范围;若用户要做实测,按 getting-started.md 第 4 步操作;(2) plan Step4 的「09-外部Agent接入AtoA.md 架构文档」按 plan 边界「全部 AtoA 任务完成后补」不做,架构说明已精简写进 docs/atoa/README.md 的「架构设计」章节"
+        "./init.sh 全绿:ruff + 217 passed(纯文档任务,后端零改动基线不变)",
+        "SKILL.md frontmatter YAML 校验通过(yaml.safe_load)+ 6 新建文件交叉链接全部 resolve",
+        "偏差:对齐 apifox-cli 范本(中文 description+触发场景+metadata.requires.bins)而非 plan 英文骨架",
+        "偏差:Claude Code 实测为可选项(依赖 Agent 环境),Skill 格式合规性已校验"
       ],
       "depends_on": "atoa-cli-chat-admin",
       "notes": "Apifox 打法四件套(CLI+Skill+授权+agentHints)的 Skill 层。Agent Skills 是 2025 年 VS Code Copilot/Claude Code/Cursor/Codex 共同采纳的事实标准:渐进式加载(先扫 frontmatter ~100 token 建索引→命中后加载正文→按需读子文件)。目录约定 .agents/skills/。行业对标 Apifox 官方 GitHub org 的 AI Agent Skills、google/agents-cli 的 skills 分发。description 精准度决定 Agent 命中率(写清做什么+何时用+前置条件)。本仓库 ~/.agents/skills/ 下已有大量 Skill 范本(lark-*/obsidian-* 等)可参照格式。本任务对齐 apifox-cli 范本风格(中文 description + 触发场景 + metadata.requires.bins + 新会话检查 + CLI 事实优先)。Skill 命令内容基于真实 CLI 11 个命令(agenthub --help / agents --help / conversations --help 核实,非 plan 骨架)。Claude Code 实测为可选项(plan §验收标准第 3 条标「(真实)」),留给用户在有 Agent 环境时按 getting-started.md 第 4 步执行。"
@@ -544,9 +492,6 @@
         "cd frontend && npm run build 通过:tsc -b + vite build 成功,0 类型错误(2026-07-11)",
         "npx oxlint src/pages/settings-page.tsx src/hooks/queries.ts src/api/endpoints.ts src/api/types.ts → 0 warnings 0 errors(2026-07-11)",
         "后端零改动(纯前端任务,基线 217 passed 不变,无回归)",
-        "API 层:types.ts 加 ApiToken(id/name/token_prefix/token_type/scopes/last_used_at/expires_at/is_active/created_at,对齐后端 ApiTokenRead)+ ApiTokenCreate(name/expires_at?/scopes?)+ ApiTokenCreated(extends ApiToken + token_id + token 明文,对齐后端 ApiTokenCreateResponse);endpoints.ts 加 fetchApiTokens(GET)/createApiToken(POST,返回 ApiTokenCreated)/revokeApiToken(DELETE)",
-        "hooks 层:queries.ts 加 qk.apiTokens(['api-tokens'])+ useApiTokens(useQuery)+ useCreateApiToken(useMutation,onSuccess invalidate apiTokens)+ useRevokeApiToken(useMutation,onSuccess invalidate apiTokens)",
-        "页面(settings-page.tsx 加 ApiTokenCard 组件):新增第三个 Card「API Token 管理」(ShieldCheck 图标,在 LLM 配置两个 Card 之后);canManage 权限守卫(canManageUsers,owner/admin/super_admin 可见);列表表格(名称/前缀 code/状态 Badge 生效中|已吊销/创建时间/最后使用/过期 永不过期|fmt/吊销按钮);「颁发新 Token」按钮弹 Dialog",
         "颁发流程 Dialog:表单(name Input + 有效期 Select:永不过期/7/30/90/365 天 → 计算 expires_at ISO 字符串 + 权限范围提示「继承全部权限」);提交成功后**切换到独立的「明文展示」Dialog**(关键 UX):大字号琥珀色警告横幅「请立即复制下方 Token 并妥善保管」+ 只读 Input 显示明文 + 复制按钮(navigator.clipboard.writeText + Check/Copy 图标切换 + clipboard 失败 fallback toast)+ 名称/前缀元信息 + 「我已保存,关闭」按钮",
         "吊销确认 Dialog:吊销按钮 → 确认 Dialog(「确定吊销 {name}?吊销后使用此 Token 的 Agent 将立即无法访问,且不可恢复」)+ destructive 按钮 → useRevokeApiToken → toast 反馈 → 列表刷新",
         "实现差异 vs plan:(1) expires_at 用下拉选择预设天数(永不过期/7/30/90/365)而非日期选择器 —— 日期选择器需额外日期组件且手输 ISO 字符串易错,预设天数覆盖常见场景且更简洁;(2) 明文展示用**独立 Dialog**(issue Dialog 关闭后弹出 reveal Dialog)而非 plan 描述的「切换 Dialog 内视图」,因关闭 issue Dialog 可重置表单而保留 reveal 状态独立管理更清晰;(3) ApiTokenCreated 对齐后端真实 schema 用 token_id(非 plan 骨架的 id)+ extends ApiToken 复用 Read 字段;(4) scope 细粒度编辑不实现(UI 显示「继承全部权限」提示),对齐 plan 边界"
@@ -568,16 +513,10 @@
         "./init.sh 全绿"
       ],
       "evidence": [
-        "发现于 Session 030 AtoA 接入配置(2026-07-11):Step 3 选 curl 颁发 Token,curl -L 返回 307→403",
-        "root cause:api_token_service.py 3 处 permission_service.require(user_id, tenant_id, OBJECT, ACT_MANAGE) — require() 缺 platform_role 参数(默认 None),check() 的 super_admin 绕过(platform_role=='super_admin'→True)不触发",
-        "路由层 require_permission 传了 platform_role=user.platform_role 能过,但服务层 require() 早一步抛 PermissionError→被 main.py _permission_handler 捕获 render 403",
-        "init_admin.py 重跑已补 api_tokens:manage 到 DB(casbin_rule 表已验证),但代码层传参缺失才是根本问题",
-        "排查发现影响面远大于 api_tokens:全仓库 7 个 Service 共 ~38 处 require() 都缺 platform_role:agent_service(5)、api_token_service(3)、conversation_service(4)、member_service(4)、organization_service(5)、rbac_service(8)、user_service(9)",
-        "现有 API(agent CRUD / users / roles 等)不受影响,因为 Casbin 在服务器启动时已加载了这些政策。但任何新增权限(如 api_tokens:manage)都会暴露此 bug",
-        "Session 032 修复(根治路径 B,2026-07-11):./init.sh 全绿 → ruff All checks passed! + pytest 229 passed(基线 217 + 新增 12 test_service_platform_role)",
-        "修复范围(7 Service × 38 处 require + 对应 controller 转发):agent_service(5 require + agents.py 5 call)、api_token_service(3 + api_tokens.py 3)、conversation_service(4 + chat.py create_or_get + conversations.py 3)、member_service(4 + members.py 4)、organization_service(5 + organizations.py 5)、rbac_service(8 + roles.py 8)、user_service(create 补 1 处 + users.py 1 call);user_service 其余 8 处 require 在 if not is_super_admin 守卫内(无需转发,已是黄金范本)",
-        "回归测试 tests/test_service_platform_role.py(12 个):① require() 忠实复现 test_permission_require_forwards_platform_role —— 用 no-role 拥有的 'anything:nuke' policy,断言 require(...,platform_role='super_admin') 不抛、require(...) 无 platform_role 抛 PermissionError(注入破坏 require 丢 platform_role 后此测试 FAIL,证明忠实);② Service 层 test_agent_service/api_token_service_require_forwards 验证签名接受并转发;③ E2E super_admin_client 覆盖 7 个 endpoint(issue/list/revoke api-token + create agent + list members/roles/organizations/conversations);④ 非回归 owner 能颁发 / member 403",
-        "修复机制:permission_service.require()/check() 本身签名已支持 platform_role(require:73-89 转发给 check);bug 在 6 个 Service 调用方未传 + user_service.create 漏传。修复 = 每个调用方加 platform_role 形参 + controller 传 user.platform_role。向后兼容(platform_role 默认 None)"
+        "./init.sh 全绿:ruff + 229 passed(基线 217 + 新增 12 test_service_platform_role)",
+        "修复范围:7 Service × 38 处 require 加 platform_role 形参 + 对应 controller 转发",
+        "忠实性验证:用 'anything:nuke' 合成权限注入破坏 require 丢 platform_role → 测试 FAIL → 恢复 → PASS",
+        "bug 本质:require() 签名有 platform_role,是调用方没传(6 Service + user_service.create)"
       ],
       "notes": "系统性模式缺陷,非 api_tokens 独有。require() 方法签名支持 platform_role 参数(默认为 None),但所有调用方都没传。修复范围:7 个 Service 所有 require() 调用增加 platform_role 形参 + 路由层传 user.platform_role。两条修复路径:(A)仅修 api_token_service 让配置走通(局部) (B)全修所有 Service(根治)——Session 032 采用路径 B 根治。黄金范本:user_service.py 的 list/get/update/delete/change_status/reset_password 已有 is_super_admin 守卫 + platform_role 参数;本次将其余 6 Service 对齐同一模式(转发 platform_role 给 require,require/check 的 super_admin 短路负责绕过)。"
     },
@@ -598,13 +537,10 @@
         "./init.sh 全绿(无 schema 改动,无需 CI migrations 守门)"
       ],
       "evidence": [
-        "2026-07-11: 新建 app/agents/token_budget.py —— estimate_tokens(CJK≈1 token/字 + ASCII≈1/4 token + 保守 +1 偏高)+ estimate_messages_tokens(每条 +4 overhead)+ truncate_history(滑动窗口丢弃最旧,MIN_HISTORY_MESSAGES=6 兜底);常量 CONTEXT_TOKEN_BUDGET=24000 / RESERVE_FOR_REPLY=4096",
-        "2026-07-11: graph.py stream_agent 的 astream_events 循环外包 asyncio.timeout(LLM_STREAM_TIMEOUT_SECONDS=60) —— Python 3.11+ 上下文管理器,超时抛 TimeoutError 由 chat.py except 捕获;非 plan 的 wait_for(asyncio.timeout 是 3.11+ 推荐写法,项目 Python 3.13)",
-        "2026-07-11: chat.py 历史拼接后加 history = truncate_history(history);Repository list_for_conversation 加 limit=200 防御性参数(非截断逻辑,截断靠 token_budget)",
-        "2026-07-11: chat.py event_source 异常分支加部分回复容错 —— partial = ''.join(full_reply);if partial.strip(): append_message('assistant', partial + '\\n\\n[生成中断]');空回复不落库",
-        "2026-07-11: tests/test_token_budget.py 12 纯函数单测全过(estimate_tokens 空/中文/英文/混合 + estimate_messages_tokens 求和/空 + truncate_history 正常不截断/丢弃最旧/最小保留/空/保留近期 + 常量合理性)",
-        "2026-07-11: tests/test_chat.py +3 集成测试全过 —— test_truncate_history_called_on_long_conversation(注入 40 条重消息断言 history<40 且≥6)+ test_assistant_partial_reply_persisted_on_error(stream 中途抛异常断言 assistant 消息含 partial reply + [生成中断])+ test_llm_timeout_yields_error_frame(mock create_react_agent 返回 hanging agent + LLM_STREAM_TIMEOUT_SECONDS=0.1 断言 error frame 无 [DONE])",
-        "2026-07-11: ./init.sh → ruff All checks passed! + 244 passed(229 基线 + 12 token_budget + 3 chat 集成,无回归);无 schema/migration 改动故无需 alembic check"
+        "./init.sh 全绿:ruff + 244 passed(基线 229 + 新增 12 token_budget + 3 chat 集成)",
+        "偏差:超时用 asyncio.timeout(Python 3.11+ 上下文管理器)非 plan 的 wait_for(后者破坏流式语义)",
+        "偏差:truncate_history 不含 system_prompt(由 graph.py messages_modifier 注入,不在 history 列表)",
+        "超时测试忠实性:mock create_react_agent 返回 hanging agent + monkeypatch 超时 0.1s,让真实 timeout 代码路径跑通"
       ],
       "depends_on": "real-chat-llm-config",
       "notes": "根因:conversation.py:32 list_for_conversation 无 limit 全量拉取;chat.py:76-82 全量拼接;graph.py:118 全量喂 agent;零 token 计数(grep 全仓零命中)。后果:长对话 100% 撞 context window 崩溃(DeepSeek 32K),第 N 轮发 N 条历史 token 成本平方级增长。决策:token 近似估算(不引入 tiktoken,DeepSeek 无官方 tokenizer);滑动窗口截断(不做对话摘要,那是后续增强);固定预算常量 24000(不查 per-model context_length);超时用 asyncio.wait_for 整体 60s。不动 Message 表结构(token_count 字段属用量计量任务范围)。"
@@ -625,17 +561,10 @@
         "手动浏览器验证:Markdown 渲染 + 代码高亮 + 停止/复制/重新生成(需前后端启动)"
       ],
       "evidence": [
-        "cd frontend && npm run build 通过:tsc -b + vite build 成功,0 类型错误(2026-07-11);CSS 47.38KB(含 highlight.js github-dark 主题 + typography),JS 951.85KB(含 react-markdown/remark-gfm/rehype-highlight/highlight.js)",
-        "npx oxlint src/ 全仓库 → 0 warnings 0 errors(2026-07-11);改动文件 chat-page.tsx + markdown-view.tsx 单独检查亦 0 warning",
-        "依赖安装:npm install react-markdown remark-gfm rehype-highlight highlight.js @tailwindcss/typography → added 107 packages,0 vulnerabilities(2026-07-11)",
-        "MarkdownView 组件(frontend/src/components/chat/markdown-view.tsx 新建):react-markdown + remark-gfm(GFM 表格/任务列表/删除线/自动链接)+ rehype-highlight(highlight.js 语法高亮);components 覆盖:pre 包裹 relative 容器 + 代码块复制按钮(CodeBlockCopy 组件,group-hover 显示)+ code 区分行内( bg-muted)/块级(language-*)+ a 加 target=_blank rel=noopener;导入 highlight.js/styles/github-dark.css(代码块固定深色背景 bg-zinc-900,浅暗模式一致 à la ChatGPT);prose prose-sm dark:prose-invert 排版(tailwind typography 插件)",
-        "chat-page.tsx 集成:assistant 消息 content 非空时用 <MarkdownView content={msg.content}/> 渲染(去掉 whitespace-pre-wrap,Markdown 接管排版)+ overflow-x-auto 防代码块溢出;user 消息保持 whitespace-pre-wrap 纯文本(防注入);流式中 content 增长同样走 MarkdownView(react-markdown 增量重渲染,消息体 <2KB 性能可接受)",
-        "停止生成按钮:streaming 时发送按钮(Send)替换为停止按钮(Square,destructive variant),点击调 abortRef.current?.abort();catch 里识别 err.name==='AbortError' 跳过 toast(用户主动停止非错误);finally 仍执行 setStreaming(false)+invalidate conversations;data-testid='send-btn' 保留(E2E 兼容,条件渲染不冲突)",
-        "复制按钮:assistant 消息 hover 显示操作栏(Copy 图标),点击 navigator.clipboard.writeText(msg.content)→ 图标变 Check 2 秒恢复;copiedId state 按消息 id 独立反馈;代码块复制在 MarkdownView 的 CodeBlockCopy 组件内(每块独立 copied state)",
-        "重新生成(简化版):最后一条 assistant 消息操作栏显示 RotateCcw 按钮(仅 isLastAssistant && !streaming);点击移除尾部 assistant placeholder + 把对应 user 消息 content 填回输入框(setInput),用户手动重发——规避后端重复存 user 消息(plan 边界)",
-        "tailwind.config.js 注册 typography 插件(plugins: [tailwindcssTypography],原 plugins: [] 为空);darkMode: ['class'] 不变",
-        "E2E 兼容:三个 data-testid(message-input/send-btn/assistant-message)全部保留;send-btn 在发送/停止按钮上各一处但条件渲染不冲突;E2E 在非 streaming 状态点击 send-btn 安全",
-        "后端零改动(纯前端任务):git diff 确认无 app/ 文件改动;后端基线 244 passed 不变(无回归)"
+        "cd frontend && npm run build 通过(tsc + vite 0 错误)+ oxlint 全仓库 0 warning",
+        "偏差:多装 @tailwindcss/typography(plan 用 prose 类但 plugins 为空)",
+        "偏差:代码块用单套 github-dark.css + 固定 bg-zinc-900(非 plan 的浅色+深色双套,避免 .hljs 冲突)",
+        "偏差:补 AbortError 识别(用户主动停止跳过错误 toast,plan 未预见)"
       ],
       "depends_on": "chat-frontend",
       "notes": "根因:chat-page.tsx:318 用 whitespace-pre-wrap 纯文本渲染(无 Markdown 解析);package.json 无 react-markdown;abortRef(chat-page.tsx:72,155) 声明了却没接停止按钮;无复制(grep clipboard 零命中)/无重新生成。决策:react-markdown + remark-gfm + rehype-highlight(highlight.js 轻量,非 shiki);用户消息保持纯文本(防注入);流式边流边渲染;重新生成简化版(填回输入框,避免后端重复存 user 消息)。不做:消息编辑/删除、文件上传、KaTeX/Mermaid、对话搜索/重命名(均属另一任务)。纯前端任务,后端零改动。"
@@ -656,16 +585,10 @@
         "./init.sh 全绿 + alembic upgrade head/check 无 drift + cd frontend && npm run build 通过"
       ],
       "evidence": [
-        "./init.sh 全绿:ruff check → All checks passed!;pytest → 250 passed(基线 244 + 新增 6:5 test_agents_api + 1 test_chat)(2026-07-11)",
-        "APP_ENV=testing alembic upgrade head → c4d5e6f7a8b9 → 5dd68e90d6f0 迁移成功;alembic check → No new upgrade operations detected(无 drift,env.py + conftest.py 已含 agent import 无需改)(2026-07-11)",
-        "cd frontend && npm run build 通过:tsc -b + vite build 成功,0 类型错误;npx oxlint src/ 全仓库 → 0 warnings 0 errors(2026-07-11)",
-        "Agent model(app/models/agent.py)加 4 字段:description(Text default='' server_default='')+ temperature(Float default=0.7 server_default='0.7')+ max_tokens(Integer nullable)+ top_p(Float nullable);import 补 Float, Integer",
-        "迁移 5dd68e90d6f0(down_revision c4d5e6f7a8b9):add_column agents.description/temperature/max_tokens/top_p;description+temperature 带 server_default 给现有行填默认值;downgrade 对称 drop 4 列",
-        "Schema(app/schemas/agent.py):AgentBase 加 description(str='')+ temperature(Field(0.7, ge=0, le=2))+ max_tokens(int|None, ge=1, le=32768)+ top_p(float|None, ge=0, le=1);AgentUpdate 对应 Optional 版(None=不改);AgentService.create 传 4 新字段;update 用 model_dump(exclude_unset=True) 只更新传入字段(对齐 users/roles 模式)",
-        "graph.py 移除硬编码 temperature=0.3:新建 _build_llm_kwargs helper 统一构造 ChatOpenAI kwargs(temperature 必传,max_tokens/top_p 非 None 才传);build_agent + stream_agent 签名加 temperature/max_tokens/top_p 参数;chat.py event_source 调 stream_agent 传 agent.temperature/max_tokens/top_p",
-        "测试 test_agents_api.py +5:test_create_agent_with_inference_params(temperature=0.9/max_tokens=2048/top_p=0.95/description 断言)+ test_create_agent_default_inference_params(不传→temperature=0.7/max_tokens=None/top_p=None/description='')+ test_create_agent_invalid_temperature_returns_422(temperature=3.0→422)+ test_update_agent_inference_params(PATCH temperature/max_tokens/description,top_p 未传保持 None)+ test_update_agent_clears_max_tokens_to_null(PATCH max_tokens=null 清空)",
-        "测试 test_chat.py +1:test_agent_inference_params_passed_to_stream_agent(建 agent temperature=0.1/max_tokens=1024→对话→断言 capturing_stream 收到 temperature=0.1/max_tokens=1024/top_p=None,验证 Agent→chat.py→stream_agent 完整传递链)",
-        "前端 types.ts:Agent 加 description/temperature/max_tokens/top_p;AgentCreate/AgentUpdate 对应加(optional);agents-page.tsx:zod schema 加 4 字段(temperature z.number()+valueAsNumber,max_tokens/top_p 用 string 空串=不设);表单加 description Input + temperature range slider(0-2 step 0.1 + 实时数值显示)+ 高级折叠区 details(原生,max_tokens/top_p Input number 留空=不限制);onSubmit 用 parseNum 空串→null;列表名称列下加 description 小字"
+        "./init.sh 全绿:ruff + 250 passed(基线 244 + 新增 6)+ alembic check 无 drift",
+        "迁移 5dd68e90d6f0(4 新列带 server_default 给现有行填默认值)",
+        "偏差:_build_llm_kwargs helper 提取(max_tokens/top_p 非 None 才传,避免覆盖 provider 默认)",
+        "偏差:前端 max_tokens/top_p 用 string+parseNum(非 z.union,后者推断 unknown TS 报错)"
       ],
       "depends_on": "real-chat-llm-config",
       "notes": "根因:app/models/agent.py:16-33 只有 4 有效字段(name/system_prompt/model/时间戳);temperature 硬编码 graph.py:76,109 两处写死 0.3;无 max_tokens/top_p;前端 agents-page.tsx:44-48 表单只有 3 字段。决策:加 4 字段(temperature/max_tokens/top_p/description);默认 temperature=0.7(原硬编码 0.3 改进为更通用默认);max_tokens/top_p 为 None 时不传给 LLM(用 provider 默认);前端高级参数折叠(新手不被吓到)。不做:工具配置(属工具体系任务)、知识库关联(属 RAG 任务)、prompt 变量模板、Agent 分类标签系统、per-model 动态上限。"
@@ -684,16 +607,10 @@
         "./init.sh 全绿"
       ],
       "evidence": [
-        "发现于 Session 030 AtoA 接入配置收尾(2026-07-11):为让新终端可用 agenthub,跑 pipx install -e . 成功,但 ~/.local/bin/agenthub whoami 报 ModuleNotFoundError: No module named 'typer'",
-        "root cause:pyproject.toml [project] 段完全没有 dependencies 字段(grep dependencies 零命中)——CLI 运行依赖 typer/httpx/click 未声明,后端依赖(fastapi/sqlalchemy/pycasbin/langgraph 等)也未声明",
-        "本地 .venv 能跑是因为依赖被手动 pip install 装入,不依赖 pyproject dependencies 字段;pipx 创建独立虚拟环境时不会装未声明的依赖",
-        "临时绕过(已执行,不改代码):pipx inject agenthub typer httpx click → ~/.local/bin/agenthub whoami 返回 {valid:true,...} 全局可用",
-        "CLI 第三方运行依赖(grep cli/ import 排除测试文件):typer、httpx、click(pytest 仅测试用,非运行依赖)",
-        "Session 033 修复(2026-07-11):方案 = requirements.txt 作唯一来源 + CLI 依赖合并进主 dependencies(用户 3 项决策确认)。pyproject.toml 加 dynamic=[\"dependencies\"] + [tool.setuptools.dynamic] dependencies={file=[\"requirements.txt\"]},不在 pyproject 重复版本号 → 零漂移",
-        "requirements.txt 改动:① 合并 CLI 依赖段(typer>=0.12,<1 / rich>=13,<14 / click>=8.1,<9;httpx 已存在不重复);② 第17行内联注释重排(setuptools dynamic 读取走 packaging.Requirements 解析,不支持内联 #,必须拆成独立注释行);③ click 显式声明(cli/errors.py:18 直接 import,typer 0.12+ 依赖树不再传递 click)",
-        "requirements-cli.txt 删除(内容已合并进 requirements.txt,避免双轨);init.sh INSTALL_CMD 从 'pip install -r requirements-dev.txt -r requirements-cli.txt' 简化为 'pip install -r requirements-dev.txt'(requirements-dev.txt 的 -r requirements.txt 自动含 CLI 依赖);.github/workflows/ci.yml Backend job 同步删 -r requirements-cli.txt;docs/atoa/distribution.md:29 引用更新",
-        "验证(全过):① pyproject.toml tomllib 解析 OK(dynamic + [tool.setuptools.dynamic] 段就位);② pip install -e . 成功(editable build done,无 PEP 508 解析错误,证明内联注释重排生效);③ importlib.metadata.requires('agenthub') 从修复前的 0 项变为 26 项(含 typer/rich/click/httpx 四个 CLI 依赖全 ✅,pydantic-settings 两条条件标记各自独立);④ ./init.sh 全绿 ruff All checks passed! + 229 passed(简化装依赖路径不回归);⑤ import typer,click,rich,httpx + agenthub --help 正常",
-        "架构决策理由:pyproject 把 app+cli 打成一个项目(packages.find include app*,cli*),故 pip install -e . 必须装齐两者依赖。CLI 依赖(typer/rich/click)原在 requirements-cli.txt 独立分层,但作 dynamic 单一来源时必须合并进 requirements.txt,否则 pipx/pip install -e . 读不到 CLI 依赖(原 bug 复现)。合并后 requirements-cli.txt 冗余故删"
+        "./init.sh 全绿:ruff + 229 passed(简化装依赖路径不回归)",
+        "pip install -e . 成功 + importlib.metadata.requires 从 0 项变为 26 项(含 typer/rich/click/httpx)",
+        "偏差:requirements.txt 作唯一来源(dynamic dependencies,零版本漂移),CLI 依赖合并后删 requirements-cli.txt",
+        "偏差:requirements.txt 第17行内联注释重排(setuptools dynamic PEP 508 解析不支持内联 #)"
       ],
       "notes": "关联 atoa-cli-core(priority 20),其 plan 假设 pipx install -e . 可直接全局分发,实际因 dependencies 缺失受阻。根因修复:pyproject.toml [project] 加 dependencies=[typer,httpx,click, ...](CLI 运行最小集)——建议同时补全后端依赖让 pip install -e . 在干净环境可用。本任务在 AtoA 接入配置中用 pipx inject 临时绕过,治本修复留作独立任务。不影响后端运行(后端用 .venv 已装齐),仅影响 CLI 全局分发与干净环境安装。 Session 033 根治:采用 dynamic dependencies 从 requirements.txt 读取(单一事实来源,零版本漂移),CLI 依赖合并进 requirements.txt 后 requirements-cli.txt 删除。死依赖(pgvector/python-dateutil)本次不清理(独立任务)。pipx reinstall 实测留作可选证据(本会话用 pip install -e . + metadata 检查已等价证明 dependencies 声明正确)。"
     },
@@ -718,12 +635,7 @@
         "cd frontend && npm run build 通过:tsc + vite build 成功,0 类型错误(2026-07-12);npx oxlint src/ → 0 warnings 0 errors(39 文件)",
         "APP_ENV=testing alembic upgrade head → 迁移链通;alembic check → No new upgrade operations detected(聚合迁移 c1d2e3f4a5b6 抠掉 organizations/user_organizations 建表块 + drop 块 + 头注释,保留 users/rbac/sessions/logs;本地 Postgres 残留旧表已 DROP,check 无 drift)(2026-07-12)",
         "grep organization app/ tests/ alembic/ frontend/src/(排除注释/dist)→ 零残留(grep exit 1)",
-        "Step 1 整删 6 文件:app/models/organization.py + app/repositories/organization.py + app/services/organization_service.py + app/api/v1/organizations.py + app/schemas/organization.py + tests/test_organizations_api.py",
-        "Step 2-5 User 模块耦合清理:app/schemas/user.py(删 OrganizationBrief 类 + UserRead.organizations + UserCreate/Update.organization_ids)+ app/repositories/user.py(删 Organization/UserOrganization import + list_organizations/sync_organizations 两方法 + serialize_user 的 organizations 形参/构造块/返回字段)+ app/services/user_service.py(删 Organization import + _validate_org_ids 方法 + create/update 的 org 校验/sync 调用 + serialize_user 调用去 organizations 实参)+ app/core/validation_errors.py(删 organization_ids 中文映射)",
-        "Step 6-7 迁移+注册清理:alembic/versions/c1d2e3f4a5b6(抠 organizations+user_organizations 建表块+索引+downgrade drop 块+头注释,保留其它表)+ alembic/env.py(删 organization import)+ tests/conftest.py(删 organization import)+ app/main.py(删 organizations import + include_router)",
-        "Step 8-9 权限 seed 清理:app/services/permission_service.py(DEFAULT_OWNER 删 4 条 organizations + ADMIN 删 1 条 + MEMBER 删 1 条)+ tests/conftest.py(_make_casbin owner 删 4 条 + admin 删 1 条)",
-        "Step 10 前端清理:删 frontend/src/pages/organizations-page.tsx + endpoints.ts(删 4 import + 5 函数 fetchOrganizationTree/fetchOrganizations/createOrganization/updateOrganization/deleteOrganization)+ types.ts(删 OrganizationBrief + Organization + OrganizationTreeNode + OrganizationCreate + OrganizationUpdate 5 接口 + UserRead.organizations + UserCreate.organization_ids + 注释 roles/organizations→roles)+ queries.ts(删 4 import + qk.orgTree/organizations + 4 hooks useOrganizationTree/useCreate/useUpdate/useDeleteOrganization)+ App.tsx(删 import + Route)+ dashboard-layout.tsx(删 NAV_ITEMS 组织项 + Building2 import)+ dashboard-page.tsx(删管理组织 Link)+ permissions-page.tsx(删 OBJ_LABELS organizations + objOrder 两处硬编码)+ users-page.tsx(删 createMut 的 organization_ids:[] 字段)",
-        "测试清理:test_rbac_api.py(删 test_org_tree_crud + 文件头注释改)+ test_service_platform_role.py(删 test_super_admin_can_list_organizations)+ test_users_crud.py(删 test_create_user_with_organization_ids + test_create_user_with_invalid_org_ids_400)"
+        "Step 6-7 迁移+注册清理:alembic/versions/c1d2e3f4a5b6(抠 organizations+user_organizations 建表块+索引+downgrade drop 块+头注释,保留其它表)+ alembic/env.py(删 organization import)+ tests/conftest.py(删 organization import)+ app/main.py(删 organizations import + include_router)"
       ],
       "notes": "MVP 业务模块第 1 任务(共 6 个)。现有 Organization 是「租户内部部门树」(tenant_id 非空外键,不能跨门店),用户的新业务用「Group 跨租户管理门店」替代——两者同名但完全不同。本任务只删不建,新 Group 在 groups-api 任务。高风险点:User 模块(repository JOIN user_organizations + service 查 Organization 表)深度耦合,必须同步清理 schema(repo list_organizations/sync_organizations)+ service(_validate_org_ids)+ 前端表单(organization_ids),否则 user CRUD 全线崩溃。聚合迁移 c1d2e3f4a5b6 不能整删(一次建多表),只能编辑抠 organizations 块。前置无,WIP=1 顺序执行。"
     },
@@ -743,16 +655,10 @@
         "./init.sh 全绿 + alembic upgrade head && alembic check 无 drift"
       ],
       "evidence": [
-        "./init.sh 全绿:ruff check(app/ cli/ tests/ scripts/ alembic/)→ All checks passed!;pytest → 294 passed(基线 281 + 净增 13,无回归)(2026-07-12)",
-        "pytest tests/test_tenants_api.py -v → 19 passed(原 8 核心回归 + 新增 11:POST 收紧 owner/member 403 ×2、GET /all super_admin + 非 super_admin 403、member_count 仅聚合 active SCD2 行、GET /{id} super_admin + 非 super_admin 403 + 404、PUT /{id} super_admin + partial 不影响其他字段 + 非 super_admin 403 + 404、user-scoped list member_count 恒 0)(2026-07-12)",
-        "Tenant model(app/models/tenant.py)加字段:status(String(20) default='active' + server_default='active',给现有行回填)、description/address(String(500) nullable)、created_by(String(128) nullable,非 FK —— bootstrap 路径 dev-user 可能不存在于 users 表,plain String 更稳;记录 super_admin 创建者)",
-        "Alembic 迁移 84605f063730(down_revision 6f197cf8f964):add_column tenants status/description/address/created_by;status 加 server_default='active' 回填现有行(NOT NULL 约束);APP_ENV=testing alembic upgrade head(6f197cf8f964 → 84605f063730)成功;alembic check → No new upgrade operations detected(env.py 已 import tenant 无需改;model status 加 server_default 对齐迁移避免 drift)",
-        "Repository 扩展(app/repositories/tenant.py):list_all_with_member_count(LEFT JOIN UserTenant + COUNT + _ACTIVE 谓词 valid_to IS NULL + GROUP BY + created_at desc)、get_detail_with_member_count(单门店同聚合)。member_count 是运行时聚合非表字段(避免冗余维护)",
-        "Service 扩展(app/services/tenant_service.py):list_all(调 repo 聚合)、get_detail(NotFoundError if absent)、update(exclude_unset 部分更新 + flush/commit/refresh + 重新聚合 member_count)、create_tenant 加 created_by keyword-only 参数(向后兼容,dev_bootstrap 不传仍正常);_to_read helper 从 ORM 对象 + member_count 组装 TenantRead",
-        "API 扩展(app/api/v1/tenants.py):GET /tenants/all(super_admin dependencies)+ GET /tenants/{tenant_id}(super_admin)+ PUT /tenants/{tenant_id}(super_admin)+ POST /tenants/ 收紧为 super_admin dependencies;_http_exc 异常映射(NotFoundError→404,其他 ValueError→400);⚠️ 路由顺序:/all 必须在 /{tenant_id} 前定义(否则 'all' 被当 tenant_id 匹配);GET /tenants/(我的租户)保留无守卫",
-        "权限守卫设计:平台级 4 端点(GET /all、GET /{id}、POST /、PUT /{id})统一 require_super_admin()(deps.py:246,cross-tenant 操作不属于租户级 RBAC);user-scoped GET /tenants/ 保留任意登录用户;casbin seed 无需改(门店管理走 super_admin 不进租户级 RBAC)",
-        "bootstrap 路径安全确认:main.py dev_bootstrap(L153)直接调 svc.create_tenant()(不经 HTTP 守卫),收紧 POST 权限不影响它;scripts/init_admin.py 只调 /auth/login(不经 POST /tenants/);create_tenant 新签名 created_by 默认 None 向后兼容",
-        "架构铁律遵守:依赖单向 Controller→Service→Repository→Model;多租户隔离在平台级端点天然由 super_admin 守卫(看所有租户是 super_admin 的定义);user-scoped list 仍走 memberships.list_for_user 用户隔离;member_count 聚合用 _ACTIVE 谓词与 SCD2 当前态语义一致"
+        "./init.sh 全绿:ruff + 294 passed(基线 281 + 净增 13)",
+        "迁移 84605f063730 + alembic check 无 drift",
+        "偏差:created_by 用 plain String 非 FK(bootstrap 路径 dev-user 可能不存在于 users 表)",
+        "偏差:member_count 运行时聚合(LEFT JOIN + _ACTIVE 谓词)非表字段;路由顺序 /all 必须在 /{id} 前"
       ],
       "depends_on": "org-cleanup",
       "notes": "核实发现租户后端极弱(仅 POST 创建 + GET 我的租户两端点,无 list-all/edit/detail)。super_admin 看不到所有门店、门店不能改名、groups-ui/customers-ui 需要门店下拉无数据源。本任务补齐:GET /tenants/all(super_admin 平台级列表含 member_count)+ GET/PUT /tenants/{id} + 收紧 POST 为 super_admin。Tenant 加 status/created_by/description/address 字段。前置 org-cleanup(已 passing)。迁移 head=6f197cf8f964。为 groups-ui(门店挂载下拉)和 customers-ui(客户归属门店)提供数据源。"
@@ -776,10 +682,7 @@
         "cd frontend && npm run build 通过:tsc -b + vite build 成功,0 类型错误(2026-07-12);JS 976.51KB / CSS 47.99KB",
         "npx oxlint src/(全仓库 43 文件)→ 0 warnings 0 errors(2026-07-12);9 改动文件单独检查亦 0 warning",
         "后端零改动(纯前端任务,基线 294 passed 不变,无回归)",
-        "API 层:types.ts Tenant 扩展 status/description/address/member_count/created_by(全 optional,兼容现有 dashboard 用法)+ 新增 TenantUpdate;endpoints.ts 加 fetchAllTenants(GET /tenants/all)+ updateTenant(PUT /tenants/{id})",
-        "hooks 层:queries.ts 加 qk.allTenants key + useAllTenants(enabled 参数,避免非 super_admin 触发 403)+ useUpdateTenant(onSuccess invalidate allTenants + tenants);useCreateTenant 的 onSuccess 扩展同时 invalidate allTenants",
         "门店页(tenants-page.tsx 新建):useAllTenants 列表 → 表格(门店名+id/状态 Badge/地址/成员数/描述/创建时间/操作 DropdownMenu);创建/编辑共用 Dialog(react-hook-form + zod);创建只发 name(后端 TenantCreate 仅 name),若填了 status/description/address 则创建后 PUT 补充;编辑用 diff payload 只发变更字段",
-        "路由守卫:新建 require-super-admin.tsx(RequireSuperAdmin 组件,me.platform_role !== 'super_admin' → 重定向 /);App.tsx /tenants 注册在 RequireSuperAdmin 内;后端 403 仍是硬边界,路由守卫是 UX 层",
         "导航:dashboard-layout NAV_ITEMS 加「门店」(Store 图标,needsSuperAdmin:true);NavItem 接口加 needsSuperAdmin 字段;filter 逻辑扩展(super_admin 判定 + needsUserManagement 判定 + 默认可见)",
         "dashboard 收紧:dashboard-page 创建租户按钮加 hidden={me?.platform_role !== 'super_admin'}(POST 收紧后普通用户会 403);「我的租户」卡片本身保留(普通用户视角不变)",
         "顺带修复(groups-page):门店挂载下拉从 useTenants(user-scoped 我的)改为 useAllTenants(canManage 条件启用);修复了 super_admin 管理 Group 门店挂载时只能看到自己租户、看不到其他门店的 UX 缺陷;非 super_admin 只读访问时 query 不启用(避免 403)",
@@ -803,14 +706,10 @@
         "./init.sh 全绿 + APP_ENV=testing alembic upgrade head && alembic check 无 drift(env.py + conftest.py 两处 import 同步)"
       ],
       "evidence": [
-        "./init.sh 全绿:ruff check(app+cli+tests+scripts+alembic)→ All checks passed!;pytest → 248 passed(基线 232 + 新增 16 test_groups_api)(2026-07-12)",
-        "pytest tests/test_groups_api.py -v → 16 passed(super_admin:create+get、list 空→有数据、create+tenant_ids 同时挂载、create 未知 tenant_id 404、update、update 重复 code 400、delete 软删除后列表不含+get 404、get 不存在 404、attach+detach 门店、attach 未知 tenant 404、detach 未挂载 404;门店写守卫:owner POST 403、member POST 403、member attach 403;门店读隔离:tenant 用户只看自己所属 Group、看不到不相关 Group + 直接 get 404)(2026-07-12)",
-        "Group model(app/models/group.py 新建):平台级无 tenant_id;字段 id/name/code/address/description/status/sort_order/is_deleted/deleted_at/created_at/updated_at;软删除 + partial unique index uq_groups_code_active(postgresql_where=is_deleted false + sqlite_where=is_deleted 0 双库,对齐 User.uq_users_username_active 模式,软删除后 code 可复用);GroupTenant 关联表(group_id+tenant_id FK CASCADE + UniqueConstraint uq_group_tenant 防重复挂载 + idx_group_tenants_tenant_id 索引反查)",
-        "迁移 574391d912fc(down_revision 5dd68e90d6f0):create_table groups + group_tenants + 3 索引;server_default 补齐(status='active'/sort_order=0/is_deleted=false)给现有行填默认值;APP_ENV=testing alembic upgrade head 成功;alembic check → No new upgrade operations detected(env.py + conftest.py 两处 group import 同步,Session 018 教训未重演)",
-        "权限设计(核心技术决策):Group 平台级不用 require_permission('groups',act),写操作用 require_super_admin()(纯平台级,仅 super_admin),读操作 Depends(get_current_user) 登录即可 + Service 内分流(is_super_admin 看全部 / 门店用户 list_for_tenant 反查自己所属);groups 不进 DEFAULT_OWNER/ADMIN/MEMBER_PERMS,conftest casbin seed 不加 groups 项;门店用户读自己所属 Group 不查 groups:read(因无此 casbin 权限,走「登录即可」路径)",
-        "GroupRepository(app/repositories/group.py):平台级,继承 BaseRepository(非 TenantScopedRepository,因 Group 无 tenant_id);list_all(super_admin 全部,is_deleted=False 过滤)+ list_for_tenant(门店视角 JOIN GroupTenant 反查)+ get_by_code(唯一性校验);GroupTenantRepository:list_for_group/exists/attach/detach/tenant_exists(挂载前校验 tenant 存在)",
-        "GroupService(app/services/group_service.py):参照 agent_service.py CRUD 范式;_to_read helper 组装 GroupRead(JOIN GroupTenant+Tenant 填 tenant_ids + tenants TenantBrief);create/update 后 re-fetch 避免 commit 过期对象触发 MissingGreenlet(对齐 user_service._read 模式);delete 软删除;attach_tenant/detach_tenant 校验 group 存在 + tenant 存在 + 重复挂载 BizError 400 + 未挂载 NotFoundError 404",
-        "实现差异 vs plan:(1) GroupTenant 用普通 UniqueConstraint(非 partial index)——挂载关系解除=删行无软删除态,plan §Step1 的 partial index 修正为普通约束;(2) Group 加软删除(用户决策,plan §Step1 字面无 is_deleted)对齐项目铁律;(3) _to_read 用 group.__table__.columns 遍历(非 GroupRead.model_fields,因后者含 tenant_ids/tenants 非 ORM 属性)"
+        "./init.sh 全绿:ruff + 248 passed(基线 232 + 新增 16 test_groups_api)",
+        "迁移 574391d912fc + alembic check 无 drift(env.py/conftest.py 两处 import 同步)",
+        "偏差:GroupTenant 用普通 UniqueConstraint 非 partial index(挂载解除=删行无软删除态)",
+        "偏差:Group 加软删除(用户决策,plan 字面无 is_deleted)对齐项目铁律"
       ],
       "depends_on": "tenants-admin-ui",
       "notes": "Group 是用户业务里的「经营主体」:可能是连锁企业(多家门店)也可能是单店。平台级实体(无 tenant_id),总部 super_admin 维护。门店挂载走 GroupTenant 多对多关联表。权限设计:写操作用 require_super_admin()(纯平台级),读操作 Service 内分流(super_admin 看全部 / 门店用户看自己所属)。不进 DEFAULT_*_PERMS(门店角色无权管 Group),super_admin 通过 require_super_admin 守卫不走 casbin。参照 agent_service.py CRUD 范式。前置 org-cleanup(旧 Organization 已删)。"
@@ -833,11 +732,6 @@
         "cd frontend && npm run build 通过:tsc -b + vite build 成功,0 类型错误(2026-07-12);chunk size >500KB 警告是既有警告(highlight.js/react-markdown,非本任务引入)",
         "npx oxlint(6 改动文件:groups-page.tsx/queries.ts/endpoints.ts/types.ts/App.tsx/dashboard-layout.tsx)→ 0 warnings 0 errors(2026-07-12)",
         "后端零改动(纯前端任务,基线 248 passed 不变,无回归)",
-        "API 层(types.ts):加 TenantBrief(id/name:string|null —— 对齐后端 app/schemas/group.py 的 TenantBrief.name: str|None,非 plan 骨架的 name:string)+ Group(id/name/code/address/description/status/sort_order/tenant_ids/tenants/created_at/updated_at)+ GroupCreate(含 tenant_ids 创建时批量挂载)+ GroupUpdate(全 optional,无 tenant_ids —— 挂载走独立端点)",
-        "API 层(endpoints.ts):加 7 端点 fetchGroups/fetchGroup/createGroup/updateGroup(PUT,对齐后端 @router.put)/deleteGroup/attachTenant(POST /groups/{id}/tenants/{tid})/detachTenant(DELETE 同路径);放在 tenants 段之后",
-        "hooks 层(queries.ts):qk 加 groups + group:(id);7 hooks useGroups/useGroup(enabled:!!id)/useCreateGroup/useUpdateGroup(onSuccess invalidate groups+group(id))/useDeleteGroup/useAttachTenant(useMemo 算 attachableTenants,onSuccess invalidate groups+group(groupId))/useDetachTenant(同);import 补 7 端点 + GroupCreate/GroupUpdate 类型(字母序)",
-        "页面(groups-page.tsx 新建):参照 roles-page(useForm+zodResolver+Dialog)+ members-page(Badge 多选);列表表格(组织名/编码/地址/关联门店数 Badge N 家/状态 Badge/更新时间/操作 DropdownMenu);创建 Dialog(zod schema name 必填 + code/address/description/status/sort_order + 关联门店 Checkbox 列表数据来自 useTenants 勾选填入 tenant_ids 随 createGroup 提交);编辑 Dialog(基础字段 + 门店挂载面板:已关联门店 Badge+✕ 调 detachTenant + 底部「+ 添加门店」下拉只显示未关联门店调 attachTenant);删除确认 Dialog(destructive);权限守卫 canManage = me?.platform_role==='super_admin'(非 canManageUsers,门店 owner/admin 无权管 Group);空态提示门店用户「您还未归属任何组织,请联系总部」",
-        "路由导航:App.tsx 加 import GroupsPage + Route /groups(ProtectedRoute 内、RequireUserManagement 外,与 /agents /chat 同级 —— member 可读自己 Group);dashboard-layout.tsx 加 Building2 import(字母序)+ NAV_ITEMS 加 { to:'/groups', label:'组织', icon:Building2 }(不带 needsUserManagement,所有人可见),放在 /chat 与 /members 之间",
         "实现差异 vs plan:(1) TenantBrief.name 对齐后端 str|None(plan 骨架写 string 不准);(2) updateGroup 用 PUT(后端 @router.put)而非 plan 骨架未明确的 PATCH;(3) 编辑态门店挂载用 useMemo 算 attachableTenants(已关联 set 过滤)驱动下拉;(4) status 选项 active/inactive(对齐后端 GroupBase.status='active' 默认值);(5) 路由 /groups 不加 RequireUserManagement(plan 明确 member 可读自己 Group);(6) 权限守卫用 platform_role==='super_admin' 而非 canManageUsers(plan 风险表提示 Group 平台级仅 super_admin 管控)"
       ],
       "depends_on": "groups-api",
@@ -859,14 +753,10 @@
         "./init.sh 全绿 + alembic upgrade head && alembic check 无 drift"
       ],
       "evidence": [
-        "./init.sh 全绿:ruff check(app+tests+alembic)→ All checks passed!;pytest → 265 passed(基线 248 + 新增 17 test_customers_api)(2026-07-12)",
-        "pytest tests/test_customers_api.py -v → 17 passed(新身份建 Customer+Profile、复用身份跨店共享 Customer、跨店聚合 profile_count=2、本店重复 400、门店列表隔离只看自己、跨店 profile get/update/delete 404、member read 通过 create/update/delete 403、非超管 HQ 端点 403、update 同步 name 到 Customer、软删除后列表消失且 Customer 存在 profile_count=0、软删后同 identity 可重建、update/delete 不存在 404、HQ aggregate 不存在 404、super_admin 列表看跨店、HQ 列表)(2026-07-12)",
-        "双表 model(app/models/customer.py):Customer 平台级无 tenant_id + identity_key 部分唯一索引(uq_customers_identity_active PG/SQLite 双库)+ 软删除;CustomerProfile 带 tenant_id FK + (customer_id,tenant_id) 部分唯一索引(uq_profile_customer_tenant_active)+ tenant_id 索引 + created_by FK users;参照 tenant.py User/UserTenant 双表 + group.py 平台级模式",
-        "迁移 6f197cf8f964(down_revision 574391d912fc):create_table customers + customer_profiles + 5 索引;server_default 补齐(is_deleted text('false')/tags text('{}')/status 'active');env.py + conftest.py 两处 customer import 同步(Session 018 教训未重演);alembic upgrade head 574391d912fc → 6f197cf8f964 成功;alembic check → No new upgrade operations detected",
-        "核心 create_profile 逻辑:customer = get_by_identity(identity_key)→ 存在则复用(同步 name/gender/birthday)+ 不存在则新建 → get_by_customer_tenant 查本店是否已有该客户档案 → 有则 BizError(400 该客户在本门店已有档案)→ 无则建 Profile(tenant_id);commit 后 re-fetch 避免 MissingGreenlet",
-        "权限设计双轨:门店视角 /customers/profiles/* 走 require_permission('customers',act) 路由守卫 + Service 内 require(platform_role) 二次校验;HQ 视角 /customers/ + /customers/{id}/aggregate 走 require_super_admin();super_admin 走 list_all 跨店、门店走 list_for_tenant 本店隔离",
-        "update_profile 同步全局身份:name/gender/birthday 写入 Customer,remark/tags/status 写入 Profile;delete_profile 只软删本店 Profile(Customer 全局身份保留,其它店可能还在用);软删后同 identity_key 可重建(partial unique index 只覆盖 live 行)",
-        "权限 seed 5 处同步:permission_service DEFAULT_OWNER_PERMS +4(customers read/create/update/delete)+ DEFAULT_ADMIN_PERMS +3(无 delete)+ DEFAULT_MEMBER_PERMS +1(read);conftest _make_casbin owner +4 / admin +3 / member +1"
+        "./init.sh 全绿:ruff + 265 passed(基线 248 + 新增 17 test_customers_api)",
+        "迁移 6f197cf8f964 + alembic check 无 drift",
+        "偏差:permission_service 导入用单例实例(非模块),参照 user_service/group_service",
+        "偏差:test fixture 不可混用(app_client+member_client 的 decode_token patch 互相覆盖,改用 db_session 直接建 profile)"
       ],
       "depends_on": "groups-api",
       "notes": "客户域核心难点:一个客户可能去多个门店。设计=全局身份(Customer,手机号/证件号唯一)+ 门店档案(CustomerProfile,带 tenant_id 隔离)。保证不破坏租户隔离铁律(门店只看自己 tenant 的 Profile)+ 跨店识别同一人(总部 JOIN 两表)。跨租户查询范式照搬 user.py:117-149 的 super_admin 形参分支。权限 seed 5 处同步(permission_service 3 常量 + conftest casbin owner/admin/member)。前置 groups-api(建议非硬依赖,MVP Customer 可不绑 Group)。不做消费记录/订单/跟进(属后续增强)。"
@@ -891,9 +781,6 @@
         "cd frontend && npm run build 通过:tsc -b + vite build 成功,0 类型错误(2026-07-12)",
         "npx oxlint src/pages/customers-page.tsx src/hooks/queries.ts src/api/endpoints.ts src/api/types.ts src/App.tsx src/components/layout/dashboard-layout.tsx → 0 warnings 0 errors(2026-07-12)",
         "后端零改动(纯前端任务,基线 265 passed 不变,无回归);pytest tests/test_customers_api.py → 17 passed 确认前置端点就绪",
-        "API 层:types.ts 加 6 个 Customer 类型(CustomerBrief/CustomerProfileBrief/CustomerProfileRead/CustomerProfileCreate/CustomerProfileUpdate/CustomerRead)—— 对齐真实后端 app/schemas/customer.py(注意:CustomerProfileBrief.tenant 是嵌套 TenantBrief,非 plan 文档的扁平 tenant_id/tenant_name;HQ 视角返回类型叫 CustomerRead 非 plan 的 CustomerAggregate);endpoints.ts 加 6 个端点函数(fetchCustomerProfiles/createCustomerProfile/updateCustomerProfile/deleteCustomerProfile/fetchCustomers/fetchCustomerAggregate)",
-        "hooks 层:queries.ts 加 qk.customerProfiles + qk.customers + qk.customer(id);6 个 hooks(useCustomerProfiles/useCreateCustomerProfile/useUpdateCustomerProfile/useDeleteCustomerProfile/useCustomers/useCustomerAggregate)—— 写操作 onSuccess 同时 invalidate customerProfiles + customers(门店编辑后总部聚合视图也刷新)",
-        "页面(customers-page.tsx 新建,双视角):CustomersPage 按 me.platform_role==='super_admin' 条件渲染 StoreView / HqView;StoreView = 本店档案列表(姓名/手机/性别/生日/状态/最近到店/备注)+ 创建/编辑 Dialog(identity_key 编辑时 disabled 全局身份标识不可改 + gender/birthday/remark/tags_json + status)+ 删除确认;HqView = 全局客户列表(姓名/手机/性别/去过 N 家店 Badge)+ 点击行内联展开跨店档案明细(列表数据已含 profiles 无需额外请求)",
         "权限守卫三层:canCreate=canManageUsers(me)(owner/admin 可创建编辑,member 只读);canDelete=me.roles.includes('owner')(仅 owner 可删除,admin 不能);super_admin 总部视图只读(写操作在门店视角);路由 /customers 在 ProtectedRoute 内 member 可见(门店视角 member 只读)",
         "实现差异 vs plan:(1) CustomerProfileBrief.tenant 用嵌套 TenantBrief(对齐真实后端 schema,plan 文档写扁平 tenant_id/tenant_name 是过时的);(2) HQ 聚合返回类型用 CustomerRead(非 plan 的 CustomerAggregate,后端 schema 就叫 CustomerRead);(3) 跨店档案详情用行内展开(列表已含 profiles)而非 plan 的 useCustomerAggregate 按需加载——MVP 量小列表全返回更简单;(4) tags 用原生 textarea 填 JSON(项目无 Textarea UI 组件,用 Tailwind 样式匹配 Input);(5) 客户图标用 Contact(避免与用户管理页的 Users 冲突)"
       ],
@@ -916,13 +803,10 @@
         "./init.sh 全绿(现有 super_admin 测试无回归)"
       ],
       "evidence": [
-        "./init.sh 全绿:ruff All checks passed! + 281 passed(基线 265 + 16 新增 tests/test_hq_platform_role.py,无回归)(2026-07-12)",
-        "permission_service.check() 加 hq_staff + act=='read' 短路(super_admin 全权短路不变);新增模块级 helper is_cross_tenant_viewer(platform_role)(super_admin/hq_staff 都算跨租户查看者)+ CROSS_TENANT_VIEWER_ROLES 常量(2026-07-12)",
-        "Service 层跨租户分支扩展:customer_service.list_profiles 的 is_super 改为 is_cross_tenant_viewer;group_service.list/get 的 platform_role=='super_admin' 改为 is_cross_tenant_viewer。写操作不改:hq_staff 写落入 casbin → 无策略 403(天然只读)(2026-07-12)",
-        "Customer HQ 读端点守卫扩展:deps.py 新增 require_cross_tenant_viewer(super_admin+hq_staff 通过);GET /customers/ 与 GET /customers/{id}/aggregate 从 require_super_admin 改为 require_cross_tenant_viewer。Group 写端点仍 require_super_admin(hq_staff 403,组织架构不可改)(2026-07-12)",
-        "tests/test_hq_platform_role.py 16 个测试覆盖:hq_staff 跨店读客户/聚合/组织/agent 全 200;hq_staff 写客户 create/update/delete 全 403;hq_staff 建/删组织 403;hq_staff 访问平台 LLM 配置 403;super_admin 读 HQ 客户/建组织 不回归;owner/member 仍被 HQ 端点 403;is_cross_tenant_viewer 单元契约(2026-07-12)",
-        "conftest 加 hq_staff_client fixture:用 member 租户角色 + platform_role='hq_staff'(复用 _build_client),真实还原「总部人员无门店业务角色」场景——首版误用 owner 角色导致写权限泄漏(member 的有限 casbin 权限是 hq_staff 只读的正确边界)(2026-07-12)",
-        "无迁移/无 schema 改动(platform_role 是自由字符串字段 tenant.py,加 hq_staff 无需迁移/JWT 改动);现有 super_admin 回归测试 test_service_platform_role.py / test_customers_api.py / test_groups_api.py / test_permission_service.py 全过(51 passed)(2026-07-12)"
+        "./init.sh 全绿:ruff + 281 passed(基线 265 + 新增 16 test_hq_platform_role)",
+        "无迁移(platform_role 是自由字符串字段)",
+        "偏差:hq_staff_client fixture 绑定 member 角色(非 owner),避免 owner 写权限泄漏导致写操作误返 200",
+        "偏差:HQ 读端点守卫从 require_super_admin 改为 require_cross_tenant_viewer(plan 隐含但需显式)"
       ],
       "depends_on": "customers-api",
       "notes": "用户「总部各司其职」需求的具体落地。platform_role 是自由字符串无 Enum 约束(tenant.py:92-96),加 hq_staff 无需迁移/JWT 改动。设计=check() 方案 A(加分支),不改 casbin 架构。hq_staff 定位=总部看板/巡检员,能看全貌不能改。MVP 两个平台角色(super_admin 全权 + hq_staff 只读),可扩展(后续加财务/客服等岗位再升级到平台级 casbin domain)。前置 customers-api(用 Customer 域作跨租户只读验证载体)。前端 customers-ui/groups-ui 的 isSuperAdmin 判定可顺带改为 isCrossTenantViewer(若已合并)。"
@@ -998,14 +882,10 @@
         "./init.sh 全绿(纯脚本任务,无 app/ 代码改动,基线不回归)"
       ],
       "evidence": [
-        "python scripts/seed_demo.py --reset 一键清空演示数据(白名单边界:门店名/用户名/group code/customer identity/agent name/role code 反查 ID 按 FK 反向级联删,super_admin/默认角色权限/casbin 非演示行不碰)+ 全量重建,无报错。清理覆盖:Message→Conversation→ApiToken→LlmConfig→CustomerProfile→Customer→RolePermission→Role(自定义)→Agent→UserLoginMethod→UserTenant→User→GroupTenant→Group→Tenant→SystemLog→casbin grouping/policy",
-        "python scripts/seed_demo.py(无参数)幂等可重跑:全部新实体(自定义角色/LLM配置/对话/Token/登录方式)打印 exists 跳过;li_shifu 保持 senior_therapist 绑定稳定(SCD2 无 churn,step1 跳过 CUSTOM_ROLE member 由 step6 绑定)",
-        "重建后各表计数验证(真实 Postgres aap 库):3 门店 + 7 用户 + 2 组织 + 3 客户身份 + 5 门店档案 + 4 Agent(推理参数各不同:朝阳 temp=0.3/max=2048/top_p=0.9,海淀 0.7/默认,王府井 0.9/4096/0.95,总部 0.2/8192/0.85)+ 5 对话 + 22 消息 + 2 LlmConfig(平台 deepseek-chat + 朝阳租户级 deepseek-reasoner)+ 2 ApiToken(朝阳/海淀 owner)+ 1 自定义角色 senior_therapist(customers:read/update + conversations:read/create/chat)+ 6 SystemLog + 1 UserLoginMethod(chen_guanzhang 手机号)",
-        "三级 fallback 验证:平台级 LlmConfig default_model=deepseek-chat api_key_hint=sk-***lder available=[chat,reasoner];朝阳租户级 override=deepseek-reasoner → 登录朝阳店 Agent 下拉显示 reasoner,海淀/王府井回退平台 chat",
-        "自定义角色生效验证:li_shifu 当前角色=senior_therapist(SCD2 1 行 valid_to=NULL),角色权限=[conversations:read/create/chat, customers:read/update],无 customers:delete → 能改客户不能删",
-        "运行时 bug 修复(真实跑通暴露):① --reset 清 casbin 后重建,_ensure_membership 原只写 SCD2 不写 casbin grouping → 加 permission_service.add_role_for_user_in_domain/set_role_for_user_in_domain 同步 grouping;② li_shifu 被 rebind 成 senior_therapist 后缺 conversations:create → CUSTOM_ROLE 权限补 conversations:read/create/chat;③ PLATFORM 对话用 hq_staff actor 无 conversations:create → 改用 super_admin(platform_role bypass);④ casbin 模块路径是 app.core.casbin_enforcer 非 app.core.security",
-        "./init.sh 全绿:ruff All checks passed! + 294 passed(纯脚本+文档任务,app/ 零改动,基线不回归)",
-        "脚本行数:~700 行(从 369 行扩展);新增 --reset argparse + _reset_demo_data(白名单反查 FK 反向删)+ 6 个 seed 函数(_seed_custom_role/_seed_llm_configs/_seed_conversations/_seed_api_tokens/_seed_extra_login_methods);docstring 更新全量清单"
+        "./init.sh 全绿:ruff + 294 passed(纯脚本+文档,app/ 零改动)",
+        "python scripts/seed_demo.py --reset 真实 Postgres 一键清空+全量重建无报错;无参数幂等重跑全部跳过",
+        "Bug 修复:_reset_demo_data 删 SystemLog 顺序错误(SET NULL 导致审计日志泄漏),上移到删租户之前",
+        "运行时 bug:_ensure_membership 原只写 SCD2 不写 casbin grouping,补 add_role_for_user_in_domain 同步"
       ],
       "notes": "demo-seed(37)只覆盖了组织/客户/门店三域 8 张表,用户要求覆盖全面。本任务在 seed_demo.py 基础上扩:① 加 --reset 清理重建(按 FK 反向删除 + 演示白名单边界,不误伤 super_admin/非演示数据);② 补全缺口表(Conversation/Message/LlmConfig/ApiToken/SystemLog/自定义Role+Permission+RolePermission/UserLoginMethod)+ Agent 推理参数差异化。关键设计:清理用演示白名单(门店名/用户名/code/identity_key)反查行ID级联删,绝不用裸 DELETE FROM;Conversation 用 create_or_get + append_message、LlmConfig 用 upsert_platform/upsert_tenant、ApiToken 用 issue(明文只展示一次)、自定义角色用 RbacService.create+grant_permission——全调真实 Service 让 casbin/SCD2/审计副作用正确触发。不种 UserSession/VerificationCode(运行时态);不调真实 LLM(assistant 消息写死文本);LlmConfig api_key 用占位符(真实 key 由用户在 settings 页填)。前置 demo-seed(37)已 passing。纯脚本+文档任务,不改 app/ 功能代码。"
     },
@@ -1028,12 +908,7 @@
       "evidence": [
         "./init.sh 全绿:ruff check → All checks passed!;pytest → 299 passed(基线 294 + 新增 5:1 catalogue 中文 label 集成 + 4 DEFAULT 目录完整性单元测试)(2026-07-13)",
         "cd frontend && npm run build 通过:tsc -b + vite build 成功,0 类型错误;npx oxlint src/ 全仓库(43 文件)→ 0 warnings 0 errors(2026-07-13)",
-        "Step 1 DEFAULT_*_PERMS 重写(permission_service.py):owner 补 conversations:update/delete + agents:export + customers:export;settings:manage 拆 read/update;api_tokens:manage 拆 read/create/delete。加 OBJ_CN/ACT_CN 中文映射常量(seed + catalogue 共用单一真相源)",
-        "Step 2 路由守卫 + Service 层改细:settings.py GET→read/PUT→update(2 处);api_tokens.py POST→create/GET→read/DELETE→delete(3 处);api_token_service.py ACT_MANAGE 拆为 ACT_CREATE/ACT_READ/ACT_DELETE(issue→create/list→read/revoke→delete,消除路由守卫与 Service 层 require 不一致)",
-        "Step 3 中文名 + label:_upsert_permission 写 name=f'{OBJ_CN}-{ACT_CN}'(如「智能体-查看」);get_catalogue 填 obj_label/act_label + order_by(code) 稳定排序;rbac.py PermissionItem 加 obj_label/act_label 字段",
         "Step 4 conftest 同步:_make_casbin owner/admin 策略对齐新 DEFAULT(拆 manage + 补 update/delete/export);修复既有 drift —— conftest member 原缺 roles:read(与 DEFAULT_MEMBER_PERMS 不一致),现对齐;test_permissions_api 的 test_member_without_roles_read_is_forbidden 改为 test_member_with_roles_read_can_view_matrix(反映 drift 消除后正确行为);3 测试文件 docstring 字面量更新(:manage→细化项)",
-        "Step 5 前端消除漂移:permissions-page.tsx 删 OBJ_LABELS(4 obj)+ ACT_ORDER 硬编码,分组逻辑改用 catalogue 返回的 obj_label(组标题)+ act_label(动作列);types.ts PermissionItem 加 obj_label/act_label;无新 hook(复用 usePermissionMatrix 的 permissions 数组已含 label)",
-        "Step 6 backfill 脚本 + 测试:新建 scripts/backfill_permissions.py(遍历租户→grant 缺失项 + revoke 旧 manage grant + 回填中文 name,走 rbac_service.grant_permission/revoke_permission 同步 SCD2+casbin,super_admin platform_role 绕过 require,idempotent,支持 --dry-run);test_permissions_api +test_catalogue_returns_chinese_labels(断言 obj_label=智能体/act_label=查看/name=智能体-查看);test_permission_service +4 单元测试(DEFAULT_OWNER 完整目录、manage 已拆、member 无 settings/api_tokens、OBJ_CN/ACT_CN 覆盖全目录)",
         "三处漂移消除确认:① 路由守卫无 settings:manage/api_tokens:manage 残留(grep 确认全 read/update/create/delete)② Service 层无 ACT_MANAGE(grep 确认)③ 前端无 OBJ_LABELS/ACT_ORDER(grep 确认);DEFAULT_*_PERMS 无 manage(只剩 ACT_CN 映射表 legacy 条目供 backfill 老行)",
         "实现差异 vs plan:① plan §Step2「Permission 表拆 obj/act 实列」按边界判断降级,保持 code 编码,catalogue 解析返回(降低风险,无 migration)② 发现 plan 未提及的 Service 层 ACT_MANAGE(api_token_service 3 处 require 用统一 manage),窄范围修复对齐路由守卫拆分 ③ 用户决策:中文 name 写进 DB + backfill 老数据;PermissionItem 加 obj_label/act_label;backfill 用 scripts/ 运维脚本(走 enforcer 不直接写 casbin 表)"
       ],
@@ -1058,17 +933,10 @@
         "./init.sh 全绿 + npm run build 通过"
       ],
       "evidence": [
-        "305 tests passed(ruff All checks passed + pytest 全绿,基线 299 + 新增 6:3 个 /me permissions 聚合测试 + 1 个 catalogue?type= 过滤 + 3 个 DEFAULT_MENU_PERMS 单元测试;conftest _make_casbin 补 menu 策略对齐)",
-        "npm run build 通过(tsc -b + vite build 成功,0 类型错误)",
-        "npx oxlint src/ 全仓库 43 文件 0 warnings 0 errors",
-        "后端:DEFAULT_MENU_PERMS(owner/admin 10 业务菜单,member 5 业务菜单,menu:tenants 不进 seed)+ MENU_CN 11 项中文映射 + seed_tenant_defaults 扩展 seed menu 权限 + _upsert_permission 加 perm_type 参数(obj='menu' 时 type='menu')",
-        "catalogue:?type=menu/?type=api 过滤(Query alias='type')+ PermissionItem schema 加 type 字段 + get_catalogue 按 Permission.type 过滤",
-        "MeResponse 加 permissions 字段(全部生效码 menu+api,走 get_implicit_permissions_for_user 聚合);super_admin 返 [](前端 bypass);3 测试覆盖 owner/member/super_admin",
-        "前端:lib/permission.ts 加 hasPermission(me,obj,act) + canViewMenu(me,menuCode);canManageUsers 标 @deprecated(无调用点)",
-        "前端:dashboard-layout NAV_ITEMS 改 menuCode/platformOnly(删 needsSuperAdmin/needsUserManagement);require-permission 改 PATH_MENU 按路径查 menu 权限",
-        "前端:permissions-page 矩阵按 type 分两区(菜单权限/操作权限)+ canManage 改 roles:update;customers/roles/members/settings 按钮改用 hasPermission(customers:create/roles:create/users:create/settings:update/api_tokens:read)",
-        "backfill 脚本扩展:补 grant menu 权限(DEFAULT_MENU_PERMS)+ Permission.name 重写兼容 menu 用 MENU_CN;--help 正常",
-        "实现决策(与 plan 差异):MeResponse 用 permissions(含 menu+api 统一字段)而非 plan 的 menus(只 menu);用户选择「全部改用 api 权限」——按钮级判断也迁移到 hasPermission(超出 plan 原边界但消除 canManageUsers 全部硬编码)"
+        "./init.sh 全绿:ruff + 306 passed(基线 299 + 新增 6)",
+        "cd frontend && npm run build 通过 + oxlint 0 warning",
+        "偏差:MeResponse 用 permissions(含 menu+api 统一字段)而非 plan 的 menus(用户决策统一一个字段)",
+        "Bug 修复:test_matrix_updates_after_grant 函数定义被新测试顶替丢失(孤儿代码),恢复后 305→306 passed"
       ],
       "notes": "解决用户核心痛点「只有增删改查没有视图权限」。关键设计:menu 权限是 UX 层非安全边界,后端真正拦截靠 api 权限(require_permission);menu + 对应 api read 通常一起 grant 但允许独立配。前置 permission-unified-model(39)。不做:data_scope(任务 41)、矩阵 UI 完整重写(任务 42)、后端 menu 校验(menu 不进 require_permission)、按钮级权限(只页面/菜单级)。老用户 menu 权限缺失由 backfill 补(可并入任务 39 的 backfill 脚本)。"
     },
