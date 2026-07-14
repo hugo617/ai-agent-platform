@@ -1141,3 +1141,27 @@
 
 ---
 
+### Session 099 — 2026-07-14
+- **本轮目标**: ship-it 收尾 `data-export`(priority 55)—— 清理 + 审查 + PR + CI 守门 + 合并入 `main`,承接 Session 098 的未提交工作树
+- **实现方式**: 全自动 ship-it 流水线,无中断。阶段 0 环境探测 → 阶段 1 清理 → 阶段 2 审查 → 阶段 3 提交 → 阶段 4 PR → 阶段 5 CI 守门 → 阶段 6 合并
+- **已完成**:
+  - **清理(阶段 1)**:无 stray debug log / 无未引用 import(ruff 全过)。移除 `_customer_rows` 中冗余别名 `cust = customer`(直接用返回值)。验证 exports.py 每个符号(_parse_dt/_as_naive_utc/_row_dt/_stream_rows/_cell/4 个 row generator/_require_entity_read/ENTITIES/COLUMNS 等)均有调用方,无孤儿
+  - **审查(阶段 2)**:逐条核对项目铁律 —— ① 分层:Controller → Repository 只读聚合(同 /logs、/dashboard),无 Service 层,无反向依赖 ✅;② 多租户隔离:门店 scope 在 Repository 层(list_for_tenant/list_for_user/list_logs),scope 分流镜像 /logs ✅;③ 流式不 OOM:异步生成器分批 yield + MAX_EXPORT_ROWS 100k 封顶 ✅;④ UTF-8 BOM ✅;⑤ 每实体独立权限守卫 ✅;⑥ is_cross_tenant_viewer scope ✅。**SQLite tz-shim 复核**:`_as_naive_utc`/`_row_dt` 把查询参数与行 created_at 两侧都归一到 naive-UTC 比较,Postgres(timestamptz)行经 `_row_dt` 转 naive-UTC,逻辑双库一致,不影响 CI Postgres 行为 ✅
+  - **修复数据丢失 bug**:跨租户对话导出原复用 `ConversationRepository.search_all(keyword="")`,其 `title ILIKE '%%'` 谓词对 NULL title 返回 NULL(非 TRUE),会静默丢弃 title 为 NULL 的对话(title 字段 nullable=True)。改为直接 `select(Conversation)` 保证无损导出,并加回归测试 `test_export_conversations_super_admin_null_title`。原测试集(标题全非空)覆盖不到此 bug,新测试守住修复
+  - **提交(阶段 3)**:单 commit `4419025` —— `feat(export): 数据导出 CSV(customers/conversations/usage/logs streaming + 前端导出按钮)`,11 files +1333/-30。无敏感文件
+  - **PR(阶段 4)**:#60,base `main`
+  - **CI 守门(阶段 5)**:**4 个 job 一次全绿,0 次修红**。Frontend(typecheck+build+lint)28s ✅、Migrations(alembic upgrade on Postgres)41s ✅、E2E(Playwright 全栈)1m54s ✅、Backend(pytest+ruff,含 `--cov-fail-under=80`)5m1s ✅。E2E 只访问 /login、/agents、/chat,不触达 /customers、/logs、/billing,导出按钮不影响 E2E 选择器
+  - **合并(阶段 6)**:squash 合并入 `main`,commit `10b4ef0`,删除远端 feat/data-export 分支。`git cat-file -e origin/main:app/api/v1/exports.py` 确认文件已在基线
+- **运行过的验证**(全过):
+  - `ruff check app/ cli/ tests/ scripts/ alembic/` → All checks passed
+  - `pytest -q` → **479 passed**(baseline 478 + 1 新增回归 test_export_conversations_super_admin_null_title)
+  - `cd frontend && npm run build` → built successfully(tsc+vite 0 错误)
+  - `cd frontend && npx oxlint src/` → Found 0 warnings and 0 errors
+  - GitHub Actions PR #60 → 4/4 pass
+- **已记录证据**: feature_list.json 的 data-export evidence 追加 ship-it 收尾条目(PR#60 + squash 10b4ef0 + CI 4/4 + 回归测试)
+- **提交记录**: `10b4ef0 feat(export): 数据导出 CSV(...) (#60)`(squash,origin/main)
+- **已知风险**: 无。Session 098 的 message_count N+1 风险仍存(100k 封顶 + 门店数据量小,可接受),非本次引入
+- **下一步最佳动作**: 执行下一 not_started 功能(查 feature_list.json 优先级,选最高)
+
+---
+

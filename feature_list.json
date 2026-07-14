@@ -1367,7 +1367,8 @@
         "frontend/src/pages/customers-page.tsx:门店视图「导出 CSV」按钮(customers:read)",
         "frontend/src/pages/logs-page.tsx:「导出 CSV」按钮,透传当前 action/resource/date/tenant 过滤",
         "frontend/src/pages/billing-page.tsx:「导出用量」按钮(usage)",
-        "验证:./init.sh 全绿 pytest 478 passed(baseline 461 + 17 新增);cd frontend && npm run build 通过(tsc+vite,0 错误);npx oxlint src/ 0 警告 0 错误"
+        "验证:./init.sh 全绿 pytest 478 passed(baseline 461 + 17 新增);cd frontend && npm run build 通过(tsc+vite,0 错误);npx oxlint src/ 0 警告 0 错误",
+        "ship-it 收尾(Session 099):清理冗余别名;审查修复跨租户对话导出数据丢失 bug(search_all 的 title ILIKE '%%' 丢弃 NULL title → 改为直接 select(Conversation) 无损导出 + 加回归测试 test_export_conversations_super_admin_null_title);PR #60 base main;GitHub Actions 4/4 一次全绿(Frontend 28s / Migrations 41s / E2E 1m54s / Backend 5m1s,0 次修红);squash 合并入 main commit 10b4ef0,删除远端分支;pytest 479 passed(478+1 回归)"
       ],
       "notes": "第二梯队。现状:无任何导出能力。复用 TanStack Table 数据,加后端 CSV streaming。门店月度经营分析 + 数据可携带性基本要求。详细 plan 执行到时写。用量导出依赖 token计费(43)。"
     },
