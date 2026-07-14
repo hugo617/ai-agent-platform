@@ -24,6 +24,7 @@ from app.api.v1 import (
     permissions,
     roles,
     search,
+    tenant_config,
     tenants,
     users,
 )
@@ -82,6 +83,7 @@ def create_app() -> FastAPI:
     app.include_router(dashboard.router, prefix=prefix)
     app.include_router(logs.router, prefix=prefix)
     app.include_router(search.router, prefix=prefix)
+    app.include_router(tenant_config.router, prefix=prefix)
 
     @app.get("/health", tags=["meta"])
     async def health() -> dict:

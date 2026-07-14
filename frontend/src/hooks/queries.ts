@@ -4,6 +4,7 @@ import {
   useQueryClient,
 } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
+import { applyThemeColor } from "@/lib/theme";
 import {
   addMember,
   addConversationTag,
@@ -55,6 +56,7 @@ import {
   fetchSessions,
   fetchTenantLlmConfig,
   fetchTenants,
+  fetchTenantConfig,
   fetchTransactions,
   fetchUsage,
   fetchUserStatistics,
@@ -78,6 +80,7 @@ import {
   updateMember,
   updatePricing,
   updateTenant,
+  updateTenantConfig,
   updatePlatformLlmConfig,
   updateRole,
   updateTenantLlmConfig,
@@ -103,6 +106,7 @@ import type {
   RoleCreate,
   RolePermissionGrant,
   RoleUpdate,
+  TenantConfigUpdate,
   TenantUpdate,
   UserFilters,
   UserFormData,
@@ -140,6 +144,9 @@ export const qk = {
   llmConfigPlatform: ["settings", "llm", "platform"] as const,
   llmConfigTenant: ["settings", "llm", "tenant"] as const,
   effectiveModels: ["settings", "models"] as const,
+  // tenant branding config (white-label). One row per tenant; read is open to
+  // any authenticated member of the tenant, write is owner/admin only.
+  tenantConfig: ["tenant-config"] as const,
   apiTokens: ["api-tokens"] as const,
   groups: ["groups"] as const,
   group: (id: string) => ["groups", id] as const,
@@ -638,6 +645,47 @@ export function useEffectiveModels() {
     queryKey: qk.effectiveModels,
     queryFn: fetchEffectiveModels,
   });
+}
+
+// ---------- tenant branding config (white-label, priority 52) ----------
+// Read is open to any authenticated user of the tenant (the theme color / logo /
+// display name apply globally to everyone), so this hook has no `enabled` gate.
+// Write (update) requires settings:update, checked by the caller before showing
+// the card.
+export function useTenantConfig() {
+  return useQuery({
+    queryKey: qk.tenantConfig,
+    queryFn: fetchTenantConfig,
+  });
+}
+
+export function useUpdateTenantConfig() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: TenantConfigUpdate) => updateTenantConfig(payload),
+    onSuccess: () => qc.invalidateQueries({ queryKey: qk.tenantConfig }),
+  });
+}
+
+/**
+ * Apply the tenant theme color globally as the ``--primary`` CSS token.
+ *
+ * Reads the current tenant's branding config (open to any authenticated user),
+ * converts ``#RRGGBB`` to the HSL token shadcn expects, and writes it onto
+ * ``:root``. The cleanup restores the platform default on unmount / tenant
+ * switch / logout so a stale brand never bleeds across tenants. No-op while the
+ * config is still loading or when no color is set (defaults preserved).
+ */
+export function useApplyTenantTheme() {
+  const { data } = useTenantConfig();
+  useEffect(() => {
+    applyThemeColor(data?.theme_color ?? null);
+    return () => {
+      // Restore platform defaults when the branded surface unmounts (logout,
+      // tenant switch) so a stale brand never bleeds across tenants.
+      applyThemeColor(null);
+    };
+  }, [data?.theme_color]);
 }
 
 // ---------- conversations (chat history; streaming is NOT a query) ----------

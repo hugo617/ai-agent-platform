@@ -126,6 +126,7 @@ async def test_env() -> AsyncIterator[_TestEnv]:
         rbac,
         security,
         tenant,
+        tenant_config,
         usage_event,
         wallet,
     )

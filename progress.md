@@ -964,3 +964,25 @@
 - **下一步最佳动作**: 选优先级最高的 not_started feature 继续。global-search(51)已落地,可推进下一个全栈/前端 feature
 
 ---
+
+### Session 092 — 2026-07-14
+- **本轮目标**: 实现 tenant-branding-config(优先级 52)—— 租户白标品牌(显示名称/Logo URL/主题色/登录文案),主题色经 CSS 变量全站生效。全栈:模型+迁移+API+前端品牌 Card+主题色应用+顶栏品牌注入。基线 main 24a8d6e
+- **执行**:
+  - **建分支**:`feat/tenant-branding-config`(从 main 24a8d6e)
+  - **后端模型**:app/models/tenant_config.py 新建 TenantConfig(id/tenant_id FK CASCADE/UniqueConstraint uq_tenant_config_tenant/display_name/logo_url/theme_color #RRGGBB/login_text Text/created_at/updated_at)。无软删 —— 匹配 LlmConfig/Tenant 约定(配置表不软删)。UniqueConstraint 同时声明在 ORM __table_args__ 与迁移中,避开 alembic-check drift(吸取 dashboard 任务教训)
+  - **注册**:alembic/env.py + tests/conftest.py 的模型导入列表各加 tenant_config(漏 conftest 会导致 SQLite 测试「表未创建」)
+  - **迁移**:alembic/versions/2026_07_14_1200_c3d4e5f6a7b8_add_tenant_configs_table.py(down_revision b2c3d4e5f6a7,对称 up/down,create_table + UniqueConstraint)
+  - **后端分层(Controller→Service→Repository→Model)**:app/repositories/tenant_config.py(get_for_tenant,继承 BaseRepository,显式 tenant_id 过滤 = 隔离铁律);app/services/tenant_config_service.py(get_for_tenant + upsert);app/schemas/tenant_config.py(TenantConfigRead from_attributes + TenantConfigUpdate,theme_color 用 Field pattern 校验 #RRGGBB —— 避免 field_validator raise ValueError 导致 ctx 不可 JSON 序列化);app/api/v1/tenant_config.py(GET 公开给任意租户成员读 / PUT require_permission settings:update);main.py 注册路由
+  - **权限决策**:GET 故意不挂 settings:read —— 主题色/Logo 对全员生效,member 也必须能读;PUT 才需 settings:update(owner/admin/member 403)。GET/PUT 均绑定 user.tenant_id(从 token),跨租户改写构造上不可能
+  - **测试**:tests/test_tenant_config.py 8 项(GET 返回 None、PUT 创建、PUT upsert 更新、admin 可改、member PUT 403、member 可读、跨租户隔离、#RRGGBB 校验含 #abc 短码 422)
+  - **前端 types/endpoints/queries**:types.ts 加 TenantConfig + TenantConfigUpdate;endpoints.ts 加 fetchTenantConfig/updateTenantConfig;queries.ts 加 qk.tenantConfig + useTenantConfig + useUpdateTenantConfig + useApplyTenantTheme(useEffect 读 config.theme_color 应用,卸载恢复默认)
+  - **主题色全局应用**:lib/theme.ts 新建 —— hexToHsl 把 #RRGGBB 转 shadcn HSL token(如 `222.2 47.4% 11.2%`),applyThemeColor 写入 :root --primary,按 WCAG 相对亮度选 --primary-foreground(亮底用深字/暗底用白字)。模块加载时抓取平台默认值缓存以便恢复。DashboardLayout 调 useApplyTenantTheme —— 登出/切租户时 DashboardLayout 卸载 → cleanup 恢复默认,不留残色
+  - **settings 品牌 Card**:settings-page.tsx 第 4 张 Card「品牌配置」(canManageLlm=settings:update 可见),字段 display_name(Input)/logo_url(Input,上传待 task 56)/theme_color(原生 color input + hex Input + 6 色预设色板)/login_text(native textarea,匹配项目既有约定 无 Textarea 组件)
+  - **顶栏品牌注入**:dashboard-layout.tsx 侧栏头部用 tenantConfig.display_name(覆盖默认「智能体云平台」)+ logo_url(有则 img,无则 Shield 图标)
+  - **登录页 MVP 决策**:平台无 tenant slug 体系,GET /tenant-config 需登录;登录页用平台默认品牌,租户品牌登录后(DashboardLayout)生效 —— 与计划 §风险/注意事项「用默认品牌,登录后替换」一致
+- **验证(全过)**:`./init.sh` ruff clean + pytest **442 passed**(基线 434 + 8 新);`.venv/bin/alembic heads` 单 head **c3d4e5f6a7b8**;`cd frontend && npm run build` tsc+vite 0 类型错误;`cd frontend && npx oxlint src/` **0 warnings 0 errors**
+- **当前状态**: tenant-branding-config(52)✅ **实现完成,工作树在 feat/tenant-branding-config(未提交)**。feature_list.json status=passing + evidence 7 条;白标能力上线 —— owner/admin 配置本租户显示名/Logo/主题色/登录文案,主题色全站生效(按钮/链接/导航高亮),顶栏注入品牌
+- **已知风险**: 无功能风险。主题色对比度由 WCAG 亮度自动选前景色缓解(用户选极浅色时前景自动转深字);登录页无租户品牌(MVP,需 tenant slug 体系才能未登录查,后续可补);logo 上传待 file-upload(56),当前用粘贴 URL
+- **下一步最佳动作**: 用户审查/提交/推送/PR 守 CI 合并(对齐 Session 091 流程),或继续下一个 not_started feature
+
+---

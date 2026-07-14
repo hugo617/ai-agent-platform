@@ -26,6 +26,7 @@ from app.models import (  # noqa: F401
     rbac,
     security,
     tenant,
+    tenant_config,
     usage_event,
     wallet,
 )
