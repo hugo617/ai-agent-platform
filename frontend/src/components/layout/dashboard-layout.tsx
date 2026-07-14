@@ -35,6 +35,7 @@ import { useAuth } from "@/components/auth/auth-context";
 import { canViewMenu, hasPermission } from "@/lib/permission";
 import { logout } from "@/api/endpoints";
 import { GlobalSearchBox } from "@/components/layout/global-search-box";
+import { NotificationBell } from "@/components/layout/notification-bell";
 import { useApplyTenantTheme, useTenantConfig } from "@/hooks/queries";
 
 interface NavItem {
@@ -200,6 +201,9 @@ export function DashboardLayout() {
             <GlobalSearchBox />
           </div>
           <div className="flex items-center gap-3">
+            {/* 通知铃铛(priority 54) — 未读数 badge + 下拉。Every authenticated
+                user reads their own notifications, so no permission guard. */}
+            <NotificationBell />
             {me?.platform_role === "super_admin" && (
               <Badge className="bg-amber-100 text-amber-800 hover:bg-amber-100 border-amber-300">
                 🛡️ 超级管理员

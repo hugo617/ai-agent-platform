@@ -765,3 +765,41 @@ export interface SystemLogListResponse {
 export interface ApiError {
   detail: string;
 }
+
+// ============= in-app notifications (priority 54) =============
+
+/** One in-app notification row. Mirrors app/schemas/notification.py NotificationRead. */
+export interface Notification {
+  id: string;
+  tenant_id: string | null;
+  // null = tenant-wide broadcast (every user in the tenant sees it).
+  user_id: string | null;
+  // balance_warning | recharge | role_change | usage_report | system
+  type: string;
+  title: string;
+  content: string;
+  // Optional in-app path the bell navigates to on click (e.g. "/billing").
+  link: string | null;
+  is_read: boolean;
+  created_at: string;
+}
+
+/** Paginated notification envelope (GET /notifications). */
+export interface NotificationListResponse {
+  items: Notification[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+/** Reply for the bell's badge poll (GET /notifications/unread-count). */
+export interface UnreadCountResponse {
+  count: number;
+}
+
+/** Filter params for GET /notifications. */
+export interface NotificationFilters {
+  unread_only?: boolean;
+  limit?: number;
+  offset?: number;
+}

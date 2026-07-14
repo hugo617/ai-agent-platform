@@ -232,6 +232,21 @@ class BillingService:
         )
         await self.txs.add(txn)
         await self.db.commit()
+
+        # Notification trigger (priority 54): inform the tenant a recharge
+        # landed. Targeted at all tenant users (user_id=NULL) so the owner +
+        # admins all see it in their bell. Best-effort — never breaks the
+        # committed recharge (the txn is already persisted above).
+        from app.services.notification_service import NotificationService
+
+        await NotificationService(self.db).create(
+            tenant_id=tenant_id,
+            user_id=None,
+            type="recharge",
+            title="充值到账",
+            content=f"钱包已充值 {amount} tokens,当前余额 {wallet.balance}。",
+            link="/billing",
+        )
         return txn
 
     # --------------------------------------------------------------- bootstrap

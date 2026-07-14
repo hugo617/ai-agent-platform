@@ -108,6 +108,19 @@ class MemberService:
         )
         await self.db.commit()
         await self.db.refresh(membership, attribute_names=["user"])
+
+        # Notification trigger (priority 54): tell the affected user their role
+        # changed. Best-effort — never breaks the committed role change above.
+        from app.services.notification_service import NotificationService
+
+        await NotificationService(self.db).create(
+            tenant_id=tenant_id,
+            user_id=target_user_id,
+            type="role_change",
+            title="角色变更",
+            content=f"您的角色已变更为「{payload.role}」。",
+            link="/members",
+        )
         return self._to_read(membership)
 
     async def remove(
