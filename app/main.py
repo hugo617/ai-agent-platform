@@ -23,6 +23,7 @@ from app.api.v1 import (
     groups,
     logs,
     members,
+    notifications,
     permissions,
     roles,
     search,
@@ -56,7 +57,17 @@ async def lifespan(app: FastAPI):
         get_enforcer()
     except Exception as e:  # noqa: BLE001 - don't crash startup; surface on first call
         app.state.casbin_error = str(e)
-    yield
+
+    # Periodic-job scheduler (priority 54). Idempotent + gated behind
+    # SCHEDULER_ENABLED: disabled in tests (create_app is called per-test),
+    # and a no-op if already running. See app/core/scheduler.py.
+    from app.core.scheduler import init_scheduler, shutdown_scheduler
+
+    init_scheduler()
+    try:
+        yield
+    finally:
+        shutdown_scheduler()
 
 
 def create_app() -> FastAPI:
@@ -130,6 +141,7 @@ def create_app() -> FastAPI:
     app.include_router(logs.router, prefix=prefix)
     app.include_router(search.router, prefix=prefix)
     app.include_router(tenant_config.router, prefix=prefix)
+    app.include_router(notifications.router, prefix=prefix)
 
     async def _db_ping(db: AsyncSession) -> str:
         """Run ``SELECT 1`` against the configured DB. Returns 'ok'/'fail'.

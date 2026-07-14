@@ -34,6 +34,9 @@ langgraph==0.2.61
 langchain-openai==0.2.14
 langchain-core==0.3.28
 
+# Scheduled jobs (balance-warning scan, cleanup, ...) — priority 54
+APScheduler==3.11.0
+
 # Utilities
 python-dateutil==2.9.0.post0
 

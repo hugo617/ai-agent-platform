@@ -85,6 +85,10 @@ import {
   updateRole,
   updateTenantLlmConfig,
   updateUser,
+  fetchNotifications,
+  fetchUnreadCount,
+  markNotificationRead,
+  markAllNotificationsRead,
 } from "@/api/endpoints";
 import type {
   AgentCreate,
@@ -100,6 +104,7 @@ import type {
   MemberCreate,
   MemberUpdate,
   ModelPricingUpsert,
+  NotificationFilters,
   PasswordChange,
   ProfileUpdate,
   RechargeRequest,
@@ -176,6 +181,10 @@ export const qk = {
   // stream of unique keys.
   globalSearch: (q: string, limitPerType: number) =>
     ["search", q, limitPerType] as const,
+  // in-app notifications (priority 54). The bell polls unread-count every
+  // 30s; the page lists with an optional unread filter.
+  notifications: (filters: NotificationFilters) => ["notifications", filters] as const,
+  unreadCount: ["notifications", "unread-count"] as const,
 };
 
 // ---------- tenants ----------
@@ -941,5 +950,51 @@ export function useGlobalSearch(q: string, limitPerType = 5) {
     queryFn: () => globalSearch(debounced, limitPerType),
     enabled,
     placeholderData: (prev) => prev, // keep the prior dropdown stable while typing
+  });
+}
+
+// ---------- in-app notifications (priority 54) ----------
+
+/** Paginated, filterable notification list (notifications page). */
+export function useNotifications(filters?: NotificationFilters) {
+  return useQuery({
+    queryKey: qk.notifications(filters ?? {}),
+    queryFn: () => fetchNotifications(filters),
+    placeholderData: (prev) => prev, // keep previous page while fetching next
+  });
+}
+
+/**
+ * Bell-badge unread count. Polls every 30s — light endpoint, bounded cadence
+ * (the plan's risk table: avoid tight SSE/WebSocket for now). The full
+ * notification list is fetched on demand when the bell opens.
+ */
+export function useUnreadCount() {
+  return useQuery({
+    queryKey: qk.unreadCount,
+    queryFn: fetchUnreadCount,
+    refetchInterval: 30_000,
+  });
+}
+
+/** Mark one notification read; invalidates unread-count + the open list. */
+export function useMarkNotificationRead() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => markNotificationRead(id),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["notifications"] });
+    },
+  });
+}
+
+/** Mark all visible notifications read; invalidates unread-count + the list. */
+export function useMarkAllNotificationsRead() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => markAllNotificationsRead(),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["notifications"] });
+    },
   });
 }

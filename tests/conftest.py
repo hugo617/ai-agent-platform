@@ -123,6 +123,7 @@ async def test_env() -> AsyncIterator[_TestEnv]:
         log,
         message,
         model_pricing,
+        notification,
         rbac,
         security,
         tenant,

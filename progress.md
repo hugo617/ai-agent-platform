@@ -1056,3 +1056,34 @@
   - (a) 执行 `notification-scheduler`(priority 54,通知系统+定时任务,现为最高优先级 not_started)
 
 ---
+
+### Session 096 — 2026-07-14
+- **本轮目标**: ship-it 端到端交付 `notification-scheduler`(priority 54)—— in-app 通知系统(Notification 模型 + API + 铃铛 + 通知中心页)+ APScheduler 定时任务框架(余额预警扫描等)
+- **实现方式**: 全栈一次性交付。新功能分支 `feat/notification-scheduler`(基于 main HEAD `f0c166a`),不提交,留工作树
+- **已完成**:
+  - **模型 + 迁移**:`app/models/notification.py`(Notification:id/tenant_id/user_id(NULL=全员)/type/title/content/link/is_read/created_at;无软删,match SystemLog append-only 风格 + is_read 标记);迁移 `2026_07_14_1330_d4e5f6a7b8c9_add_notifications_table.py`(down_revision=`c3d4e5f6a7b8`),4 个命名索引(tenant_id/user_id/is_read/tenant_created)在 ORM `__table_args__` + 迁移两侧声明,**无 alembic check 漂移**;注册到 alembic/env.py + tests/conftest.py 两处
+  - **Service + Repository + Schema**:Controller→Service→Repository→Model 单向。NotificationRepository(list_for_user 用 OR(user_id=me, user_id IS NULL) 实现自己的+租户广播;get_for_user/mark_read/unread_count/mark_all_read 都按 tenant+user 双重隔离);NotificationService.create 走 begin_nested + try/except(照 LoggingService 模式,触发点失败不影响业务事务);schema NotificationRead/Create/ListResponse/UnreadCountResponse
+  - **API**:GET /notifications(?unread_only)、GET /notifications/unread-count、PUT /notifications/{id}/read(ownership → 404)、PUT /notifications/read-all;get_current_user 守卫(人人查自己的,无特殊权限);router 注册到 main.py
+  - **触发点**:BillingService.recharge → 租户级 recharge 通知;MemberService.update_role → 定向 role_change 通知给受影响用户;均 best-effort(提交后再发,异常吞掉)
+  - **APScheduler**:加依赖 APScheduler==3.11.0(requirements.txt + .venv);`app/core/scheduler.py` —— AsyncIOScheduler,scan_balance_warnings 余额扫描任务(daily 09:00 cron,24h 去重);init_scheduler 幂等 + shutdown_scheduler;lifespan 启动/关闭
+  - **测试安全(关键)**:**SCHEDULER_ENABLED 默认 False**(config.py 新增字段);init_scheduler 检查 `_SCHEDULER_ENABLED` + `scheduler.running` 双重守卫,测试环境完全 no-op。测试 fixture 又覆盖 noop_lifespan,第三重保险。create_app() 每测调用从不真正 start scheduler
+  - **前端**:NotificationBell(顶栏铃铛 + destructive badge + 下拉最近 8 条 + 标记已读/全部已读 + 点击跳 link;useUnreadCount 30s 轮询);NotificationsPage(分页 + 未读过滤 + 类型 badge + 全部已读);types/endpoints/queries(fetchNotifications/fetchUnreadCount/markNotificationRead/markAllNotificationsRead + useNotifications/useUnreadCount(refetchInterval 30000)/useMarkRead/useMarkAllRead);dashboard-layout 顶栏插入 + App.tsx /notifications 路由(ProtectedRoute 下,无额外权限)
+  - **测试**:`tests/test_notifications.py` 12 用例 —— 自己的+租户广播可见、别人的定向不可见、跨租户隔离、unread-count/过滤、mark-read(ownership 404)、mark-all-read、recharge/role_change 触发、触发失败不影响业务、scan_balance_warnings 创建+去重、scheduler 测试安全
+- **运行过的验证**(全过):
+  - `./init.sh` → ruff `All checks passed!` + **461 passed**(baseline 449 + 新增 12,134s)
+  - `.venv/bin/alembic heads` → 单 head `d4e5f6a7b8c9`;`alembic check` → No new upgrade operations detected(无漂移)
+  - `cd frontend && npm run build` → built successfully(2532 modules,无类型错误)
+  - `cd frontend && npx oxlint src/` → Found 0 warnings and 0 errors(51 files)
+- **已记录证据**: `feature_list.json` 的 `notification-scheduler.evidence` 填满(模型/迁移/API/触发点/scheduler/前端/测试 7 条);status `not_started` → `passing`
+- **技术要点**:
+  - **测试安全的三重保险**:① SCHEDULER_ENABLED 默认 False(config)② init_scheduler 内 if not enabled / if running 双重 short-circuit ③ conftest 的 noop_lifespan 覆盖。任何一层就够,三层叠加确保 create_app 多次调用绝不 spawn 真 cron
+  - **触发点 best-effort**:NotificationService.create 用 begin_nested(SAVEPOINT)—— 通知插入失败只回滚 savepoint,外层业务事务(recharge/role-change)的 commit 不受影响。测试用「String(200) 列塞 10000 字符」真实触发 DB 层失败验证此路径
+  - **迁移漂移规避**:照 dashboard 任务教训,所有 DB 对象(4 个索引)在迁移 + ORM `__table_args__` 两侧声明;列上不用 `index=True`(否则 autogenerate 会产生未命名索引导致漂移)
+  - **去重**:scan_balance_warnings 通过 NotificationRepository.exists_recent(tenant+type+24h) 跳过已预警过的租户,避免长期低余额租户每个 cron tick 重复打扰
+- **提交记录**: 无(按要求留工作树于 `feat/notification-scheduler`,不 commit)
+- **已知风险**: 生产多实例部署时 scheduler 会在每个 replica 启动 → 重复触发 cron。当前单 replica 可接受;多 replica 部署需用 SCHEDULER_ENABLED 仅在一台开启,或后续加 DB 锁(计划风险表已标注)
+- **下一步最佳动作**:
+  - (a) PR + CI 守门 + 合并 `notification-scheduler`(走 ship-it 阶段 5-7)
+  - (b) 或执行 `data-export`(priority 55,数据导出 CSV,现为最高优先级 not_started)
+
+---

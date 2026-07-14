@@ -26,6 +26,7 @@ import { NotFoundPage } from "@/pages/not-found-page";
 import { BillingPage } from "@/pages/billing-page";
 import { BillingAdminPage } from "@/pages/billing-admin-page";
 import { LogsPage } from "@/pages/logs-page";
+import { NotificationsPage } from "@/pages/notifications-page";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -64,6 +65,11 @@ export default function App() {
                     authenticated user manages their own profile, so no
                     permission guard (beyond ProtectedRoute) is needed. */}
                 <Route path="/profile" element={<ProfilePage />} />
+
+                {/* 通知中心(priority 54) — in-app notifications. Every
+                    authenticated user reads their own notifications; the
+                    backend scopes by user_id + tenant_id. */}
+                <Route path="/notifications" element={<NotificationsPage />} />
 
                 {/* Token 费用管理系列 4/4 — store-level billing dashboard.
                     Gated on wallet:read (seeded to owner/admin/member). The HQ

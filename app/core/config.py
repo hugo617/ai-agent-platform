@@ -72,6 +72,12 @@ class Settings(BaseSettings):
         "UxCQS2ohSvdIRjZfiNyCi5uWoy8FLLiIXonkf28M4r8="  # dev/test only
     )
 
+    # Periodic-job scheduler (priority 54). Defaults to False so the test
+    # suite — which calls create_app() once per test — never spins up real
+    # cron jobs that would outlive the test. Production deployments set this
+    # to True (on exactly one replica; multi-replica would double-fire crons).
+    scheduler_enabled: bool = False
+
     @model_validator(mode="after")
     def _secrets_not_default(self) -> "Settings":
         """Reject placeholder secrets outside development/testing.
