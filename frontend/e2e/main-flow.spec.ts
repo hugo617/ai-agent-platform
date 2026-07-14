@@ -62,9 +62,11 @@ test("login → create agent → chat → view history", async ({ page }) => {
   // prior turns (proving the chat + messages were persisted server-side).
   await expect(page.getByTestId("message-input")).toBeVisible({ timeout: 10_000 });
   await expect(page.getByText("会话").first()).toBeVisible();
-  // At least one conversation exists in the sidebar list.
-  const convButtons = page.locator('[title="删除会话"]');
-  await expect(convButtons.first()).toBeVisible({ timeout: 10_000 });
-  const count = await convButtons.count();
+  // At least one conversation exists in the sidebar list. The per-row checkbox
+  // (aria-label "选择会话") is rendered for every conversation, so it is a
+  // stable presence probe that survives UI refactors of the row actions.
+  const convRows = page.locator('[aria-label="选择会话"]');
+  await expect(convRows.first()).toBeVisible({ timeout: 10_000 });
+  const count = await convRows.count();
   expect(count).toBeGreaterThanOrEqual(1);
 });
