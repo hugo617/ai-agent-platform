@@ -1311,7 +1311,8 @@
         "测试:tests/test_health.py 7 测试(/health 恒 200 + db 字段;/ready DB ok 200;/ready DB 断 503 override get_db 用 _BrokenSession.execute raise 模拟;/metrics Prometheus text + 含 http_requests_total/http_request_duration_seconds;/metrics 记录业务请求 status=401 标签;/metrics 自身 exempt 不计入;/in_progress gauge 暴露)",
         "验证:./init.sh ruff All checks passed + 449 passed(基线 442 + 新增 7);纯后端无前端改动",
         "liveness vs readiness 区分:/health 恒 200(进程活就 ok,db 字段仅展示不阻断,避免 DB 短暂抖动导致 pod 重启);/ready 503 才摘流(让编排器停发流量到恢复)",
-        "_db_ping Depends(get_db) 而非直连 AsyncSessionLocal:走 FastAPI 依赖注入,测试 override_get_db 自动生效(否则 _db_ping 用生产 engine 连 :memory: 是独立库,SELECT 1 仍 ok 但不跟随 test DB override);503 测试靠 override 注入 _BrokenSession"
+        "_db_ping Depends(get_db) 而非直连 AsyncSessionLocal:走 FastAPI 依赖注入,测试 override_get_db 自动生效(否则 _db_ping 用生产 engine 连 :memory: 是独立库,SELECT 1 仍 ok 但不跟随 test DB override);503 测试靠 override 注入 _BrokenSession",
+        "交付:PR #58 squash merge 入 main(f271f75);CI 4/4 首轮全绿(Migrations 50s / Backend pytest+ruff 4m4s / Frontend 27s / E2E 1m39s)零修红;ship-it 审查发现并修复 metrics 中间件 404 原始路径泄漏(基数爆炸)→ 收敛为 unmatched label"
       ],
       "notes": "第一梯队 工程化。现状:只有 /health 返回 ok 不检查 DB,无 /ready 无 metrics。生产部署必需的运维能力。详细 plan 执行到时写。独立无依赖。"
     },

@@ -8,8 +8,7 @@
 - **标准启动路径**: `./init.sh`(装依赖 + ruff + pytest)
 - **标准验证路径**: `./init.sh`(同上,后端快速验证,SQLite 内存库)
 - **完整验证路径**(需 docker): `alembic upgrade head && alembic check` + `cd frontend && npm run build`
-- **当前最高优先级未完成功能**: **`notification-scheduler`(priority 54,通知系统 + 定时任务)** —— health-monitoring(53)✅ 已实现待合并(/ready 就绪探针 503 + /metrics Prometheus + /health 加 db ping;449 passed)。46-52 全部已合并入 main。54 做 Notification 模型 + API + 铃铛组件 + APScheduler(余额预警/日报/清理)。前置无。剩余 not_started:54 notification-scheduler / 55 data-export / 56 file-upload-storage / 57 knowledge-base-rag / 58 multi-agent-orchestration。
-  - **待推送** ⚠️:main 上有 1 个未 push 的 docs commit(Session 093 收尾),因会话中网络中断(proxy 9910 挂 + 直连 empty reply),待网络恢复 push;feat/health-monitoring 分支亦待 push+PR。
+- **当前最高优先级未完成功能**: **`notification-scheduler`(priority 54,通知系统 + 定时任务)** —— health-monitoring(53)✅ 已合并 main(PR #58,/ready 就绪探针 503 + /metrics Prometheus + /health 加 db ping;CI 4/4 全绿)。46-53 全部已合并入 main。54 做 Notification 模型 + API + 铃铛组件 + APScheduler(余额预警/日报/清理)。前置无。剩余 not_started:54 notification-scheduler / 55 data-export / 56 file-upload-storage / 57 knowledge-base-rag / 58 multi-agent-orchestration。
 - **当前 blocker**: 无
 
 ## 后续任务规划
@@ -1029,5 +1028,31 @@
 - **下一步最佳动作**:
   - (a) 网络恢复后 ship-it 清理+审查+commit+PR+CI+合并 health-monitoring 到 main(顺带 push 滞留的 Session 093 docs);
   - (b) 执行 `notification-scheduler`(priority 54,通知系统+定时任务,现为最高优先级 not_started)
+
+---
+
+### Session 095 — 2026-07-14
+- **本轮目标**: ship-it 端到端交付 `health-monitoring`(priority 53)—— 网络恢复后清理+审查+PR+CI 守门+合并;顺带 push 滞留的 Session 093 docs commit
+- **实现方式**: 网络已恢复,默认 proxy(127.0.0.1:9910)可用。全程全自动,无中断
+- **已完成**:
+  - **预步骤**:main 上滞留的 docs commit `927c5cc`(Session 093 收尾)push 到 origin/main;`git rev-list --left-right --count origin/main...main` → `0 0`(同步)
+  - **清理(阶段 1)**:无死代码。4 个新符号(REQUESTS/LATENCY/IN_PROGRESS/render_metrics)全有 caller(app/main.py);ruff check 全过,无未用 import
+  - **审查(阶段 2)+ 修复**:**发现并修复 1 个真实缺陷** —— metrics 中间件 404 fallback 用原始 path 导致 Prometheus label 基数爆炸。审查时验证:`request.scope["route"]` 对未匹配路由(404)为空,fallback `or path` 泄漏原始 URL;客户端/攻击者打不同 URL(/api/v1/nonexistent-aaa、-bbb、-ccc)实测产生 3 个独立 series。修为 `or "unmatched"` 收敛成单一 label(commit `367b021`)。其余约定(meta 端点在 main.py 符合既有 /health 模式;Depends(get_db) 可测;liveness vs readiness 语义正确;中间件 try/finally)均无问题
+  - **验证(阶段 4)**:`./init.sh` ruff clean + **449 passed**(158s);`npx oxlint src/` 0 warnings/errors(49 files);`npm run build` 成功(纯后端,前端不受影响;chunk-size warning 为既有,非本任务)
+  - **PR + CI(阶段 5-6)**:PR #58 开;CI **4/4 首轮全绿**(Migrations 50s / Backend pytest+ruff 4m4s / Frontend 27s / E2E 1m39s),零修红
+  - **合并(阶段 7)**:squash merge 入 main → `f271f75`(PR #58);feature 分支删除;`git fetch --prune` 清理 stale refs
+- **运行过的验证**(全过):
+  - `./init.sh` → ruff `All checks passed!` + **449 passed**
+  - `npx oxlint src/` → Found 0 warnings and 0 errors
+  - `npm run build` → built successfully(2530 modules,无报错)
+  - CI #58 → Migrations pass / Backend pass / Frontend pass / E2E pass
+- **已记录证据**: `feature_list.json` 的 `health-monitoring.evidence`(增补合并/CI 证据);status 维持 passing
+- **技术要点**:
+  - **基数爆炸修复**:metrics.py 的设计原则是「path label 用 route template 保基数有界」,但 404 fallback 漏了 —— 未匹配路由取不到 template 就 fallback 原始 path。修复:收敛成固定 `"unmatched"` label。这正是 ship-it 审查阶段的价值:发现实现前未暴露的边界缺陷
+  - **squash merge**:feat(ops) commit `5851513` + fix(ops) commit `367b021` 合并成单个 `f271f75 ... (#58)`,保持 main 线性
+- **提交记录**: `f271f75 feat(ops): 健康检查/监控... (#58)`(合并入 main);`367b021 fix(ops): metrics 中间件 404 原始路径泄漏 → 收敛为 unmatched label`(PR 内)
+- **已知风险**: 无新风险。/metrics 生产暴露仍需配 IP 白名单/反代鉴权(运维层,Session 094 已标注)
+- **下一步最佳动作**:
+  - (a) 执行 `notification-scheduler`(priority 54,通知系统+定时任务,现为最高优先级 not_started)
 
 ---
