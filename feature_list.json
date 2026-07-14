@@ -1160,7 +1160,7 @@
       "area": "审计",
       "title": "审计日志查询 UI(SystemLog 暴露 API + 前端页面)",
       "user_visible_behavior": "管理员能在审计日志页查看系统操作记录(谁在何时做了什么),按操作人/时间/操作类型/资源过滤;super_admin 看全平台,owner 看本租户",
-      "status": "not_started",
+      "status": "passing",
       "plan": "harness/docs/plan-audit-log-ui.md",
       "verification": [
         "新增 SystemLog 查询端点 GET /logs(分页 + 过滤:operator/action/resource_type/date_range)",
@@ -1169,7 +1169,15 @@
         "侧边栏加「审计日志」菜单(owner/admin 可见)",
         "pytest 覆盖查询/过滤/租户隔离 + npm run build 通过"
       ],
-      "evidence": [],
+      "evidence": [
+        "后端:app/repositories/log.py(SystemLogRepository.list_logs,多租户过滤在 Repository 层,append-only 不加 is_deleted)+ app/schemas/log.py(SystemLogRead/SystemLogListResponse)+ app/api/v1/logs.py(GET /logs 双视角:门店 logs:read 强制本租户;super_admin/hq_staff 跨租户可选 tenant_id 过滤)+ main.py 注册 logs router",
+        "权限:permission_service.DEFAULT_OWNER_PERMS/DEFAULT_ADMIN_PERMS 加 logs:read(member 不给);OBJ_CN 加 logs→审计日志;conftest _make_casbin owner/admin 策略同步;test_permission_service 目录测试 expected set 补 logs:read",
+        "前端:types.ts(SystemLog/LogFilters/SystemLogListResponse)+ endpoints.ts(fetchLogs)+ queries.ts(useLogs + qk.logs + placeholderData 保上一页)+ logs-page.tsx(过滤栏 action/resource/date/tenant + Table 展开行 before/after JSON diff + Pagination)+ dashboard-layout 加「审计日志」(permission: logs:read)+ App.tsx /logs 路由(RequireApiPermission)+ require-permission PATH_API_PERM 加 /logs",
+        "测试:tests/test_logs_api.py 14 测试(门店看本租户/租户隔离/门店传 foreign tenant_id 被忽略/super_admin 跨租户/super_admin 按 tenant 过滤/member 403/action/resource_type/user_id/date_from 过滤/坏日期 400/分页 limit+offset/最新优先/before-after JSON 暴露)",
+        "验证:./init.sh ruff All checks passed + 385 passed(基线 371 + 新增 14)+ npm run build 0 类型错误 + npx oxlint src/ 0 warnings 0 errors(46 文件)",
+        "SystemLog append-only:Repository 无 is_deleted 谓词(与 Customer/User 软删除模型不同),日志永不删",
+        "无迁移:复用现有 SystemLog 表 + 既有索引(idx_system_logs_resource/_tenant_id/_user_id),纯读端点"
+      ],
       "notes": "第一梯队。现状:SystemLog 模型在写(logging_service.record)但无查询 API 无前端页,数据在黑暗里。补查询端点+前端审计页。详细 plan 执行到时写。独立无依赖。"
     },
     {

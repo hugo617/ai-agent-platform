@@ -24,6 +24,7 @@ import { UsersPage } from "@/pages/users-page";
 import { NotFoundPage } from "@/pages/not-found-page";
 import { BillingPage } from "@/pages/billing-page";
 import { BillingAdminPage } from "@/pages/billing-admin-page";
+import { LogsPage } from "@/pages/logs-page";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -63,6 +64,9 @@ export default function App() {
                     admin route is super_admin only. */}
                 <Route element={<RequireApiPermission />}>
                   <Route path="/billing" element={<BillingPage />} />
+                  {/* 审计日志 — gated on logs:read (seeded to owner/admin).
+                      super_admin/hq_staff see cross-tenant rows. */}
+                  <Route path="/logs" element={<LogsPage />} />
                 </Route>
 
                 {/* Platform-level (super_admin only) routes. The backend still

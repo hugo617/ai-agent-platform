@@ -38,6 +38,7 @@ import {
   fetchEffectiveModels,
   fetchGroups,
   fetchAllTenants,
+  fetchLogs,
   fetchMembers,
   fetchMessages,
   fetchPermissionMatrix,
@@ -81,6 +82,7 @@ import type {
   GroupCreate,
   GroupUpdate,
   LlmConfigUpdate,
+  LogFilters,
   MemberCreate,
   MemberUpdate,
   ModelPricingUpsert,
@@ -141,6 +143,8 @@ export const qk = {
   customerStats: ["customers", "statistics"] as const,
   dashboardTrends: (days: number) => ["dashboard", "trends", days] as const,
   dashboardOverview: ["dashboard", "overview"] as const,
+  // audit logs — paginated, filterable by operator/action/resource/date.
+  logs: (filters: LogFilters) => ["logs", filters] as const,
 };
 
 // ---------- tenants ----------
@@ -736,5 +740,16 @@ export function useDashboardOverview(enabled = true) {
     queryKey: qk.dashboardOverview,
     queryFn: fetchDashboardOverview,
     enabled,
+  });
+}
+
+// ---------- audit logs ----------
+
+/** Paginated, filterable audit log. Refetches when filters change (new key). */
+export function useLogs(filters: LogFilters) {
+  return useQuery({
+    queryKey: qk.logs(filters),
+    queryFn: () => fetchLogs(filters),
+    placeholderData: (prev) => prev, // keep previous page while fetching next
   });
 }

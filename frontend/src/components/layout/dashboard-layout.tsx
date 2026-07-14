@@ -9,6 +9,7 @@ import {
   LogOut,
   Menu,
   MessageSquare,
+  ScrollText,
   Settings,
   Shield,
   ShieldCheck,
@@ -70,6 +71,14 @@ const NAV_ITEMS: NavItem[] = [
   { to: "/roles", label: "角色", icon: Shield, menuCode: "menu:roles" },
   { to: "/permissions", label: "权限矩阵", icon: ShieldCheck, menuCode: "menu:permissions" },
   { to: "/settings", label: "设置", icon: Settings, menuCode: "menu:settings" },
+  // 审计日志 — owner/admin see their store; super_admin/hq_staff see all.
+  // No menu:logs permission is seeded, so gate on the api permission directly.
+  {
+    to: "/logs",
+    label: "审计日志",
+    icon: ScrollText,
+    permission: { obj: "logs", act: "read" },
+  },
 ];
 
 export function DashboardLayout() {

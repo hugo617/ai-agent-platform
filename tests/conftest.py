@@ -51,6 +51,7 @@ def _make_casbin(owner_user: str, tenant_id: str):
         ("customers", "export"),
         ("wallet", "read"), ("wallet", "update"),
         ("billing", "read"),
+        ("logs", "read"),
     ]:
         e.add_policy("owner", tenant_id, obj, act)
     # Menu visibility perms for owner (all business menus; menu:tenants is
@@ -74,6 +75,7 @@ def _make_casbin(owner_user: str, tenant_id: str):
         ("customers", "export"),
         ("wallet", "read"), ("wallet", "update"),
         ("billing", "read"),
+        ("logs", "read"),
     ]:
         e.add_policy("admin", tenant_id, obj, act)
     for code in [

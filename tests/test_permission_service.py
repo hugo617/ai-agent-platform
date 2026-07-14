@@ -126,6 +126,7 @@ def test_default_owner_perms_cover_full_catalogue():
         ("customers", "delete"), ("customers", "export"),
         ("wallet", "read"), ("wallet", "update"),
         ("billing", "read"),
+        ("logs", "read"),
     }
     assert set(DEFAULT_OWNER_PERMS) == expected
 

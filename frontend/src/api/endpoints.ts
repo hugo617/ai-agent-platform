@@ -24,6 +24,7 @@ import type {
   LlmConfig,
   LlmConfigUpdate,
   LoginRequest,
+  LogFilters,
   Member,
   MemberCreate,
   MemberUpdate,
@@ -40,6 +41,7 @@ import type {
   RolePermissionRead,
   RoleUpdate,
   SessionRead,
+  SystemLogListResponse,
   Tenant,
   TenantUpdate,
   TokenResponse,
@@ -447,6 +449,28 @@ export async function resetUserPassword(
 
 export async function fetchUserStatistics(): Promise<UserStatistics> {
   const { data } = await api.get<UserStatistics>("/users/statistics");
+  return data;
+}
+
+// ---------- audit logs ----------
+
+/** GET /logs — paginated, filterable audit log. Store users are auto-scoped to
+ * their tenant; super_admin/hq_staff may pass tenant_id to narrow. */
+export async function fetchLogs(
+  filters?: LogFilters,
+): Promise<SystemLogListResponse> {
+  const { data } = await api.get<SystemLogListResponse>("/logs/", {
+    params: {
+      user_id: filters?.user_id,
+      action: filters?.action,
+      resource_type: filters?.resource_type,
+      tenant_id: filters?.tenant_id,
+      date_from: filters?.date_from,
+      date_to: filters?.date_to,
+      limit: filters?.limit,
+      offset: filters?.offset,
+    },
+  });
   return data;
 }
 
