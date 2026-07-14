@@ -986,3 +986,22 @@
 - **下一步最佳动作**: 用户审查/提交/推送/PR 守 CI 合并(对齐 Session 091 流程),或继续下一个 not_started feature
 
 ---
+
+### Session 093 — 2026-07-14
+- **本轮目标**: ship-it 全自动交付 tenant-branding-config(52,租户白标品牌)—— 清理 + 审查 + 提交 + 推送 + PR + 守 CI + 合并入 main + 收尾。基线 main 24a8d6e,feat/tenant-branding-config 分支(Session 092 工作树未提交)
+- **执行**:
+  - **阶段 0 环境探测**:BASE=main(git symbolic-ref origin/HEAD 确认);CI=GitHub Actions(ci.yml 4 job:migrations/PG、backend/SQLite、frontend、e2e/PG);提交风格 `feat(<scope>): <中文>(#PR)`;当前 18 文件未提交(10 改 + 8 新建)
+  - **阶段 1 清理废代码**:无死代码可删。逐个确认新符号全有调用方 —— 后端 TenantConfigRepository.get_for_tenant 被 service 调用、service.upsert 被 controller 调用、controller 注册 main.py;前端 applyThemeColor/hexToHsl(theme.ts 内 applyThemeColor 调 hexToHsl)被 queries.ts useApplyTenantTheme 调用、useTenantConfig/useUpdateTenantConfig/useApplyTenantTheme 在 dashboard-layout.tsx + settings-page.tsx 有调用方;settings-page PRESET_COLORS/Palette/Textarea 均使用。无 print/breakpoint/console.log/TODO/FIXME。**0 删除**
+  - **阶段 2 质量审查**:对照项目铁律逐项核 —— ① 依赖单向(Controller→Service→Repository→Model):tenant_config.py 路由 → TenantConfigService → TenantConfigRepository,全链单向合规;② 多租户隔离在 Repository 层(get_for_tenant 的 tenant_id WHERE 即边界)+ Controller 绑定 user.tenant_id(token),跨租户改写构造上不可能;③ 权限:GET 公开给任意租户成员(品牌对全员生效,member 也能读),PUT require_permission settings:update(owner/admin/super_admin 短路),member PUT 403;④ 配置表无软删,匹配 LlmConfig/Tenant 约定;⑤ UniqueConstraint uq_tenant_config_tenant 同时声明在 ORM __table_args__ 与迁移,规避 alembic-check drift(CI Migrations job pass 验证);⑥ 模型已注册 alembic/env.py + tests/conftest.py + app/main.py;⑦ theme_color 用 Field pattern 原生约束校验(避免 field_validator raise ValueError 导致 ctx 不可 JSON 序列化);⑧ theme.ts hexToHsl 转 HSL 正确,relativeLuminance 按 WCAG sRGB 公式算,applyThemeColor 按 >0.45 亮度阈值选前景色(亮底深字/暗底白字);⑨ useApplyTenantTheme useEffect cleanup 卸载恢复默认(登出/切租户不留残色)。无问题需修
+  - **阶段 3 提交**:18 文件分组暂存(单一 feature 内聚,一个 commit)`feat(branding): 租户品牌配置(显示名/logo/主题色/登录文案 + 主题色 CSS 变量全局应用)`(d00ab35)。无密钥/产物入库
+  - **阶段 4 推送 + PR**:`git push -u origin HEAD`(默认 git config,proxy 开放且必需)+ gh 开 **PR #57** 对 main https://github.com/hugo617/ai-agent-platform/pull/57
+  - **阶段 5 守 CI**:**首轮全绿,0 次修红**。Migrations(alembic upgrade+check on PG)pass 44s —— UniqueConstraint ORM+迁移双声明,drift 未触发;Backend(pytest+ruff)pass 4m2s —— 442 passed;Frontend(typecheck+build+oxlint)pass 30s;E2E(Playwright)pass 1m54s —— 顶栏品牌注入(display_name 覆盖默认名 + logo img)+ 主题色 CSS 变量应用仅改 :root CSS var 不改 DOM 结构,E2E 用 getByTestId/aria-label 定位,未破坏既有选择器
+  - **阶段 6 合并**:`gh pr merge 57 --squash --delete-branch` → main **9073831** `feat(branding): 租户品牌配置(显示名/logo/主题色/登录文案 + 主题色 CSS 变量全局应用) (#57)`(符合项目提交风格)。本地 checkout main + pull 确认基线推进,远端 feat/tenant-branding-config 分支已删
+  - **阶段 7 收尾**:feature_list.json evidence 补「PR #57 squash-merge 入 main 9073831,CI 4 job 首轮全绿 + 0 修红 + drift/E2E 说明」;本 Session 记录
+- **验证(全过)**:`./init.sh` ruff clean + pytest **442 passed**(基线 434 + 8 新);`.venv/bin/alembic heads` 单头 **c3d4e5f6a7b8**;`cd frontend && npm run build` tsc+vite 0 类型错误;`cd frontend && npx oxlint src/` 0 warnings 0 errors;CI 4 job 全绿(首轮,0 修红)
+- **环境备注**:AGENTS.md 记载的 git proxy(127.0.0.1:9910)「未运行」已过时(同 Session 081/083/085/087/089/091)—— 端口 OPEN 且网络需走 proxy,push/gh 用默认 config 成功。gh 已认证(hugo617)
+- **当前状态**: tenant-branding-config(52)✅ **已合并入 main(9073831,PR #57 squash)**,基线已推进。白标能力正式上线 —— owner/admin 配置本租户显示名/Logo/主题色/登录文案,主题色全站生效(按钮/链接/导航高亮),顶栏注入品牌;权限隔离(任意成员可读、owner/admin 可改、跨租户不可见)
+- **已知风险**: 无功能风险。主题色对比度由 WCAG 亮度自动选前景色缓解(用户选极浅色时前景自动转深字);登录页无租户品牌(MVP,需 tenant slug 体系才能未登录查,后续可补);logo 上传待 file-upload(56),当前用粘贴 URL。手动浏览器验证未跑(需前后端启动),pytest 442 + npm build + oxlint + CI E2E 已覆盖行为/类型/规范/端到端主流程不回归
+- **下一步最佳动作**: 选优先级最高的 not_started feature 继续。tenant-branding-config(52)已落地,可推进下一个全栈/前端 feature(如 file-upload 56 可补 logo 上传闭环)
+
+---

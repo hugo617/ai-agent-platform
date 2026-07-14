@@ -1285,7 +1285,8 @@
         "前端:settings-page 第 4 张「品牌配置」Card(显示名/Logo URL/主题色 color picker+预设色板+hex/登录文案 Textarea);types/endpoints/queries(useTenantConfig + useUpdateTenantConfig + useApplyTenantTheme)",
         "前端:lib/theme.ts 把 #RRGGBB 转 shadcn HSL token 写入 :root --primary,按 WCAG 亮度选 --primary-foreground;DashboardLayout 调 useApplyTenantTheme 应用主题色并在卸载时恢复默认(切换租户/登出不留残色);顶栏 logo+display_name 注入",
         "前端登录页 MVP:无 tenant slug 体系,登录页用平台默认品牌,租户品牌在登录后(DashboardLayout)生效 —— 与计划 §风险/注意事项 一致",
-        "npm run build(tsc+vite 0 错误)+ npx oxlint src/ 0 warnings 0 errors"
+        "npm run build(tsc+vite 0 错误)+ npx oxlint src/ 0 warnings 0 errors",
+        "交付:PR #57 squash-merge 入 main 9073831,CI 4 job 首轮全绿(Migrations 44s / Backend pytest+ruff 4m2s / Frontend 30s / E2E Playwright 1m54s),0 次修红;alembic-check drift 未触发(UniqueConstraint ORM+迁移双声明);E2E 顶栏品牌注入未破坏既有 getByTestId/aria-label 选择器"
       ],
       "notes": "第一梯队。现状:settings 只有 LLM+API Token,无品牌配置,多租户白标能力缺失。logo 上传依赖 file-upload(56),可先做名称/主题色/文案。详细 plan 执行到时写。"
     },
