@@ -65,6 +65,42 @@ import type {
   WalletTransaction,
 } from "./types";
 
+// ---------- file upload (priority 56) ----------
+// POST /uploads/upload takes a multipart FormData body (the axios `api` instance
+// already attaches the bearer token), validates the content-type + size on the
+// backend, and returns the public URL the caller should persist on its own
+// model (avatar/logo/…). The caller is responsible for saving the returned URL.
+
+export interface UploadResponse {
+  url: string; // e.g. /static/{tenant}/{uuid}.png — what <img src=> should use
+  key: string; // the storage key (no original filename)
+  size: number; // bytes
+  content_type: string; // the validated MIME type
+}
+
+/**
+ * Upload a single file via POST /uploads/upload. Returns the URL + metadata;
+ * the caller persists the URL on its own record (e.g. TenantConfig.logo_url).
+ *
+ * Pass an optional onProgress callback (0–100) for a progress bar.
+ */
+export async function uploadFile(
+  file: File,
+  onProgress?: (percent: number) => void,
+): Promise<UploadResponse> {
+  const form = new FormData();
+  form.append("file", file);
+  const { data } = await api.post<UploadResponse>("/uploads/upload", form, {
+    headers: { "Content-Type": "multipart/form-data" },
+    onUploadProgress: (evt) => {
+      if (onProgress && evt.total) {
+        onProgress(Math.round((evt.loaded / evt.total) * 100));
+      }
+    },
+  });
+  return data;
+}
+
 // ---------- auth ----------
 export async function fetchMe(): Promise<MeResponse> {
   const { data } = await api.get<MeResponse>("/auth/me");

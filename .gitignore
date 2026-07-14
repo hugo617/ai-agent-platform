@@ -66,6 +66,10 @@ docker-compose.override.yml
 *.sqlite3
 *.db
 
+# Uploaded files (created at runtime by LocalStorage under repo root when
+# storage_backend == "local"; S3/OSS backends don't write here). Never commit.
+uploads/
+
 # Local tooling state (CLI agents / Apifox local cache)
 .zcode/
 .apifox/

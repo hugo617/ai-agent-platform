@@ -1165,3 +1165,29 @@
 
 ---
 
+### Session 100 — 2026-07-14
+- **本轮目标**: 实现 `file-upload-storage`(priority 56)—— 存储抽象层(Local/S3/OSS)+ POST /upload 端点 + 前端 FileUpload 组件 + 一个消费方接入。多租户 AI 智能体平台的地基,被 user-profile(49 头像)/tenant-branding(52 logo)/knowledge-base-rag(57 文档)依赖
+- **实现方式**: 全栈实现。分支 `feat/file-upload-storage`(基于 main HEAD `1970e7a`)。**未提交**,留工作树供审查
+- **已完成**:
+  - **后端存储抽象(Step 1)**: `app/core/storage.py` —— `StorageBackend` ABC(save/delete/exists)+ `LocalStorage`(真实实现:anyio.to_thread + Path.write_bytes 写到 UPLOAD_DIR,返回 `/static/{key}`,`_path()` 做 resolve()+relative_to() 防穿越,懒建目录)+ `AmazonS3Storage`/`AliyunOSSStorage`(stub,缺 boto3/oss2 或凭证时抛 NotImplementedError 含配置指引,方法体内注释了真实 boto3/oss2 调用轮廓)+ `get_storage()` 工厂(lru_cache 单例,读 settings.storage_backend)+ `reset_storage_cache()`(测试用)
+  - **配置(Step 1)**: `app/core/config.py` Settings 新增 storage_backend(默认 "local")/ storage_local_dir(默认 "uploads")/ upload_max_bytes(默认 10MB)/ s3_bucket/region/access/secret + oss_bucket/endpoint/access/secret(全 None 默认)
+  - **上传端点(Step 2-3)**: `app/api/v1/uploads.py` —— `POST /api/v1/uploads/upload`(UploadFile + get_current_user)。安全:content-type 白名单(image/png/jpeg/webp/gif, application/pdf, text/plain)→ 400;读 `max_bytes+1` 字节即判超大 → 413(不缓存超大 body);key = `{tenant_id}/{uuid4().hex}{ext}`(ext 来自 content-type,**不用原文件名** 防穿越 + 防 PII 泄漏);空文件 → 400;storage save 失败/NotImplementedError → 502。返回 {url, key, size, content_type}
+  - **静态服务(Step 2)**: `app/main.py` create_app 末尾,仅 local 模式 mount `/static` → LocalStorage().root;`static_dir.mkdir(parents=True, exist_ok=True)` 懒建目录(**测试安全**:tests 每 test 调 create_app,无 uploads/ 目录时不会因 StaticFiles "directory does not exist" 报错)。S3/OSS 模式不 mount(返回绝对 URL)
+  - **测试**: `tests/test_upload.py` 6 用例全过 —— 上传 PNG 返回 url+key + key==url.removeprefix('/static/') + endswith .png + 无原文件名;GET /static/{key} 200 round-trip 字节一致;非法类型 application/octet-stream → 400;超大(cap+1 字节)→ 413;无 Authorization → 401;key tenant 前缀 + 无 `..`。`upload_client` fixture patch settings.storage_local_dir=tmp_path 并 reset_storage_cache(),hermetic 不污染真实 uploads/
+  - **前端(Step 4)**: `frontend/src/components/ui/file-upload.tsx` —— 可复用组件(role=button div + 拖拽 + 隐藏 input + 图片预览 + 进度条 + 客户端 maxSizeMb 预检 + onUploaded 回调 + 清除按钮);`frontend/src/api/endpoints.ts` 新增 `uploadFile(file, onProgress)`(axios multipart FormData,UploadResponse 类型)
+  - **消费方接入(Step 5)**: `frontend/src/pages/settings-page.tsx` TenantBrandingCard 的 Logo 字段 —— 从纯 URL 输入改为 `FileUpload`(上传自动填 URL)+ 保留 URL 输入框(可粘贴外部 CDN URL)。权限 settings:update(owner/admin/super_admin)
+- **关键决策**:
+  - **未引入新依赖**: aiofiles/boto3/oss2 均 NOT in requirements。LocalStorage 用 anyio.to_thread + Path.write_bytes(anyio 随 FastAPI/Starlette 自带)。S3/OSS stub 保留方法轮廓注释,plugging 真实 SDK 是 fill-in-the-blank
+  - **存储是基础设施不是 Repository**: Controller 直接调 get_storage()(同 metrics/scheduler),不经过 Service/Repository 分层(铁律的分层规则针对业务数据,上传无 DB 行)
+  - **测试安全的 static mount**: mkdir 懒执行 + 仅 local 模式 mount + upload_client fixture 用 tmp_path 覆盖 storage_local_dir。全量 479 基线测试零回归
+- **运行过的验证**(全过):
+  - `./init.sh` → ruff All checks passed + **pytest 485 passed**(基线 479 + 6 新增 test_upload)
+  - `cd frontend && npm run build` → built successfully(tsc + vite,0 错误)
+  - `cd frontend && npx oxlint src/` → Found 0 warnings and 0 errors
+- **已记录证据**: feature_list.json 的 file-upload-storage status 改 passing + evidence 5 条(后端实现/无新依赖/测试/验证命令/前端+消费方)
+- **提交记录**: 无(工作树未提交,在 feat/file-upload-storage 分支)
+- **已知风险**: 无。S3/OSS 是显式 stub(缺 SDK 时 NotImplementedError),生产切换前需 `pip install boto3/oss2` + 配凭证;本地 uploads/ 不入生产(抽象层 + config 切换已就位)
+- **下一步最佳动作**: 审查 + ship-it 收尾(参考 Session 099 流水线):PR → CI 守门 → 合并入 main。或继续下一个 not_started(57 knowledge-base-rag 依赖本任务的 uploadFile)
+
+---
+
