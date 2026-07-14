@@ -1176,7 +1176,8 @@
         "测试:tests/test_logs_api.py 14 测试(门店看本租户/租户隔离/门店传 foreign tenant_id 被忽略/super_admin 跨租户/super_admin 按 tenant 过滤/member 403/action/resource_type/user_id/date_from 过滤/坏日期 400/分页 limit+offset/最新优先/before-after JSON 暴露)",
         "验证:./init.sh ruff All checks passed + 385 passed(基线 371 + 新增 14)+ npm run build 0 类型错误 + npx oxlint src/ 0 warnings 0 errors(46 文件)",
         "SystemLog append-only:Repository 无 is_deleted 谓词(与 Customer/User 软删除模型不同),日志永不删",
-        "无迁移:复用现有 SystemLog 表 + 既有索引(idx_system_logs_resource/_tenant_id/_user_id),纯读端点"
+        "无迁移:复用现有 SystemLog 表 + 既有索引(idx_system_logs_resource/_tenant_id/_user_id),纯读端点",
+        "已合并入 main:PR #52 squash → commit 6f2f23b(CI 四任务 Migrations/Backend/Frontend/E2E 首轮全绿 0 次修红)"
       ],
       "notes": "第一梯队。现状:SystemLog 模型在写(logging_service.record)但无查询 API 无前端页,数据在黑暗里。补查询端点+前端审计页。详细 plan 执行到时写。独立无依赖。"
     },

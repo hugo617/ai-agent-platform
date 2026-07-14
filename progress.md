@@ -8,7 +8,7 @@
 - **标准启动路径**: `./init.sh`(装依赖 + ruff + pytest)
 - **标准验证路径**: `./init.sh`(同上,后端快速验证,SQLite 内存库)
 - **完整验证路径**(需 docker): `alembic upgrade head && alembic check` + `cd frontend && npm run build`
-- **当前最高优先级未完成功能**: **`user-profile-account`(priority 49,用户个人中心)** —— audit-log-ui(48)✅ 已实现(待 ship-it 合并):SystemLog GET /logs 端点(双视角:门店 logs:read 本租户 / super_admin/hq_staff 跨租户)+ logs-page(过滤栏 + 展开行 before/after JSON diff + 分页)+ logs:read 权限(owner/admin)。49 做 PUT /auth/me(改资料)+ PUT /me/password(旧密码校验)+ profile-page(资料/密码/我的会话)+ 头像下拉入口。前置无。前一个 user-profile-account 之前还有 conversation-management(50)/global-search(51)等,按 priority 49 顺位。
+- **当前最高优先级未完成功能**: **`user-profile-account`(priority 49,用户个人中心)** —— audit-log-ui(48)✅ 已 passing 并入 main(6f2f23b,PR #52 squash;GET /logs 双视角端点 + logs-page 审计页 + logs:read 权限)。49 做 PUT /auth/me(改资料)+ PUT /me/password(旧密码校验)+ profile-page(资料/密码/我的会话)+ 头像下拉入口。前置无。前一个 user-profile-account 之前还有 conversation-management(50)/global-search(51)等,按 priority 49 顺位。
 - **当前 blocker**: 无
 
 ## 后续任务规划
@@ -820,5 +820,21 @@
 - **下一步最佳动作**:
   - (a) ship-it 清理 + 审查 + commit + PR + CI 守门 + 合并 audit-log-ui 到 main;
   - (b) 执行 `user-profile-account`(priority 49,用户个人中心,现为最高优先级 not_started)
+
+---
+
+### Session 085 — 2026-07-14
+- **本轮目标**: ship-it 收尾 —— 把 Session 084 的 audit-log-ui(48,全栈审计日志查询)改动一路推到合并入 main
+- **执行**(在 `feat/audit-log-ui` 分支,基线 main):
+  - **Phase 1 清理废代码**:实测「无未用新符号」声明属实 —— 新增 Repository 方法(SystemLogRepository.list_logs/_apply_filters)、endpoint(GET /logs + _parse_dt helper)、schema(SystemLogRead/SystemLogListResponse)、前端 hook/endpoint(qk.logs + useLogs/fetchLogs)、组件(LogsPage/JsonBlock)均有调用方;logs-page.tsx 全部 5 个 lucide 图标(ChevronDown/ChevronRight/Loader2/RefreshCw/ScrollText)均在用,apiErrorMessage 在错误态(line 240)在用,type 导入(LogFilters/SystemLog/Tenant)均在用;新文件无 console/print/breakpoint/TODO/FIXME/注释死码;**0 删除**
+  - **Phase 2 质量复审**:对照项目铁律逐项核 —— ① 依赖单向(Controller→Service→Repository→Model):logs.py 路由 → SystemLogRepository(直连,本端点只读无 Service 中间层,与 GET /customers/{id}/usage 同模式,合规);② 多租户隔离在 Repository 层(_apply_filters 的 tenant_id WHERE 即边界,tenant_id=None=跨租户 super_admin 信号由 API 层 is_cross_tenant_viewer 授权);③ soft-delete:SystemLog append-only **无 is_deleted 列**(核实 app/models/log.py),Repository 正确不加该谓词(文档化在模块 docstring);④ 字段命名对齐 ORM 属性非 DB 列(details_json←Python 属性 / DB 列名 details;user_id 非 operator_id;old_values-new_values 非 before-after),schema + 前端类型全程一致;⑤ 权限 seed 三处同步(permission_service DEFAULT_OWNER/ADMIN_PERMS + OBJ_CN / conftest _make_casbin owner+admin / test_permission_service expected set);⑥ 内联 dual-view 守卫与既有 /customers/statistics 模式一致;无问题
+  - **Phase 3 验证(全过)**:`./init.sh` → ruff clean + **pytest 385 passed**(基线 371 + 新增 14);`cd frontend && npm run build` → tsc + vite 成功 0 类型错误;`cd frontend && npx oxlint src/` → 0 warnings 0 errors
+  - **Phase 4 提交 + 推送 + 开 PR**:commit 989d44d `feat(audit): 审计日志查询(GET /logs + 前端审计页 + logs:read 权限)`(17 文件 +1075/-3);推 feat/audit-log-ui;PR #52 https://github.com/hugo617/ai-agent-platform/pull/52
+  - **Phase 5 守 CI(0 次修红,首轮全绿)**:Migrations **pass** 45s(无迁移,纯复用 SystemLog 表 + 既有索引,alembic upgrade head + check 干净)/ Backend(pytest+ruff)**pass** 3m5s / Frontend(typecheck+build+oxlint)**pass** 28s / E2E(Playwright)**pass** 1m46s —— 四任务一次性全绿
+  - **Phase 6 合并**:squash 合并入 main 为 6f2f23b(`(#52)` 后缀,符合项目提交风格),远端 feat/audit-log-ui 分支已删(--delete-branch)
+- **环境备注**:AGENTS.md 记载的 git proxy(127.0.0.1:9910)「未运行」已过时(同 Session 081/083)—— 端口 OPEN 且网络需走 proxy,push/gh 用默认 config(带 proxy)成功。gh 已认证(hugo617)
+- **当前状态**: audit-log-ui(48)✅ 已入 main(6f2f23b),审计日志查询正式上线 —— 门店 owner/admin 可查本租户操作记录,super_admin/hq_staff 可查全平台(可按门店过滤),支持操作人/操作类型/资源/时间范围过滤 + 展开行 before/after JSON diff + 分页
+- **已知风险**: 无功能风险。手动浏览器验证未跑(需前后端启动),pytest 385 + npm build + oxlint + E2E 已覆盖行为/类型/规范/端到端主流程不回归
+- **下一步最佳动作**: 选优先级最高的 not_started —— `user-profile-account`(49,用户个人中心)
 
 ---
