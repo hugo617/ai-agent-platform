@@ -906,3 +906,26 @@
 - **下一步最佳动作**: 交 ship-it agent 提交+推送 feat/conversation-management + 开 PR;之后选优先级最高的 not_started feature 继续
 
 ---
+
+### Session 089 — 2026-07-14
+- **本轮目标**: ship-it 端到端交付 —— 把 `feat/conversation-management`(50,全栈对话管理增强)从工作树一路推到合并入 main,自主跑完清理/审查/提交/推送/PR/守 CI/合并/收尾全流程。基线 main 76ed083,全程在 feature 分支
+- **执行**:
+  - **阶段 0 环境探测**:基线 `main`(git symbolic-ref origin/HEAD 确认);CI = GitHub Actions 4 job(Migrations/PG、Backend/SQLite、Frontend、E2E/PG);提交风格 `feat(<scope>): <中文>(#PR)`;当前 13 文件未提交(11 改 + 2 新建)
+  - **阶段 1 清理废代码**:全 diff 扫描 —— 无未用 import、无 stray debug log/print/console.log、无 TODO/FIXME/孤儿符号。逐个 grep 验证:6 个新 hook 全有 chat-page.tsx 调用方;6 个新 endpoint fn 全有 queries.ts 调用方;chat-page.tsx 12 个 lucide 图标全在用(最少 2 次=import+JSX);`qk.conversations` 改函数后所有调用点(仅 queries.ts L647 一处)都加了 `()` 调用;原直连删除按钮重构为 DropdownMenu 后旧 `title="删除会话"` 选择器在 chat-page.tsx 内已无残留。**0 删除**
+  - **阶段 2 质量审查**:对照项目铁律逐项核 —— ① 依赖单向(Controller→Service→Repository→Model):conversations.py 路由 → ConversationService → ConversationRepository,全链单向合规;② 多租户隔离在 Repository 层(list_for_user 的 tenant_id+user_id WHERE 即边界);③ ownership:_get_owned 统一 tenant 查找 + user_id 归属校验,foreign/不存在均 404 不泄露存在性;④ JSONB 双库模式与 CustomerProfile.tags 一致(JSONB().with_variant(JSON,"sqlite"));⑤ 迁移仅 add_column 无新索引 → 无 ORM __table_args__ drift(规避 dashboard 任务踩过的 alembic-check-drift 雷,CI Migrations job pass 验证);⑥ tag-contains 方言分发正确(PG `@>` / SQLite `json_each`);⑦ batch-delete foreign id 走 404 而非静默跳过。无问题需修
+  - **阶段 3 提交**:13 文件分组暂存(单一 feature 内聚,一个 commit),commit `29f848c feat(chat): 对话管理增强(搜索/重命名/标签/收藏/置顶/批量删除)`。无密钥/产物入库(`.coverage`、`frontend/dist` 均 gitignore)
+  - **阶段 4 推送+PR**:`git push -u origin HEAD`(默认 git config proxy 直连成功)+ `gh pr create` 开 **PR #55** 对 main https://github.com/hugo617/ai-agent-platform/pull/55
+  - **阶段 5 守 CI(1 次修红)**:
+    - **首轮**:`gh pr checks --watch` —— Migrations **pass** 1m3s / Backend(pytest+ruff)**pass** 3m39s / Frontend **pass** 33s / **E2E fail** 2m46s
+    - **诊断**:`gh run view --log-failed` 定位根因 —— E2E `main-flow.spec.ts:67` 用 `[title="删除会话"]` 选择器断言「至少一个会话存在」,但本轮 chat-page.tsx 把每行的直连删除按钮重构为 DropdownMenu(触发器 `title="更多操作"`),旧 title 选择器失效。非功能 bug,是 UI 重构导致 E2E 选择器过时
+    - **修复**:E2E 选择器从 `[title="删除会话"]`(已不存在的元素)改为 `[aria-label="选择会话"]`(每行 Checkbox,重构后仍稳定存在),保留「断言至少一个会话在侧边栏」的原意。commit `1a4c8f1 test(e2e): 适配会话行 DropdownMenu 重构...` + push
+    - **二轮**:**4 job 全绿** —— Migrations **pass** 1m3s / Backend(pytest+ruff)**pass** 3m35s / Frontend(typecheck+build+oxlint)**pass** 29s / E2E(Playwright)**pass** 1m38s
+  - **阶段 6 合并**:`gh pr merge 55 --squash --delete-branch` —— squash 入 main 为 `b6b8f3c ... (#55)`(符合项目提交风格),远端 feat/conversation-management 分支已删。`git checkout main && git pull` 确认本地 main 已含改动
+  - **阶段 7 收尾**:feature_list.json evidence 补「PR #55 squash-merge 入 main b6b8f3c,CI 4 job 全绿 + E2E 选择器修复说明」;本 Session 记录入 progress.md
+- **验证(全过)**:`./init.sh` ruff clean + pytest **414 passed**(基线 393 + 21 新);`.venv/bin/alembic heads` 单头 `b2c3d4e5f6a7`;`cd frontend && npm run build` 0 类型错误;`cd frontend && npx oxlint src/` 0 warnings 0 errors;CI 4 job 全绿(1 次修红)
+- **环境备注**:AGENTS.md 记载的 git proxy(127.0.0.1:9910)「未运行」已过时(同 Session 081/083/085/087)—— 端口 OPEN 且网络需走 proxy,push/gh 用默认 config(带 proxy)成功。gh 已认证(hugo617)
+- **当前状态**: conversation-management(50)✅ **已合并入 main(b6b8f3c,PR #55 squash)**,基线已推进。对话管理增强正式上线 —— 用户可搜索对话(标题/消息内容/标签)、重命名、打标签、收藏、置顶、批量删除
+- **已知风险**: 无功能风险。消息内容 ILIKE 搜索无 GIN 索引(会话量级内可接受,plan 风险表已记)。手动浏览器验证未跑(需前后端启动),pytest 414 + npm build + oxlint + E2E 已覆盖行为/类型/规范/端到端主流程不回归
+- **下一步最佳动作**: 选优先级最高的 not_started feature 继续。global-search(51)弱依赖本任务的对话搜索(现已落地),可顺势推进;或选其他全栈/前端 feature
+
+---
