@@ -1114,3 +1114,30 @@
   - (a) 执行 `data-export`(priority 55,数据导出 CSV,现为最高优先级 not_started)
 
 ---
+
+### Session 098 — 2026-07-14
+- **本轮目标**: 端到端交付 `data-export`(priority 55)—— CSV 导出(客户/对话/用量/审计),门店+总部双 scope,前后端全栈。基线 `main`,新分支 `feat/data-export`,工作树未提交
+- **实现方式**: 全自动,无中断。先读 plan-data-export.md + 镜像 logs.py/customers.py 的双 scope 模式,后端先行(端点+测试),再前端(按钮+下载)
+- **已完成**:
+  - **后端 `app/api/v1/exports.py`**:GET /exports/{entity} ∈ {customers,conversations,usage,logs},StreamingResponse。① **流式**:`_stream_rows` 异步生成器分批 yield(EXPORT_BATCH_SIZE=500),先发 UTF-8 BOM(\ufeff,Excel 中文不乱码)→ header → 分批行;MAX_EXPORT_ROWS=100k 封顶内存。② **双 scope**:`is_cross_tenant_viewer` 分流 —— 门店用户钉在自己 tenant,cross-tenant(super_admin/hq_staff)看全平台(可选 tenant_id 收窄)。③ **每实体独立权限**(内联,镜像 logs.py rationale):customers:read / conversations:read / wallet:read|billing:read / logs:read;super_admin 在 check() 首行 bypass。④ **date_from/date_to**(默认 30 天);SQLite naive datetime 与 aware 查询参数比较用 `_as_naive_utc`/`_row_dt` 归一化。⑤ **只读聚合直调 Repository**(同 /dashboard/overview、/logs、/search),无 Service 层
+  - **main.py**:注册 exports router
+  - **测试 `tests/test_export.py`(17 个)**:各实体 CSV 表头+行数、租户隔离(store A 看不到 store B)、super_admin 跨租户、member 无 logs:read → 403、member 有 customers:read 可导出(证明复用同一权限,无新权限)、日期范围(默认 30 天 + 显式 date_from)、未知实体 404、坏日期 400、streaming 响应 content-type=text/csv + content-disposition=attachment
+  - **前端**:① `endpoints.ts`:`exportEntity(entity, params)` axios responseType:blob 返回 Blob + ExportEntity/ExportParams 类型;② `lib/download.ts`:`downloadBlob` 创建 `<a>` + click + setTimeout revokeObjectURL;③ `hooks/queries.ts`:`useExportCsv` mutation 封装 exportEntity+downloadBlob;④ 三个列表页加按钮 —— customers-page 门店视图「导出 CSV」(customers:read)、logs-page「导出 CSV」(透传当前 action/resource/date/tenant 过滤)、billing-page「导出用量」(usage)。都用 useToast 成功/失败提示 + Loader2 spinner
+- **运行过的验证**(全过):
+  - `./init.sh` → ruff `All checks passed!` + **478 passed**(baseline 461 + 17 新增,180s)
+  - `cd frontend && npm run build` → built successfully(2534 modules,tsc+vite 0 错误)
+  - `cd frontend && npx oxlint src/` → Found 0 warnings and 0 errors
+- **已记录证据**: `feature_list.json` 的 `data-export` status 改 passing,evidence 填 10 条(端点/路由/测试/前端各层 + 验证命令)
+- **技术要点**:
+  - **流式 vs 一次性**:plan 的 csv_stream 伪代码是一次性 iter([buffer.getvalue()]);本实现改成真流式(异步生成器分批 yield),大数据量不 OOM。MAX_EXPORT_ROWS 是兜底(即使流式,DB cursor + 已序列化行仍占 RAM)
+  - **SQLite 时区坑**:SQLite 的 DateTime(timezone=True) 是 no-op,存啥取啥(naive);拿 aware 的查询参数去比 row 的 naive created_at 会 TypeError。`_as_naive_utc`/`_row_dt` 把两侧都归一到 naive-UTC 比较,生产 Postgres(timestamptz)不受影响
+  - **复用既有权限,零新增**:plan 明确「无新权限」。conftest 早有 customers:read/wallet:read/billing:read/logs:read 策略,导出端点直接复用,member 有 customers:read 就能导出客户(测试 `test_export_customers_member_can_read` 证明)
+  - **每实体独立守卫**:logs.py 的 rationale 原样照搬 —— store mode 要 entity:read,HQ mode 要 cross-tenant viewer 角色,单个 router dependencies= 表达不了,故内联 `permission_service.require`
+- **提交记录**: 未提交(按要求留工作树在 feat/data-export)
+- **已知风险**: 无新风险。message_count 是按 conversation 逐条 count(messages)(无存储列),超大数据量(数万对话)会 N+1;100k 行封顶 + 门店单租户数据量小,实际可接受,后续若上量可加缓存列
+- **下一步最佳动作**:
+  - (a) 清理 + 审查 + PR + CI 守门 + 合并 `data-export`(同 Session 097 的 ship-it 流程)
+  - (b) 或执行下一 not_started 功能(查 feature_list.json 优先级)
+
+---
+

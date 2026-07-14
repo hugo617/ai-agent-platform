@@ -2,6 +2,7 @@ import { Fragment, useState } from "react";
 import {
   ChevronDown,
   ChevronRight,
+  Download,
   Loader2,
   RefreshCw,
   ScrollText,
@@ -11,7 +12,7 @@ import { apiErrorMessage } from "@/api/client";
 import { fetchTenants } from "@/api/endpoints";
 import type { LogFilters, SystemLog, Tenant } from "@/api/types";
 import { useAuth } from "@/components/auth/auth-context";
-import { useLogs } from "@/hooks/queries";
+import { useLogs, useExportCsv } from "@/hooks/queries";
 import { useQuery } from "@tanstack/react-query";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -39,6 +40,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Pagination } from "@/components/ui/pagination";
+import { useToast } from "@/components/ui/toast";
 
 const PAGE_SIZE = 20;
 
@@ -77,6 +79,8 @@ function JsonBlock({ value }: { value: unknown }) {
 export function LogsPage() {
   const { me } = useAuth();
   const isSuperAdmin = me?.platform_role === "super_admin";
+  const toast = useToast();
+  const exportMut = useExportCsv();
 
   // Filters held in state; the query key includes them so a change refetches.
   const [action, setAction] = useState<string>("all");
@@ -117,6 +121,27 @@ export function LogsPage() {
     });
   };
 
+  // Export mirrors the active filter set (action / resource / date / tenant)
+  // so the CSV matches what the user sees on screen. The backend re-applies
+  // the scope: store users can't escape their tenant; super_admin may narrow.
+  const handleExport = async () => {
+    const filename = `logs_${new Date().toISOString().slice(0, 10)}.csv`;
+    try {
+      await exportMut.mutateAsync({
+        entity: "logs",
+        filename,
+        params: {
+          date_from: filters.date_from,
+          date_to: filters.date_to,
+          tenant_id: filters.tenant_id,
+        },
+      });
+      toast.success("已导出审计日志");
+    } catch (err) {
+      toast.error("导出失败", apiErrorMessage(err));
+    }
+  };
+
   return (
     <div className="mx-auto max-w-7xl space-y-6 p-6">
       <div className="flex items-center justify-between">
@@ -131,19 +156,34 @@ export function LogsPage() {
             </p>
           </div>
         </div>
-        <Button
-          variant="outline"
-          size="sm"
-          disabled={isFetching}
-          onClick={() => refetch()}
-        >
-          {isFetching ? (
-            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-          ) : (
-            <RefreshCw className="mr-2 h-4 w-4" />
-          )}
-          刷新
-        </Button>
+        <div className="flex gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleExport}
+            disabled={exportMut.isPending}
+          >
+            {exportMut.isPending ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <Download className="mr-2 h-4 w-4" />
+            )}
+            导出 CSV
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={isFetching}
+            onClick={() => refetch()}
+          >
+            {isFetching ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <RefreshCw className="mr-2 h-4 w-4" />
+            )}
+            刷新
+          </Button>
+        </div>
       </div>
 
       <Card>

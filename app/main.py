@@ -20,6 +20,7 @@ from app.api.v1 import (
     conversations,
     customers,
     dashboard,
+    exports,
     groups,
     logs,
     members,
@@ -142,6 +143,7 @@ def create_app() -> FastAPI:
     app.include_router(search.router, prefix=prefix)
     app.include_router(tenant_config.router, prefix=prefix)
     app.include_router(notifications.router, prefix=prefix)
+    app.include_router(exports.router, prefix=prefix)
 
     async def _db_ping(db: AsyncSession) -> str:
         """Run ``SELECT 1`` against the configured DB. Returns 'ok'/'fail'.
