@@ -60,3 +60,34 @@ class SessionRead(BaseModel):
     expires_at: datetime
     created_at: datetime
     last_accessed_at: datetime
+
+
+class ProfileUpdate(BaseModel):
+    """Editable fields for the current user's self-service profile.
+
+    Only profile columns the user may change are exposed — ``platform_role`` /
+    ``status`` / ``username`` are intentionally absent so a caller cannot
+    escalate privileges via the self-service endpoint (``PUT /auth/me`` ignores
+    any such fields defensively). Matches the editable subset of ``UserUpdate``
+    (app/schemas/user.py).
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    display_name: str | None = Field(default=None, max_length=128)
+    real_name: str | None = Field(default=None, max_length=100)
+    phone: str | None = Field(default=None, max_length=20)
+    avatar: str | None = Field(default=None, max_length=255)
+
+
+class PasswordChange(BaseModel):
+    """Self-service password change payload (``PUT /auth/me/password``).
+
+    ``old_password`` is verified against the stored bcrypt hash; the caller must
+    know the current password (unlike the admin reset, which needs no proof).
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    old_password: str = Field(..., min_length=1, max_length=255)
+    new_password: str = Field(..., min_length=8, max_length=255)

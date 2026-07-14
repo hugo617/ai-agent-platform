@@ -1187,7 +1187,7 @@
       "area": "用户管理",
       "title": "用户个人中心(改密码/改资料/我的会话)",
       "user_visible_behavior": "用户能自助管理个人账号:修改密码、编辑资料(姓名/头像)、查看我的会话和用量;不必找管理员改密码",
-      "status": "not_started",
+      "status": "passing",
       "plan": "harness/docs/plan-user-profile-account.md",
       "verification": [
         "新增 PUT /auth/me 端点(改自己密码/资料,需验证旧密码)",
@@ -1196,7 +1196,15 @@
         "pytest 覆盖改密码(旧密码校验)/改资料/越权防护(不能改别人)",
         "npm run build 通过"
       ],
-      "evidence": [],
+      "evidence": [
+        "后端:app/schemas/auth.py(ProfileUpdate:display_name/real_name/phone/avatar 全可选,extra=ignore 防注入 platform_role/status + PasswordChange:old_password + new_password min 8)+ app/api/v1/auth.py(PUT /auth/me 仅改可编辑字段、token user_id 锁定目标、改后返回 MeResponse;PUT /auth/me/password 用 app/core/password.py 的 verify_password/hash_password,旧密码错→400,OIDC-only 账户无密码→400,password_updated_at 刷新)",
+        "密码存储位置确认:bcrypt 哈希直接存在 User.password 列(app/models/tenant.py),无单独 UserLoginMethod 密码表;登录校验在 AuthService.login 经 UserRepository.get_by_login_identifier + verify_password",
+        "前端:types.ts(ProfileUpdate/PasswordChange)+ endpoints.ts(updateMe PUT /auth/me + changePassword PUT /auth/me/password)+ queries.ts(useUpdateMe 成功后 invalidate [\"auth\",\"me\"] 刷新 /me + useChangePassword)+ profile-page.tsx(资料编辑卡 display_name/real_name/phone react-hook-form+zod + 修改密码卡 旧/新/确认 前端校验 new===confirm + 我的会话卡 复用 useConversations 列最近 8 条 + 跳转 /chat)+ dashboard-layout.tsx(顶栏用户区改为 DropdownMenu 头像下拉,含「个人中心」「退出登录」)+ App.tsx(/profile 路由,ProtectedRoute 下无额外权限守卫,人人可访问自己的)",
+        "测试:tests/test_profile.py 8 测试(PUT /auth/me 改 display_name/real_name/phone 落库;不能改 platform_role/status(extra ignore);需鉴权 401;token user_id 锁定 member 改自己不影响 owner;PUT /auth/me/password 旧密码错→400 且原密码仍可登录;正确旧密码→204 新密码可登录且旧密码失效;new_password 短于 8→422;需鉴权 401)",
+        "验证:./init.sh ruff All checks passed + pytest 393 passed(基线 385 + 新增 8)+ npm run build 0 类型错误 + npx oxlint src/ 0 warnings 0 errors",
+        "无迁移:User 模型已有 password/password_updated_at/display_name/real_name/phone/avatar,全部复用,零 schema 改动",
+        "不做:头像上传(依赖 file-upload 56,avatar 字段已留接口)、2FA、第三方账号绑定管理(Logto 管)"
+      ],
       "notes": "第一梯队 SaaS 体面。现状:无个人中心页,GET /auth/me 只读,用户改不了自己信息。头像上传依赖 file-upload(56),可先做改密码/资料文字字段。详细 plan 执行到时写。"
     },
     {

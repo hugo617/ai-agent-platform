@@ -1,11 +1,15 @@
 """Auth endpoints.
 
   - ``GET  /auth/me``        — current principal (Logto, dev-token, or local).
+  - ``PUT  /auth/me``        — self-service profile edit (current user only).
+  - ``PUT  /auth/me/password``— self-service password change (verify old → new).
   - ``POST /auth/login``     — local username/password → HS256 access token.
   - ``POST /auth/logout``    — revoke the calling session.
   - ``GET  /auth/sessions``  — list the caller's active sessions.
   - ``DELETE /auth/sessions/{session_id}`` — terminate one session.
 """
+
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -13,11 +17,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import CurrentUser, get_current_user
 from app.core.config import settings
 from app.core.database import get_db
+from app.core.password import hash_password, verify_password
 from app.core.security import TokenError, decode_token
 from app.repositories.tenant import UserRepository
 from app.schemas.auth import (
     LoginRequest,
     MeResponse,
+    PasswordChange,
+    ProfileUpdate,
     SessionRead,
     TokenResponse,
 )
@@ -27,30 +34,21 @@ from app.services.permission_service import permission_service
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 
-@router.get("/me", response_model=MeResponse)
-async def me(
-    user: CurrentUser = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-) -> MeResponse:
+async def _build_me_response(user: CurrentUser, db: AsyncSession) -> MeResponse:
+    """Assemble MeResponse for the current principal (shared by GET + PUT /me)."""
     roles = await permission_service.get_roles_for_user_in_domain(
         user.user_id, user.tenant_id
     )
-    # Read platform_role from the user row (authoritative, not the JWT).
     platform_role = user.platform_role
     if platform_role is None:
         db_user = await UserRepository(db).get(user.user_id)
         platform_role = db_user.platform_role if db_user else None
 
-    # Aggregate every currently-effective permission code (api + menu) for the
-    # frontend's nav/button guards. super_admin bypasses all checks, so we skip
-    # the casbin walk and return [] — the frontend short-circuits on
-    # platform_role === "super_admin".
     permissions: list[str] = []
     if platform_role != "super_admin" and user.tenant_id is not None:
         implicit = await permission_service.get_implicit_permissions_for_user(
             user.user_id, user.tenant_id
         )
-        # Each row is [sub, dom, obj, act]; collapse to "<obj>:<act>" codes.
         permissions = [f"{row[2]}:{row[3]}" for row in implicit if len(row) >= 4]
 
     return MeResponse(
@@ -61,6 +59,81 @@ async def me(
         roles=roles,
         permissions=permissions,
     )
+
+
+@router.get("/me", response_model=MeResponse)
+async def me(
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> MeResponse:
+    return await _build_me_response(user, db)
+
+
+@router.put("/me", response_model=MeResponse)
+async def update_me(
+    payload: ProfileUpdate,
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> MeResponse:
+    """Self-service profile edit.
+
+    Only the editable profile columns (display_name/real_name/phone/avatar) are
+    applied; platform_role/status/username are NOT exposed on the schema and any
+    such fields in the body are dropped (``extra="ignore"``). The target user is
+    ALWAYS the token's ``user_id`` — there is no user_id in the body to honor,
+    so privilege escalation is impossible.
+    """
+    repo = UserRepository(db)
+    db_user = await repo.get(user.user_id)
+    if db_user is None or db_user.is_deleted:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="账户不存在")
+
+    changed = False
+    for field in ("display_name", "real_name", "phone", "avatar"):
+        value = getattr(payload, field)
+        if value is not None and value != getattr(db_user, field):
+            setattr(db_user, field, value)
+            changed = True
+    if changed:
+        db_user.updated_by = user.user_id
+        await db.commit()
+
+    return await _build_me_response(user, db)
+
+
+@router.put("/me/password", status_code=status.HTTP_204_NO_CONTENT)
+async def change_password(
+    payload: PasswordChange,
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    """Self-service password change.
+
+    Verifies ``old_password`` against the stored bcrypt hash before applying the
+    new one. A wrong old password → 400. OIDC-only accounts (no password set)
+    cannot change their password here → 400. The new password is hashed with the
+    same bcrypt helper used at login (``hash_password``); password_updated_at is
+    refreshed to match the admin reset path.
+    """
+    repo = UserRepository(db)
+    db_user = await repo.get(user.user_id)
+    if db_user is None or db_user.is_deleted:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="账户不存在")
+    if not db_user.password:
+        # OIDC-only account (Logto manages auth). Surface a clear reason.
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="该账户未设置本地密码,无法自助修改",
+        )
+    if not verify_password(payload.old_password, db_user.password):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="旧密码不正确"
+        )
+
+    db_user.password = hash_password(payload.new_password)
+    db_user.password_updated_at = datetime.now(UTC)
+    db_user.updated_by = user.user_id
+    await db.commit()
 
 
 @router.post(

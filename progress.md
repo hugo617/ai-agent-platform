@@ -838,3 +838,30 @@
 - **下一步最佳动作**: 选优先级最高的 not_started —— `user-profile-account`(49,用户个人中心)
 
 ---
+
+### Session 086 — 2026-07-14
+- **本轮目标**: 实现 `user-profile-account`(49,优先级)—— 用户个人中心(改密码/改资料/我的会话),让用户自助管理账号而不必找管理员。全栈任务(后端 PUT /auth/me + PUT /auth/me/password + 前端 profile-page)。在 `feat/user-profile-account` 分支工作,基线 main d3f3414
+- **执行**:
+  - **取证(关键)**:读 app/models/tenant.py 确认 User 模型实际字段 —— 有 `display_name/real_name/phone/avatar`(非 plan 说的 `full_name/avatar_url`),且 **bcrypt 密码哈希直接存在 `User.password` 列**(无单独 UserLoginMethod 密码表,plan 的「may be on UserLoginMethod」猜疑被证伪)。登录校验在 AuthService.login 经 UserRepository.get_by_login_identifier + app/core/password.py 的 `verify_password`/`hash_password`(bcrypt 直用,非 passlib)
+  - **后端 schemas**(app/schemas/auth.py):`ProfileUpdate`(display_name/real_name/phone/avatar 全可选,`extra="ignore"` 防注入 platform_role/status/username)+ `PasswordChange`(old_password + new_password min 8)
+  - **后端 endpoints**(app/api/v1/auth.py):`PUT /auth/me`(仅改可编辑字段、token user_id 锁定目标无 body user_id、改后返回 MeResponse、抽出 `_build_me_response` 共享 GET+PUT)+ `PUT /auth/me/password`(verify_password 验旧→hash_password 设新、旧错 400、OIDC-only 无密码 400、刷新 password_updated_at,复用 app/core/password.py)
+  - **后端测试**(tests/test_profile.py 8 测):PUT /auth/me 改 display_name/real_name/phone 落库(db_session 直读回)+ 不能改 platform_role/status(extra ignore,直读 user 行验 platform_role 仍 None / status 仍 active)+ 需鉴权 401 + token user_id 锁定(member 改自己不影响 owner,分别读两行验)+ 密码:旧密码错 400 且原密码仍可登录(real_auth 端到端)+ 正确旧密码 204 新密码可登录旧密码失效 + new_password 短于 8 → 422 + 需鉴权 401
+  - **前端 API 层**:types.ts(ProfileUpdate/PasswordChange)+ endpoints.ts(updateMe PUT /auth/me + changePassword PUT /auth/me/password)+ queries.ts(useUpdateMe 成功后 invalidate `["auth","me"]` 刷新 /auth-context 的 me 查询 + useChangePassword)
+  - **前端页面**(profile-page.tsx 新建):资料编辑卡(display_name/real_name/phone react-hook-form+zod,空串转 undefined 不覆盖)+ 修改密码卡(旧/新/确认,zod refine 校验 new===confirm)+ 我的会话卡(复用 useConversations 列最近 8 条 + 跳转 /chat)+ 本地 Field helper(匹配既有页风格)
+  - **前端入口/路由**:dashboard-layout.tsx 顶栏用户区从「纯文本 email + 退出图标」改为 DropdownMenu 头像下拉(UserCircle trigger),含「个人中心」(navigate /profile)+「退出登录」(复用既有 handleSignOut);App.tsx 加 `/profile` → ProfilePage(ProtectedRoute 下无额外权限守卫,人人可访问自己的)
+- **验证(全过)**:`./init.sh` → ruff All checks passed + **pytest 393 passed**(基线 385 + 新增 8,零回归);`cd frontend && npm run build` → tsc + vite 成功 0 类型错误;`cd frontend && npx oxlint src/` → 0 warnings 0 errors(初版 1 个未用 import 已修)
+- **技术备注**:
+  - **密码存储位置**:bcrypt 哈希直接在 `User.password` 列(app/models/tenant.py L94),非 UserLoginMethod 表 —— `hash_password`/`verify_password` 在 app/core/password.py。改密码端点与此一致
+  - **越权防护双重**:① ProfileUpdate schema 不含 platform_role/status(extra=ignore 兜底);② PUT /auth/me 目标用户恒为 token 的 user.user_id(无 body user_id 可传),结构性杜绝越权改他人
+  - **依赖方向**:auth.py 路由 → UserRepository(直连,无 Service 中间层),与既有 GET /auth/me 同层、与 GET /customers/{id}/usage 直连 Repository 模式一致,合规
+  - **/me 刷新**:前端 /me 查询键在 auth-context(`["auth","me",token]`),useUpdateMe 成功后 invalidate `["auth","me"]` 前缀强制 refetch
+- **偏离 plan 处 + 原因**:
+  - plan 说可编辑字段 `full_name/avatar_url`,实际 User 模型是 `display_name/real_name/phone/avatar` → 改用实际字段(display_name/real_name/phone),avatar 字段保留但 UI 暂不暴露(依赖 file-upload 56)
+  - plan 说「step 4 我的会话端点 复用 GET /conversations?user_id=me」→ 该列表已按调用者租户过滤,前端直接复用 useConversations,无需新端点(plan 本就这么写,确认无误)
+- **无迁移**:User 模型已有全部所需列(password/password_updated_at/display_name/real_name/phone/avatar),零 schema 改动
+- **不做(边界)**:头像上传(file-upload 56)、2FA、第三方账号绑定管理(Logto 管)、改密码后吊销旧 token(MVP 接受,token 有时效)
+- **当前状态**: user-profile-account(49)✅ 实现完成,留在 `feat/user-profile-account` 分支工作树(未提交,交 ship-it agent 处理)。feature_list.json status→passing + evidence 已填;前端 build + oxlint + 后端 pytest 全绿
+- **已知风险**: 无功能风险。改密码后旧 token 仍有效到过期(MVP 接受,plan 风险表已记)。手动浏览器验证未跑(需前后端启动)
+- **下一步最佳动作**: 交 ship-it agent 提交+推送 feat/user-profile-account + 开 PR;之后选优先级最高的 not_started 全栈/前端 feature 继续
+
+---
