@@ -298,6 +298,23 @@ export interface MeResponse {
   permissions: string[];
 }
 
+// Self-service profile edit (PUT /auth/me). Only editable profile columns —
+// platform_role/status/username are intentionally absent so the caller cannot
+// escalate. All optional: omit a field to leave it unchanged.
+export interface ProfileUpdate {
+  display_name?: string | null;
+  real_name?: string | null;
+  phone?: string | null;
+  avatar?: string | null;
+}
+
+// Self-service password change (PUT /auth/me/password). old_password is
+// verified against the stored bcrypt hash before the new one is applied.
+export interface PasswordChange {
+  old_password: string;
+  new_password: string; // min 8 chars (backend-enforced)
+}
+
 export interface Conversation {
   id: string;
   agent_id: string;

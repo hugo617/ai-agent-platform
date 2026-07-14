@@ -14,6 +14,7 @@ import {
   Shield,
   ShieldCheck,
   Store,
+  UserCircle,
   Users,
   UserCog,
   Wallet,
@@ -22,6 +23,14 @@ import {
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { useAuth } from "@/components/auth/auth-context";
 import { canViewMenu, hasPermission } from "@/lib/permission";
 import { logout } from "@/api/endpoints";
@@ -176,12 +185,33 @@ export function DashboardLayout() {
             {me?.roles?.[0] && (
               <Badge variant="secondary">{me.roles[0]}</Badge>
             )}
-            <span className="text-sm text-muted-foreground">
-              {me?.email ?? me?.user_id}
-            </span>
-            <Button variant="ghost" size="icon" onClick={handleSignOut} title="退出登录">
-              <LogOut className="h-4 w-4" />
-            </Button>
+            {/* 用户菜单 — 头像下拉：「个人中心」+「退出登录」。Every
+                authenticated user can reach their own profile, so no permission
+                guard on the entry. */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="sm" className="gap-2">
+                  <UserCircle className="h-5 w-5" />
+                  <span className="max-w-[12rem] truncate text-sm">
+                    {me?.email ?? me?.user_id}
+                  </span>
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-48">
+                <DropdownMenuLabel className="truncate">
+                  {me?.email ?? me?.user_id}
+                </DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => navigate("/profile")}>
+                  <UserCircle className="mr-2 h-4 w-4" />
+                  个人中心
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={handleSignOut}>
+                  <LogOut className="mr-2 h-4 w-4" />
+                  退出登录
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </header>
 

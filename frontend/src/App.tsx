@@ -21,6 +21,7 @@ import { PermissionsPage } from "@/pages/permissions-page";
 import { SettingsPage } from "@/pages/settings-page";
 import { TenantsPage } from "@/pages/tenants-page";
 import { UsersPage } from "@/pages/users-page";
+import { ProfilePage } from "@/pages/profile-page";
 import { NotFoundPage } from "@/pages/not-found-page";
 import { BillingPage } from "@/pages/billing-page";
 import { BillingAdminPage } from "@/pages/billing-admin-page";
@@ -58,6 +59,11 @@ export default function App() {
                 <Route path="/chat" element={<ChatPage />} />
                 <Route path="/groups" element={<GroupsPage />} />
                 <Route path="/customers" element={<CustomersPage />} />
+
+                {/* 个人中心 — self-service account management. Every
+                    authenticated user manages their own profile, so no
+                    permission guard (beyond ProtectedRoute) is needed. */}
+                <Route path="/profile" element={<ProfilePage />} />
 
                 {/* Token 费用管理系列 4/4 — store-level billing dashboard.
                     Gated on wallet:read (seeded to owner/admin/member). The HQ

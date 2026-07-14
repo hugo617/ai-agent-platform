@@ -6,6 +6,7 @@ import {
 import {
   addMember,
   attachTenant,
+  changePassword,
   changeUserStatus,
   createAgent,
   createApiToken,
@@ -65,6 +66,7 @@ import {
   updateAgent,
   updateCustomerProfile,
   updateGroup,
+  updateMe,
   updateMember,
   updatePricing,
   updateTenant,
@@ -86,6 +88,8 @@ import type {
   MemberCreate,
   MemberUpdate,
   ModelPricingUpsert,
+  PasswordChange,
+  ProfileUpdate,
   RechargeRequest,
   RoleCreate,
   RolePermissionGrant,
@@ -558,6 +562,23 @@ export function useTerminateSession() {
   return useMutation({
     mutationFn: (sessionId: string) => terminateSession(sessionId),
     onSuccess: () => qc.invalidateQueries({ queryKey: qk.sessions }),
+  });
+}
+
+// Self-service profile + password (PUT /auth/me, PUT /auth/me/password).
+// The /me query key is owned by auth-context (["auth","me",token]), so
+// invalidating ["auth","me"] forces it to refetch the updated identity.
+export function useUpdateMe() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: ProfileUpdate) => updateMe(payload),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["auth", "me"] }),
+  });
+}
+
+export function useChangePassword() {
+  return useMutation({
+    mutationFn: (payload: PasswordChange) => changePassword(payload),
   });
 }
 
