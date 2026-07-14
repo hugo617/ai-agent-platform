@@ -8,7 +8,8 @@
 - **标准启动路径**: `./init.sh`(装依赖 + ruff + pytest)
 - **标准验证路径**: `./init.sh`(同上,后端快速验证,SQLite 内存库)
 - **完整验证路径**(需 docker): `alembic upgrade head && alembic check` + `cd frontend && npm run build`
-- **当前最高优先级未完成功能**: **`user-profile-account`(priority 49,用户个人中心)** —— audit-log-ui(48)✅ 已 passing 并入 main(6f2f23b,PR #52 squash;GET /logs 双视角端点 + logs-page 审计页 + logs:read 权限)。49 做 PUT /auth/me(改资料)+ PUT /me/password(旧密码校验)+ profile-page(资料/密码/我的会话)+ 头像下拉入口。前置无。前一个 user-profile-account 之前还有 conversation-management(50)/global-search(51)等,按 priority 49 顺位。
+- **当前最高优先级未完成功能**: **`notification-scheduler`(priority 54,通知系统 + 定时任务)** —— health-monitoring(53)✅ 已实现待合并(/ready 就绪探针 503 + /metrics Prometheus + /health 加 db ping;449 passed)。46-52 全部已合并入 main。54 做 Notification 模型 + API + 铃铛组件 + APScheduler(余额预警/日报/清理)。前置无。剩余 not_started:54 notification-scheduler / 55 data-export / 56 file-upload-storage / 57 knowledge-base-rag / 58 multi-agent-orchestration。
+  - **待推送** ⚠️:main 上有 1 个未 push 的 docs commit(Session 093 收尾),因会话中网络中断(proxy 9910 挂 + 直连 empty reply),待网络恢复 push;feat/health-monitoring 分支亦待 push+PR。
 - **当前 blocker**: 无
 
 ## 后续任务规划
@@ -1003,5 +1004,30 @@
 - **当前状态**: tenant-branding-config(52)✅ **已合并入 main(9073831,PR #57 squash)**,基线已推进。白标能力正式上线 —— owner/admin 配置本租户显示名/Logo/主题色/登录文案,主题色全站生效(按钮/链接/导航高亮),顶栏注入品牌;权限隔离(任意成员可读、owner/admin 可改、跨租户不可见)
 - **已知风险**: 无功能风险。主题色对比度由 WCAG 亮度自动选前景色缓解(用户选极浅色时前景自动转深字);登录页无租户品牌(MVP,需 tenant slug 体系才能未登录查,后续可补);logo 上传待 file-upload(56),当前用粘贴 URL。手动浏览器验证未跑(需前后端启动),pytest 442 + npm build + oxlint + CI E2E 已覆盖行为/类型/规范/端到端主流程不回归
 - **下一步最佳动作**: 选优先级最高的 not_started feature 继续。tenant-branding-config(52)已落地,可推进下一个全栈/前端 feature(如 file-upload 56 可补 logo 上传闭环)
+
+---
+### Session 094 — 2026-07-14
+- **本轮目标**: 执行 `health-monitoring`(priority 53,健康检查/监控)—— /ready 就绪探针 + /metrics Prometheus + /health 增强 DB 检查。纯后端无前端无迁移。前置无
+- **实现方式**: ship-it 交付 tenant-branding-config(52)时触及使用上限中断(但 PR #57 已合并 main,仅 docs 收尾被断),本会话手动补完 52 收尾 + 亲自实现 53(纯后端范围明确)
+- **已完成**(对照 plan §实施步骤 Step 1-4):
+  - **Step 1-2 /ready + /health 增强**:app/main.py _db_ping(SELECT 1,Depends(get_db) 走依赖注入 → 测试 DB override 自动生效);/health 恒 200(liveness,db 字段仅展示不阻断,避免 DB 短暂抖动导致 pod 重启);/ready(就绪探针,db 失败 → 503 not_ready,让编排器停发流量)
+  - **Step 3 /metrics + 中间件**:app/core/metrics.py(REQUESTS Counter method/path/status + LATENCY Histogram method/path + IN_PROGRESS Gauge + render_metrics 返 body/content_type);app/main.py metrics 中间件 —— 用 route template(如 /api/v1/agents/{agent_id})非 raw URL 保 label 基数有界;排除 /metrics/health/ready/openapi.json/docs/redoc 自循环(避免 scrape 膨胀自己 counter);try/finally 保证 IN_PROGRESS inc/dec 配对(异常也 dec);perf_counter 计时
+  - **依赖**:requirements.txt 加 prometheus-client==0.25.0
+  - **Step 4 测试**:tests/test_health.py 7 测试(/health 恒 200 + db 字段;/ready DB ok → 200 ready;/ready DB 断 → 503 not_ready,override get_db 用 _BrokenSession.execute raise 模拟;/metrics Prometheus text 含 http_requests_total/http_request_duration_seconds;/metrics 记录业务请求 status=401 标签;/metrics 自身 exempt 不计入/in_progress gauge 暴露)
+- **运行过的验证**(全过):
+  - `./init.sh` → ruff `All checks passed!` + **449 passed**(基线 442 + 新增 7)
+  - 纯后端无前端,无需 npm build
+- **已记录证据**: `feature_list.json` 的 `health-monitoring.evidence` 字段(6 条),status 改 passing
+- **技术要点**(与 plan 的实现差异):
+  - **_db_ping 用 Depends(get_db) 而非直连 AsyncSessionLocal**:走 FastAPI 依赖注入,测试 override_get_db 自动生效。否则 _db_ping 用生产 engine 连 :memory: 是独立库(StaticPool 才跨连接共享,test engine 用了 StaticPool 但生产 _get_engine 没配),SELECT 1 仍 ok 但不跟随 test DB override;503 测试靠 override 注入 _BrokenSession.execute raise
+  - **path label 用 route template 非 raw URL**:request.scope["route"].path 取匹配路由模板(/api/v1/agents/{agent_id}),而非 raw URL(会带具体 id 导致 label 基数爆炸,一个 agent 一个 series)
+  - **liveness vs readiness 区分**:/health 恒 200(进程活就 ok);/ready 503 才摘流。K8s 探针语义:liveness 失败重启 pod、readiness 失败摘流不重启 —— DB 抖动应摘流不应重启,所以 /health 不因 db 阻断
+  - **中间件 try/finally**:IN_PROGRESS.inc() 在前,dec() 在 finally —— 即使业务抛异常,gauge 也能归零,否则 gauge 只增不减泄漏
+- **提交记录**: 待 ship-it 清理+审查+commit+PR+CI 守门+合并(改动:app/core/metrics.py 新建 + app/main.py 中间件+3 端点 + requirements.txt + tests/test_health.py 新建 + feature_list.json + progress.md)
+- **网络中断 ⚠️**:会话中 git push 失败(proxy 127.0.0.1:9910 挂了 + 直连 empty reply),网络环境波动。本地 commit 在 feat/health-monitoring 分支待网络恢复后 ship-it push+PR。main 上还有 1 个 docs commit(Session 093)待 push
+- **已知风险**: 无功能风险。无迁移无前端;手动 curl 验证未跑(需服务启动),pytest 449 + ruff 已覆盖行为;/metrics 端点生产暴露需配 IP 白名单或反代鉴权(plan §风险 标注,运维层)
+- **下一步最佳动作**:
+  - (a) 网络恢复后 ship-it 清理+审查+commit+PR+CI+合并 health-monitoring 到 main(顺带 push 滞留的 Session 093 docs);
+  - (b) 执行 `notification-scheduler`(priority 54,通知系统+定时任务,现为最高优先级 not_started)
 
 ---

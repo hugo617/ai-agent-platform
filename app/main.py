@@ -4,10 +4,12 @@ import time
 from contextlib import asynccontextmanager
 
 import jwt
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1 import (
     agents,
@@ -32,7 +34,16 @@ from app.api.v1 import (
     settings as settings_router,
 )
 from app.core.config import settings
+from app.core.database import get_db
+from app.core.metrics import IN_PROGRESS, LATENCY, REQUESTS, render_metrics
 from app.core.validation_errors import localize_message
+
+# Paths excluded from request metrics. The infra/observability endpoints would
+# otherwise self-reference (every /metrics scrape inflates its own counter) and
+# the liveness/readiness probes are too noisy to be useful as business signals.
+_METRIC_EXEMPT_PATHS: frozenset[str] = frozenset(
+    {"/metrics", "/health", "/ready", "/openapi.json", "/docs", "/redoc"}
+)
 
 
 @asynccontextmanager
@@ -64,6 +75,41 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
+    # --------------------------------------------------------------
+    # Observability middleware: record request count + latency for the
+    # Prometheus metrics endpoint. The route *template* is used as the
+    # path label (e.g. "/api/v1/agents/{agent_id}", not the raw URL with
+    # the id substituted in) to keep label cardinality bounded. Infra
+    # endpoints (/metrics, /health, /ready, docs) are excluded so a
+    # metrics scrape can't inflate its own counter.
+    # --------------------------------------------------------------
+    @app.middleware("http")
+    async def metrics_middleware(request: Request, call_next):
+        path = request.url.path
+        exempt = path in _METRIC_EXEMPT_PATHS
+        if exempt:
+            return await call_next(request)
+
+        IN_PROGRESS.inc()
+        start = time.perf_counter()
+        status_code = 500
+        try:
+            response = await call_next(request)
+            status_code = response.status_code
+            return response
+        finally:
+            elapsed = time.perf_counter() - start
+            IN_PROGRESS.dec()
+            # Prefer the matched route template (keeps cardinality bounded);
+            # collapse unmatched routes (404) into a single "unmatched" label
+            # rather than the raw path — otherwise a client hitting distinct
+            # unknown URLs would create one label series per URL and exhaust
+            # the Prometheus registry (cardinality bomb).
+            route = request.scope.get("route")
+            label_path = getattr(route, "path", None) or "unmatched"
+            REQUESTS.labels(request.method, label_path, str(status_code)).inc()
+            LATENCY.labels(request.method, label_path).observe(elapsed)
+
     # Register v1 routers under the API prefix.
     prefix = settings.api_v1_prefix
     app.include_router(auth.router, prefix=prefix)
@@ -85,9 +131,59 @@ def create_app() -> FastAPI:
     app.include_router(search.router, prefix=prefix)
     app.include_router(tenant_config.router, prefix=prefix)
 
+    async def _db_ping(db: AsyncSession) -> str:
+        """Run ``SELECT 1`` against the configured DB. Returns 'ok'/'fail'.
+
+        Used by both /health (liveness — must stay fast and never raise) and
+        /ready (readiness — gates traffic). Any exception is treated as a
+        failure; the caller decides the HTTP status. Uses the same session
+        dependency as business endpoints, so test DB overrides apply.
+        """
+        try:
+            await db.execute(text("SELECT 1"))
+            return "ok"
+        except Exception:  # noqa: BLE001 - probe must never raise
+            return "fail"
+
     @app.get("/health", tags=["meta"])
-    async def health() -> dict:
-        return {"status": "ok", "app": settings.app_name, "env": settings.app_env}
+    async def health(db: AsyncSession = Depends(get_db)) -> dict:
+        """Liveness probe.
+
+        Stays lightweight and always returns 200 while the process is up. The
+        DB ping is best-effort (a transient DB blip should not restart the pod
+        — that's /ready's job), surfaced as ``db`` but never changes the status
+        code. Kept fast by the connection pool's ``pool_pre_ping``.
+        """
+        return {
+            "status": "ok",
+            "app": settings.app_name,
+            "env": settings.app_env,
+            "db": await _db_ping(db),
+        }
+
+    @app.get("/ready", tags=["meta"])
+    async def ready(db: AsyncSession = Depends(get_db)) -> JSONResponse:
+        """Readiness probe — gates traffic on real dependency health.
+
+        Returns 200 when the DB is reachable, 503 otherwise. Unlike /health
+        (liveness), a failing check here makes the orchestrator stop sending
+        traffic until it recovers.
+        """
+        db_status = await _db_ping(db)
+        ready = db_status == "ok"
+        return JSONResponse(
+            status_code=200 if ready else 503,
+            content={
+                "status": "ready" if ready else "not_ready",
+                "checks": {"db": db_status},
+            },
+        )
+
+    @app.get("/metrics", tags=["meta"])
+    async def metrics() -> Response:
+        """Prometheus exposition endpoint (text format)."""
+        body, content_type = render_metrics()
+        return Response(content=body, media_type=content_type)
 
     # ------------------------------------------------------------------
     # Dev-only helpers: JWKS endpoint + test-token minting.

@@ -2,6 +2,7 @@
 fastapi==0.115.6
 uvicorn[standard]==0.34.0
 python-multipart==0.0.20
+prometheus-client==0.25.0
 
 # Settings & validation
 pydantic==2.10.4
