@@ -31,6 +31,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { FileUpload } from "@/components/ui/file-upload";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -221,14 +222,24 @@ function TenantBrandingCard() {
             </div>
 
             <div className="space-y-2">
-              <Label>Logo URL</Label>
+              <Label>Logo</Label>
+              {/* Upload fills the URL field automatically; the text input below
+                  stays available for pasting an external CDN URL. An empty
+                  onUploaded value clears the logo. */}
+              <FileUpload
+                value={logoUrl || null}
+                accept="image/png,image/jpeg,image/webp,image/gif"
+                maxSizeMb={10}
+                label="点击或拖拽 Logo 图片上传"
+                onUploaded={(url) => setLogoUrl(url)}
+              />
               <Input
                 value={logoUrl}
                 onChange={(e) => setLogoUrl(e.target.value)}
                 placeholder="https://cdn.example.com/logo.png"
               />
               <p className="text-xs text-muted-foreground">
-                粘贴图片地址。Logo 上传功能将在后续版本提供。
+                上传图片或粘贴图片地址(支持 PNG / JPEG / WebP / GIF,≤ 10MB)。
               </p>
             </div>
 
