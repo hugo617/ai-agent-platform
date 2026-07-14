@@ -78,11 +78,16 @@ class ConversationService:
         user_id: str,
         tenant_id: str,
         platform_role: str | None = None,
+        *,
+        search: str | None = None,
+        tag: str | None = None,
     ) -> list[ConversationRead]:
         await permission_service.require(
             user_id, tenant_id, self.OBJECT, "read", platform_role=platform_role
         )
-        convs = await self.conversations.list_for_user(tenant_id, user_id)
+        convs = await self.conversations.list_for_user(
+            tenant_id, user_id, search=search, tag=tag
+        )
         return [ConversationRead.model_validate(c) for c in convs]
 
     async def statistics(
@@ -187,3 +192,150 @@ class ConversationService:
             )
         await self.conversations.delete(conv)
         await self.db.commit()
+
+    # ------------------------------------- conversation-management (priority 50)
+    #
+    # Rename / tag / pin / star / batch-delete. All share the same ownership
+    # rule as delete: the conversation must belong to the caller (private per-
+    # user history). Super admin bypasses the casbin guard but STILL must own
+    # the conversation (super_admin runs across tenants, not across users' chats
+    # within a tenant) — this matches the existing delete behaviour.
+
+    async def _get_owned(
+        self,
+        user_id: str,
+        tenant_id: str,
+        conversation_id: str,
+        platform_role: str | None,
+        act: str,
+    ) -> Conversation:
+        """Fetch a conversation and verify the caller owns it.
+
+        Used by every management mutation: tenant-scoped lookup + ownership
+        check (``user_id == caller``). A 404 NotFoundError is raised for both
+        a missing conversation and one owned by a different user, so the API
+        never leaks "exists but not yours".
+        """
+        await permission_service.require(
+            user_id, tenant_id, self.OBJECT, act, platform_role=platform_role
+        )
+        conv = await self.conversations.get_for_tenant(conversation_id, tenant_id)
+        if conv is None or conv.user_id != user_id:
+            raise NotFoundError(
+                f"conversation {conversation_id} not found in tenant {tenant_id}"
+            )
+        return conv
+
+    async def rename(
+        self,
+        user_id: str,
+        tenant_id: str,
+        conversation_id: str,
+        title: str,
+        platform_role: str | None = None,
+    ) -> ConversationRead:
+        conv = await self._get_owned(
+            user_id, tenant_id, conversation_id, platform_role, act="update"
+        )
+        conv.title = title
+        await self.db.commit()
+        await self.db.refresh(conv)
+        return ConversationRead.model_validate(conv)
+
+    async def add_tag(
+        self,
+        user_id: str,
+        tenant_id: str,
+        conversation_id: str,
+        tag: str,
+        platform_role: str | None = None,
+    ) -> ConversationRead:
+        """Append a tag (idempotent — duplicates are not stored twice)."""
+        conv = await self._get_owned(
+            user_id, tenant_id, conversation_id, platform_role, act="update"
+        )
+        tags = list(conv.tags or [])
+        if tag not in tags:
+            tags.append(tag)
+            conv.tags = tags
+        await self.db.commit()
+        await self.db.refresh(conv)
+        return ConversationRead.model_validate(conv)
+
+    async def remove_tag(
+        self,
+        user_id: str,
+        tenant_id: str,
+        conversation_id: str,
+        tag: str,
+        platform_role: str | None = None,
+    ) -> ConversationRead:
+        conv = await self._get_owned(
+            user_id, tenant_id, conversation_id, platform_role, act="update"
+        )
+        tags = [t for t in (conv.tags or []) if t != tag]
+        conv.tags = tags
+        await self.db.commit()
+        await self.db.refresh(conv)
+        return ConversationRead.model_validate(conv)
+
+    async def set_pinned(
+        self,
+        user_id: str,
+        tenant_id: str,
+        conversation_id: str,
+        pinned: bool,
+        platform_role: str | None = None,
+    ) -> ConversationRead:
+        conv = await self._get_owned(
+            user_id, tenant_id, conversation_id, platform_role, act="update"
+        )
+        conv.is_pinned = pinned
+        await self.db.commit()
+        await self.db.refresh(conv)
+        return ConversationRead.model_validate(conv)
+
+    async def set_starred(
+        self,
+        user_id: str,
+        tenant_id: str,
+        conversation_id: str,
+        starred: bool,
+        platform_role: str | None = None,
+    ) -> ConversationRead:
+        conv = await self._get_owned(
+            user_id, tenant_id, conversation_id, platform_role, act="update"
+        )
+        conv.is_starred = starred
+        await self.db.commit()
+        await self.db.refresh(conv)
+        return ConversationRead.model_validate(conv)
+
+    async def batch_delete(
+        self,
+        user_id: str,
+        tenant_id: str,
+        conversation_ids: list[str],
+        platform_role: str | None = None,
+    ) -> int:
+        """Hard-delete several conversations owned by the caller at once.
+
+        Returns the number deleted. Every id must belong to the caller (same
+        user within the tenant): a single foreign id raises NotFoundError
+        rather than silently skipping it (so the client learns the id was
+        wrong instead of believing it was deleted).
+        """
+        await permission_service.require(
+            user_id, tenant_id, self.OBJECT, "delete", platform_role=platform_role
+        )
+        deleted = 0
+        for cid in conversation_ids:
+            conv = await self.conversations.get_for_tenant(cid, tenant_id)
+            if conv is None or conv.user_id != user_id:
+                raise NotFoundError(
+                    f"conversation {cid} not found in tenant {tenant_id}"
+                )
+            await self.conversations.delete(conv)
+            deleted += 1
+        await self.db.commit()
+        return deleted

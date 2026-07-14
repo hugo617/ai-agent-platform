@@ -21,6 +21,11 @@ class ConversationRead(BaseModel):
     user_id: str
     title: str | None = None
     customer_id: str | None = None
+    # conversation-management fields (priority 50). tags defaults to [] so
+    # legacy rows (and the server default '[]') round-trip as an empty list.
+    tags: list[str] = Field(default_factory=list)
+    is_pinned: bool = False
+    is_starred: bool = False
     created_at: datetime
     updated_at: datetime
 
@@ -44,6 +49,43 @@ class ConversationStatistics(BaseModel):
     total: int
     last_7d: int
     last_30d: int
+
+
+# ------- conversation-management request bodies (priority 50) -------
+
+
+class ConversationTitleUpdate(BaseModel):
+    """Body of PATCH /conversations/{id}/title — rename a conversation."""
+
+    title: str = Field(..., min_length=1, max_length=255)
+
+
+class TagAdd(BaseModel):
+    """Body of POST /conversations/{id}/tags — append one tag string."""
+
+    tag: str = Field(..., min_length=1, max_length=64)
+
+
+class PinUpdate(BaseModel):
+    """Body of PATCH /conversations/{id}/pin — set the pinned flag."""
+
+    pinned: bool
+
+
+class StarUpdate(BaseModel):
+    """Body of PATCH /conversations/{id}/star — set the starred flag."""
+
+    starred: bool
+
+
+class BatchDelete(BaseModel):
+    """Body of POST /conversations/batch-delete — a list of conversation ids.
+
+    The service verifies every id belongs to the caller (same user within the
+    tenant); any id that does not is rejected rather than silently skipped.
+    """
+
+    conversation_ids: list[str] = Field(..., min_length=1)
 
 
 class ChatRequest(BaseModel):
