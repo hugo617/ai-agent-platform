@@ -8,7 +8,7 @@
 - **标准启动路径**: `./init.sh`(装依赖 + ruff + pytest)
 - **标准验证路径**: `./init.sh`(同上,后端快速验证,SQLite 内存库)
 - **完整验证路径**(需 docker): `alembic upgrade head && alembic check` + `cd frontend && npm run build`
-- **当前最高优先级未完成功能**: **`token-billing-ui`(priority 46,Token 费用管理系列 4/4 收官)** —— customer-conversation-link(45)✅ 已 passing 并入 main(05c7106,PR #48 squash;Conversation 加 customer_id + UsageEvent 透传 + GET /customers/{id}/usage 聚合 + 客户 360 AI 服务维度 + 聊天页关联客户 + 客户详情 AI 用量 Dialog)。46 做门店级看板(余额/消耗/流水)+ 总部级看板(门店汇总/充值/定价)+ 余额预警 + 用量钻取。前置 customer-conversation-link(45)✅。
+- **当前最高优先级未完成功能**: **`user-profile-account`(priority 49,用户个人中心)** —— audit-log-ui(48)✅ 已实现(待 ship-it 合并):SystemLog GET /logs 端点(双视角:门店 logs:read 本租户 / super_admin/hq_staff 跨租户)+ logs-page(过滤栏 + 展开行 before/after JSON diff + 分页)+ logs:read 权限(owner/admin)。49 做 PUT /auth/me(改资料)+ PUT /me/password(旧密码校验)+ profile-page(资料/密码/我的会话)+ 头像下拉入口。前置无。前一个 user-profile-account 之前还有 conversation-management(50)/global-search(51)等,按 priority 49 顺位。
 - **当前 blocker**: 无
 
 ## 后续任务规划
@@ -795,3 +795,30 @@
 
 ---
 
+### Session 084 — 2026-07-14
+- **本轮目标**: 执行 `audit-log-ui`(priority 48,审计日志查询 UI)—— SystemLog 在写(logging_service.record)但无读 API 无前端页,数据在黑暗里。补 GET /logs 端点(分页 + 多维过滤)+ logs-page 审计页(双视角)。前置无
+- **实现方式**: 本轮先由实现 agent 完成后端骨架(logs.py API + log.py repository + log.py schema + main 注册),触及使用上限中断;本会话续完(权限 seed + conftest 同步 + 测试 + 全前端 + 文档)
+- **已完成**(对照 plan §实施步骤 Step 1-7):
+  - **Step 1 Repository**(实现 agent):`app/repositories/log.py` SystemLogRepository.list_logs(tenant_id/user_id/action/resource_type/date_from/date_to/limit/offset → rows+total)。多租户过滤在 Repository 层(tenant_id=None=跨租户 super_admin 信号)。**SystemLog append-only 无 is_deleted 列** → 与 Customer/User 不同,不加 is_deleted 谓词(文档化在模块 docstring)
+  - **Step 2 Schema + 端点**(实现 agent):`app/schemas/log.py` SystemLogRead(from_attributes)+ SystemLogListResponse(items/total/limit/offset);`app/api/v1/logs.py` GET /logs 双视角 —— is_cross_tenant_viewer 分流(门店 logs:read require + 强制 scope_tenant=user.tenant_id 传 foreign tenant_id 被忽略;super_admin/hq_staff scope_tenant=tenant_id 可选过滤)。权限守卫内联(双视角需不同守卫,与 GET /customers/{id}/usage 同模式)
+  - **Step 3 权限 seed**(本会话):permission_service DEFAULT_OWNER_PERMS/DEFAULT_ADMIN_PERMS 加 ("logs","read")(member 不给);OBJ_CN 加 "logs":"审计日志"(catalogue 自描述);conftest _make_casbin owner/admin 策略同步加 logs:read
+  - **Step 4-6 前端**(本会话):types.ts(SystemLog/LogFilters/SystemLogListResponse 镜像后端 schema,details_json/old_values/new_values/user_id 命名对齐 ORM 属性非 DB 列)+ endpoints.ts(fetchLogs params GET)+ queries.ts(qk.logs + useLogs placeholderData 保上一页)+ logs-page.tsx(过滤栏 action/resource_type/date_from/date_to + HQ 专属 tenant 下拉 + Table 展开行 before/after JSON diff <pre> + Pagination limit/offset + 级别 Badge + 操作/资源中文 label)+ dashboard-layout 加「审计日志」(permission:{obj:"logs",act:"read"},ScrollText 图标)+ App.tsx /logs 路由(并入 RequireApiPermission 块)+ require-permission PATH_API_PERM 加 /logs
+  - **Step 7 测试**(本会话 新建 `tests/test_logs_api.py` 14 测试):门店 owner 看本租户 / 租户隔离(A 看不到 B)/ 门店传 foreign tenant_id 被忽略(无法逃逸)/ super_admin 跨租户 / super_admin 按 tenant 过滤 / member 403 / action 过滤 / resource_type 过滤 / user_id 过滤 / date_from 范围过滤 / 坏日期 400 / 分页 limit+offset / 最新优先(created_at desc) / before-after JSON 暴露。日志用直接 SystemLog insert seed(比走 LoggingService 更简单确定)
+- **运行过的验证**(全过):
+  - `./init.sh` → ruff `All checks passed!` + **385 passed**(基线 371 + 新增 14)
+  - `cd frontend && npm run build` → tsc + vite 成功,0 类型错误(chunk-size >500kB 是既有 advisory 非阻断)
+  - `npx oxlint src/` → 0 warnings 0 errors(46 文件 / 102 规则)
+- **已记录证据**: `feature_list.json` 的 `audit-log-ui.evidence` 字段(7 条),status 改 passing
+- **技术要点**(与 plan 的实现差异):
+  - **SystemLog append-only 无软删除**:plan 未明说,核实 app/models/log.py 确认无 is_deleted 列 → Repository 不加 is_deleted 谓词(与 Customer/User 软删除模型不同),日志永不删,文档化在 log.py 模块 docstring
+  - **字段命名对齐 ORM 属性非 DB 列**:details_json(DB 列名 details 但 Python 属性 details_json)/ user_id(非 operator_id)/ old_values-new_values(非 before-after)。schema + 前端类型全程用 ORM 属性名,避免漂移
+  - **导航用 permission:{obj,act} 而非 menuCode**:无 menu:logs seed(plan 说 needsUserManagement 已在 permission-menu-view 移除),沿用 billing 页建立的 api-permission-gated 导航模式,owner/admin 见、member 不见
+  - **logs-page 用 Fragment key 非 <>**:React map 里多行(主行+展开行)需带 key 的 Fragment,不能用空 <>。展开行显示 before/after/details JSON,无详情的行不可点(无箭头)
+  - **测试 seed 用直接 insert 而非 LoggingService**:LoggingService.record 包 begin_nested savepoint + best-effort swallow,测试场景下直接 SystemLog insert 更简单确定(created_at 显式设以控制日期桶)
+- **提交记录**: 待 ship-it 清理+审查+commit+PR+CI 守门+合并(改动:3 后端实现新建 + 1 schema 新建 + 1 API 新建 + 1 main 注册 + 2 权限/conftest + 1 目录测试更新 + 14 测试新建 + 6 前端 + feature_list.json + progress.md)
+- **已知风险**: 无功能风险。无迁移(复用 SystemLog 表 + 既有索引);手动浏览器验证未跑(需前后端启动),pytest 385 + npm build + oxlint 已覆盖行为/类型/规范/不回归
+- **下一步最佳动作**:
+  - (a) ship-it 清理 + 审查 + commit + PR + CI 守门 + 合并 audit-log-ui 到 main;
+  - (b) 执行 `user-profile-account`(priority 49,用户个人中心,现为最高优先级 not_started)
+
+---

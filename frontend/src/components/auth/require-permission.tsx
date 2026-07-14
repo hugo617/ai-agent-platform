@@ -51,6 +51,7 @@ export function RequireUserManagement() {
  */
 const PATH_API_PERM: Record<string, { obj: string; act: string }> = {
   "/billing": { obj: "wallet", act: "read" },
+  "/logs": { obj: "logs", act: "read" },
 };
 
 /**

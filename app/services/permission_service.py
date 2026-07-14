@@ -462,6 +462,7 @@ DEFAULT_OWNER_PERMS: list[tuple[str, str]] = [
     ("customers", "export"),
     ("wallet", "read"), ("wallet", "update"),
     ("billing", "read"),
+    ("logs", "read"),
 ]
 DEFAULT_ADMIN_PERMS: list[tuple[str, str]] = [
     ("agents", "read"), ("agents", "create"), ("agents", "update"), ("agents", "export"),
@@ -473,6 +474,7 @@ DEFAULT_ADMIN_PERMS: list[tuple[str, str]] = [
     ("customers", "read"), ("customers", "create"), ("customers", "update"), ("customers", "export"),
     ("wallet", "read"), ("wallet", "update"),
     ("billing", "read"),
+    ("logs", "read"),
 ]
 DEFAULT_MEMBER_PERMS: list[tuple[str, str]] = [
     ("agents", "read"),
@@ -527,6 +529,7 @@ OBJ_CN: dict[str, str] = {
     "customers": "客户",
     "wallet": "钱包",
     "billing": "计费",
+    "logs": "审计日志",
     "menu": "菜单",
 }
 ACT_CN: dict[str, str] = {

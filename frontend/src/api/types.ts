@@ -643,6 +643,48 @@ export interface DashboardOverview {
   top_tenants: TenantActivityItem[];
 }
 
+/** Filter params for GET /logs (audit log). All optional. */
+export interface LogFilters {
+  user_id?: string;
+  action?: string;
+  resource_type?: string;
+  tenant_id?: string; // super_admin/hq_staff only; ignored for store users
+  date_from?: string; // ISO-8601
+  date_to?: string; // ISO-8601
+  limit?: number;
+  offset?: number;
+}
+
+/** One audit-log row (read-side DTO). Mirrors SystemLogRead. */
+export interface SystemLog {
+  id: string;
+  level: string;
+  action: string;
+  module: string;
+  message: string;
+  details_json: Record<string, unknown> | null;
+  resource_type: string | null;
+  resource_id: string | null;
+  old_values: Record<string, unknown> | null; // before snapshot
+  new_values: Record<string, unknown> | null; // after snapshot
+  user_id: string | null; // operator (FK users), NOT operator_id
+  session_id: string | null;
+  tenant_id: string | null;
+  user_agent: string | null;
+  ip: string | null;
+  request_id: string | null;
+  duration_ms: number | null;
+  created_at: string;
+}
+
+/** Paginated audit-log envelope (GET /logs). */
+export interface SystemLogListResponse {
+  items: SystemLog[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
 export interface ApiError {
   detail: string;
 }
