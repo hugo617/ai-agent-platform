@@ -35,6 +35,7 @@ import { useAuth } from "@/components/auth/auth-context";
 import { canViewMenu, hasPermission } from "@/lib/permission";
 import { logout } from "@/api/endpoints";
 import { GlobalSearchBox } from "@/components/layout/global-search-box";
+import { useApplyTenantTheme, useTenantConfig } from "@/hooks/queries";
 
 interface NavItem {
   to: string;
@@ -95,6 +96,14 @@ export function DashboardLayout() {
   const { me, signOut } = useAuth();
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  // Tenant white-label branding (priority 52): apply the theme color globally
+  // and surface the display name + logo in the sidebar header. The config is
+  // open to any authenticated member of the tenant; the theme effect restores
+  // the platform default on logout/tenant switch via its cleanup.
+  const { data: tenantConfig } = useTenantConfig();
+  useApplyTenantTheme();
+  const brandName = tenantConfig?.display_name ?? "智能体云平台";
+  const brandLogo = tenantConfig?.logo_url;
 
   const handleSignOut = async () => {
     // Ask the backend to revoke the session row (best-effort: a network error
@@ -118,8 +127,16 @@ export function DashboardLayout() {
         )}
       >
         <div className="flex h-16 items-center gap-2 border-b px-6">
-          <Shield className="h-6 w-6 text-primary" />
-          <span className="text-lg font-semibold">智能体云平台</span>
+          {brandLogo ? (
+            <img
+              src={brandLogo}
+              alt={brandName}
+              className="h-7 w-7 shrink-0 rounded object-contain"
+            />
+          ) : (
+            <Shield className="h-6 w-6 text-primary" />
+          )}
+          <span className="truncate text-lg font-semibold">{brandName}</span>
         </div>
         <nav className="flex flex-col gap-1 p-4">
           {NAV_ITEMS.filter((item) => {

@@ -222,6 +222,30 @@ export interface LlmConfigUpdate {
   available_models?: string[];
 }
 
+// ============= tenant branding config (white-label, priority 52) =============
+
+/** One tenant's white-label brand: display name, logo, theme color, login text.
+ * null fields mean "use the platform default". One row per tenant. */
+export interface TenantConfig {
+  id: string;
+  tenant_id: string;
+  display_name: string | null; // overrides the default tenant name in the top bar
+  logo_url: string | null;
+  theme_color: string | null; // #RRGGBB; applied globally as the --primary CSS var
+  login_text: string | null; // shown on the login page
+  created_at: string;
+  updated_at: string;
+}
+
+/** Payload for PUT /tenant-config. All fields optional; the frontend sends all
+ * four on save, so null means "clear this field". theme_color is #RRGGBB. */
+export interface TenantConfigUpdate {
+  display_name: string | null;
+  logo_url: string | null;
+  theme_color: string | null;
+  login_text: string | null;
+}
+
 // ============= auth (local login + sessions) =============
 
 export interface LoginRequest {

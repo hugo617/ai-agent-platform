@@ -6,6 +6,7 @@ import {
   Eye,
   EyeOff,
   KeyRound,
+  Palette,
   Plus,
   Server,
   ShieldCheck,
@@ -51,14 +52,21 @@ import { useToast } from "@/components/ui/toast";
 import { apiErrorMessage } from "@/api/client";
 import { useAuth } from "@/components/auth/auth-context";
 import { hasPermission } from "@/lib/permission";
-import type { ApiToken, ApiTokenCreated, LlmConfig, LlmConfigUpdate } from "@/api/types";
+import type {
+  ApiToken,
+  ApiTokenCreated,
+  LlmConfig,
+  LlmConfigUpdate,
+} from "@/api/types";
 import {
   useApiTokens,
   useCreateApiToken,
   usePlatformLlmConfig,
   useRevokeApiToken,
+  useTenantConfig,
   useTenantLlmConfig,
   useUpdatePlatformLlmConfig,
+  useUpdateTenantConfig,
   useUpdateTenantLlmConfig,
 } from "@/hooks/queries";
 
@@ -85,6 +93,8 @@ export function SettingsPage() {
       {isSuperAdmin && <PlatformLlmCard />}
 
       {canManageLlm && <TenantLlmCard />}
+
+      {canManageLlm && <TenantBrandingCard />}
 
       {canManageTokens && <ApiTokenCard />}
 
@@ -128,6 +138,151 @@ function TenantLlmCard() {
       onSubmit={(payload) => updateMut.mutateAsync(payload)}
       pending={updateMut.isPending}
     />
+  );
+}
+
+// ------------------------------------------------------- tenant branding card
+
+// A few curated brand colors so a tenant can pick without a color theory
+// background. Each is a valid #RRGGBB. The swatch row complements the native
+// color input + hex text field.
+const PRESET_COLORS = [
+  "#222222", // shadcn default (near-black)
+  "#2563eb", // blue
+  "#16a34a", // green
+  "#db2777", // pink
+  "#ea580c", // orange
+  "#7c3aed", // violet
+];
+
+/** Tenant white-label branding card — display name, logo, theme color, login text.
+ * Visible to owner/admin/super_admin (settings:update). Saves via the tenant
+ * config upsert; the theme color is applied globally by useApplyTenantTheme. */
+function TenantBrandingCard() {
+  const toast = useToast();
+  const { data, isLoading } = useTenantConfig();
+  const updateMut = useUpdateTenantConfig();
+
+  // Local editable state, seeded once from the fetched config. We keep the
+  // fields as strings (empty = cleared) so the user can wipe a value and save.
+  const [displayName, setDisplayName] = useState("");
+  const [logoUrl, setLogoUrl] = useState("");
+  const [themeColor, setThemeColor] = useState("#222222");
+  const [loginText, setLoginText] = useState("");
+  const [seeded, setSeeded] = useState(false);
+
+  if (!seeded && !isLoading) {
+    setDisplayName(data?.display_name ?? "");
+    setLogoUrl(data?.logo_url ?? "");
+    setThemeColor(data?.theme_color ?? "#222222");
+    setLoginText(data?.login_text ?? "");
+    setSeeded(true);
+  }
+
+  const handleSave = async () => {
+    // Normalize empty strings to null (the backend stores null = use default).
+    const payload = {
+      display_name: displayName.trim() || null,
+      logo_url: logoUrl.trim() || null,
+      theme_color: themeColor || null,
+      login_text: loginText.trim() || null,
+    };
+    try {
+      await updateMut.mutateAsync(payload);
+      toast.success("已保存", "品牌配置");
+    } catch (err) {
+      toast.error("保存失败", apiErrorMessage(err));
+    }
+  };
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Palette className="h-5 w-5" /> 品牌配置
+        </CardTitle>
+        <CardDescription>
+          配置本租户的白标品牌：显示名称、Logo、主题色与登录页文案。主题色会
+          应用到全站按钮与链接。
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {isLoading ? (
+          <p className="py-6 text-center text-sm text-muted-foreground">加载中…</p>
+        ) : (
+          <>
+            <div className="space-y-2">
+              <Label>显示名称</Label>
+              <Input
+                value={displayName}
+                onChange={(e) => setDisplayName(e.target.value)}
+                placeholder="覆盖默认平台名称(留空则使用默认)"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label>Logo URL</Label>
+              <Input
+                value={logoUrl}
+                onChange={(e) => setLogoUrl(e.target.value)}
+                placeholder="https://cdn.example.com/logo.png"
+              />
+              <p className="text-xs text-muted-foreground">
+                粘贴图片地址。Logo 上传功能将在后续版本提供。
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <Label>主题色</Label>
+              <div className="flex flex-wrap items-center gap-2">
+                <input
+                  type="color"
+                  value={themeColor}
+                  onChange={(e) => setThemeColor(e.target.value)}
+                  className="h-9 w-12 cursor-pointer rounded border border-input bg-background p-1"
+                  aria-label="选择主题色"
+                />
+                <Input
+                  value={themeColor}
+                  onChange={(e) => setThemeColor(e.target.value)}
+                  placeholder="#RRGGBB"
+                  className="w-32 font-mono"
+                />
+                <div className="flex flex-wrap gap-1.5">
+                  {PRESET_COLORS.map((c) => (
+                    <button
+                      key={c}
+                      type="button"
+                      onClick={() => setThemeColor(c)}
+                      className="h-7 w-7 rounded-full border border-border ring-offset-2 transition hover:scale-110"
+                      style={{ backgroundColor: c }}
+                      aria-label={`预设色 ${c}`}
+                    />
+                  ))}
+                </div>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                应用到全站按钮 / 链接(实时预览见上方导航栏高亮色)。
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <Label>登录页文案</Label>
+              <textarea
+                className="flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                value={loginText}
+                onChange={(e) => setLoginText(e.target.value)}
+                placeholder="展示在登录页的欢迎 / 提示文案"
+              />
+            </div>
+
+            <Button onClick={handleSave} disabled={updateMut.isPending}>
+              {updateMut.isPending ? "保存中…" : "保存"}
+            </Button>
+          </>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 
