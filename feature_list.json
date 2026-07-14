@@ -1348,16 +1348,27 @@
       "area": "工程化",
       "title": "数据导出 CSV(客户/对话/用量/审计,门店+总部级)",
       "user_visible_behavior": "管理员能导出业务数据为 CSV:客户清单/对话记录/用量明细/审计日志;门店导本店数据,总部导全平台。月度经营分析必备",
-      "status": "not_started",
+      "status": "passing",
       "plan": "harness/docs/plan-data-export.md",
       "verification": [
-        "后端 CSV 生成端点:GET /export/{entity}(customers/conversations/usage/logs),StreamingResponse + csv.writer",
-        "权限:门店级导本租户(wallet:read/billing:read),总部级 super_admin 导全平台",
-        "前端:各列表页加「导出 CSV」按钮 + 时间范围/过滤参数透传",
-        "pytest 覆盖导出内容正确/权限/租户隔离 + 大数据量 streaming 不 OOM",
-        "npm run build 通过"
+        "后端 CSV 生成端点:GET /exports/{entity}(customers/conversations/usage/logs),StreamingResponse + csv.writer 异步生成器分批 yield",
+        "权限:门店级导本租户(customers:read/conversations:read/wallet:read|billing:read/logs:read),总部级 super_admin/hq_staff 导全平台;每个实体独立权限守卫(内联,镜像 logs.py)",
+        "前端:customers-page/logs-page/billing-page 加「导出 CSV」按钮 + 时间范围/过滤参数透传;axios responseType:blob + downloadBlob 触发浏览器下载",
+        "pytest 覆盖导出内容正确/权限/租户隔离/日期范围/streaming 响应形态(17 个测试)",
+        "npm run build 通过,tsc 0 错误;oxlint 0 警告"
       ],
-      "evidence": [],
+      "evidence": [
+        "app/api/v1/exports.py:GET /exports/{entity} 流式 CSV,UTF-8 BOM,csv.writer 异步生成器分批 yield(EXPORT_BATCH_SIZE=500),MAX_EXPORT_ROWS=100k 封顶内存;store/HQ 双 scope(is_cross_tenant_viewer 分流),每实体独立权限守卫(_require_entity_read);default 30 天窗口",
+        "app/main.py:注册 exports router",
+        "tests/test_export.py:17 个测试 — 各实体 CSV 表头+行数、租户隔离、super_admin 跨租户、member 无 logs:read → 403、member 有 customers:read 可导出(复用同一权限)、日期范围、未知实体 404、坏日期 400、streaming 响应 content-type/disposition",
+        "frontend/src/api/endpoints.ts:exportEntity(entity, params) responseType:blob 返回 Blob + ExportEntity/ExportParams 类型",
+        "frontend/src/lib/download.ts:downloadBlob(blob, filename) 创建 <a> + click + revokeObjectURL",
+        "frontend/src/hooks/queries.ts:useExportCsv mutation 封装 exportEntity + downloadBlob",
+        "frontend/src/pages/customers-page.tsx:门店视图「导出 CSV」按钮(customers:read)",
+        "frontend/src/pages/logs-page.tsx:「导出 CSV」按钮,透传当前 action/resource/date/tenant 过滤",
+        "frontend/src/pages/billing-page.tsx:「导出用量」按钮(usage)",
+        "验证:./init.sh 全绿 pytest 478 passed(baseline 461 + 17 新增);cd frontend && npm run build 通过(tsc+vite,0 错误);npx oxlint src/ 0 警告 0 错误"
+      ],
       "notes": "第二梯队。现状:无任何导出能力。复用 TanStack Table 数据,加后端 CSV streaming。门店月度经营分析 + 数据可携带性基本要求。详细 plan 执行到时写。用量导出依赖 token计费(43)。"
     },
     {

@@ -8,6 +8,8 @@ import {
   ChevronDown,
   ChevronRight,
   Contact,
+  Download,
+  Loader2,
   MessageSquare,
   MoreHorizontal,
   Pencil,
@@ -73,6 +75,7 @@ import {
   useCustomers,
   useDeleteCustomerProfile,
   useUpdateCustomerProfile,
+  useExportCsv,
 } from "@/hooks/queries";
 
 const GENDERS = ["male", "female", "other"] as const;
@@ -138,6 +141,7 @@ function StoreView() {
   const createMut = useCreateCustomerProfile();
   const updateMut = useUpdateCustomerProfile();
   const deleteMut = useDeleteCustomerProfile();
+  const exportMut = useExportCsv();
 
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<CustomerProfileRead | null>(null);
@@ -248,6 +252,19 @@ function StoreView() {
     }
   };
 
+  const handleExport = async () => {
+    // Store view exports this tenant's customer profiles (default 30-day
+    // window; the backend enforces customers:read). Filename includes today
+    // so repeated exports don't overwrite each other.
+    const filename = `customers_${new Date().toISOString().slice(0, 10)}.csv`;
+    try {
+      await exportMut.mutateAsync({ entity: "customers", filename });
+      toast.success("已导出客户列表");
+    } catch (err) {
+      toast.error("导出失败", apiErrorMessage(err));
+    }
+  };
+
   const list = profiles ?? [];
 
   return (
@@ -264,6 +281,18 @@ function StoreView() {
             <Plus className="mr-2 h-4 w-4" /> 新增客户
           </Button>
         )}
+        <Button
+          variant="outline"
+          onClick={handleExport}
+          disabled={exportMut.isPending}
+        >
+          {exportMut.isPending ? (
+            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+          ) : (
+            <Download className="mr-2 h-4 w-4" />
+          )}
+          导出 CSV
+        </Button>
       </div>
 
       <Card>

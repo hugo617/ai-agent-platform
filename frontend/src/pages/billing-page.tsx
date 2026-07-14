@@ -5,6 +5,8 @@ import {
   ArrowDownCircle,
   ArrowUpCircle,
   Coins,
+  Download,
+  Loader2,
   RefreshCw,
   Wallet as WalletIcon,
 } from "lucide-react";
@@ -37,7 +39,10 @@ import {
   useTransactions,
   useUsage,
   useWallet,
+  useExportCsv,
 } from "@/hooks/queries";
+import { useToast } from "@/components/ui/toast";
+import { apiErrorMessage } from "@/api/client";
 
 const fmt = (s: string | null | undefined): string =>
   s ? new Date(s).toLocaleString() : "-";
@@ -120,6 +125,8 @@ export function BillingPage() {
   const walletQ = useWallet();
   const txQ = useTransactions();
   const usageQ = useUsage();
+  const exportMut = useExportCsv();
+  const toast = useToast();
   const [trendDays, setTrendDays] = useState<7 | 30>(7);
 
   const wallet = walletQ.data ?? null;
@@ -139,6 +146,19 @@ export function BillingPage() {
   const anyFetching =
     walletQ.isFetching || txQ.isFetching || usageQ.isFetching;
 
+  const handleExportUsage = async () => {
+    // Usage export mirrors the /billing/usage scope (billing:read or
+    // wallet:read on the backend). Default 30-day window keeps the CSV aligned
+    // with the trend chart above.
+    const filename = `usage_${new Date().toISOString().slice(0, 10)}.csv`;
+    try {
+      await exportMut.mutateAsync({ entity: "usage", filename });
+      toast.success("已导出用量明细");
+    } catch (err) {
+      toast.error("导出失败", apiErrorMessage(err));
+    }
+  };
+
   const trend = buildDailyTrend(usage?.items ?? [], trendDays);
   const trendMax = Math.max(1, ...trend.map((b) => b.value));
 
@@ -153,15 +173,30 @@ export function BillingPage() {
             {!isSuperAdmin && "（只读视图）"}
           </p>
         </div>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={refetchAll}
-          disabled={anyFetching}
-        >
-          <RefreshCw className={cn("h-4 w-4", anyFetching && "animate-spin")} />
-          刷新
-        </Button>
+        <div className="flex gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleExportUsage}
+            disabled={exportMut.isPending}
+          >
+            {exportMut.isPending ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <Download className="mr-2 h-4 w-4" />
+            )}
+            导出用量
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={refetchAll}
+            disabled={anyFetching}
+          >
+            <RefreshCw className={cn("h-4 w-4", anyFetching && "animate-spin")} />
+            刷新
+          </Button>
+        </div>
       </div>
 
       {/* balance card + counters */}
