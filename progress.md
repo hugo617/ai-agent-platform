@@ -865,3 +865,21 @@
 - **下一步最佳动作**: 交 ship-it agent 提交+推送 feat/user-profile-account + 开 PR;之后选优先级最高的 not_started 全栈/前端 feature 继续
 
 ---
+
+### Session 087 — 2026-07-14
+- **本轮目标**: ship-it 端到端交付 —— 把 `feat/user-profile-account`(49)从工作树一路推到合并入 main,自主跑完提交/推送/PR/守 CI/合并/收尾全流程。基线 main d3f3414,全程在 feature 分支
+- **执行**:
+  - **阶段 0 环境探测**:基线 `main`(git symbolic-ref origin/HEAD 确认);CI = GitHub Actions 4 job(Migrations/Backend/Frontend/E2E,无 migration 此任务);提交风格 `feat(<scope>): <中文>(#PR)`;当前 11 文件未提交(9 改 + 2 新建)
+  - **阶段 1 清理废代码**:全 diff 扫描 —— 无未用 import、无 stray debug log/print/console.log、无 TODO/FIXME、无孤儿符号。dashboard-layout 头像下拉重构干净:旧「span + 退出图标」被 DropdownMenu 完整替换,`handleSignOut`/`navigate` 均仍被引用,无重复元素。每条新 import 均有调用方(逐个 grep 验证)。无死代码可删
+  - **阶段 2 质量审查**:① 依赖方向合规 —— auth 路由直连 UserRepository(与既有 GET /auth/me 同层,auth 端点是已知薄 handler 例外);② 越权防护双重(schema extra=ignore + 目标恒为 token user_id);③ `_build_me_response` 重构保 GET /me 行为不变;④ `hash_password`/`verify_password` 签名与调用完全匹配;⑤ User.avatar 非空带默认值,handler `if value is not None` 守卫正确不覆盖。无问题需修
+  - **阶段 3 提交**:11 文件分组暂存(单一 feature 内聚,一个 commit),commit `2b58260 feat(auth): 用户个人中心(PUT /auth/me + 改密码 + profile 页 + 头像下拉)`。无密钥/产物入库(`.coverage`、`frontend/dist` 均 gitignore)
+  - **阶段 4 推送+PR**:`git push -u origin HEAD`(默认 git config proxy 直连成功)+ `gh pr create` 开 **PR #54** 对 main
+  - **阶段 5 守 CI**:`gh pr checks --watch` —— **4 job 全绿一次过,零修红**:Backend(pytest+ruff)3m18s / E2E(Playwright)2m17s / Frontend(typecheck+build+oxlint)27s / Migrations(alembic)42s。本地验证复现一致(init.sh pytest 393 passed + npm build 0 错 + oxlint 0 warning)
+  - **阶段 6 合并**:`gh pr merge 54 --squash --delete-branch` —— squash 入 main 为 `48f74b9 ... (#54)`,远端 feature 分支已删。`git checkout main && git pull` 确认本地 main 已含改动
+  - **阶段 7 收尾**:feature_list.json evidence 补「PR #54 squash-merge 入 main,CI 4 job 全绿一次过」;本 Session 记录入 progress.md
+- **验证(全过)**:`./init.sh` ruff + pytest 393 passed;`cd frontend && npm run build` 0 类型错误;`npx oxlint src/` 0 warnings;CI 4 job 全绿
+- **当前状态**: user-profile-account(49)✅ **已合并入 main(48f74b9,PR #54 squash)**,基线已推进。feature 分支已删
+- **已知风险**: 无。改密码后旧 token 仍有效到过期(MVP 接受)。手动浏览器验证未跑(需前后端启动)
+- **下一步最佳动作**: 选优先级最高的 not_started 全栈/前端 feature 继续(开新 feature 分支)
+
+---

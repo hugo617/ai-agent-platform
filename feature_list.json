@@ -1203,7 +1203,8 @@
         "测试:tests/test_profile.py 8 测试(PUT /auth/me 改 display_name/real_name/phone 落库;不能改 platform_role/status(extra ignore);需鉴权 401;token user_id 锁定 member 改自己不影响 owner;PUT /auth/me/password 旧密码错→400 且原密码仍可登录;正确旧密码→204 新密码可登录且旧密码失效;new_password 短于 8→422;需鉴权 401)",
         "验证:./init.sh ruff All checks passed + pytest 393 passed(基线 385 + 新增 8)+ npm run build 0 类型错误 + npx oxlint src/ 0 warnings 0 errors",
         "无迁移:User 模型已有 password/password_updated_at/display_name/real_name/phone/avatar,全部复用,零 schema 改动",
-        "不做:头像上传(依赖 file-upload 56,avatar 字段已留接口)、2FA、第三方账号绑定管理(Logto 管)"
+        "不做:头像上传(依赖 file-upload 56,avatar 字段已留接口)、2FA、第三方账号绑定管理(Logto 管)",
+        "交付:PR #54 squash-merge 入 main(48f74b9),CI 4 job 全绿一次过(Backend pytest+ruff / Migrations / Frontend typecheck+build+oxlint / E2E Playwright),零修红"
       ],
       "notes": "第一梯队 SaaS 体面。现状:无个人中心页,GET /auth/me 只读,用户改不了自己信息。头像上传依赖 file-upload(56),可先做改密码/资料文字字段。详细 plan 执行到时写。"
     },
