@@ -1087,3 +1087,30 @@
   - (b) 或执行 `data-export`(priority 55,数据导出 CSV,现为最高优先级 not_started)
 
 ---
+
+### Session 097 — 2026-07-14
+- **本轮目标**: ship-it 端到端交付 `notification-scheduler`(priority 54)收尾 —— 清理 + 审查 + PR + CI 守门 + 合并(Session 096 留的工作树)
+- **实现方式**: 全自动,无中断。基线 `main`,CI 4 job(Migrations/Backend/Frontend/E2E),全程默认 proxy
+- **已完成**:
+  - **清理(阶段 1)**:**发现并删除 1 处死代码** —— `app/schemas/notification.py` 的 `NotificationCreate` 类。其 docstring 自称「trigger points 消费的写 DTO」,但全仓库(py/ts/tsx)零调用方:触发点(billing/member service、scheduler scan)实际都直接调 `NotificationService.create(**kwargs)`,从不构造该 DTO。一并删除其专属 `Field` import(删后 F401 才暴露它是孤立的)。其余 14 新符号(模型字段/端点/hooks/job/组件)全有 caller:ruff 全过无未用 import,无 print/breakpoint/调试日志
+  - **审查(阶段 2)**:逐条对照项目铁律核对,无新问题需要修。① Controller→Service→Repository→Model 单向 ✅ ② 多租户+用户隔离在 Repository 层(`or_(user_id==me, user_id IS NULL)` 且都带 `tenant_id==tnt`)✅ ③ 触发点 best-effort:`recharge`/`update_role` 先 `commit()` 业务事务再发通知,通知走 `begin_nested` SAVEPOINT + try/except,失败只回滚 savepoint —— `test_notification_failure_does_not_break_recharge` 用「String(200) 塞 10000 字符」真触发 DB 层失败验证此路径 ✅ ④ scheduler 测试安全三重保险(SCHEDULER_ENABLED 默认 False + init_scheduler `.running` 双重 short-circuit + conftest noop_lifespan)✅ ⑤ 迁移 4 索引在 ORM `__table_args__` + 迁移两侧声明,无漂移 ✅ ⑥ 模型注册在 env.py + conftest.py ✅。E2E 安全:顶栏铃铛是新加的 sibling 元素,E2E 全程用 `data-testid` 选择器,无文本/结构冲突
+  - **验证(阶段 4)**:`./init.sh` ruff `All checks passed!` + **461 passed**(131s);`.venv/bin/alembic heads` 单 head `d4e5f6a7b8c9`;`cd frontend && npm run build` built successfully(2532 modules,chunk-size warning 为既有非本任务);`cd frontend && npx oxlint src/` Found 0 warnings and 0 errors
+  - **PR + CI(阶段 5-6)**:PR #59 开;CI **4/4 首轮全绿**(Migrations 53s / Backend pytest+ruff 3m56s / Frontend 31s / E2E 1m56s),**零修红** —— 关键风险点全部验证通过:alembic check 无漂移、scheduler 在 CI(SCHEDULER_ENABLED 默认 False)不启动、APScheduler 已在 requirements.txt、E2E 顶栏铃铛不撞选择器
+  - **合并(阶段 7)**:squash merge 入 main → `7fe629d`(PR #59);feature 分支删除(本地+远端);`git fetch --prune` 清理 stale refs;本地 main 与 origin/main 同步
+- **运行过的验证**(全过):
+  - `./init.sh` → ruff `All checks passed!` + **461 passed**
+  - `.venv/bin/alembic heads` → 单 head `d4e5f6a7b8c9`
+  - `cd frontend && npm run build` → built successfully(2532 modules)
+  - `cd frontend && npx oxlint src/` → Found 0 warnings and 0 errors
+  - CI #59 → Migrations pass / Backend pass / Frontend pass / E2E pass(首轮全绿)
+- **已记录证据**: `feature_list.json` 的 `notification-scheduler.evidence` 增补合并/CI 证据(7 条);status 维持 passing
+- **技术要点**:
+  - **死代码识别价值**:`NotificationCreate` 是典型「docstring 自证存在但实际零调用」的死类。Pydantic BaseModel 不被 ruff F401 跟踪(它不是 import),所以只有手动追溯调用链才能发现 —— 正是 ship-it 清理阶段的目的。删后 docstring 改写为「trigger points 直接调 create(**kwargs),故无 NotificationCreate」,避免下次审查又来一遍
+  - **CI 首轮全绿的设计红利**:Session 096 的「测试安全三重保险」「迁移两侧声明索引」「SAVEPOINT 隔离」三个前置设计直接换来本轮零修红,四个 CI job 全过无需干预
+  - **squash merge**:feat(notifications) commit `1157eab` 合并成单个 `7fe629d ... (#59)`,保持 main 线性
+- **提交记录**: `7fe629d feat(notifications): 通知系统 + APScheduler... (#59)`(合并入 main)
+- **已知风险**: 无新风险。多 replica 部署 scheduler 会重复触发 cron(Session 096 已标注,需 SCHEDULER_ENABLED 单实例开启或后续加 DB 锁)
+- **下一步最佳动作**:
+  - (a) 执行 `data-export`(priority 55,数据导出 CSV,现为最高优先级 not_started)
+
+---

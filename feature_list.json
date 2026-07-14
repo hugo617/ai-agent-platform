@@ -1337,7 +1337,8 @@
         "触发点:BillingService.recharge → 余额预警/充值通知;MemberService.update_role → 角色变更通知;APScheduler scan_balance_warnings 余额扫描(24h 去重)",
         "app/core/scheduler.py:AsyncIOScheduler,init_scheduler 幂等 + SCHEDULER_ENABLED=False 默认(测试安全);lifespan 启动/关闭",
         "前端:NotificationBell(顶栏铃铛 + 30s 轮询未读数 + 下拉)+ NotificationsPage(分页 + 未读过滤);dashboard-layout 集成 + /notifications 路由",
-        "pytest tests/test_notifications.py → 12 passed(2026-07-14);全量 pytest 461 passed;frontend npm run build 通过;oxlint 0 warnings"
+        "pytest tests/test_notifications.py → 12 passed(2026-07-14);全量 pytest 461 passed;frontend npm run build 通过;oxlint 0 warnings",
+        "ship-it 交付(Session 097):PR #59 squash merge 入 main → 7fe629d;CI 4/4 首轮全绿(Migrations 53s / Backend pytest+ruff 3m56s / Frontend 31s / E2E 1m56s)零修红;清理删除 NotificationCreate 死代码类(零调用方)"
       ],
       "notes": "第二梯队。Token 计费的配套——余额预警/充值到账/月报都需要通知+定时任务。不做的话 token 计费体验不完整(用户得自己刷页面)。成本中(APScheduler集成+通知模型+铃铛)。详细 plan 执行到时写。依赖 token计费(44)用于余额预警触发场景。"
     },
