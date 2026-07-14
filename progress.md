@@ -8,7 +8,7 @@
 - **标准启动路径**: `./init.sh`(装依赖 + ruff + pytest)
 - **标准验证路径**: `./init.sh`(同上,后端快速验证,SQLite 内存库)
 - **完整验证路径**(需 docker): `alembic upgrade head && alembic check` + `cd frontend && npm run build`
-- **当前最高优先级未完成功能**: **`notification-scheduler`(priority 54,通知系统 + 定时任务)** —— health-monitoring(53)✅ 已合并 main(PR #58,/ready 就绪探针 503 + /metrics Prometheus + /health 加 db ping;CI 4/4 全绿)。46-53 全部已合并入 main。54 做 Notification 模型 + API + 铃铛组件 + APScheduler(余额预警/日报/清理)。前置无。剩余 not_started:54 notification-scheduler / 55 data-export / 56 file-upload-storage / 57 knowledge-base-rag / 58 multi-agent-orchestration。
+- **当前最高优先级未完成功能**: **`knowledge-base-rag`(priority 57,知识库 + RAG)** —— file-upload-storage(56)✅ 已合并 main(PR #62,StorageBackend Local/S3/OSS + POST /uploads/upload + 前端 FileUpload 组件 + settings-page logo 接入;CI 4/4 全绿首轮)。46-56 全部已合并入 main。57 做 知识库文档(复用 uploadFile)+ pgvector RAG 检索。前置(file-upload-storage)已就绪。剩余 not_started:57 knowledge-base-rag / 58 multi-agent-orchestration。
 - **当前 blocker**: 无
 
 ## 后续任务规划
@@ -1188,6 +1188,30 @@
 - **提交记录**: 无(工作树未提交,在 feat/file-upload-storage 分支)
 - **已知风险**: 无。S3/OSS 是显式 stub(缺 SDK 时 NotImplementedError),生产切换前需 `pip install boto3/oss2` + 配凭证;本地 uploads/ 不入生产(抽象层 + config 切换已就位)
 - **下一步最佳动作**: 审查 + ship-it 收尾(参考 Session 099 流水线):PR → CI 守门 → 合并入 main。或继续下一个 not_started(57 knowledge-base-rag 依赖本任务的 uploadFile)
+
+---
+
+### Session 101 — 2026-07-14
+- **本轮目标**: ship-it 收尾 `file-upload-storage`(priority 56)—— 清理 + 审查 + PR + CI 守门 + 合并入 `main`,承接 Session 100 的未提交工作树
+- **实现方式**: 全自动 ship-it 流水线,无中断。阶段 0 环境探测 → 阶段 1 清理 → 阶段 2 审查 → 阶段 3 提交 → 阶段 4 PR → 阶段 5 CI 守门 → 阶段 6 合并 → 阶段 7 收尾
+- **已完成**:
+  - **清理(阶段 1)**:无 stray debug log / 无未引用 import / 无 TODO-FIXME。逐个确认新符号全有调用方 —— `get_storage()` 被 uploads.py 调用、`reset_storage_cache()` 被 test_upload.py 调用、`StorageError` 被 uploads.py 捕获、前端 `uploadFile` 被 file-upload.tsx 调用、`FileUpload` 被 settings-page.tsx 调用、`_build_key`/`ALLOWED_CONTENT_TYPES`/`UploadResponse` 内聚使用。**1 处废代码预防修复**:`uploads/` 运行时目录(LocalStorage 写入根,create_app() 每次调用都 mkdir)未在 .gitignore —— 加入 `.gitignore`(与 `*.sqlite3`/`.coverage`/`logs/` 同类运行时产物),防 `git add -A` 误提交
+  - **审查(阶段 2)**:对照项目铁律逐条核 —— ① 存储是基础设施(同 metrics/scheduler),Controller 直接调 `get_storage()` 不经 Service/Repository 分层,铁律的分层规则针对业务数据(上传无 DB 行)✅;② uuid key `{tenant_id}/{uuid4().hex}{ext}` 防穿越 + 防 PII 泄漏,ext 来自 content-type **不用原文件名** ✅;③ `_path()` resolve()+relative_to() 双重防御穿越 ✅;④ content-type 白名单(image/png|jpeg|webp|gif, application/pdf, text/plain)→ 400 ✅;⑤ size cap 读 `max_bytes+1` 字节即判超大 → 413,不缓存超大 body(防 DoS)✅;⑥ static mount 测试安全:仅 local 模式 mount + mkdir 懒执行 + upload_client fixture 用 tmp_path 覆盖 storage_local_dir,479 基线零回归 ✅;⑦ 无新依赖(aiofiles/boto3/oss2 NOT in requirements,LocalStorage 用 anyio.to_thread)✅;⑧ S3/OSS stub 缺 SDK/凭证时抛 NotImplementedError 含配置指引,factory switch 正常 ✅;⑨ 前端 FileUpload 客户端 maxSizeMb 预检 + 拖拽 + 图片预览 + 进度条 + onUploaded 回调 ✅。**1 处代码质量修复**:`frontend/src/api/endpoints.ts` 新增的 uploadFile 块被插在 `import axios` 和 `import type {...}` 之间,分裂了 import 组 —— 移到所有 import 之后(`// ---------- file upload ----------` 与其他业务分区风格一致)
+  - **提交(阶段 3)**:单 commit `5dac6c3` —— `feat(storage): 文件上传 + 存储抽象(StorageBackend Local/S3/OSS + /upload 端点 + FileUpload 组件)`,11 files +913/-4。无密钥/产物入库
+  - **PR(阶段 4)**:**#62**,base `main`,https://github.com/hugo617/ai-agent-platform/pull/62(默认 git config,proxy 开放且必需)
+  - **CI 守门(阶段 5)**:**4 个 job 一次全绿,0 次修红**。Frontend(typecheck+build+lint)28s ✅、Migrations(alembic upgrade on Postgres)41s ✅、E2E(Playwright 全栈)1m53s ✅、Backend(pytest+ruff,含 `--cov-fail-under=80`)4m36s ✅。E2E 只覆盖 login→agent→chat mainflow,不触达 /settings/品牌/logo,settings-page logo 字段改动(标签 "Logo URL"→"Logo" + 新增 FileUpload)不破坏 E2E 选择器;static mount + storage 不破坏 479 基线
+  - **合并(阶段 6)**:squash 合并入 `main`,commit `1643f2c`,删除远端 feat/file-upload-storage 分支。`git cat-file -e origin/main:app/core/storage.py` + `:app/api/v1/uploads.py` 确认文件已在基线
+- **运行过的验证**(全过):
+  - `ruff check app/ cli/ tests/ scripts/ alembic/` → All checks passed
+  - `pytest -q` → **485 passed**(479 baseline + 6 新增 test_upload)
+  - `pytest --cov=app --cov-fail-under=80` → coverage 94%(新模块 uploads.py 91% / storage.py 68%,后者未覆盖行全是 S3/OSS stub 的 `# pragma: no cover`)
+  - `cd frontend && npm run build` → built successfully(tsc+vite 0 错误)
+  - `cd frontend && npx oxlint src/` → Found 0 warnings and 0 errors
+  - GitHub Actions PR #62 → 4/4 pass
+- **已记录证据**: feature_list.json 的 file-upload-storage evidence 追加 ship-it 收尾条目(PR#62 + squash 1643f2c + CI 4/4)
+- **提交记录**: `1643f2c feat(storage): 文件上传 + 存储抽象(...) (#62)`(squash,origin/main)
+- **已知风险**: 无。S3/OSS 是显式 stub(缺 SDK 时 NotImplementedError,502 上游存储错配),生产切换前需 `pip install boto3/oss2` + 配凭证;本地 uploads/ 已 gitignore 不入库
+- **下一步最佳动作**: 执行下一 not_started `knowledge-base-rag`(57,priority 次高)—— 复用本任务的 `uploadFile` 上传知识库文档 + pgvector RAG 检索。前置(file-upload-storage)已就绪
 
 ---
 

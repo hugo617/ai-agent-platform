@@ -1392,7 +1392,8 @@
         "未引入新依赖: aiofiles/boto3/oss2 均 NOT 在 requirements; LocalStorage 用 anyio.to_thread + Path.write_bytes(anyio 随 FastAPI 自带)。S3/OSS stub 在缺 SDK/凭证时抛 NotImplementedError('S3/OSS storage not configured...')。",
         "测试: tests/test_upload.py 6 个用例全过(上传 PNG 返回 url+key + GET /static 200 round-trip 字节一致 / 非法类型 400 / 超大 413 / 未认证 401 / key 为 tenant/uuid.ext 无原文件名)。upload_client fixture 用 tmp_path 覆盖 storage_local_dir 保证 hermetic。",
         "验证命令: ./init.sh 全绿 ruff + pytest 485 passed(基线 479 + 6 新增); cd frontend && npm run build 通过(tsc + vite,0 错误); npx oxlint src/ 0 warnings 0 errors。",
-        "前端: frontend/src/components/ui/file-upload.tsx(可复用组件:点击/拖拽 + 图片预览 + 进度条 + 客户端大小预检 + onUploaded 回调); frontend/src/api/endpoints.ts 新增 uploadFile(file, onProgress); 消费方接入: settings-page.tsx TenantBrandingCard 的 Logo 字段从纯 URL 输入改为 FileUpload 上传 + 保留 URL 输入(品牌设置 settings:update,owner/admin)。"
+        "前端: frontend/src/components/ui/file-upload.tsx(可复用组件:点击/拖拽 + 图片预览 + 进度条 + 客户端大小预检 + onUploaded 回调); frontend/src/api/endpoints.ts 新增 uploadFile(file, onProgress); 消费方接入: settings-page.tsx TenantBrandingCard 的 Logo 字段从纯 URL 输入改为 FileUpload 上传 + 保留 URL 输入(品牌设置 settings:update,owner/admin)。",
+        "ship-it 收尾(Session 101): 清理 uploads/ 运行时目录加入 .gitignore + 修复 endpoints.ts uploadFile 块插在 import 中间分裂 import 组;PR #62 squash 合并入 main(commit 1643f2c);GitHub Actions 4/4 首轮全绿(Frontend 28s / Migrations 41s / E2E 1m53s / Backend pytest+ruff+cov-fail-under=80 4m36s),0 次修红。E2E 只覆盖 login→agent→chat mainflow 不触达 settings/品牌/logo,settings-page 改动无影响。"
       ],
       "notes": "第二梯队 地基。现状:无上传能力,Customer.avatar 是死字段,无对象存储。是多个功能的前置:用户头像(49)/租户logo(52)/RAG文档(57)。存储抽象本地dev/S3生产可切。详细 plan 执行到时写。被依赖:49/52/57。"
     },
