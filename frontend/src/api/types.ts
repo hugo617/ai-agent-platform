@@ -324,6 +324,11 @@ export interface Conversation {
   // Optional customer attribution (Token 费用管理系列 3/4). Null = internal
   // staff query (not tied to a customer).
   customer_id: string | null;
+  // conversation-management (priority 50). tags defaults to [] (backend
+  // server_default '[]'); is_pinned/is_starred default false.
+  tags: string[];
+  is_pinned: boolean;
+  is_starred: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -333,6 +338,14 @@ export interface Message {
   role: "user" | "assistant";
   content: string;
   created_at: string;
+}
+
+// conversation-management (priority 50): optional filters for the chat list.
+// Both are substring/contains filters on the backend (title OR message content
+// for search; tags array for tag). Empty/undefined = match all.
+export interface ConversationFilters {
+  search?: string;
+  tag?: string;
 }
 
 // ============= API tokens (AtoA — agenthub CLI auth) =============

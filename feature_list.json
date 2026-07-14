@@ -1214,7 +1214,7 @@
       "area": "AI 内核",
       "title": "对话管理增强(搜索/重命名/标签/收藏/批量删除)",
       "user_visible_behavior": "用户能搜索历史对话(按标题/内容)、重命名对话、打标签/收藏分类、置顶常用、批量清理;不只列表/读/删",
-      "status": "not_started",
+      "status": "passing",
       "plan": "harness/docs/plan-conversation-management.md",
       "verification": [
         "Conversation 模型加字段:tags(JSON)/is_pinned/is_starred(可空向后兼容)+ 迁移无 drift",
@@ -1223,7 +1223,15 @@
         "pytest 覆盖搜索/重命名/标签/置顶/批量删除/租户隔离",
         "npm run build 通过 + alembic check 无 drift"
       ],
-      "evidence": [],
+      "evidence": [
+        "Conversation 加 tags(JSONB.with_variant(JSON,'sqlite'),default list,server_default '[]')+is_pinned/is_starred(Boolean,default false,server_default text('false'))(app/models/agent.py)",
+        "手写迁移 alembic/versions/2026_07_14_1030_b2c3d4e5f6a7_add_conversation_management_columns.py(down_revision a1b2c3d4e5f6,仅加列无新索引→无 ORM __table_args__ drift);alembic heads 单头 b2c3d4e5f6a7",
+        "后端 API:GET / 加 search(tag filter)+ pinned-first 排序;PATCH title/POST tags/DELETE tags/{tag}/PATCH pin/PATCH star/POST batch-delete,全 conversations:update 或 :delete 守卫 + 复用 _get_owned 用户隔离(app/api/v1/conversations.py + app/services/conversation_service.py)",
+        "tags JSONB 双库:Postgres @> via .contains([]) / SQLite json_each via _tags_contain 方言分发(app/repositories/conversation.py)",
+        "前端 chat-page.tsx:防抖搜索框 + 多选 checkbox + 批量删除 + 每项 DropdownMenu(重命名 Dialog/添加标签 Dialog/置顶/收藏/删除)+ 置顶📌/收藏⭐图标 + 标签 chip(点击删除)",
+        "tests/test_conversation_management.py 21 个测试全过:搜索(标题/内容/标签/组合)、排序(置顶优先)、重命名、标签增删、置顶/收藏、批量删除+所有权、跨租户隔离、member 权限 403、ConversationRead 默认值",
+        "验证全过:./init.sh ruff clean + pytest 414 passed(基线 393 + 21 新);cd frontend && npm run build 0 类型错误;cd frontend && npx oxlint src/ 0 warnings 0 errors;.venv/bin/alembic heads 单头"
+      ],
       "notes": "第一梯队。现状:对话只有列表/读/删,Conversation 模型只有 6 列无 tags/pinned。补搜索+管理交互让聊天体验完整。详细 plan 执行到时写。被 global-search(51)弱依赖。"
     },
     {

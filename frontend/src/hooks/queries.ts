@@ -5,7 +5,9 @@ import {
 } from "@tanstack/react-query";
 import {
   addMember,
+  addConversationTag,
   attachTenant,
+  batchDeleteConversations,
   changePassword,
   changeUserStatus,
   createAgent,
@@ -58,10 +60,14 @@ import {
   fetchWallet,
   grantRolePermission,
   recharge,
+  removeConversationTag,
   removeMember,
+  renameConversation,
   resetUserPassword,
   revokeApiToken,
   revokeRolePermission,
+  setConversationPinned,
+  setConversationStarred,
   terminateSession,
   updateAgent,
   updateCustomerProfile,
@@ -79,6 +85,7 @@ import type {
   AgentCreate,
   AgentUpdate,
   ApiTokenCreate,
+  ConversationFilters,
   CustomerProfileCreate,
   CustomerProfileUpdate,
   GroupCreate,
@@ -119,7 +126,13 @@ export const qk = {
   rolePermissions: (id: string) => ["roles", id, "permissions"] as const,
   permissionMatrix: ["permissions", "matrix"] as const,
   sessions: ["auth", "sessions"] as const,
-  conversations: ["conversations"] as const,
+  // conversation list query key encodes the search/tag filters so each distinct
+  // filter set caches independently (a debounced search produces a stream of
+  // unique keys). Empty filters collapse to the bare key for the common case.
+  conversations: (filters?: ConversationFilters) =>
+    (filters && (filters.search || filters.tag)
+      ? ["conversations", filters] as const
+      : ["conversations"] as const),
   messages: (conversationId: string) =>
     ["conversations", conversationId, "messages"] as const,
   llmConfigPlatform: ["settings", "llm", "platform"] as const,
@@ -624,8 +637,16 @@ export function useEffectiveModels() {
 // sendChatStream is an async generator consumed imperatively in chat-page.tsx
 // (streaming deltas don't fit useMutation's one-shot success semantics), so
 // there is no useChatStream hook here by design.
-export function useConversations() {
-  return useQuery({ queryKey: qk.conversations, queryFn: fetchConversations });
+//
+// conversation-management (priority 50): useConversations accepts search/tag
+// filters; the query key encodes them so each filter set caches independently.
+// All mutations invalidate the whole ["conversations"] family so every filter
+// view refetches after a change.
+export function useConversations(filters?: ConversationFilters) {
+  return useQuery({
+    queryKey: qk.conversations(filters),
+    queryFn: () => fetchConversations(filters),
+  });
 }
 
 // Conversation counts (total + 7d/30d) for the dashboard card.
@@ -648,7 +669,63 @@ export function useDeleteConversation() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (conversationId: string) => deleteConversation(conversationId),
-    onSuccess: () => qc.invalidateQueries({ queryKey: qk.conversations }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["conversations"] }),
+  });
+}
+
+// conversation-management mutations (priority 50). Each invalidates the whole
+// conversations family so the list (any active filter view) refetches.
+export function useRenameConversation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, title }: { id: string; title: string }) =>
+      renameConversation(id, title),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["conversations"] }),
+  });
+}
+
+export function useAddConversationTag() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, tag }: { id: string; tag: string }) =>
+      addConversationTag(id, tag),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["conversations"] }),
+  });
+}
+
+export function useRemoveConversationTag() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, tag }: { id: string; tag: string }) =>
+      removeConversationTag(id, tag),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["conversations"] }),
+  });
+}
+
+export function useSetConversationPinned() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, pinned }: { id: string; pinned: boolean }) =>
+      setConversationPinned(id, pinned),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["conversations"] }),
+  });
+}
+
+export function useSetConversationStarred() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, starred }: { id: string; starred: boolean }) =>
+      setConversationStarred(id, starred),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["conversations"] }),
+  });
+}
+
+export function useBatchDeleteConversations() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (conversationIds: string[]) =>
+      batchDeleteConversations(conversationIds),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["conversations"] }),
   });
 }
 

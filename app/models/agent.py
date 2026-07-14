@@ -3,8 +3,21 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, Float, ForeignKey, Index, Integer, String, Text, func
+from sqlalchemy import (
+    Boolean,
+    DateTime,
+    Float,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+    func,
+    text,
+)
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.types import JSON
 
 from app.core.database import Base
 
@@ -79,6 +92,20 @@ class Conversation(Base):
         index=True,
     )
     title: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # Conversation-management tags. JSONB on Postgres (so ``tags @> ['x']``
+    # contains queries are indexable later), plain JSON on SQLite (tests).
+    # Mirrors the CustomerProfile.tags dual-DB idiom. Default empty array.
+    tags: Mapped[list] = mapped_column(
+        JSONB().with_variant(JSON, "sqlite"),
+        default=list,
+        server_default=text("'[]'"),
+    )
+    is_pinned: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=text("false")
+    )
+    is_starred: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=text("false")
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

@@ -625,8 +625,13 @@ export async function terminateSession(sessionId: string): Promise<void> {
 // instead, manually attaching the bearer token (axios interceptor can't run)
 // and replicating the client's 401 → auth-expired handling.
 
-export async function fetchConversations(): Promise<Conversation[]> {
-  const { data } = await api.get<Conversation[]>("/conversations/");
+export async function fetchConversations(params?: {
+  search?: string;
+  tag?: string;
+}): Promise<Conversation[]> {
+  const { data } = await api.get<Conversation[]>("/conversations/", {
+    params: { search: params?.search, tag: params?.tag },
+  });
   return data;
 }
 
@@ -639,6 +644,73 @@ export async function fetchMessages(conversationId: string): Promise<Message[]> 
 
 export async function deleteConversation(conversationId: string): Promise<void> {
   await api.delete(`/conversations/${conversationId}`);
+}
+
+// conversation-management (priority 50): rename / tags / pin / star / batch.
+// All gated by conversations:update (or :delete) on the backend; ownership is
+// re-checked server-side (only the conversation owner may mutate it).
+export async function renameConversation(
+  conversationId: string,
+  title: string,
+): Promise<Conversation> {
+  const { data } = await api.patch<Conversation>(
+    `/conversations/${conversationId}/title`,
+    { title },
+  );
+  return data;
+}
+
+export async function addConversationTag(
+  conversationId: string,
+  tag: string,
+): Promise<Conversation> {
+  const { data } = await api.post<Conversation>(
+    `/conversations/${conversationId}/tags`,
+    { tag },
+  );
+  return data;
+}
+
+export async function removeConversationTag(
+  conversationId: string,
+  tag: string,
+): Promise<Conversation> {
+  const { data } = await api.delete<Conversation>(
+    `/conversations/${conversationId}/tags/${encodeURIComponent(tag)}`,
+  );
+  return data;
+}
+
+export async function setConversationPinned(
+  conversationId: string,
+  pinned: boolean,
+): Promise<Conversation> {
+  const { data } = await api.patch<Conversation>(
+    `/conversations/${conversationId}/pin`,
+    { pinned },
+  );
+  return data;
+}
+
+export async function setConversationStarred(
+  conversationId: string,
+  starred: boolean,
+): Promise<Conversation> {
+  const { data } = await api.patch<Conversation>(
+    `/conversations/${conversationId}/star`,
+    { starred },
+  );
+  return data;
+}
+
+export async function batchDeleteConversations(
+  conversationIds: string[],
+): Promise<{ deleted: number }> {
+  const { data } = await api.post<{ deleted: number }>(
+    "/conversations/batch-delete",
+    { conversation_ids: conversationIds },
+  );
+  return data;
 }
 
 // Conversation counts (total + 7d/30d windows) for the dashboard card. Store

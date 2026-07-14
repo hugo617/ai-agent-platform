@@ -883,3 +883,26 @@
 - **下一步最佳动作**: 选优先级最高的 not_started 全栈/前端 feature 继续(开新 feature 分支)
 
 ---
+
+### Session 088 — 2026-07-14
+- **本轮目标**: 全栈实现 conversation-management(优先级 50)—— 对话搜索/重命名/标签/收藏/置顶/批量删除。基线 main 76ed083,全程在 feat/conversation-management 分支
+- **执行**:
+  - **模型+迁移**:Conversation 加 3 列 —— `tags`(JSONB().with_variant(JSON,"sqlite"),default list,server_default text("'[]'"))、`is_pinned`/`is_starred`(Boolean default False server_default text("false"));完全照抄 CustomerProfile.tags 双库模式。手写迁移 `2026_07_14_1030_b2c3d4e5f6a7`(down_revision `a1b2c3d4e5f6`,**仅 add_column 无新索引** → 无 ORM __table_args__ drift,避开 dashboard 任务踩过的 alembic-check-drift 雷)
+  - **后端分层(Controller→Service→Repository→Model)**:
+    - Repository:`list_for_user` 加 `search`(title ILIKE OR messages.content ILIKE 子查询)+ `tag`(JSON contains,**方言分发**:PG `tags.contains([tag])` 即 `@>`,SQLite 用 `json_each` table-valued EXISTS)+ pinned-first 排序(`is_pinned DESC, updated_at DESC`)
+    - Service:`_get_owned` 统一 tenant 查找 + 用户归属校验(404 不泄露存在性);rename/add_tag(idempotent)/remove_tag/set_pinned/set_starred/batch_delete(任何 foreign id → 404,不静默跳过)
+    - API:GET / 加 search/tag Query 参数;新增 PATCH title / POST tags / DELETE tags/{tag} / PATCH pin / PATCH star / POST batch-delete;全 conversations:update 或 :delete 守卫
+    - Schema:ConversationRead 加 tags/is_pinned/is_starred;新增 ConversationTitleUpdate/TagAdd/PinUpdate/StarUpdate/BatchDelete 请求体
+  - **前端**:
+    - types.ts:Conversation 加 3 字段;新增 ConversationFilters
+    - endpoints.ts:fetchConversations 加 search/tag params;新增 renameConversation/addConversationTag/removeConversationTag/setConversationPinned/setConversationStarred/batchDeleteConversations
+    - queries.ts:qk.conversations 改为函数(编码 filter);新增 6 个 mutation hook(useRenameConversation/useAddConversationTag/useRemoveConversationTag/useSetConversationPinned/useSetConversationStarred/useBatchDeleteConversations),全 invalidate `["conversations"]` family
+    - chat-page.tsx:300ms 防抖搜索框 + 多选 Checkbox + 批量删除按钮 + 每项 DropdownMenu(重命名 Dialog/添加标签 Dialog/置顶/收藏/删除确认)+ 置顶📌/收藏⭐图标 + 标签 chip(点击删除)
+  - **测试**:tests/test_conversation_management.py 21 测试 —— 搜索(标题/消息内容/标签/组合)、置顶优先排序、重命名、标签增删(idempotent)、置顶/收藏 toggle、批量删除+所有权(foreign id 不删)、跨租户不可见且不可改、member 权限 403、ConversationRead 默认值
+- **验证(全过)**:`./init.sh` ruff clean + pytest **414 passed**(基线 393 + 21 新);`.venv/bin/alembic heads` 单头 `b2c3d4e5f6a7`;`cd frontend && npm run build` 0 类型错误;`cd frontend && npx oxlint src/` 0 warnings 0 errors
+- **关键决策**:tags JSON contains 不能用单一 `.contains()`——它在 SQLite 发出 `@>` 报错,所以 `_tags_contain(col, tag, dialect_name)` 方言分发(PG `@>` / SQLite `json_each`)。batch-delete foreign id 走 404 而非静默跳过(让客户端知道 id 错了)。super_admin 仍受用户归属约束(跨租户不跨用户)
+- **当前状态**: conversation-management(50)✅ 实现完成,留在 `feat/conversation-management` 分支工作树(**未提交**,交 ship-it agent 处理)。feature_list.json status→passing + evidence 已填;全验证绿
+- **已知风险**: 消息内容 ILIKE 搜索无 GIN 索引(会话量级内可接受,plan 风险表已记);手动浏览器验证未跑(需前后端启动)
+- **下一步最佳动作**: 交 ship-it agent 提交+推送 feat/conversation-management + 开 PR;之后选优先级最高的 not_started feature 继续
+
+---

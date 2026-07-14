@@ -2,28 +2,83 @@
 
 from datetime import datetime
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 
 from app.models.agent import Conversation
 from app.models.message import Message
 from app.repositories.base import TenantScopedRepository
 
 
+def _tags_contain(tags_col, tag: str, dialect_name: str):
+    """Build a "tags JSON array contains ``tag``" predicate for either dialect.
+
+    Postgres JSONB supports the ``@>`` containment operator (``tags @> ['x']``),
+    which is indexable by a future GIN index. SQLite has no ``@>``: we use the
+    JSON1 ``json_each`` table-valued function (``EXISTS (SELECT 1 FROM
+    json_each(tags) WHERE value = :tag)``), which the in-memory test suite
+    relies on. The returned element is a boolean SQL expression.
+    """
+    if dialect_name == "postgresql":
+        return tags_col.contains([tag])
+    # SQLite (tests) — EXISTS over json_each.
+    je = func.json_each(tags_col).table_valued("value")
+    return select(1).select_from(je).where(je.c.value == tag).exists()
+
+
 class ConversationRepository(TenantScopedRepository[Conversation]):
     model = Conversation
 
-    async def list_for_user(self, tenant_id: str, user_id: str, limit: int = 50) -> list[Conversation]:
-        # Order by most-recently-active so a conversation with a new message
-        # bubbles to the top of the user's list.
+    async def list_for_user(
+        self,
+        tenant_id: str,
+        user_id: str,
+        limit: int = 50,
+        *,
+        search: str | None = None,
+        tag: str | None = None,
+    ) -> list[Conversation]:
+        """List a user's conversations, most-recently-active first.
+
+        conversation-management (priority 50) optional filters:
+
+        - ``search``: case-insensitive substring against the title OR any message
+          content (a subquery over messages joined by conversation_id). Empty/
+          None search is a no-op (matches all).
+        - ``tag``: conversations whose ``tags`` JSON array contains the tag
+          (``@> ['x']`` on Postgres JSONB, ``json_each`` on SQLite tests).
+
+        Ordering is pinned-first (``is_pinned DESC``) then ``updated_at DESC``
+        so important chats stay on top of the recency list.
+        """
         stmt = (
             select(Conversation)
             .where(
                 Conversation.tenant_id == tenant_id,
                 Conversation.user_id == user_id,
             )
-            .order_by(Conversation.updated_at.desc())
+            .order_by(Conversation.is_pinned.desc(), Conversation.updated_at.desc())
             .limit(limit)
         )
+        if search:
+            like = f"%{search}%"
+            # Subquery over messages: any message in this conversation whose
+            # content matches the search term. Combined with the title ILIKE via
+            # OR so a chat matches if either its title or any message hits.
+            msg_subq = (
+                select(Message.conversation_id)
+                .where(Message.content.ilike(like))
+                .scalar_subquery()
+            )
+            stmt = stmt.where(
+                or_(
+                    Conversation.title.ilike(like),
+                    Conversation.id.in_(msg_subq),
+                )
+            )
+        if tag:
+            stmt = stmt.where(
+                _tags_contain(Conversation.tags, tag, self.db.bind.dialect.name)
+            )
         result = await self.db.execute(stmt)
         return list(result.scalars().all())
 
