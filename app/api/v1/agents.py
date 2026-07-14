@@ -1,6 +1,6 @@
 """Agent endpoints — CRUD, all guarded by casbin permissions."""
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import CurrentUser, get_current_user, require_permission
@@ -25,12 +25,19 @@ def _http_exc(e: ValueError) -> HTTPException:
     dependencies=[Depends(require_permission("agents", "read"))],
 )
 async def list_agents(
+    search: str | None = Query(
+        default=None, description="Substring match on agent name (ILIKE)"
+    ),
     user: CurrentUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> list[AgentRead]:
+    """List this tenant's agents, optionally filtered by a name search."""
     service = AgentService(db)
     return await service.list(
-        user.user_id, user.tenant_id, platform_role=user.platform_role
+        user.user_id,
+        user.tenant_id,
+        platform_role=user.platform_role,
+        search=search,
     )
 
 

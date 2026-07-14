@@ -34,6 +34,7 @@ import {
 import { useAuth } from "@/components/auth/auth-context";
 import { canViewMenu, hasPermission } from "@/lib/permission";
 import { logout } from "@/api/endpoints";
+import { GlobalSearchBox } from "@/components/layout/global-search-box";
 
 interface NavItem {
   to: string;
@@ -175,7 +176,12 @@ export function DashboardLayout() {
           >
             {sidebarOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
           </Button>
-          <div className="flex-1" />
+          {/* 全局搜索框 — top-bar cross-entity search (priority 51). Hidden on
+              small screens (the mobile hamburger takes the space); the flexible
+              spacer keeps the right-side badges pinned to the edge. */}
+          <div className="hidden flex-1 justify-center px-4 sm:flex">
+            <GlobalSearchBox />
+          </div>
           <div className="flex items-center gap-3">
             {me?.platform_role === "super_admin" && (
               <Badge className="bg-amber-100 text-amber-800 hover:bg-amber-100 border-amber-300">

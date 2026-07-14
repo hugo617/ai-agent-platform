@@ -673,6 +673,29 @@ export interface DashboardOverview {
   top_tenants: TenantActivityItem[];
 }
 
+// ============= global cross-entity search (priority 51) =============
+//
+// GET /search?q=&limit_per_type= aggregates hits across agents / customers /
+// conversations (+ users / tenants for super_admin / hq_staff). The top-bar
+// dropdown renders each non-empty section as a clickable list; selecting an
+// item navigates to that entity's list/detail page.
+
+/** One lightweight search hit (id + label + type discriminator). */
+export interface SearchResultItem {
+  id: string;
+  label: string;
+  type: string;
+}
+
+/** Grouped cross-entity search response. Every key is always present. */
+export interface GlobalSearchResult {
+  agents: SearchResultItem[];
+  customers: SearchResultItem[];
+  conversations: SearchResultItem[];
+  users: SearchResultItem[];
+  tenants: SearchResultItem[];
+}
+
 /** Filter params for GET /logs (audit log). All optional. */
 export interface LogFilters {
   user_id?: string;

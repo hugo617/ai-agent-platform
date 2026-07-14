@@ -3,6 +3,7 @@ import {
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
+import { useEffect, useState } from "react";
 import {
   addMember,
   addConversationTag,
@@ -41,6 +42,7 @@ import {
   fetchEffectiveModels,
   fetchGroups,
   fetchAllTenants,
+  globalSearch,
   fetchLogs,
   fetchMembers,
   fetchMessages,
@@ -162,6 +164,11 @@ export const qk = {
   dashboardOverview: ["dashboard", "overview"] as const,
   // audit logs — paginated, filterable by operator/action/resource/date.
   logs: (filters: LogFilters) => ["logs", filters] as const,
+  // global cross-entity search (priority 51). Key encodes the query so each
+  // distinct term caches independently; the debounced hook below produces the
+  // stream of unique keys.
+  globalSearch: (q: string, limitPerType: number) =>
+    ["search", q, limitPerType] as const,
 };
 
 // ---------- tenants ----------
@@ -849,5 +856,42 @@ export function useLogs(filters: LogFilters) {
     queryKey: qk.logs(filters),
     queryFn: () => fetchLogs(filters),
     placeholderData: (prev) => prev, // keep previous page while fetching next
+  });
+}
+
+// ---------- global cross-entity search (priority 51) ----------
+
+/**
+ * Delay mirroring a value until the user stops changing it for `delay` ms.
+ *
+ * Used by `useGlobalSearch` to avoid firing a cross-entity search on every
+ * keystroke. Generic so other live-search inputs can reuse it later.
+ */
+export function useDebouncedValue<T>(value: T, delay = 300): T {
+  const [debounced, setDebounced] = useState(value);
+  useEffect(() => {
+    const id = setTimeout(() => setDebounced(value), delay);
+    return () => clearTimeout(id);
+  }, [value, delay]);
+  return debounced;
+}
+
+/**
+ * Cross-entity search hook for the top-bar search box.
+ *
+ * Debounces the raw query (300ms), then fires GET /search only when the
+ * debounced term is at least 2 chars (the backend's minimum). Below that the
+ * query is disabled so no request leaves the browser — matching the empty-
+ * result guard on the server side.
+ */
+export function useGlobalSearch(q: string, limitPerType = 5) {
+  const term = q.trim();
+  const debounced = useDebouncedValue(term, 300);
+  const enabled = debounced.length >= 2;
+  return useQuery({
+    queryKey: qk.globalSearch(debounced, limitPerType),
+    queryFn: () => globalSearch(debounced, limitPerType),
+    enabled,
+    placeholderData: (prev) => prev, // keep the prior dropdown stable while typing
   });
 }
