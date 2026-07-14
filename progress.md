@@ -946,3 +946,21 @@
 - **下一步最佳动作**: 用户审查/提交/推送/PR 守 CI 合并(对齐 Session 089 流程),或继续下一个 not_started feature
 
 ---
+
+### Session 091 — 2026-07-14
+- **本轮目标**: ship-it 全自动交付 global-search(51)—— 清理 + 审查 + 提交 + 推送 + PR + 守 CI + 合并入 main。基线 main 4986c99,feat/global-search 分支(Session 090 工作树)
+- **执行**:
+  - **阶段 0 环境探测**:BASE=main;CI=GitHub Actions(ci.yml 4 job:migrations/backend/frontend/e2e);后端 pytest+ruff(init.sh),前端 npm build + oxlint
+  - **阶段 1 清理废代码**:无死代码可删。逐个确认新 search 方法/端点/hook/组件全部有调用方(AgentRepository.search/search_for_tenant、CustomerProfileRepository.search_for_tenant/search_for_scope、CustomerRepository.search、ConversationRepository.search_all、UserRepository.search、TenantRepository.search 均被 search.py 或各 Service 调用);前端 global-search-box.tsx 的 6 个 lucide 图标 + Input/cn/useGlobalSearch/SearchResultItem/useNavigate/useEffect/useRef/useState 全部使用;无 print/breakpoint/TODO/FIXME
+  - **阶段 2 审查 + 修复**:发现并修复一处真实 bug —— CustomerService.list_profiles 搜索路径对 group/self data scope 处理不一致:原实现 resolved.scope=="all" 走 Customer.search + list_all 过滤、否则一律 search_for_tenant(tenant_id),导致 group scope 搜索时被收窄为单租户(看不到兄弟门店)、self scope 搜索时被放宽为全租户(越权看同事的 profile)。新增 CustomerProfileRepository.search_for_scope 镜像 list_for_scope 的 all/tenant/group/self 语义 + JOIN Customer 加 name/identity_key ILIKE,Service 搜索路径统一委托给它,搜索时与无搜索时返回同一人群,隔离逻辑全部留在 Repository 层(铁律不破)。CustomerProfileRepository.search_for_tenant 仍被 search.py 门店分支使用,非死代码
+  - **阶段 3 提交**:单 commit(整个 feature 是一个整体)`feat(search): 全局搜索(跨 Agent/客户/对话/用户 + 顶部搜索框)`(c12d3c9),含 Session 090 已写的 progress.md + feature_list.json
+  - **阶段 4 推送 + PR**:`git push -u origin HEAD`(默认 git config,proxy 开放且必需);gh 开 PR #56 对 main
+  - **阶段 5 守 CI**:**首轮全绿,0 次修红**。Migrations pass(40s)、Backend pytest+ruff pass(3m47s)、E2E Playwright pass(1m53s)、Frontend typecheck+build+lint pass(26s)。E2E 顶栏布局改动未破坏既有 selector(主流程用 getByTestId 定位内页元素,不碰顶栏 flex 占位;新增 GlobalSearchBox 保留 flex-1,右栏徽章布局不变)
+  - **阶段 6 合并**:`gh pr merge 56 --squash --delete-branch` → main 70e7fba `feat(search): 全局搜索(跨 Agent/客户/对话/用户 + 顶部搜索框) (#56)`。本地 checkout main + pull 确认基线推进,远端 feature 分支已删
+- **验证(全过)**:`./init.sh` ruff clean + pytest **434 passed**(基线 414 + 20 新);`cd frontend && npm run build` 0 类型错误;`cd frontend && npx oxlint src/` 0 warnings;CI 4 job 全绿(首轮,0 修红)
+- **环境备注**:AGENTS.md 记载的 git proxy(127.0.0.1:9910)「未运行」已过时(同 Session 081/083/085/087/089)—— 端口 OPEN 且网络需走 proxy,push/gh 用默认 config 成功。gh 已认证(hugo617)
+- **当前状态**: global-search(51)✅ **已合并入 main(70e7fba,PR #56 squash)**,基线已推进。全局搜索正式上线 —— 顶栏搜索框跨 Agent/客户/对话/用户/门店 搜索,分类下拉,点击跳转,权限隔离(门店本租户/super_admin+hq_staff 跨租户 + users/tenants)
+- **已知风险**: 无功能风险。group/self scope 搜索一致性 bug 已修(search_for_scope 统一处理)。ILIKE 无 trigram 索引(量级内可接受,plan 风险表已记)。手动浏览器验证未跑(需前后端启动),pytest 434 + npm build + oxlint + CI E2E 已覆盖行为/类型/规范/端到端主流程不回归
+- **下一步最佳动作**: 选优先级最高的 not_started feature 继续。global-search(51)已落地,可推进下一个全栈/前端 feature
+
+---

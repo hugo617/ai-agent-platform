@@ -1258,7 +1258,9 @@
         "前端 types.ts 加 GlobalSearchResult/SearchResultItem;endpoints.ts 加 globalSearch(q, limitPerType);queries.ts 加 useGlobalSearch(300ms 防抖 useDebouncedValue + useQuery enabled=q.length>=2 + placeholderData 保持下拉稳定)",
         "前端新增 components/layout/global-search-box.tsx:放大镜 Input + 防抖 + 下拉分类(智能体/客户/对话/用户/门店,top 5 每类)+ 每项点击 navigate 详情页 + 「查看全部」跳列表页带 ?search=;Escape/外部点击关闭;dashboard-layout.tsx 顶栏内嵌(移动端隐藏,不破坏既有头像下拉布局)",
         "tests/test_global_search.py 20 个测试全过:agents/customers 单实体 search 参数、global 各实体命中(name/title/identity_key)、跨分类聚合、q<2 字符空结果、门店用户租户隔离(看不到他租户 agent/customer)、super_admin/hq_staff 额外返回 users+tenants 且跨租户可见、limit_per_type 截断(默认 5)、DTO shape {id,label,type}",
-        "验证全过:./init.sh ruff clean + pytest 434 passed(基线 414 + 20 新);cd frontend && npm run build 0 类型错误(tsc -b + vite);cd frontend && npx oxlint src/ 0 warnings 0 errors"
+        "验证全过:./init.sh ruff clean + pytest 434 passed(基线 414 + 20 新);cd frontend && npm run build 0 类型错误(tsc -b + vite);cd frontend && npx oxlint src/ 0 warnings 0 errors",
+        "ship-it 审查修复:CustomerService.list_profiles 搜索路径原对 group/self data scope 不一致(group 收窄为单租户、self 放宽为全租户越权);新增 CustomerProfileRepository.search_for_scope 镜像 list_for_scope 的 all/tenant/group/self 语义 + JOIN Customer ILIKE,Service 搜索路径统一委托,隔离逻辑留在 Repository 层(app/repositories/customer.py + app/services/customer_service.py)",
+        "已合并入 main:PR #56 squash → 70e7fba,CI 4 job 全绿(首轮 0 修红:Migrations/Backend pytest+ruff/E2E Playwright/Frontend typecheck+build+lint),远端 feat/global-search 分支已删"
       ],
       "notes": "第一梯队。现状:只有 users 有 search 参数,其他实体无搜索,无跨实体全局搜索。详细 plan 执行到时写。依赖 conversation-management(50)的对话搜索。"
     },
