@@ -116,6 +116,8 @@ class CustomerService:
         actor_id: str,
         tenant_id: str,
         platform_role: str | None = None,
+        *,
+        search: str | None = None,
     ) -> list[CustomerProfileRead]:
         """Store view filtered by the caller's row-level data scope.
 
@@ -123,6 +125,10 @@ class CustomerService:
         store); tenant roles resolve to tenant/group/self per their role's
         ``data_scope`` (权限重构系列 3/4). Permission check still runs for
         non-platform users (``customers:read``).
+
+        ``search`` (when provided) narrows to profiles whose Customer name or
+        identity_key matches the keyword (ILIKE). Empty/None returns the full
+        scoped list — matching the users-list convention.
         """
         is_cross_tenant = is_cross_tenant_viewer(platform_role)
         if not is_cross_tenant:
@@ -136,12 +142,27 @@ class CustomerService:
         resolved = await DataScopeService(self.db).resolve(
             actor_id, tenant_id, platform_role
         )
-        profiles = await self.profiles.list_for_scope(
-            scope=resolved.scope,
-            tenant_id=tenant_id,
-            group_tenant_ids=resolved.tenant_ids or None,
-            owner_user_id=resolved.owner_user_id,
-        )
+        kw = (search or "").strip() or None
+        if kw is None:
+            profiles = await self.profiles.list_for_scope(
+                scope=resolved.scope,
+                tenant_id=tenant_id,
+                group_tenant_ids=resolved.tenant_ids or None,
+                owner_user_id=resolved.owner_user_id,
+            )
+        else:
+            # Search path delegates to search_for_scope so the same scope
+            # semantics (all / tenant / group / self) apply as on the no-search
+            # path — no silent narrowing (group) or broadening (self) when a
+            # keyword is present. Tenant/scope isolation stays in the repo.
+            profiles = await self.profiles.search_for_scope(
+                keyword=kw,
+                scope=resolved.scope,
+                tenant_id=tenant_id,
+                group_tenant_ids=resolved.tenant_ids or None,
+                owner_user_id=resolved.owner_user_id,
+                limit=100,
+            )
         # Batch-load customers to avoid N+1.
         customer_ids = list({p.customer_id for p in profiles})
         customers_map: dict[str, Customer] = {}

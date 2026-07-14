@@ -1241,7 +1241,7 @@
       "area": "看板",
       "title": "全局搜索(跨 Agent/客户/对话/用户)",
       "user_visible_behavior": "用户在顶部搜索框输入关键词,跨实体(Agent/客户/对话/用户)搜索,结果分类展示,点击直达对应详情",
-      "status": "not_started",
+      "status": "passing",
       "plan": "harness/docs/plan-global-search.md",
       "verification": [
         "新增 GET /search?q= 全局搜索端点(聚合 agents/customers/conversations/users,各自 ILIKE,按类型分组返回)",
@@ -1250,7 +1250,16 @@
         "权限:按当前用户可访问范围过滤(super_admin 全局,门店用户本租户)",
         "pytest 覆盖跨实体搜索/权限过滤/租户隔离 + npm run build 通过"
       ],
-      "evidence": [],
+      "evidence": [
+        "后端各实体加 search:AgentRepository.search/search_for_tenant(name ILIKE)+ CustomerProfileRepository.search_for_tenant(JOIN Customer 按 name/identity_key ILIKE)+ CustomerRepository.search + ConversationRepository.search_all(title 跨租户)+ UserRepository.search + TenantRepository.search;agents GET / 与 customers GET /profiles/ 各加 ?search= 参数透传到 Service(app/repositories/*.py + app/api/v1/agents.py + app/api/v1/customers.py)",
+        "新增 GET /api/v1/search?q=&limit_per_type=5 聚合端点:读聚合器直连多 Repository(同 /dashboard/overview 模式),asyncio.gather 并发查 agents/customers/conversations;q.strip()<2 字符直接返回空;门店用户按本租户 scope、is_cross_tenant_viewer(super_admin/hq_staff)跨租户并额外返回 users+tenants;每条返回轻量 DTO {id,label,type}(app/api/v1/search.py + app/schemas/search.py)",
+        "对话搜索复用 conversation-management(50)的 list_for_user search(title OR message content);门店用户走该路径,super_admin 走新加的 search_all(仅 title 跨租户,保持聚合查询轻量)",
+        "权限隔离下沉到 Repository:每个 search 方法自带 tenant_id 过滤,Controller 不绕过;super_admin/hq_staff 经 is_cross_tenant_viewer 分支走无 tenant_id 的平台级查询(app/services/permission_service.py is_cross_tenant_viewer 复用)",
+        "前端 types.ts 加 GlobalSearchResult/SearchResultItem;endpoints.ts 加 globalSearch(q, limitPerType);queries.ts 加 useGlobalSearch(300ms 防抖 useDebouncedValue + useQuery enabled=q.length>=2 + placeholderData 保持下拉稳定)",
+        "前端新增 components/layout/global-search-box.tsx:放大镜 Input + 防抖 + 下拉分类(智能体/客户/对话/用户/门店,top 5 每类)+ 每项点击 navigate 详情页 + 「查看全部」跳列表页带 ?search=;Escape/外部点击关闭;dashboard-layout.tsx 顶栏内嵌(移动端隐藏,不破坏既有头像下拉布局)",
+        "tests/test_global_search.py 20 个测试全过:agents/customers 单实体 search 参数、global 各实体命中(name/title/identity_key)、跨分类聚合、q<2 字符空结果、门店用户租户隔离(看不到他租户 agent/customer)、super_admin/hq_staff 额外返回 users+tenants 且跨租户可见、limit_per_type 截断(默认 5)、DTO shape {id,label,type}",
+        "验证全过:./init.sh ruff clean + pytest 434 passed(基线 414 + 20 新);cd frontend && npm run build 0 类型错误(tsc -b + vite);cd frontend && npx oxlint src/ 0 warnings 0 errors"
+      ],
       "notes": "第一梯队。现状:只有 users 有 search 参数,其他实体无搜索,无跨实体全局搜索。详细 plan 执行到时写。依赖 conversation-management(50)的对话搜索。"
     },
     {

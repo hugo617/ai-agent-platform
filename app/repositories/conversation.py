@@ -102,6 +102,24 @@ class ConversationRepository(TenantScopedRepository[Conversation]):
         result = await self.db.execute(stmt)
         return list(result.scalars().all())
 
+    async def search_all(self, *, keyword: str, limit: int = 5) -> list[Conversation]:
+        """Cross-tenant title search (super_admin global search aggregator).
+
+        Ignores ``tenant_id`` and ``user_id`` — super_admin runs across the
+        whole platform in the overview endpoints, so the global search mirrors
+        that scope. Matches the title only (not message content) to keep the
+        aggregator query cheap; the per-user ``list_for_user`` already does the
+        full title+message search for the chat page.
+        """
+        like = f"%{keyword}%"
+        stmt = (
+            select(Conversation)
+            .where(Conversation.title.ilike(like))
+            .order_by(Conversation.updated_at.desc())
+            .limit(limit)
+        )
+        return list((await self.db.execute(stmt)).scalars().all())
+
     async def count_for_tenant(
         self, tenant_id: str, since: datetime | None = None
     ) -> int:

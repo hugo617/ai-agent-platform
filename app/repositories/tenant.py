@@ -66,6 +66,22 @@ class TenantRepository(BaseRepository[Tenant]):
         tenant, count = row
         return tenant, int(count)
 
+    async def search(self, *, keyword: str, limit: int = 5) -> list[Tenant]:
+        """Case-insensitive name match (super_admin global search aggregator).
+
+        Platform-level: tenants have no ``tenant_id`` of their own, so no scope
+        filter is applied. Only super_admin reaches this branch (the global
+        search endpoint gates users/tenants on ``is_cross_tenant_viewer``).
+        """
+        like = f"%{keyword}%"
+        stmt = (
+            select(Tenant)
+            .where(Tenant.name.ilike(like))
+            .order_by(Tenant.created_at.desc())
+            .limit(limit)
+        )
+        return list((await self.db.execute(stmt)).scalars().all())
+
 
 class UserRepository(BaseRepository[User]):
     model = User
@@ -103,6 +119,30 @@ class UserRepository(BaseRepository[User]):
         )
         result = await self.db.execute(stmt)
         return result.scalar_one_or_none()
+
+    async def search(self, *, keyword: str, limit: int = 5) -> list[User]:
+        """Cross-tenant username/email/real_name search (super_admin aggregator).
+
+        Platform-level: User has no ``tenant_id`` of its own. Only super_admin
+        reaches this branch (the global search endpoint gates users/tenants on
+        ``is_cross_tenant_viewer``), mirroring the existing user-list super_admin
+        path.
+        """
+        like = f"%{keyword}%"
+        stmt = (
+            select(User)
+            .where(
+                User.is_deleted.is_(False),
+                or_(
+                    User.username.ilike(like),
+                    User.email.ilike(like),
+                    User.real_name.ilike(like),
+                ),
+            )
+            .order_by(User.created_at.desc())
+            .limit(limit)
+        )
+        return list((await self.db.execute(stmt)).scalars().all())
 
     async def update_last_login(self, user_id: str) -> None:
         user = await self.db.get(User, user_id)

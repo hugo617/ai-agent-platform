@@ -23,6 +23,7 @@ from app.api.v1 import (
     members,
     permissions,
     roles,
+    search,
     tenants,
     users,
 )
@@ -80,6 +81,7 @@ def create_app() -> FastAPI:
     app.include_router(billing.router, prefix=prefix)
     app.include_router(dashboard.router, prefix=prefix)
     app.include_router(logs.router, prefix=prefix)
+    app.include_router(search.router, prefix=prefix)
 
     @app.get("/health", tags=["meta"])
     async def health() -> dict:

@@ -12,7 +12,7 @@ view. The super_admin cross-store aggregation uses a separate unscoped query
 
 from datetime import datetime
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import Base
@@ -50,6 +50,28 @@ class CustomerRepository(BaseRepository[Customer]):
             select(Customer)
             .where(Customer.is_deleted.is_(False))
             .order_by(Customer.created_at.desc())
+        )
+        return list((await self.db.execute(stmt)).scalars().all())
+
+    async def search(self, *, keyword: str, limit: int = 5) -> list[Customer]:
+        """Case-insensitive match on name OR identity_key across all stores.
+
+        Used by the global search endpoint for cross-tenant viewers
+        (super_admin / hq_staff): the Customer table is platform-level (no
+        ``tenant_id``), so no tenant filter is applied here.
+        """
+        like = f"%{keyword}%"
+        stmt = (
+            select(Customer)
+            .where(
+                Customer.is_deleted.is_(False),
+                or_(
+                    Customer.name.ilike(like),
+                    Customer.identity_key.ilike(like),
+                ),
+            )
+            .order_by(Customer.created_at.desc())
+            .limit(limit)
         )
         return list((await self.db.execute(stmt)).scalars().all())
 
@@ -135,6 +157,92 @@ class CustomerProfileRepository(TenantScopedRepository[CustomerProfile]):
             select(CustomerProfile)
             .where(CustomerProfile.is_deleted.is_(False))
             .order_by(CustomerProfile.created_at.desc())
+        )
+        return list((await self.db.execute(stmt)).scalars().all())
+
+    async def search_for_tenant(
+        self, *, keyword: str, tenant_id: str, limit: int = 100
+    ) -> list[CustomerProfile]:
+        """Store-scoped name/identity_key search (joins the global Customer).
+
+        ``name`` and ``identity_key`` live on the platform-level Customer; this
+        store's profiles carry only ``remark``/``tags``/``status``. We JOIN to
+        Customer so a store user can find a profile by the customer's name or
+        identity, while the ``tenant_id`` filter keeps isolation in the
+        repository layer (per the multi-tenant rule).
+        """
+        like = f"%{keyword}%"
+        stmt = (
+            select(CustomerProfile)
+            .join(Customer, Customer.id == CustomerProfile.customer_id)
+            .where(
+                CustomerProfile.tenant_id == tenant_id,
+                CustomerProfile.is_deleted.is_(False),
+                Customer.is_deleted.is_(False),
+                or_(
+                    Customer.name.ilike(like),
+                    Customer.identity_key.ilike(like),
+                ),
+            )
+            .order_by(CustomerProfile.created_at.desc())
+            .limit(limit)
+        )
+        return list((await self.db.execute(stmt)).scalars().all())
+
+    async def search_for_scope(
+        self,
+        *,
+        keyword: str,
+        scope: str,
+        tenant_id: str,
+        group_tenant_ids: list[str] | None = None,
+        owner_user_id: str | None = None,
+        limit: int = 100,
+    ) -> list[CustomerProfile]:
+        """Keyword search that honours the resolved row-level data scope.
+
+        Mirrors ``list_for_scope`` (same scope semantics + is_deleted filter)
+        and layers the Customer name/identity_key ILIKE on top, so a search
+        returns exactly the same population the user sees without a search —
+        no silent narrowing (group) or broadening (self) when a keyword is
+        present. Tenant/scope isolation stays in this repository layer.
+
+        - ``all``     → ignore tenant_id (cross-store, platform viewers)
+        - ``tenant``  → ``tenant_id == tenant_id``
+        - ``group``   → ``tenant_id IN (group_tenant_ids)``
+        - ``self``    → ``tenant_id == tenant_id AND created_by == owner_user_id``
+        """
+        like = f"%{keyword}%"
+        if scope == "all":
+            tenant_clause = CustomerProfile.is_deleted.is_(False)
+        elif scope == "group":
+            ids = group_tenant_ids or [tenant_id]
+            tenant_clause = CustomerProfile.is_deleted.is_(False) & (
+                CustomerProfile.tenant_id.in_(ids)
+            )
+        elif scope == "self":
+            tenant_clause = (
+                CustomerProfile.is_deleted.is_(False)
+                & (CustomerProfile.tenant_id == tenant_id)
+                & (CustomerProfile.created_by == owner_user_id)
+            )
+        else:  # "tenant" (safe fallback)
+            tenant_clause = CustomerProfile.is_deleted.is_(False) & (
+                CustomerProfile.tenant_id == tenant_id
+            )
+        stmt = (
+            select(CustomerProfile)
+            .join(Customer, Customer.id == CustomerProfile.customer_id)
+            .where(
+                tenant_clause,
+                Customer.is_deleted.is_(False),
+                or_(
+                    Customer.name.ilike(like),
+                    Customer.identity_key.ilike(like),
+                ),
+            )
+            .order_by(CustomerProfile.created_at.desc())
+            .limit(limit)
         )
         return list((await self.db.execute(stmt)).scalars().all())
 

@@ -18,6 +18,7 @@ import type {
   CustomerUsage,
   DashboardOverview,
   DashboardTrends,
+  GlobalSearchResult,
   Group,
   GroupCreate,
   GroupUpdate,
@@ -736,6 +737,22 @@ export async function fetchDashboardTrends(days: number): Promise<DashboardTrend
 
 export async function fetchDashboardOverview(): Promise<DashboardOverview> {
   const { data } = await api.get<DashboardOverview>("/dashboard/overview");
+  return data;
+}
+
+// ---------- global cross-entity search (priority 51) ----------
+// GET /search?q=&limit_per_type= fans a single query across agents / customers /
+// conversations (+ users / tenants for super_admin / hq_staff). The backend
+// enforces tenant scoping: store users see their own tenant; cross-tenant
+// viewers additionally get users + tenants. Short queries (< 2 chars) return an
+// empty result, so callers gate the request on q.length >= 2 to avoid noise.
+export async function globalSearch(
+  q: string,
+  limitPerType = 5,
+): Promise<GlobalSearchResult> {
+  const { data } = await api.get<GlobalSearchResult>("/search", {
+    params: { q, limit_per_type: limitPerType },
+  });
   return data;
 }
 

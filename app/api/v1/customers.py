@@ -11,7 +11,7 @@ Two access patterns, two permission guards:
   (super_admin full power + hq_staff read-only HQ panorama).
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import (
@@ -142,12 +142,23 @@ async def get_customer_usage(
     dependencies=[Depends(require_permission("customers", "read"))],
 )
 async def list_profiles(
+    search: str | None = Query(
+        default=None,
+        description="Substring match on customer name or identity_key (ILIKE)",
+    ),
     user: CurrentUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> list[CustomerProfileRead]:
-    """List customer profiles. Store users see their tenant; super_admin sees all."""
+    """List customer profiles, optionally filtered by a name/identity search.
+
+    Store users see their tenant; super_admin sees all. ``search`` matches the
+    customer's name or identity_key (case-insensitive substring).
+    """
     return await CustomerService(db).list_profiles(
-        user.user_id, user.tenant_id, platform_role=user.platform_role
+        user.user_id,
+        user.tenant_id,
+        platform_role=user.platform_role,
+        search=search,
     )
 
 

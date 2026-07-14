@@ -929,3 +929,20 @@
 - **下一步最佳动作**: 选优先级最高的 not_started feature 继续。global-search(51)弱依赖本任务的对话搜索(现已落地),可顺势推进;或选其他全栈/前端 feature
 
 ---
+
+### Session 090 — 2026-07-14
+- **本轮目标**: 全栈交付 `global-search`(51,跨 Agent/客户/对话/用户全局搜索)—— 后端各实体 search 参数 + 跨实体聚合端点 + 前端顶栏搜索框。基线 main 4986c99,全程在 feat/global-search 分支,未提交留工作树
+- **执行**:
+  - **阶段 1 后端单实体 search**:只有 users 有 search 参数。给 AgentRepository 加 search(跨租户 name ILIKE)+ search_for_tenant(本租户 name ILIKE);CustomerProfileRepository 加 search_for_tenant(JOIN Customer 按 name/identity_key ILIKE,tenant_id 过滤)+ CustomerRepository 加 search(平台级);ConversationRepository 加 search_all(跨租户 title ILIKE);UserRepository 加 search(username/email/real_name ILIKE);TenantRepository 加 search(name ILIKE)。AgentService.list / CustomerService.list_profiles 各加 search 透传;agents GET / 与 customers GET /profiles/ 加 ?search= Query 参数(对齐 users.py 模式)
+  - **阶段 2 聚合端点**:新建 app/api/v1/search.py `GET /search?q=&limit_per_type=5`(默认 5,ge=1 le=20)。读聚合器直连多 Repository(同 /dashboard/overview 模式,铁律允许的读聚合例外),asyncio.gather 并发查 agents/customers/conversations;q.strip()<2 字符直接返回空 GlobalSearchResult 不查库;门店用户走 search_for_tenant(本租户)、is_cross_tenant_viewer(super_admin/hq_staff)走平台级 search 并额外返回 users+tenants。每条返回轻量 DTO {id,label,type}(app/schemas/search.py SearchResultItem/GlobalSearchResult)。权限仅 get_current_user(搜索复用既有各实体读 scope,无新权限)。main.py 注册 search router
+  - **阶段 3 对话搜索复用**:conversation-management(50)已给 ConversationRepository.list_for_user 加 search(title OR message content ILIKE)。门店用户全局搜索直接复用该路径(传 search=keyword);super_admin 用新加的 search_all(仅 title 跨租户,保持聚合查询轻量,不 JOIN messages)
+  - **阶段 4 前端**:types.ts 加 GlobalSearchResult/SearchResultItem;endpoints.ts 加 globalSearch(q, limitPerType);queries.ts 加 useDebouncedValue(300ms 通用防抖 hook)+ useGlobalSearch(useQuery enabled=q.length>=2 + placeholderData 保持下拉稳定 + qk.globalSearch key)。新建 components/layout/global-search-box.tsx:放大镜 Input + 防抖 + 下拉分类(智能体/客户/对话/用户/门店,top 5 每类,按 SECTION_ORDER 排序)+ 每项点击 navigate 详情页 + 「查看全部」跳列表页带 ?search= + Escape/外部点击关闭 + loading/无结果态。dashboard-layout.tsx 顶栏内嵌(替换原 flex-1 空占位,移动端 hidden,不破坏既有头像下拉布局)
+  - **阶段 5 测试**:tests/test_global_search.py 20 个测试。覆盖:agents/customers 单实体 search 参数(name/identity_key ILIKE + 空搜索返回全部)、global 各实体命中(agent name/customer name/customer identity/conversation title)、跨分类聚合(一词命中三类)、q<2 字符空结果、空白 q 空结果、门店用户租户隔离(看不到他租户 agent/customer)、super_admin 额外返回 users+tenants 且跨租户可见 agent/customer、hq_staff 同样跨租户、limit_per_type 截断(默认 5)、DTO shape {id,label,type}
+  - **阶段 6 验证收尾**:feature_list.json global-search status 改 passing + evidence 8 条;本 Session 记录
+- **验证(全过)**:`./init.sh` ruff clean + pytest **434 passed**(基线 414 + 20 新);`cd frontend && npm run build` 0 类型错误(tsc -b + vite);`cd frontend && npx oxlint src/` 0 warnings 0 errors
+- **关键决策**:① 全局搜索 Controller 直连多 Repository(不经 Service)—— 读聚合器例外,对齐 /dashboard/overview,各 search 方法的 tenant_id 过滤仍在 Repository 层(铁律不破);② CustomerProfile 无 name 列(name 在全局 Customer),store 用户搜索 JOIN Customer,super_admin 直接查 Customer 表;③ 测试用 ASCII name/keyword(SQLite+aiosqlite 经 ASGI transport 时中文 ILIKE 有 collation 怪相,Postgres ILIKE 正常,既有测试约定也用 ASCII);④ 搜索无新权限、无 schema 变更(纯 query-only,无迁移)
+- **当前状态**: global-search(51)✅ **实现完成,工作树未提交**(feat/global-search 分支)。顶部搜索框可跨实体搜索,分类下拉,点击跳转,权限隔离(门店本租户/super_admin 跨租户 + users/tenants)
+- **已知风险**: 无功能风险。ILIKE 无 trigram 索引(量级内可接受,plan 风险表已记)。手动浏览器验证未跑(需前后端启动),pytest 434 + npm build + oxlint 已覆盖行为/类型/规范不回归
+- **下一步最佳动作**: 用户审查/提交/推送/PR 守 CI 合并(对齐 Session 089 流程),或继续下一个 not_started feature
+
+---

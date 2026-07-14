@@ -23,12 +23,30 @@ class AgentService:
         return agent
 
     async def list(
-        self, user_id: str, tenant_id: str, platform_role: str | None = None
+        self,
+        user_id: str,
+        tenant_id: str,
+        platform_role: str | None = None,
+        *,
+        search: str | None = None,
     ) -> list[AgentRead]:
+        """List the tenant's agents, optionally narrowed by a name search.
+
+        Mirrors the users list behaviour: ``search`` is a case-insensitive
+        substring on the agent name; empty/None returns everything. Stays
+        tenant-scoped (the original semantics) — ``tenant_id`` filtering lives
+        in the repository, so multi-tenant isolation cannot be forgotten.
+        """
         await permission_service.require(
             user_id, tenant_id, self.OBJECT, "read", platform_role=platform_role
         )
-        agents = await self.repo.list_for_tenant(tenant_id)
+        kw = (search or "").strip() or None
+        if kw is None:
+            agents = await self.repo.list_for_tenant(tenant_id)
+        else:
+            agents = await self.repo.search_for_tenant(
+                keyword=kw, tenant_id=tenant_id, limit=100
+            )
         return [AgentRead.model_validate(a) for a in agents]
 
     async def statistics(
