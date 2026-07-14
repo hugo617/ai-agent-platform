@@ -101,9 +101,12 @@ def create_app() -> FastAPI:
             elapsed = time.perf_counter() - start
             IN_PROGRESS.dec()
             # Prefer the matched route template (keeps cardinality bounded);
-            # fall back to the raw path if the route isn't resolved (e.g. 404).
+            # collapse unmatched routes (404) into a single "unmatched" label
+            # rather than the raw path — otherwise a client hitting distinct
+            # unknown URLs would create one label series per URL and exhaust
+            # the Prometheus registry (cardinality bomb).
             route = request.scope.get("route")
-            label_path = getattr(route, "path", None) or path
+            label_path = getattr(route, "path", None) or "unmatched"
             REQUESTS.labels(request.method, label_path, str(status_code)).inc()
             LATENCY.labels(request.method, label_path).observe(elapsed)
 
