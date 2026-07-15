@@ -41,11 +41,10 @@ async def upload_client(test_env, tmp_path: Path):
     """An app_client whose local storage dir is a tmp dir, not the real uploads/.
 
     ``settings.storage_local_dir`` is what ``LocalStorage.__init__`` reads to
-    resolve its root, and ``create_app`` constructs a fresh ``LocalStorage``
-    while wiring the /static mount — so patching the attribute *before*
-    ``create_app`` runs makes both the mount and ``get_storage()`` land inside
-    ``tmp_path``. This is the hermetic equivalent of pointing a real deploy at
-    an uploads volume.
+    resolve its root, and ``get_storage()`` builds the backend lazily — so
+    patching the attribute *before* ``create_app`` runs makes ``get_storage()``
+    land inside ``tmp_path``. This is the hermetic equivalent of pointing a
+    real deploy at an uploads volume.
     """
     from contextlib import asynccontextmanager
 
@@ -106,9 +105,9 @@ async def test_upload_png_returns_url_and_key(upload_client):
     body = resp.json()
     assert body["content_type"] == "image/png"
     assert body["size"] == len(_PNG_BYTES)
-    assert body["url"].startswith("/static/")
-    # url and key agree: /static/{key}
-    assert body["url"].removeprefix("/static/") == body["key"]
+    assert body["url"].startswith("uploads/files/")
+    # url and key agree: uploads/files/{key}
+    assert body["url"].removeprefix("uploads/files/") == body["key"]
     assert body["key"].endswith(".png")
     # No original filename leaked into the key — only tenant/uuid.ext.
     assert "avatar" not in body["key"]
@@ -117,20 +116,48 @@ async def test_upload_png_returns_url_and_key(upload_client):
 
 
 @pytest.mark.asyncio
-async def test_upload_then_get_static_returns_bytes(upload_client):
-    """The returned /static URL serves the exact bytes we uploaded."""
+async def test_upload_then_download_returns_bytes(upload_client):
+    """The authenticated download route serves the exact bytes we uploaded.
+
+    Replaces the old ``/static`` mount test: downloads now go through
+    ``GET /api/v1/uploads/files/{key}`` which requires a token. The returned
+    ``url`` is a relative path (``uploads/files/{key}``) the frontend axios
+    instance joins to its ``/api/v1`` baseURL; here we build the full path.
+    """
     resp = await upload_client.post(
         "/api/v1/uploads/upload",
         files={"file": _png("logo.png")},
         headers=AUTH,
     )
     assert resp.status_code == 200, resp.text
-    url = resp.json()["url"]
+    key = resp.json()["key"]
 
-    got = await upload_client.get(url)
+    got = await upload_client.get(f"/api/v1/uploads/files/{key}", headers=AUTH)
     assert got.status_code == 200
     assert got.content == _PNG_BYTES
     assert got.headers["content-type"] == "image/png"
+
+
+@pytest.mark.asyncio
+async def test_download_requires_auth(upload_client):
+    """No Authorization header on the download route → 401 (was 200 under /static)."""
+    resp = await upload_client.post(
+        "/api/v1/uploads/upload",
+        files={"file": _png()},
+        headers=AUTH,
+    )
+    key = resp.json()["key"]
+    got = await upload_client.get(f"/api/v1/uploads/files/{key}")
+    assert got.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_download_404_missing(upload_client):
+    """A key that doesn't exist on disk → 404, not 500."""
+    got = await upload_client.get(
+        "/api/v1/uploads/files/does-not-exist/abc.png", headers=AUTH
+    )
+    assert got.status_code == 404
 
 
 @pytest.mark.asyncio
@@ -165,8 +192,8 @@ async def test_upload_rejects_oversized_file(upload_client):
 @pytest.mark.asyncio
 async def test_upload_requires_auth(app_client):
     """No Authorization header → 401 (uploads are authenticated-only)."""
-    # app_client (not upload_client) is fine here — the static mount is already
-    # wired; we only assert the auth gate, which runs before storage is touched.
+    # app_client (not upload_client) is fine here — we only assert the auth
+    # gate, which runs before storage is touched.
     resp = await app_client.post(
         "/api/v1/uploads/upload",
         files={"file": _png()},
@@ -193,3 +220,75 @@ async def test_upload_key_is_tenant_scoped(upload_client):
     assert "/" in key
     assert prefix  # non-empty tenant prefix
     assert ".." not in key
+
+
+# --------------------------------------------------------------- S3 backend
+#
+# These exercise the real AmazonS3Storage against a moto-mocked S3, so no AWS
+# credentials are needed. We build the backend directly (not through the upload
+# HTTP route) because the route's download endpoint is local-only — S3 save
+# returns an absolute URL the route doesn't serve. Testing the backend class
+# directly is what proves the boto3 calls are wired correctly.
+
+
+@pytest.fixture
+def s3_backend(monkeypatch, tmp_path):
+    """A real AmazonS3Storage against an isolated moto S3.
+
+    moto reads fake credentials from the environment; we set them, flip the
+    storage settings to s3, create the bucket, and yield a fresh backend.
+    """
+    monkeypatch.setenv("AWS_ACCESS_KEY_ID", "test")
+    monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "test")
+    monkeypatch.setenv("AWS_DEFAULT_REGION", "us-east-1")
+
+    from moto import mock_aws
+
+    from app.core import storage as storage_mod
+    from app.core.config import settings
+
+    bucket = "test-uploads"
+    with mock_aws():
+        import boto3
+
+        boto3.client("s3", region_name="us-east-1").create_bucket(
+            Bucket=bucket
+        )
+        with patch.object(settings, "s3_bucket", bucket), \
+             patch.object(settings, "s3_region", "us-east-1"), \
+             patch.object(settings, "s3_access_key", "test"), \
+             patch.object(settings, "s3_secret_key", "test"):
+            storage_mod.reset_storage_cache()
+            yield storage_mod.AmazonS3Storage()
+            storage_mod.reset_storage_cache()
+
+
+@pytest.mark.asyncio
+async def test_s3_save_returns_absolute_url_and_object_exists(s3_backend):
+    """save() puts the object in S3 and returns a public https URL."""
+    import boto3
+
+    url = await s3_backend.save(_PNG_BYTES, "image/png", "t1/abc.png")
+    assert url == "https://test-uploads.s3.us-east-1.amazonaws.com/t1/abc.png"
+    # The object really landed in (mocked) S3.
+    objs = boto3.client("s3", region_name="us-east-1").list_objects_v2(
+        Bucket="test-uploads"
+    )
+    keys = [o["Key"] for o in objs.get("Contents", [])]
+    assert "t1/abc.png" in keys
+
+
+@pytest.mark.asyncio
+async def test_s3_delete_is_idempotent(s3_backend):
+    """Deleting a key that was never written is a no-op (S3 semantics)."""
+    # No setup — the key doesn't exist; delete must not raise.
+    await s3_backend.delete("never/existed.png")
+    assert await s3_backend.exists("never/existed.png") is False
+
+
+@pytest.mark.asyncio
+async def test_s3_exists_after_save(s3_backend):
+    """exists() reflects put_object: False before save, True after."""
+    assert await s3_backend.exists("t2/img.png") is False
+    await s3_backend.save(_PNG_BYTES, "image/png", "t2/img.png")
+    assert await s3_backend.exists("t2/img.png") is True

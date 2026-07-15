@@ -18,6 +18,14 @@ class MeResponse(BaseModel):
     # role sets. super_admin gets an empty list here and the frontend bypasses
     # (platform_role === "super_admin" short-circuits every check).
     permissions: list[str] = []
+    # Self-service profile fields (priority 49): exposed so the profile page can
+    # pre-fill display_name/real_name/phone/avatar rather than starting blank.
+    # CurrentUser (from the token) carries none of these, so _build_me_response
+    # loads the DB row to populate them.
+    display_name: str | None = None
+    real_name: str | None = None
+    phone: str | None = None
+    avatar: str | None = None
 
 
 class LoginRequest(BaseModel):

@@ -67,11 +67,16 @@ import type {
 // ---------- file upload (priority 56) ----------
 // POST /uploads/upload takes a multipart FormData body (the axios `api` instance
 // already attaches the bearer token), validates the content-type + size on the
-// backend, and returns the public URL the caller should persist on its own
-// model (avatar/logo/…). The caller is responsible for saving the returned URL.
+// backend, and returns the URL the caller should persist on its own model
+// (avatar/logo/…). The caller is responsible for saving the returned URL.
+//
+// The URL is served behind the authenticated download route (local backend:
+// relative "uploads/files/{key}" joined to this instance's baseURL; S3/OSS:
+// absolute https), so it must be rendered through <SecureImage>, NOT a plain
+// <img src> — <img> cannot attach the Authorization header the route requires.
 
 export interface UploadResponse {
-  url: string; // e.g. /static/{tenant}/{uuid}.png — what <img src=> should use
+  url: string; // e.g. uploads/files/{tenant}/{uuid}.png — render via <SecureImage>
   key: string; // the storage key (no original filename)
   size: number; // bytes
   content_type: string; // the validated MIME type

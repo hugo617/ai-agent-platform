@@ -1204,7 +1204,8 @@
         "验证:./init.sh ruff All checks passed + pytest 393 passed(基线 385 + 新增 8)+ npm run build 0 类型错误 + npx oxlint src/ 0 warnings 0 errors",
         "无迁移:User 模型已有 password/password_updated_at/display_name/real_name/phone/avatar,全部复用,零 schema 改动",
         "不做:头像上传(依赖 file-upload 56,avatar 字段已留接口)、2FA、第三方账号绑定管理(Logto 管)",
-        "交付:PR #54 squash-merge 入 main(48f74b9),CI 4 job 全绿一次过(Backend pytest+ruff / Migrations / Frontend typecheck+build+oxlint / E2E Playwright),零修红"
+        "交付:PR #54 squash-merge 入 main(48f74b9),CI 4 job 全绿一次过(Backend pytest+ruff / Migrations / Frontend typecheck+build+oxlint / E2E Playwright),零修红",
+        "[深度审查修复 2026-07-15] 兑现 user_visible_behavior 承诺的「编辑资料(姓名/头像)」:① 头像上传回填 —— profile-page.tsx 加 FileUpload 头像区(accept 图片 maxSizeMb 5 + SecureImage 回显当前头像)+ avatar 独立 state + onSubmit 随文字字段一起 PUT。② MeResponse 补全 profile 字段 —— schemas/auth.py MeResponse 加 display_name/real_name/phone/avatar;_build_me_response 无条件查 DB 取 db_user 填充(CurrentUser 来自 token 不带 profile 字段)。③ 修复 #64 登记的「表单无法预填」—— profile-page 表单 defaultValues 从 me 预填(useForm values 选项)。tests/test_profile.py 新增 2 测试(test_me_returns_profile_fields + test_update_avatar_persists_and_echoes),共 10 passed。"
       ],
       "notes": "第一梯队 SaaS 体面。现状:无个人中心页,GET /auth/me 只读,用户改不了自己信息。头像上传依赖 file-upload(56),可先做改密码/资料文字字段。详细 plan 执行到时写。"
     },
@@ -1368,7 +1369,8 @@
         "frontend/src/pages/logs-page.tsx:「导出 CSV」按钮,透传当前 action/resource/date/tenant 过滤",
         "frontend/src/pages/billing-page.tsx:「导出用量」按钮(usage)",
         "验证:./init.sh 全绿 pytest 478 passed(baseline 461 + 17 新增);cd frontend && npm run build 通过(tsc+vite,0 错误);npx oxlint src/ 0 警告 0 错误",
-        "ship-it 收尾(Session 099):清理冗余别名;审查修复跨租户对话导出数据丢失 bug(search_all 的 title ILIKE '%%' 丢弃 NULL title → 改为直接 select(Conversation) 无损导出 + 加回归测试 test_export_conversations_super_admin_null_title);PR #60 base main;GitHub Actions 4/4 一次全绿(Frontend 28s / Migrations 41s / E2E 1m54s / Backend 5m1s,0 次修红);squash 合并入 main commit 10b4ef0,删除远端分支;pytest 479 passed(478+1 回归)"
+        "ship-it 收尾(Session 099):清理冗余别名;审查修复跨租户对话导出数据丢失 bug(search_all 的 title ILIKE '%%' 丢弃 NULL title → 改为直接 select(Conversation) 无损导出 + 加回归测试 test_export_conversations_super_admin_null_title);PR #60 base main;GitHub Actions 4/4 一次全绿(Frontend 28s / Migrations 41s / E2E 1m54s / Backend 5m1s,0 次修红);squash 合并入 main commit 10b4ef0,删除远端分支;pytest 479 passed(478+1 回归)",
+        "[深度审查修复 2026-07-15] 补测试覆盖矩阵空白(test_export.py 原 18 → 25,新增 7):① test_export_usage_member_forbidden —— 剥离 member 的 billing:read 覆盖 exports.py 自写 raise PermissionError 拒绝分支(原测试矩阵无法触达)+ 配对 test_export_usage_member_allowed_with_billing_read(billing:read 放行);② hq_staff 导出行为首次覆盖:test_export_customers_hq_staff_cross_tenant / test_export_logs_hq_staff_cross_tenant / test_export_hq_staff_with_tenant_filter(?tenant_id 过滤);③ 补 test_export_conversations_tenant_isolation(原缺失)+ test_export_usage_super_admin_cross_tenant(原缺失)。usage 分支手写 PermissionError 保留(双权限 billing:read OR wallet:read 需求合理,require 只能查单个)。"
       ],
       "notes": "第二梯队。现状:无任何导出能力。复用 TanStack Table 数据,加后端 CSV streaming。门店月度经营分析 + 数据可携带性基本要求。详细 plan 执行到时写。用量导出依赖 token计费(43)。"
     },
@@ -1393,7 +1395,8 @@
         "测试: tests/test_upload.py 6 个用例全过(上传 PNG 返回 url+key + GET /static 200 round-trip 字节一致 / 非法类型 400 / 超大 413 / 未认证 401 / key 为 tenant/uuid.ext 无原文件名)。upload_client fixture 用 tmp_path 覆盖 storage_local_dir 保证 hermetic。",
         "验证命令: ./init.sh 全绿 ruff + pytest 485 passed(基线 479 + 6 新增); cd frontend && npm run build 通过(tsc + vite,0 错误); npx oxlint src/ 0 warnings 0 errors。",
         "前端: frontend/src/components/ui/file-upload.tsx(可复用组件:点击/拖拽 + 图片预览 + 进度条 + 客户端大小预检 + onUploaded 回调); frontend/src/api/endpoints.ts 新增 uploadFile(file, onProgress); 消费方接入: settings-page.tsx TenantBrandingCard 的 Logo 字段从纯 URL 输入改为 FileUpload 上传 + 保留 URL 输入(品牌设置 settings:update,owner/admin)。",
-        "ship-it 收尾(Session 101): 清理 uploads/ 运行时目录加入 .gitignore + 修复 endpoints.ts uploadFile 块插在 import 中间分裂 import 组;PR #62 squash 合并入 main(commit 1643f2c);GitHub Actions 4/4 首轮全绿(Frontend 28s / Migrations 41s / E2E 1m53s / Backend pytest+ruff+cov-fail-under=80 4m36s),0 次修红。E2E 只覆盖 login→agent→chat mainflow 不触达 settings/品牌/logo,settings-page 改动无影响。"
+        "ship-it 收尾(Session 101): 清理 uploads/ 运行时目录加入 .gitignore + 修复 endpoints.ts uploadFile 块插在 import 中间分裂 import 组;PR #62 squash 合并入 main(commit 1643f2c);GitHub Actions 4/4 首轮全绿(Frontend 28s / Migrations 41s / E2E 1m53s / Backend pytest+ruff+cov-fail-under=80 4m36s),0 次修红。E2E 只覆盖 login→agent→chat mainflow 不触达 settings/品牌/logo,settings-page 改动无影响。",
+        "[深度审查修复 2026-07-15] 修复 2 个遗留问题:① /static 裸挂载改带鉴权下载端点 —— 移除 main.py 的 StaticFiles 匿名挂载(任何人持 URL 即可下载 + tenant_id 可枚举),新增 GET /uploads/files/{key} 走 get_current_user + FileResponse(路径遍历防护复用 LocalStorage._path);LocalStorage.save 返回值改相对路径 uploads/files/{key}。前端新增 SecureImage 组件(fetch→blob URL,卸载 revoke),dashboard-layout logo + file-upload 预览回显改用 SecureImage。② S3 backend 真实现 —— AmazonS3Storage 从 NotImplementedError stub 改为真实 boto3 调用(save/delete/exists,闭包包装 boto3 kwargs 因 anyio run_sync 不转发 kwargs),boto3 入 requirements 运行依赖 + moto[s3] 入测试依赖。OSS 保持诚实 stub。./init.sh 全绿 499 passed(test_upload 8 local + 3 S3 moto mock)。"
       ],
       "notes": "第二梯队 地基。现状:无上传能力,Customer.avatar 是死字段,无对象存储。是多个功能的前置:用户头像(49)/租户logo(52)/RAG文档(57)。存储抽象本地dev/S3生产可切。详细 plan 执行到时写。被依赖:49/52/57。"
     },

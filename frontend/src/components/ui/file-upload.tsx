@@ -4,6 +4,7 @@ import { UploadCloud, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { apiErrorMessage } from "@/api/client";
 import { uploadFile } from "@/api/endpoints";
+import { SecureImage } from "@/components/ui/secure-image";
 
 /**
  * Reusable file upload component (priority 56).
@@ -123,7 +124,12 @@ export function FileUpload({
     [handleFiles],
   );
 
-  const shownPreview = previewUrl ?? (preview && value ? value : null);
+  // Two preview sources: a freshly-picked local objectURL (no auth needed,
+  // rendered as a plain <img>) or the persisted ``value`` URL (served behind
+  // the authenticated download route, rendered via <SecureImage>). The local
+  // preview wins when present so the user sees what they just selected.
+  const localPreview = previewUrl;
+  const savedPreview = !localPreview && preview && value ? value : null;
 
   return (
     <div className={cn("space-y-2", className)}>
@@ -148,13 +154,21 @@ export function FileUpload({
           disabled && "pointer-events-none opacity-50",
         )}
       >
-        {shownPreview ? (
+        {(localPreview || savedPreview) && (
           <div className="relative">
-            <img
-              src={shownPreview}
-              alt="预览"
-              className="max-h-32 max-w-full rounded object-contain"
-            />
+            {localPreview ? (
+              <img
+                src={localPreview}
+                alt="预览"
+                className="max-h-32 max-w-full rounded object-contain"
+              />
+            ) : (
+              <SecureImage
+                src={savedPreview}
+                alt="预览"
+                className="max-h-32 max-w-full rounded object-contain"
+              />
+            )}
             {state.status !== "uploading" && (
               <button
                 type="button"
@@ -173,7 +187,8 @@ export function FileUpload({
               </button>
             )}
           </div>
-        ) : (
+        )}
+        {!(localPreview || savedPreview) && (
           <>
             <UploadCloud className="h-8 w-8 text-muted-foreground" />
             <span>{label}</span>

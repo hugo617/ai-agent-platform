@@ -39,10 +39,13 @@ async def _build_me_response(user: CurrentUser, db: AsyncSession) -> MeResponse:
     roles = await permission_service.get_roles_for_user_in_domain(
         user.user_id, user.tenant_id
     )
+    # The token's CurrentUser carries only id/tenant/email/platform_role, so the
+    # profile columns (display_name/real_name/phone/avatar) and the authoritative
+    # platform_role must be read from the DB. Load once and reuse for both.
+    db_user = await UserRepository(db).get(user.user_id)
     platform_role = user.platform_role
-    if platform_role is None:
-        db_user = await UserRepository(db).get(user.user_id)
-        platform_role = db_user.platform_role if db_user else None
+    if platform_role is None and db_user is not None:
+        platform_role = db_user.platform_role
 
     permissions: list[str] = []
     if platform_role != "super_admin" and user.tenant_id is not None:
@@ -58,6 +61,10 @@ async def _build_me_response(user: CurrentUser, db: AsyncSession) -> MeResponse:
         platform_role=platform_role,
         roles=roles,
         permissions=permissions,
+        display_name=db_user.display_name if db_user else None,
+        real_name=db_user.real_name if db_user else None,
+        phone=db_user.phone if db_user else None,
+        avatar=db_user.avatar if db_user else None,
     )
 
 
