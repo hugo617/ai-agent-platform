@@ -22,7 +22,7 @@ Design notes (per project 铁律 + plan-file-upload-storage.md):
 
 import uuid
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFile, status
 from pydantic import BaseModel
 
 from app.api.deps import CurrentUser, get_current_user
@@ -128,3 +128,48 @@ async def upload_file(
     return UploadResponse(
         url=url, key=key, size=len(data), content_type=content_type
     )
+
+
+@router.get("/files/{key:path}")
+async def download_file(
+    key: str,
+    user: CurrentUser = Depends(get_current_user),
+) -> Response:
+    """Serve a previously-uploaded file **with authentication**.
+
+    Replaces the old ``/static`` ``StaticFiles`` mount, which was anonymous —
+    anyone holding a URL (``/static/{tenant}/{uuid}.png``) could fetch it, and
+    the ``{tenant_id}`` segment leaked tenant existence. This route requires a
+    valid token; the unguessable uuid in the key is the authorisation (any
+    logged-in user can fetch any key they know — there is no per-tenant
+    isolation on downloads, by design, so cross-tenant viewers like a
+    super-admin looking at a store's logo aren't blocked).
+
+    Only the local backend serves files here: S3/OSS backends return absolute
+    https URLs from ``save``, and the frontend requests those directly. A path
+    traversal key (``../../etc/passwd``) is rejected via ``LocalStorage._path``'s
+    root-escape check; a missing file is a 404.
+    """
+    from fastapi.responses import FileResponse
+
+    from app.core.storage import LocalStorage, StorageError
+
+    storage = get_storage()
+    if not isinstance(storage, LocalStorage):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="file download is only available for the local storage backend",
+        )
+    try:
+        path = storage._path(key)
+    except StorageError as exc:  # key escapes the storage root
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+    if not path.is_file():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="file not found",
+        )
+    return FileResponse(path)

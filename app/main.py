@@ -148,24 +148,6 @@ def create_app() -> FastAPI:
     app.include_router(exports.router, prefix=prefix)
     app.include_router(uploads.router, prefix=prefix)
 
-    # --------------------------------------------------------------
-    # Static file serving for the local storage backend (priority 56).
-    # Uploaded files land under UPLOAD_DIR and are served back at /static/{key}.
-    # The directory is created lazily here so mounting never breaks when the
-    # dir is absent — critically this means tests (which call create_app() once
-    # per test, in a fresh cwd with no uploads/) don't hit StaticFiles' "raise
-    # if directory does not exist" startup error. Only mounted in local mode:
-    # S3/OSS backends return absolute URLs and don't need a local mount.
-    # --------------------------------------------------------------
-    if settings.storage_backend == "local":
-        from fastapi.staticfiles import StaticFiles
-
-        from app.core.storage import LocalStorage
-
-        static_dir = LocalStorage().root
-        static_dir.mkdir(parents=True, exist_ok=True)
-        app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
-
     async def _db_ping(db: AsyncSession) -> str:
         """Run ``SELECT 1`` against the configured DB. Returns 'ok'/'fail'.
 

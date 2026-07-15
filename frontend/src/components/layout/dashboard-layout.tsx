@@ -36,6 +36,7 @@ import { canViewMenu, hasPermission, isSuperAdmin } from "@/lib/permission";
 import { logout } from "@/api/endpoints";
 import { GlobalSearchBox } from "@/components/layout/global-search-box";
 import { NotificationBell } from "@/components/layout/notification-bell";
+import { SecureImage } from "@/components/ui/secure-image";
 import { useApplyTenantTheme, useTenantConfig } from "@/hooks/queries";
 
 interface NavItem {
@@ -129,7 +130,7 @@ export function DashboardLayout() {
       >
         <div className="flex h-16 items-center gap-2 border-b px-6">
           {brandLogo ? (
-            <img
+            <SecureImage
               src={brandLogo}
               alt={brandName}
               className="h-7 w-7 shrink-0 rounded object-contain"

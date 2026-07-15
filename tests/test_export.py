@@ -541,3 +541,169 @@ async def test_export_streaming_response_shape(app_client, db_session, test_env)
     assert "attachment" in resp.headers["content-disposition"]
     assert "customers_" in resp.headers["content-disposition"]
     assert resp.headers["content-disposition"].endswith('.csv"')
+
+
+# ============================================================ coverage gaps
+#
+# The matrix above left hq_staff entirely uncovered (only super_admin exercised
+# the cross-tenant branch), had no 403 test for usage (the self-written
+# PermissionError branch in _require_entity_read), and missed conversations
+# tenant isolation + usage cross-tenant. These fill those gaps.
+
+
+@pytest.mark.asyncio
+async def test_export_usage_member_forbidden(member_client, db_session, test_env):
+    """A role with neither billing:read nor wallet:read → 403.
+
+    Covers the self-written ``raise PermissionError`` branch in
+    ``_require_entity_read`` (exports.py): usage accepts EITHER perm, so we
+    strip the member's seeded billing:read to force the deny path. Without this
+    test the branch was unreachable by the suite.
+    """
+    conv = await _seed_conversation(
+        db_session, tenant_id=test_env.tenant_id, agent_id=_AGENT_ID,
+        user_id=test_env.owner_user, title="用量",
+    )
+    await _seed_usage(
+        db_session, tenant_id=test_env.tenant_id, conversation_id=conv.id,
+        user_id=test_env.owner_user,
+    )
+    # The member role is seeded with billing:read; strip it so the deny path
+    # (neither billing:read nor wallet:read) is exercised. We remove by role
+    # subject, not user_id — the policy is (role, tenant, obj, act).
+    test_env.enforcer.remove_policy(
+        "member", test_env.tenant_id, "billing", "read"
+    )
+    try:
+        resp = await member_client.get("/api/v1/exports/usage", headers=AUTH)
+        assert resp.status_code == 403
+    finally:
+        # Restore so other tests using the member role aren't poisoned.
+        test_env.enforcer.add_policy(
+            "member", test_env.tenant_id, "billing", "read"
+        )
+
+
+@pytest.mark.asyncio
+async def test_export_usage_member_allowed_with_billing_read(
+    member_client, db_session, test_env
+):
+    """member DOES have billing:read (seeded) → usage export 200.
+
+    Pairs with the forbidden test above: proves the OR branch lets a billing:read
+    holder through (without needing wallet:read).
+    """
+    conv = await _seed_conversation(
+        db_session, tenant_id=test_env.tenant_id, agent_id=_AGENT_ID,
+        user_id=test_env.owner_user, title="用量",
+    )
+    await _seed_usage(
+        db_session, tenant_id=test_env.tenant_id, conversation_id=conv.id,
+        user_id=test_env.owner_user, total=7,
+    )
+    resp = await member_client.get("/api/v1/exports/usage", headers=AUTH)
+    assert resp.status_code == 200
+    rows = _parse_csv(resp.content)
+    assert len(rows) == 2  # header + 1
+    assert rows[1][5] == "7"
+
+
+@pytest.mark.asyncio
+async def test_export_customers_hq_staff_cross_tenant(
+    hq_staff_client, db_session, test_env
+):
+    """hq_staff (cross-tenant viewer) sees customers across tenants."""
+    other = "tnt-export-cust-hq"
+    await _seed_customer(
+        db_session, tenant_id=test_env.tenant_id, identity_key="13800000001", name="本店"
+    )
+    await _seed_customer(
+        db_session, tenant_id=other, identity_key="13900000002", name="他店"
+    )
+    resp = await hq_staff_client.get("/api/v1/exports/customers", headers=AUTH)
+    assert resp.status_code == 200
+    rows = _parse_csv(resp.content)
+    assert {r[0] for r in rows[1:]} == {"本店", "他店"}
+
+
+@pytest.mark.asyncio
+async def test_export_logs_hq_staff_cross_tenant(
+    hq_staff_client, db_session, test_env
+):
+    """hq_staff sees audit logs across tenants."""
+    other = "tnt-export-log-hq"
+    await _seed_log(db_session, tenant_id=test_env.tenant_id, message="own")
+    await _seed_log(db_session, tenant_id=other, message="other")
+    resp = await hq_staff_client.get("/api/v1/exports/logs", headers=AUTH)
+    assert resp.status_code == 200
+    rows = _parse_csv(resp.content)
+    assert {r[5] for r in rows[1:]} == {"own", "other"}
+
+
+@pytest.mark.asyncio
+async def test_export_conversations_tenant_isolation(app_client, db_session, test_env):
+    """A store's conversation export cannot include another tenant's rows."""
+    other = "tnt-export-conv-iso"
+    await _seed_conversation(
+        db_session, tenant_id=test_env.tenant_id, agent_id=_AGENT_ID,
+        user_id=test_env.owner_user, title="本店对话",
+    )
+    await _seed_conversation(
+        db_session, tenant_id=other, agent_id=_AGENT_ID,
+        user_id="cross-user", title="他店对话",
+    )
+    resp = await app_client.get("/api/v1/exports/conversations", headers=AUTH)
+    assert resp.status_code == 200
+    rows = _parse_csv(resp.content)
+    titles = {r[0] for r in rows[1:]}
+    assert "本店对话" in titles
+    assert "他店对话" not in titles
+
+
+@pytest.mark.asyncio
+async def test_export_usage_super_admin_cross_tenant(
+    super_admin_client, db_session, test_env
+):
+    """super_admin usage export spans every tenant."""
+    other = "tnt-export-usage-sa"
+    conv_own = await _seed_conversation(
+        db_session, tenant_id=test_env.tenant_id, agent_id=_AGENT_ID,
+        user_id=test_env.owner_user, title="own",
+    )
+    conv_other = await _seed_conversation(
+        db_session, tenant_id=other, agent_id=_AGENT_ID,
+        user_id="cross-user", title="other",
+    )
+    await _seed_usage(
+        db_session, tenant_id=test_env.tenant_id, conversation_id=conv_own.id,
+        user_id=test_env.owner_user, total=10,
+    )
+    await _seed_usage(
+        db_session, tenant_id=other, conversation_id=conv_other.id,
+        user_id="cross-user", total=99,
+    )
+    resp = await super_admin_client.get("/api/v1/exports/usage", headers=AUTH)
+    assert resp.status_code == 200
+    rows = _parse_csv(resp.content)
+    totals = {r[5] for r in rows[1:]}
+    assert totals == {"10", "99"}
+
+
+@pytest.mark.asyncio
+async def test_export_hq_staff_with_tenant_filter(
+    hq_staff_client, db_session, test_env
+):
+    """hq_staff passing ?tenant_id narrows the export to that one tenant."""
+    other = "tnt-export-hq-filter"
+    await _seed_log(db_session, tenant_id=test_env.tenant_id, message="target")
+    await _seed_log(db_session, tenant_id=other, message="excluded")
+    resp = await hq_staff_client.get(
+        "/api/v1/exports/logs",
+        params={"tenant_id": test_env.tenant_id},
+        headers=AUTH,
+    )
+    assert resp.status_code == 200
+    rows = _parse_csv(resp.content)
+    msgs = {r[5] for r in rows[1:]}
+    assert "target" in msgs
+    assert "excluded" not in msgs

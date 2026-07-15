@@ -37,6 +37,10 @@ langchain-core==0.3.28
 # Scheduled jobs (balance-warning scan, cleanup, ...) — priority 54
 APScheduler==3.11.0
 
+# Object storage — priority 56. boto3 powers the real AmazonS3Storage backend
+# (local dev uses LocalStorage and needs no SDK); OSS stays a stub for now.
+boto3>=1.34,<2
+
 # Utilities
 python-dateutil==2.9.0.post0
 

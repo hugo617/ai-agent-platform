@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -15,6 +16,8 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { FormField as Field } from "@/components/ui/form-field";
+import { FileUpload } from "@/components/ui/file-upload";
+import { SecureImage } from "@/components/ui/secure-image";
 import { useToast } from "@/components/ui/toast";
 import { apiErrorMessage } from "@/api/client";
 import { useAuth } from "@/components/auth/auth-context";
@@ -71,29 +74,49 @@ function ProfileCard() {
   const form = useForm<ProfileFormValues>({
     resolver: zodResolver(profileSchema),
     defaultValues: {
-      // The /me response does not carry profile fields, so the inputs start
-      // blank and only send what the user types (omit = leave unchanged).
       display_name: "",
       real_name: "",
       phone: "",
     },
+    values: {
+      // Pre-fill from /me once it loads (priority 49 fix: MeResponse now carries
+      // these, so the form reflects the saved profile instead of starting blank).
+      display_name: me?.display_name ?? "",
+      real_name: me?.real_name ?? "",
+      phone: me?.phone ?? "",
+    },
   });
+  // Avatar is uploaded out-of-band (FileUpload → returned URL → this state) and
+  // submitted alongside the text fields. Kept separate from the zod schema so
+  // the upload round-trip doesn't touch form state.
+  const [avatar, setAvatar] = useState<string | null>(me?.avatar ?? null);
+  useEffect(() => {
+    setAvatar(me?.avatar ?? null);
+  }, [me?.avatar]);
 
   const onSubmit = async (values: ProfileFormValues) => {
-    // Drop empty strings so we don't clobber existing values with blanks.
-    const payload = {
+    // Drop empty strings so we don't clobber existing values with blanks. The
+    // avatar is sent only when the user changed it (differs from the saved one).
+    const payload: Record<string, string | undefined> = {
       display_name: values.display_name?.trim() || undefined,
       real_name: values.real_name?.trim() || undefined,
       phone: values.phone?.trim() || undefined,
     };
-    if (!payload.display_name && !payload.real_name && !payload.phone) {
+    if (avatar && avatar !== me?.avatar) {
+      payload.avatar = avatar;
+    }
+    if (
+      !payload.display_name &&
+      !payload.real_name &&
+      !payload.phone &&
+      !payload.avatar
+    ) {
       toast.error("请至少填写一项");
       return;
     }
     try {
       await updateMut.mutateAsync(payload);
       toast.success("资料已更新");
-      form.reset({ display_name: "", real_name: "", phone: "" });
     } catch (err) {
       toast.error("保存失败", apiErrorMessage(err));
     }
@@ -111,6 +134,24 @@ function ProfileCard() {
       </CardHeader>
       <CardContent>
         <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+          <Field label="头像">
+            <div className="flex items-center gap-4">
+              <SecureImage
+                src={avatar}
+                alt="头像"
+                className="h-16 w-16 shrink-0 rounded-full border object-cover"
+              />
+              <div className="flex-1">
+                <FileUpload
+                  value={avatar}
+                  accept="image/png,image/jpeg,image/webp,image/gif"
+                  maxSizeMb={5}
+                  label="点击或拖拽头像图片上传"
+                  onUploaded={(url) => setAvatar(url || null)}
+                />
+              </div>
+            </div>
+          </Field>
           <div className="grid gap-4 sm:grid-cols-2">
             <Field label="账号" hint="登录账号，不可自行修改">
               <Input value={me?.email ?? me?.user_id ?? ""} readOnly disabled />

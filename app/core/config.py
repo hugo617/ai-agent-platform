@@ -79,18 +79,19 @@ class Settings(BaseSettings):
     scheduler_enabled: bool = False
 
     # File upload + object storage (priority 56). ``storage_backend`` selects
-    # the StorageBackend implementation; only "local" works out of the box
-    # (writes to ``storage_local_dir`` served at /static). "s3" / "oss" need
-    # the relevant SDK + credentials and are otherwise explicit stubs.
+    # the StorageBackend implementation: "local" (default, served via the
+    # authenticated download route), "s3" (real AmazonS3Storage, boto3 is a dep),
+    # or "oss" (stub until oss2 is wired in).
     storage_backend: str = "local"  # local / s3 / oss
     storage_local_dir: str = "uploads"
     upload_max_bytes: int = 10 * 1024 * 1024  # 10 MB; enforced in the upload route
-    # S3 (boto3 not a dep — these only matter once storage_backend == "s3").
+    # S3 (only used when storage_backend == "s3"; boto3 is a runtime dep).
     s3_bucket: str | None = None
     s3_region: str | None = None
     s3_access_key: str | None = None
     s3_secret_key: str | None = None
-    # Aliyun OSS (oss2 not a dep — only matter once storage_backend == "oss").
+    # Aliyun OSS (oss2 NOT a dep — only matter once storage_backend == "oss"
+    # and the stub is implemented).
     oss_bucket: str | None = None
     oss_endpoint: str | None = None
     oss_access_key: str | None = None

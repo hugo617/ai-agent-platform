@@ -148,6 +148,41 @@ async def test_update_me_token_user_id_is_authoritative(
     assert owner.display_name is None
 
 
+@pytest.mark.asyncio
+async def test_me_returns_profile_fields(app_client, tenant_owner):
+    """GET /auth/me returns the profile columns so the frontend can pre-fill.
+
+    After PUT sets display_name/avatar, a subsequent GET must echo them back —
+    this is the contract the profile page relies on (it could not pre-fill
+    before because MeResponse lacked these fields).
+    """
+    await app_client.put(
+        "/api/v1/auth/me",
+        json={"display_name": "昵称甲", "avatar": "uploads/files/tnt/avatar.png"},
+        headers=AUTH,
+    )
+    me = (await app_client.get("/api/v1/auth/me", headers=AUTH)).json()
+    assert me["display_name"] == "昵称甲"
+    assert me["avatar"] == "uploads/files/tnt/avatar.png"
+    # Fields absent on a fresh owner (never set) come back as None.
+    assert me["real_name"] is None
+
+
+@pytest.mark.asyncio
+async def test_update_avatar_persists_and_echoes(app_client, tenant_owner, db_session):
+    """PUT /auth/me with an avatar URL persists it and the response carries it."""
+    resp = await app_client.put(
+        "/api/v1/auth/me",
+        json={"avatar": "uploads/files/tnt/u1.png"},
+        headers=AUTH,
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["avatar"] == "uploads/files/tnt/u1.png"
+    user = await db_session.get(User, tenant_owner["user_id"])
+    assert user is not None
+    assert user.avatar == "uploads/files/tnt/u1.png"
+
+
 # --------------------------------------------------------- PUT /auth/me/password
 
 
