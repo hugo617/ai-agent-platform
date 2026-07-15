@@ -48,9 +48,7 @@ import { useToast } from "@/components/ui/toast";
 import { apiErrorMessage } from "@/api/client";
 import type { Tenant } from "@/api/types";
 import { useAllTenants, useCreateTenant, useUpdateTenant } from "@/hooks/queries";
-
-const fmt = (s: string | null | undefined): string =>
-  s ? new Date(s).toLocaleString() : "-";
+import { formatDateTime as fmt } from "@/lib/format";
 
 // ---------- create / edit form schema ----------
 // Creation only sends `name` (the backend's TenantCreate accepts name only);

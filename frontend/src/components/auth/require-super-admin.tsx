@@ -12,13 +12,17 @@ import { useAuth } from "./auth-context";
  * UX guard.
  */
 export function RequireSuperAdmin() {
-  const { me, isLoading } = useAuth();
+  const { me, isLoading, meError } = useAuth();
   const location = useLocation();
 
   // While /me is loading we can't decide yet — render nothing to avoid a
   // false redirect flash (ProtectedRoute already shows a skeleton for auth
   // loading, so this is a safe empty state during the brief window).
-  if (isLoading || !me) return null;
+  if (isLoading) return null;
+  // A non-401 /me failure (e.g. 500) used to leave `me` undefined forever → a
+  // permanent blank page. A 401 already cleared the token via the interceptor,
+  // so this branch handles the rest by bouncing to /login.
+  if (meError || !me) return <Navigate to="/login" state={{ from: location }} replace />;
 
   if (me.platform_role !== "super_admin") {
     return <Navigate to="/" state={{ from: location }} replace />;

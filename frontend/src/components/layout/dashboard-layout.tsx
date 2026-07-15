@@ -32,7 +32,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useAuth } from "@/components/auth/auth-context";
-import { canViewMenu, hasPermission } from "@/lib/permission";
+import { canViewMenu, hasPermission, isSuperAdmin } from "@/lib/permission";
 import { logout } from "@/api/endpoints";
 import { GlobalSearchBox } from "@/components/layout/global-search-box";
 import { NotificationBell } from "@/components/layout/notification-bell";
@@ -143,7 +143,7 @@ export function DashboardLayout() {
           {NAV_ITEMS.filter((item) => {
             // Platform-level items (e.g. /tenants, /billing/admin) have no
             // tenant menu perm — show them purely on platform_role.
-            if (item.platformOnly) return me?.platform_role === "super_admin";
+            if (item.platformOnly) return isSuperAdmin(me);
             // Api-permission-gated items (e.g. /billing on wallet:read).
             if (item.permission)
               return hasPermission(
@@ -204,7 +204,7 @@ export function DashboardLayout() {
             {/* 通知铃铛(priority 54) — 未读数 badge + 下拉。Every authenticated
                 user reads their own notifications, so no permission guard. */}
             <NotificationBell />
-            {me?.platform_role === "super_admin" && (
+            {isSuperAdmin(me) && (
               <Badge className="bg-amber-100 text-amber-800 hover:bg-amber-100 border-amber-300">
                 🛡️ 超级管理员
               </Badge>

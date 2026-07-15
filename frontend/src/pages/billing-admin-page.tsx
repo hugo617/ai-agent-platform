@@ -25,6 +25,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { StatCard as SummaryCard } from "@/components/ui/stat-card";
 import {
   Dialog,
   DialogContent,
@@ -42,6 +43,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { FormField as Field } from "@/components/ui/form-field";
 import {
   Select,
   SelectContent,
@@ -74,10 +76,7 @@ import {
   useRecharge,
   useUpdatePricing,
 } from "@/hooks/queries";
-
-const fmtTokens = (n: number): string => n.toLocaleString("en-US");
-
-const fmtPrice = (n: number): string => `¥${n.toFixed(4)}`;
+import { formatTokens as fmtTokens, formatCurrency as fmtPrice } from "@/lib/format";
 
 // ============================================================ tenant wallets
 // The billing backend exposes GET /billing/wallet/{tenant_id} (per-tenant) but
@@ -704,42 +703,5 @@ function PricingSection() {
 
 // ---------------- shared bits ----------------
 
-function SummaryCard({
-  title,
-  value,
-  icon,
-}: {
-  title: string;
-  value: string;
-  icon: React.ReactNode;
-}) {
-  return (
-    <Card>
-      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-        <CardTitle className="text-sm font-medium">{title}</CardTitle>
-        {icon}
-      </CardHeader>
-      <CardContent>
-        <div className="text-2xl font-bold">{value}</div>
-      </CardContent>
-    </Card>
-  );
-}
-
-function Field({
-  label,
-  error,
-  children,
-}: {
-  label: string;
-  error?: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="space-y-2">
-      <Label>{label}</Label>
-      {children}
-      {error && <p className="text-xs text-destructive">{error}</p>}
-    </div>
-  );
-}
+// (FormField is imported from @/components/ui/form-field as `Field`;
+//  SummaryCard is imported from @/components/ui/stat-card.)

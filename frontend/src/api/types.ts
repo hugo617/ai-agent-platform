@@ -262,20 +262,6 @@ export interface TokenResponse {
   tenant_id: string;
 }
 
-export interface SessionRead {
-  id: string;
-  session_id: string;
-  device_type: string | null;
-  device_name: string | null;
-  platform: string | null;
-  ip_address: string | null;
-  user_agent: string | null;
-  is_active: boolean;
-  expires_at: string;
-  created_at: string;
-  last_accessed_at: string;
-}
-
 export interface Agent {
   id: string;
   tenant_id: string;
@@ -760,10 +746,6 @@ export interface SystemLogListResponse {
   total: number;
   limit: number;
   offset: number;
-}
-
-export interface ApiError {
-  detail: string;
 }
 
 // ============= in-app notifications (priority 54) =============

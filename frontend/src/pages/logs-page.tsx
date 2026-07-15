@@ -2,18 +2,18 @@ import { Fragment, useState } from "react";
 import {
   ChevronDown,
   ChevronRight,
-  Download,
   Loader2,
   RefreshCw,
   ScrollText,
 } from "lucide-react";
 
-import { apiErrorMessage } from "@/api/client";
-import { fetchTenants } from "@/api/endpoints";
-import type { LogFilters, SystemLog, Tenant } from "@/api/types";
+import type { LogFilters, SystemLog } from "@/api/types";
 import { useAuth } from "@/components/auth/auth-context";
-import { useLogs, useExportCsv } from "@/hooks/queries";
-import { useQuery } from "@tanstack/react-query";
+import { isSuperAdmin as isSuperAdminRole } from "@/lib/permission";
+import { useLogs, useAllTenants } from "@/hooks/queries";
+import { formatDateTime as fmt } from "@/lib/format";
+import { ExportCsvButton } from "@/components/ui/export-csv-button";
+import { ListState } from "@/components/ui/list-state";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -40,7 +40,6 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Pagination } from "@/components/ui/pagination";
-import { useToast } from "@/components/ui/toast";
 
 const PAGE_SIZE = 20;
 
@@ -61,9 +60,6 @@ const LEVEL_VARIANT: Record<string, "default" | "secondary" | "destructive"> = {
   error: "destructive",
 };
 
-const fmt = (s: string | null | undefined): string =>
-  s ? new Date(s).toLocaleString() : "-";
-
 /** Pretty-print a JSONB snapshot (before/after/details) inside a <pre>. */
 function JsonBlock({ value }: { value: unknown }) {
   if (!value || (typeof value === "object" && Object.keys(value as object).length === 0)) {
@@ -78,9 +74,7 @@ function JsonBlock({ value }: { value: unknown }) {
 
 export function LogsPage() {
   const { me } = useAuth();
-  const isSuperAdmin = me?.platform_role === "super_admin";
-  const toast = useToast();
-  const exportMut = useExportCsv();
+  const isSuperAdmin = isSuperAdminRole(me);
 
   // Filters held in state; the query key includes them so a change refetches.
   const [action, setAction] = useState<string>("all");
@@ -91,12 +85,12 @@ export function LogsPage() {
   const [page, setPage] = useState(1);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
-  // HQ-only tenant list for the optional tenant filter dropdown.
-  const { data: tenants } = useQuery({
-    queryKey: ["tenants", "all"],
-    queryFn: fetchTenants,
-    enabled: isSuperAdmin,
-  });
+  // HQ-only tenant list for the optional tenant filter dropdown. Uses
+  // useAllTenants (GET /tenants/all, super_admin platform-wide list) so the
+  // dropdown shows every store — NOT useQuery+fetchTenants, which hits
+  // GET /tenants/ (user-scoped) and would both under-fill the dropdown AND
+  // poison the shared ["tenants","all"] cache that other pages rely on.
+  const { data: tenants } = useAllTenants(isSuperAdmin);
 
   const filters: LogFilters = {
     action: action !== "all" ? action : undefined,
@@ -111,6 +105,7 @@ export function LogsPage() {
   const { data, isLoading, isError, error, refetch, isFetching } = useLogs(filters);
   const total = data?.total ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const items: SystemLog[] = data?.items ?? [];
 
   const toggleRow = (id: string) => {
     setExpanded((prev) => {
@@ -124,23 +119,6 @@ export function LogsPage() {
   // Export mirrors the active filter set (action / resource / date / tenant)
   // so the CSV matches what the user sees on screen. The backend re-applies
   // the scope: store users can't escape their tenant; super_admin may narrow.
-  const handleExport = async () => {
-    const filename = `logs_${new Date().toISOString().slice(0, 10)}.csv`;
-    try {
-      await exportMut.mutateAsync({
-        entity: "logs",
-        filename,
-        params: {
-          date_from: filters.date_from,
-          date_to: filters.date_to,
-          tenant_id: filters.tenant_id,
-        },
-      });
-      toast.success("已导出审计日志");
-    } catch (err) {
-      toast.error("导出失败", apiErrorMessage(err));
-    }
-  };
 
   return (
     <div className="mx-auto max-w-7xl space-y-6 p-6">
@@ -157,19 +135,16 @@ export function LogsPage() {
           </div>
         </div>
         <div className="flex gap-2">
-          <Button
-            variant="outline"
+          <ExportCsvButton
+            entity="logs"
             size="sm"
-            onClick={handleExport}
-            disabled={exportMut.isPending}
-          >
-            {exportMut.isPending ? (
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            ) : (
-              <Download className="mr-2 h-4 w-4" />
-            )}
-            导出 CSV
-          </Button>
+            successMessage="已导出审计日志"
+            params={{
+              date_from: filters.date_from,
+              date_to: filters.date_to,
+              tenant_id: filters.tenant_id,
+            }}
+          />
           <Button
             variant="outline"
             size="sm"
@@ -254,7 +229,7 @@ export function LogsPage() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">全平台</SelectItem>
-                    {(tenants as Tenant[] | undefined ?? []).map((t) => (
+                    {(tenants ?? []).map((t) => (
                       <SelectItem key={t.id} value={t.id}>
                         {t.name}
                       </SelectItem>
@@ -275,22 +250,15 @@ export function LogsPage() {
           </div>
         </CardHeader>
         <CardContent>
-          {isError ? (
-            <div className="py-8 text-center text-sm text-destructive">
-              加载失败:{apiErrorMessage(error)}
-              <Button variant="outline" size="sm" className="ml-3" onClick={() => refetch()}>
-                重试
-              </Button>
-            </div>
-          ) : isLoading ? (
-            <div className="flex items-center justify-center py-12 text-muted-foreground">
-              <Loader2 className="mr-2 h-5 w-5 animate-spin" /> 加载中…
-            </div>
-          ) : !data || data.items.length === 0 ? (
-            <div className="py-12 text-center text-sm text-muted-foreground">
-              没有符合条件的审计记录
-            </div>
-          ) : (
+          <ListState
+            isError={isError}
+            error={error}
+            onRetry={refetch}
+            isLoading={isLoading}
+            showSpinner
+            isEmpty={items.length === 0}
+            emptyText="没有符合条件的审计记录"
+          >
             <>
               <Table>
                 <TableHeader>
@@ -306,7 +274,7 @@ export function LogsPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {data.items.map((log: SystemLog) => {
+                  {items.map((log: SystemLog) => {
                     const open = expanded.has(log.id);
                     const hasDetail =
                       log.old_values ||
@@ -398,7 +366,7 @@ export function LogsPage() {
                 />
               </div>
             </>
-          )}
+          </ListState>
         </CardContent>
       </Card>
     </div>

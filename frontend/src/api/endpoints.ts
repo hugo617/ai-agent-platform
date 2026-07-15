@@ -46,7 +46,6 @@ import type {
   RolePermissionGrant,
   RolePermissionRead,
   RoleUpdate,
-  SessionRead,
   SystemLogListResponse,
   Tenant,
   TenantConfig,
@@ -286,13 +285,6 @@ export async function fetchCustomers(): Promise<CustomerRead[]> {
   return data;
 }
 
-export async function fetchCustomerAggregate(id: string): Promise<CustomerRead> {
-  const { data } = await api.get<CustomerRead>(`/customers/${id}/aggregate`);
-  return data;
-}
-
-// Token 费用管理系列 3/4: aggregate AI usage attributed to a customer.
-// Store users get their tenant's slice; cross-tenant viewers get the global sum.
 export async function fetchCustomerUsage(
   id: string,
 ): Promise<CustomerUsage> {
@@ -395,11 +387,6 @@ export async function fetchAgents(): Promise<Agent[]> {
   return data;
 }
 
-export async function fetchAgent(id: string): Promise<Agent> {
-  const { data } = await api.get<Agent>(`/agents/${id}`);
-  return data;
-}
-
 export async function createAgent(payload: AgentCreate): Promise<Agent> {
   const { data } = await api.post<Agent>("/agents/", payload);
   return data;
@@ -464,11 +451,6 @@ export async function fetchUsers(
       limit: filters.limit ?? 10,
     },
   });
-  return data;
-}
-
-export async function fetchUser(id: string): Promise<UserFull> {
-  const { data } = await api.get<UserFull>(`/users/${id}`);
   return data;
 }
 
@@ -665,15 +647,6 @@ export async function login(payload: LoginRequest): Promise<TokenResponse> {
 
 export async function logout(): Promise<void> {
   await api.post("/auth/logout");
-}
-
-export async function fetchSessions(): Promise<SessionRead[]> {
-  const { data } = await api.get<SessionRead[]>("/auth/sessions");
-  return data;
-}
-
-export async function terminateSession(sessionId: string): Promise<void> {
-  await api.delete(`/auth/sessions/${sessionId}`);
 }
 
 // ---------- conversations + chat (SSE streaming) ----------

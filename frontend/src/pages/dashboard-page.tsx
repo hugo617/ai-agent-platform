@@ -32,6 +32,7 @@ import { Label } from "@/components/ui/label";
 import { useToast } from "@/components/ui/toast";
 import { apiErrorMessage } from "@/api/client";
 import { useAuth } from "@/components/auth/auth-context";
+import { isSuperAdmin } from "@/lib/permission";
 import { cn } from "@/lib/utils";
 import {
   useAgentStatistics,
@@ -46,12 +47,11 @@ import {
 
 export function DashboardPage() {
   const { me } = useAuth();
-  const isSuperAdmin = me?.platform_role === "super_admin";
 
   // The store and HQ views split by role, mirroring customers-page.tsx: the HQ
   // overview endpoint is require_super_admin, so a non-super_admin calling it
   // would 403. useDashboardOverview(enabled) gates the request to match.
-  return isSuperAdmin ? <HqView /> : <StoreView />;
+  return isSuperAdmin(me) ? <HqView /> : <StoreView />;
 }
 
 // ============================================================ store view

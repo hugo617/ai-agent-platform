@@ -49,6 +49,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/components/ui/toast";
 import { useAuth } from "@/components/auth/auth-context";
+import { isSuperAdmin } from "@/lib/permission";
 import { MarkdownView } from "@/components/chat/markdown-view";
 import { apiErrorMessage } from "@/api/client";
 import { sendChatStream } from "@/api/endpoints";
@@ -66,9 +67,7 @@ import {
   useSetConversationPinned,
   useSetConversationStarred,
 } from "@/hooks/queries";
-
-const fmt = (s: string | null): string =>
-  s ? new Date(s).toLocaleString() : "-";
+import { formatDateTime as fmt } from "@/lib/format";
 
 /**
  * Pick a display label for a conversation: its title, or a snippet of the
@@ -92,16 +91,22 @@ export function ChatPage() {
   const { me } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
 
-  const isSuperAdmin = me?.platform_role === "super_admin";
   const { data: agents, isLoading: agentsLoading } = useAgents();
 
   // ---------------- conversation-management state ----------------
   // Debounced search: a separate "committed" value drives the query, updated
   // 300ms after the input stops changing so each keystroke doesn't fire a
   // request. Empty string → undefined so the bare query key is reused.
-  const [searchInput, setSearchInput] = useState("");
+  // Seed the conversation search box from a ?search= URL param so the global-
+  // search-box "查看全部" deep link carries the term into this page. Existing
+  // URL reads (customer_id) are preserved.
+  const [searchInput, setSearchInput] = useState(
+    searchParams.get("search") ?? "",
+  );
   const [searchCommitted, setSearchCommitted] = useState<string | undefined>(
-    undefined,
+    searchParams.get("search")
+      ? (searchParams.get("search") as string).trim() || undefined
+      : undefined,
   );
   useEffect(() => {
     const handle = setTimeout(() => {
@@ -117,15 +122,21 @@ export function ChatPage() {
   // Multi-select for batch operations. Cleared whenever the list refetches
   // (mutations invalidate) — tracked via an effect on the conversations array.
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  // Clear the multi-selection only when the *set* of conversation ids actually
+  // changes (a conversation was added or removed), NOT on every background
+  // refetch. Keying on the id-join (a primitive string) means a pin/star toggle
+  // that merely reorders the list (same ids, new array reference) no longer
+  // wipes an in-progress multi-select.
+  const conversationIdSet = conversations?.map((c) => c.id).join(",") ?? "";
   useEffect(() => {
     setSelectedIds(new Set());
-  }, [conversations]);
+  }, [conversationIdSet]);
 
   // Store customer profiles for the "关联客户" picker (store users only).
   // super_admin doesn't serve individual store customers, so we disable the
   // query for them (the endpoint permits super_admin, but the picker is hidden
-  // via !isSuperAdmin — no point fetching every store's profiles).
-  const { data: customerProfiles } = useCustomerProfiles(!isSuperAdmin);
+  // via !isSuperAdmin(me) — no point fetching every store's profiles).
+  const { data: customerProfiles } = useCustomerProfiles(!isSuperAdmin(me));
 
   const [selectedAgentId, setSelectedAgentId] = useState<string>("");
   const [selectedConversationId, setSelectedConversationId] = useState<
@@ -341,9 +352,14 @@ export function ChatPage() {
     setInput("");
     setStreaming(true);
 
-    // Build the working message list: existing history + the user turn + an
-    // empty assistant placeholder that we'll fill as deltas arrive.
-    const base = (history ?? []).map((m) => ({ ...m }));
+    // Build the working message list: the currently-shown messages + the user
+    // turn + an empty assistant placeholder that we'll fill as deltas arrive.
+    // We branch on `localMessages ?? history` (the displayed list) rather than
+    // just `history` so a regenerate stays consistent: handleRegenerate drops
+    // the trailing assistant turn into `localMessages`, and basing the next
+    // send on that trimmed view means the old assistant reply is NOT re-sent
+    // as context and the user turn isn't duplicated in the working list.
+    const base = (localMessages ?? history ?? []).map((m) => ({ ...m }));
     const userMsg: Message = {
       id: `local-user-${Date.now()}`,
       role: "user",
@@ -414,7 +430,9 @@ export function ChatPage() {
       setCopiedId(msg.id);
       setTimeout(() => setCopiedId(null), 2000);
     } catch {
-      // clipboard unavailable (insecure context); fail silently
+      // clipboard unavailable (insecure context, e.g. non-HTTPS) — surface it
+      // so the user isn't left wondering why "copy" did nothing.
+      toast.error("复制失败", "剪贴板不可用(需 HTTPS 环境)");
     }
   };
 
@@ -647,7 +665,7 @@ export function ChatPage() {
                 for super_admin (they don't serve store customers) and disabled
                 when viewing an existing conversation (attribution is fixed at
                 creation). */}
-            {!isSuperAdmin && !selectedConversationId && (
+            {!isSuperAdmin(me) && !selectedConversationId && (
               <Select
                 value={selectedCustomerId || "_none"}
                 onValueChange={(v) =>
@@ -674,7 +692,7 @@ export function ChatPage() {
             {/* When viewing an existing conversation that's attributed to a
                 customer, show a read-only badge so the staff member knows who
                 they're serving in this chat. */}
-            {!isSuperAdmin && selectedConversationId && (() => {
+            {!isSuperAdmin(me) && selectedConversationId && (() => {
               const conv = conversations?.find(
                 (c) => c.id === selectedConversationId,
               );

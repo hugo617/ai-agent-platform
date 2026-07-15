@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -40,6 +41,7 @@ import {
 } from "@/hooks/queries";
 import { apiErrorMessage } from "@/api/client";
 import type { Agent } from "@/api/types";
+import { formatDateTime } from "@/lib/format";
 
 // max_tokens / top_p are kept as strings in the form (empty = "not set") and
 // normalized to number|null on submit. temperature always has a numeric value
@@ -63,6 +65,19 @@ export function AgentsPage() {
   const updateMut = useUpdateAgent();
   const deleteMut = useDeleteAgent();
   const toast = useToast();
+
+  // Client-side filter seeded from ?search= so the global-search-box "查看全部"
+  // deep link carries the term onto this page (the agents endpoint has no
+  // server-side search). Matches against name + description, case-insensitive.
+  const [searchParams] = useSearchParams();
+  const search = (searchParams.get("search") ?? "").trim().toLowerCase();
+  const visibleAgents = search
+    ? (agents ?? []).filter(
+        (a) =>
+          a.name.toLowerCase().includes(search) ||
+          (a.description ?? "").toLowerCase().includes(search),
+      )
+    : (agents ?? []);
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Agent | null>(null);
@@ -168,7 +183,11 @@ export function AgentsPage() {
         <CardHeader>
           <CardTitle>智能体列表</CardTitle>
           <CardDescription>
-            {agents ? `共 ${agents.length} 个` : "加载中…"}
+            {agents
+              ? search
+                ? `匹配 ${visibleAgents.length} / 共 ${agents.length} 个`
+                : `共 ${agents.length} 个`
+              : "加载中…"}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -176,11 +195,11 @@ export function AgentsPage() {
             <div className="py-12 text-center text-sm text-muted-foreground">
               加载中…
             </div>
-          ) : !agents?.length ? (
+          ) : !visibleAgents.length ? (
             <div className="flex flex-col items-center gap-3 py-12 text-center">
               <Bot className="h-10 w-10 text-muted-foreground" />
               <p className="text-sm text-muted-foreground">
-                还没有智能体，点击右上角创建第一个
+                {search ? "没有匹配的智能体" : "还没有智能体，点击右上角创建第一个"}
               </p>
             </div>
           ) : (
@@ -194,7 +213,7 @@ export function AgentsPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {agents.map((agent) => (
+                {visibleAgents.map((agent) => (
                   <TableRow key={agent.id}>
                     <TableCell className="font-medium">
                       {agent.name}
@@ -208,7 +227,7 @@ export function AgentsPage() {
                       <Badge variant="outline">{agent.model}</Badge>
                     </TableCell>
                     <TableCell className="text-muted-foreground">
-                      {new Date(agent.created_at).toLocaleString()}
+                      {formatDateTime(agent.created_at)}
                     </TableCell>
                     <TableCell className="text-right">
                       <Button

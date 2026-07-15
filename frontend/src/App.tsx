@@ -1,3 +1,4 @@
+import { lazy, Suspense } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Route, Routes } from "react-router-dom";
 import { AuthProvider } from "@/components/auth/auth-context";
@@ -10,23 +11,72 @@ import { RequireSuperAdmin } from "@/components/auth/require-super-admin";
 import { ToastProvider } from "@/components/ui/toast";
 import { DashboardLayout } from "@/components/layout/dashboard-layout";
 import { LoginPage } from "@/pages/login-page";
-import { DashboardPage } from "@/pages/dashboard-page";
-import { AgentsPage } from "@/pages/agents-page";
-import { ChatPage } from "@/pages/chat-page";
-import { GroupsPage } from "@/pages/groups-page";
-import { CustomersPage } from "@/pages/customers-page";
-import { RolesPage } from "@/pages/roles-page";
-import { MembersPage } from "@/pages/members-page";
-import { PermissionsPage } from "@/pages/permissions-page";
-import { SettingsPage } from "@/pages/settings-page";
-import { TenantsPage } from "@/pages/tenants-page";
-import { UsersPage } from "@/pages/users-page";
-import { ProfilePage } from "@/pages/profile-page";
-import { NotFoundPage } from "@/pages/not-found-page";
-import { BillingPage } from "@/pages/billing-page";
-import { BillingAdminPage } from "@/pages/billing-admin-page";
-import { LogsPage } from "@/pages/logs-page";
-import { NotificationsPage } from "@/pages/notifications-page";
+
+// Code-splitting: every authenticated page is lazy-loaded so the initial
+// bundle (login screen) only carries auth + layout, and each route's code is
+// fetched on demand. Pages use named exports, so the `.then(m => ({default:
+// m.X}))` shim adapts them to React.lazy's default-export expectation.
+// LoginPage stays eager — it's the first thing unauthenticated users see.
+const DashboardPage = lazy(() =>
+  import("@/pages/dashboard-page").then((m) => ({ default: m.DashboardPage })),
+);
+const AgentsPage = lazy(() =>
+  import("@/pages/agents-page").then((m) => ({ default: m.AgentsPage })),
+);
+const ChatPage = lazy(() =>
+  import("@/pages/chat-page").then((m) => ({ default: m.ChatPage })),
+);
+const GroupsPage = lazy(() =>
+  import("@/pages/groups-page").then((m) => ({ default: m.GroupsPage })),
+);
+const CustomersPage = lazy(() =>
+  import("@/pages/customers-page").then((m) => ({ default: m.CustomersPage })),
+);
+const RolesPage = lazy(() =>
+  import("@/pages/roles-page").then((m) => ({ default: m.RolesPage })),
+);
+const MembersPage = lazy(() =>
+  import("@/pages/members-page").then((m) => ({ default: m.MembersPage })),
+);
+const PermissionsPage = lazy(() =>
+  import("@/pages/permissions-page").then((m) => ({ default: m.PermissionsPage })),
+);
+const SettingsPage = lazy(() =>
+  import("@/pages/settings-page").then((m) => ({ default: m.SettingsPage })),
+);
+const TenantsPage = lazy(() =>
+  import("@/pages/tenants-page").then((m) => ({ default: m.TenantsPage })),
+);
+const UsersPage = lazy(() =>
+  import("@/pages/users-page").then((m) => ({ default: m.UsersPage })),
+);
+const ProfilePage = lazy(() =>
+  import("@/pages/profile-page").then((m) => ({ default: m.ProfilePage })),
+);
+const NotFoundPage = lazy(() =>
+  import("@/pages/not-found-page").then((m) => ({ default: m.NotFoundPage })),
+);
+const BillingPage = lazy(() =>
+  import("@/pages/billing-page").then((m) => ({ default: m.BillingPage })),
+);
+const BillingAdminPage = lazy(() =>
+  import("@/pages/billing-admin-page").then((m) => ({ default: m.BillingAdminPage })),
+);
+const LogsPage = lazy(() =>
+  import("@/pages/logs-page").then((m) => ({ default: m.LogsPage })),
+);
+const NotificationsPage = lazy(() =>
+  import("@/pages/notifications-page").then((m) => ({ default: m.NotificationsPage })),
+);
+
+/** Full-screen spinner shown while a lazy route chunk loads. */
+function RouteFallback() {
+  return (
+    <div className="flex h-[50vh] items-center justify-center text-muted-foreground">
+      <span className="text-sm">加载中…</span>
+    </div>
+  );
+}
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -44,6 +94,7 @@ export default function App() {
       <ToastProvider>
         <BrowserRouter>
           <AuthProvider>
+            <Suspense fallback={<RouteFallback />}>
             <Routes>
               <Route path="/login" element={<LoginPage />} />
 
@@ -105,6 +156,7 @@ export default function App() {
               <Route path="*" element={<NotFoundPage />} />
               <Route path="/404" element={<NotFoundPage />} />
             </Routes>
+            </Suspense>
           </AuthProvider>
         </BrowserRouter>
       </ToastProvider>

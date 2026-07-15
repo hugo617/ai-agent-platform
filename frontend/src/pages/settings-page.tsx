@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   AlertTriangle,
   Copy,
@@ -52,7 +52,7 @@ import {
 import { useToast } from "@/components/ui/toast";
 import { apiErrorMessage } from "@/api/client";
 import { useAuth } from "@/components/auth/auth-context";
-import { hasPermission } from "@/lib/permission";
+import { hasPermission, isSuperAdmin } from "@/lib/permission";
 import type {
   ApiToken,
   ApiTokenCreated,
@@ -70,10 +70,10 @@ import {
   useUpdateTenantConfig,
   useUpdateTenantLlmConfig,
 } from "@/hooks/queries";
+import { formatDateTime as fmt } from "@/lib/format";
 
 export function SettingsPage() {
   const { me } = useAuth();
-  const isSuperAdmin = me?.platform_role === "super_admin";
   // The tenant LLM card requires settings:update; the API Token card requires
   // api_tokens:read. Both gate on the caller's effective api permissions
   // (super_admin bypasses via hasPermission).
@@ -91,7 +91,7 @@ export function SettingsPage() {
         </p>
       </div>
 
-      {isSuperAdmin && <PlatformLlmCard />}
+      {isSuperAdmin(me) && <PlatformLlmCard />}
 
       {canManageLlm && <TenantLlmCard />}
 
@@ -99,7 +99,7 @@ export function SettingsPage() {
 
       {canManageTokens && <ApiTokenCard />}
 
-      {!isSuperAdmin && !canManage && (
+      {!isSuperAdmin(me) && !canManage && (
         <Card>
           <CardContent className="py-12 text-center text-sm text-muted-foreground">
             需要管理员权限才能查看设置。
@@ -164,21 +164,22 @@ function TenantBrandingCard() {
   const { data, isLoading } = useTenantConfig();
   const updateMut = useUpdateTenantConfig();
 
-  // Local editable state, seeded once from the fetched config. We keep the
-  // fields as strings (empty = cleared) so the user can wipe a value and save.
+  // Local editable state, seeded from the fetched config via an effect (not
+  // setState-in-render, which is an anti-pattern and would never re-seed after
+  // a refetch). We keep the fields as strings (empty = cleared) so the user can
+  // wipe a value and save. Re-seeds whenever `data` changes, so a refetch
+  // (e.g. after a save) refreshes the form too.
   const [displayName, setDisplayName] = useState("");
   const [logoUrl, setLogoUrl] = useState("");
   const [themeColor, setThemeColor] = useState("#222222");
   const [loginText, setLoginText] = useState("");
-  const [seeded, setSeeded] = useState(false);
 
-  if (!seeded && !isLoading) {
+  useEffect(() => {
     setDisplayName(data?.display_name ?? "");
     setLogoUrl(data?.logo_url ?? "");
     setThemeColor(data?.theme_color ?? "#222222");
     setLoginText(data?.login_text ?? "");
-    setSeeded(true);
-  }
+  }, [data]);
 
   const handleSave = async () => {
     // Normalize empty strings to null (the backend stores null = use default).
@@ -320,19 +321,18 @@ function LlmConfigCard({
   const [models, setModels] = useState<string[] | null>(null);
   const [newModel, setNewModel] = useState("");
 
-  // Local editable field state; seeded from the fetched config once it loads.
+  // Local editable field state; seeded from the fetched config via an effect
+  // (replaces setState-in-render). Re-seeds on every config change so a refetch
+  // after save refreshes the form.
   const [baseUrl, setBaseUrl] = useState("");
   const [defaultModel, setDefaultModel] = useState("");
   const [apiKey, setApiKey] = useState("");
-  const [seeded, setSeeded] = useState(false);
 
-  // Seed local state when the config first arrives (or when it's absent).
-  if (!seeded && !isLoading) {
+  useEffect(() => {
     setBaseUrl(config?.base_url ?? "");
     setDefaultModel(config?.default_model ?? "");
     setModels(config ? [...config.available_models] : []);
-    setSeeded(true);
-  }
+  }, [config]);
 
   const resolvedModels = models ?? [];
 
@@ -499,9 +499,6 @@ function LlmConfigCard({
 }
 
 // --------------------------------------------------------------- API tokens
-
-const fmt = (s: string | null): string =>
-  s ? new Date(s).toLocaleString() : "-";
 
 /** API Token management card — issue/list/revoke tokens for external agents. */
 function ApiTokenCard() {
