@@ -43,6 +43,9 @@ import {
   fetchEffectiveModels,
   fetchGroups,
   fetchAllTenants,
+  fetchDocuments,
+  fetchPlatformEmbeddingConfig,
+  fetchTenantEmbeddingConfig,
   globalSearch,
   fetchLogs,
   fetchMembers,
@@ -79,10 +82,14 @@ import {
   updatePricing,
   updateTenant,
   updateTenantConfig,
+  updatePlatformEmbeddingConfig,
   updatePlatformLlmConfig,
   updateRole,
+  updateTenantEmbeddingConfig,
   updateTenantLlmConfig,
   updateUser,
+  createDocument,
+  deleteDocument,
   fetchNotifications,
   fetchUnreadCount,
   markNotificationRead,
@@ -97,8 +104,10 @@ import type {
   ConversationFilters,
   CustomerProfileCreate,
   CustomerProfileUpdate,
+  EmbeddingConfigUpdate,
   GroupCreate,
   GroupUpdate,
+  DocumentCreate,
   LlmConfigUpdate,
   LogFilters,
   MemberCreate,
@@ -146,6 +155,11 @@ export const qk = {
   llmConfigPlatform: ["settings", "llm", "platform"] as const,
   llmConfigTenant: ["settings", "llm", "tenant"] as const,
   effectiveModels: ["settings", "models"] as const,
+  // embedding config (RAG, priority 57). Mirror the LLM config key shape.
+  embeddingConfigPlatform: ["settings", "embedding", "platform"] as const,
+  embeddingConfigTenant: ["settings", "embedding", "tenant"] as const,
+  // knowledge base documents (RAG, priority 57).
+  documents: ["knowledge", "documents"] as const,
   // tenant branding config (white-label). One row per tenant; read is open to
   // any authenticated member of the tenant, write is owner/admin only.
   tenantConfig: ["tenant-config"] as const,
@@ -602,6 +616,54 @@ export function useEffectiveModels() {
     queryKey: qk.effectiveModels,
     queryFn: fetchEffectiveModels,
   });
+}
+
+// ---------- embedding config (RAG, priority 57) ----------
+export function usePlatformEmbeddingConfig() {
+  return useQuery({
+    queryKey: qk.embeddingConfigPlatform,
+    queryFn: fetchPlatformEmbeddingConfig,
+  });
+}
+
+export function useUpdatePlatformEmbeddingConfig() {
+  return useApiMutation(
+    (payload: EmbeddingConfigUpdate) => updatePlatformEmbeddingConfig(payload),
+    [qk.embeddingConfigPlatform],
+  );
+}
+
+export function useTenantEmbeddingConfig() {
+  return useQuery({
+    queryKey: qk.embeddingConfigTenant,
+    queryFn: fetchTenantEmbeddingConfig,
+  });
+}
+
+export function useUpdateTenantEmbeddingConfig() {
+  return useApiMutation(
+    (payload: EmbeddingConfigUpdate) => updateTenantEmbeddingConfig(payload),
+    [qk.embeddingConfigTenant],
+  );
+}
+
+// ---------- knowledge base / RAG (priority 57) ----------
+export function useDocuments() {
+  return useQuery({
+    queryKey: qk.documents,
+    queryFn: fetchDocuments,
+  });
+}
+
+export function useCreateDocument() {
+  return useApiMutation(
+    (payload: DocumentCreate) => createDocument(payload),
+    [qk.documents],
+  );
+}
+
+export function useDeleteDocument() {
+  return useApiMutation((id: string) => deleteDocument(id), [qk.documents]);
 }
 
 // ---------- tenant branding config (white-label, priority 52) ----------

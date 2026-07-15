@@ -68,6 +68,9 @@ const LogsPage = lazy(() =>
 const NotificationsPage = lazy(() =>
   import("@/pages/notifications-page").then((m) => ({ default: m.NotificationsPage })),
 );
+const KnowledgePage = lazy(() =>
+  import("@/pages/knowledge-page").then((m) => ({ default: m.KnowledgePage })),
+);
 
 /** Full-screen spinner shown while a lazy route chunk loads. */
 function RouteFallback() {
@@ -111,6 +114,7 @@ export default function App() {
                 <Route path="/chat" element={<ChatPage />} />
                 <Route path="/groups" element={<GroupsPage />} />
                 <Route path="/customers" element={<CustomersPage />} />
+                <Route path="/knowledge" element={<KnowledgePage />} />
 
                 {/* 个人中心 — self-service account management. Every
                     authenticated user manages their own profile, so no

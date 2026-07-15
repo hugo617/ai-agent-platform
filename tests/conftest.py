@@ -52,13 +52,15 @@ def _make_casbin(owner_user: str, tenant_id: str):
         ("wallet", "read"), ("wallet", "update"),
         ("billing", "read"),
         ("logs", "read"),
+        ("knowledge", "read"), ("knowledge", "create"),
+        ("knowledge", "delete"),
     ]:
         e.add_policy("owner", tenant_id, obj, act)
     # Menu visibility perms for owner (all business menus; menu:tenants is
     # platform-level and intentionally absent — super_admin bypass covers it).
     for code in [
         "dashboard", "agents", "chat", "groups", "customers",
-        "members", "users", "roles", "permissions", "settings",
+        "members", "users", "roles", "permissions", "settings", "knowledge",
     ]:
         e.add_policy("owner", tenant_id, "menu", code)
     # admin: manage users + read-mostly elsewhere (no agent/customer delete).
@@ -76,11 +78,12 @@ def _make_casbin(owner_user: str, tenant_id: str):
         ("wallet", "read"), ("wallet", "update"),
         ("billing", "read"),
         ("logs", "read"),
+        ("knowledge", "read"), ("knowledge", "create"),
     ]:
         e.add_policy("admin", tenant_id, obj, act)
     for code in [
         "dashboard", "agents", "chat", "groups", "customers",
-        "members", "users", "roles", "permissions", "settings",
+        "members", "users", "roles", "permissions", "settings", "knowledge",
     ]:
         e.add_policy("admin", tenant_id, "menu", code)
     for obj, act in [
@@ -89,10 +92,11 @@ def _make_casbin(owner_user: str, tenant_id: str):
         ("roles", "read"),
         ("customers", "read"),
         ("billing", "read"),
+        ("knowledge", "read"),
     ]:
         e.add_policy("member", tenant_id, obj, act)
     # member: only the business menus (no user-management / settings menus).
-    for code in ["dashboard", "agents", "chat", "groups", "customers"]:
+    for code in ["dashboard", "agents", "chat", "groups", "customers", "knowledge"]:
         e.add_policy("member", tenant_id, "menu", code)
     return e
 
@@ -118,6 +122,8 @@ async def test_env() -> AsyncIterator[_TestEnv]:
         agent,
         api_token,
         customer,
+        document,
+        embedding_config,
         group,
         llm_config,
         log,

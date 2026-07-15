@@ -1,7 +1,7 @@
 {
   "project": "ai-agent-platform",
   "description": "多租户 AI 智能体 SaaS 平台脚手架(FastAPI + React + pycasbin + LangGraph)",
-  "last_updated": "2026-07-14",
+  "last_updated": "2026-07-16",
   "harness_version": "stage1-clean-state",
   "rules": {
     "single_active_feature": true,
@@ -1406,7 +1406,7 @@
       "area": "AI 内核",
       "title": "知识库/RAG(激活 pgvector,文档检索增强 Agent)",
       "user_visible_behavior": "门店能上传业务文档(产品手册/FAQ/话术库),Agent 对话时自动检索相关知识注入回答;从「能聊」升级到「懂业务」",
-      "status": "not_started",
+      "status": "passing",
       "plan": "harness/docs/plan-knowledge-base-rag.md",
       "verification": [
         "激活 pgvector:Document + DocumentChunk 模型(chunk 带 embedding 向量列)+ 迁移",
@@ -1416,7 +1416,18 @@
         "pytest 覆盖分块/embedding/检索/注入 + 端到端(带知识的问答)",
         "./init.sh 全绿 + npm run build 通过 + alembic check 无 drift"
       ],
-      "evidence": [],
+      "evidence": [
+        "requirements.txt 加 langchain-text-splitters==0.3.4(RAG 分块依赖);.github/workflows/ci.yml migrations job 镜像从 postgres:16 改 pgvector/pgvector:pg16(CREATE EXTENSION vector 不再在 CI 失败);config.py 加 embedding_api_key/base_url/model 三个 env 兜底字段",
+        "新建 EmbeddingConfig 独立表(因 DeepSeek 不提供 embedding,与 chat LLM 配置分离):models/embedding_config.py + repositories + schemas + service(get_effective 三级 fallback tenant>platform>env + upsert + 复用 crypto 加密);迁移 f1a2b3c4d5e6(down_revision e5f6a7b8c9d0);settings.py 加 4 端点 GET/PUT /settings/embedding/{platform,tenant};前端 settings-page 加 PlatformEmbeddingCard + TenantEmbeddingCard(仿 LlmConfigCard 删 available_models)",
+        "新建 Document + DocumentChunk 模型:embedding 列用 Vector(1536).with_variant(JSON,\"sqlite\") 让 SQLite create_all 成功(SQLite 兼容性已实测验证);迁移 f2b3c4d5e6f7 含 CREATE EXTENSION IF NOT EXISTS vector(dialect 判断 SQLite 跳过);env.py + conftest.py 两处 model import 同步",
+        "KnowledgeService:ingest(RecursiveCharacterTextSplitter chunk_size=500 overlap=50 + batch embed + 存 DocumentChunk)+ retrieve(pgvector cosine_distance 1-distance=similarity)+ CRUD;create_document 后 re-fetch 防 commit 后 expire(修 lazy load bug)",
+        "knowledge API:POST/GET/DELETE /knowledge/documents + POST /knowledge/retrieve(调试);retrieve_knowledge 工具挂到 graph.py _build_tenant_tools(权限自检 + 租户隔离 + 失败返回\"未找到相关知识\"不阻断对话)",
+        "权限 seed 3 处同步:permission_service DEFAULT_OWNER(4 act)/ADMIN(3 act 无 delete)/MEMBER(read)+OBJ_CN knowledge:知识库+MENU_CN+DEFAULT_MENU_PERMS;conftest _make_casbin 同步;test_permission_service 2 个目录断言测试更新(11 business menus / member 6 menus)",
+        "./init.sh 全绿:ruff All checks passed! + pytest 483 passed(基线 468 + 新增 15:5 test_embedding_config + 10 test_knowledge_rag)",
+        "cd frontend && npm run build:tsc + vite build 成功 0 类型错误;knowledge-page 独立 chunk 8.90KB(代码分割生效);npx oxlint src/ 0 warnings 0 errors",
+        "测试策略:分块纯函数真测;ingest 用 _FakeEmbeddingService mock(返回固定向量);retrieve 用 monkeypatch KnowledgeService.retrieve(cosine SQL PG only);权限边界(member read-only / admin 无 delete / owner 全权);租户隔离 + 软删除清 chunks",
+        "ship-it 收尾(Session 105):清理 + 审查修复 3 处 —— ① 删 knowledge:update 死权限(无对应端点/方法/工具,文档无编辑路径只删重建,从 DEFAULT_OWNER/ADMIN_PERMS + conftest + test 同步移除)② 删 DocumentChunkRepository.count_for_document 无调用方死方法 ③ 删 RetrieveHit.chunk_index 永远为 0 的误导字段(前端不消费,后端 retrieve 不返回真实 index);验证 ./init.sh 全绿(ruff + pytest 514 passed)+ npm run build 成功 + oxlint 0 warning"
+      ],
       "notes": "第三梯队 V2 大投入。现状:pgvector 声明了(requirements.txt:19 + docker-compose)但从没用过,无 embedding/分块/检索。这是让 AI 真正有用的核心能力。成本高(embedding管线+向量存储+检索调优+知识库UI)。详细 plan 执行到时写。依赖 file-upload(56,文档上传)。"
     },
     {

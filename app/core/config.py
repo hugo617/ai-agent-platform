@@ -63,6 +63,16 @@ class Settings(BaseSettings):
     openai_base_url: str = "https://api.deepseek.com"
     openai_model: str = "deepseek-chat"
 
+    # Embedding model (priority 57 — knowledge base / RAG). Separate from the
+    # chat LLM config above because DeepSeek does NOT expose an embeddings
+    # endpoint, so embeddings must target a provider that does (OpenAI by
+    # default). These are the env last-resort fallback, overridden by platform-
+    # and tenant-level EmbeddingConfig rows (managed via the settings UI), the
+    # same tenant > platform > env resolution order the chat LLM uses.
+    embedding_api_key: str = "sk-replace-me"
+    embedding_base_url: str = "https://api.openai.com"
+    embedding_model: str = "text-embedding-3-small"
+
     # Field-level encryption — Fernet key (base64 urlsafe 32 bytes) used to
     # encrypt secrets stored in the DB (e.g. LLM API keys). Generate with:
     #   python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"

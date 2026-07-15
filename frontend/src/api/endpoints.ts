@@ -22,6 +22,11 @@ import type {
   Group,
   GroupCreate,
   GroupUpdate,
+  DocumentCreate,
+  DocumentRead,
+  RetrieveResult,
+  EmbeddingConfig,
+  EmbeddingConfigUpdate,
   LlmConfig,
   LlmConfigUpdate,
   LoginRequest,
@@ -605,6 +610,69 @@ export async function updateTenantLlmConfig(
 
 export async function fetchEffectiveModels(): Promise<string[]> {
   const { data } = await api.get<string[]>("/settings/models");
+  return data;
+}
+
+// ---------- embedding settings (platform + tenant, RAG priority 57) ----------
+export async function fetchPlatformEmbeddingConfig(): Promise<EmbeddingConfig | null> {
+  const { data } = await api.get<EmbeddingConfig | null>(
+    "/settings/embedding/platform"
+  );
+  return data;
+}
+
+export async function updatePlatformEmbeddingConfig(
+  payload: EmbeddingConfigUpdate
+): Promise<EmbeddingConfig> {
+  const { data } = await api.put<EmbeddingConfig>(
+    "/settings/embedding/platform",
+    payload
+  );
+  return data;
+}
+
+export async function fetchTenantEmbeddingConfig(): Promise<EmbeddingConfig | null> {
+  const { data } = await api.get<EmbeddingConfig | null>(
+    "/settings/embedding/tenant"
+  );
+  return data;
+}
+
+export async function updateTenantEmbeddingConfig(
+  payload: EmbeddingConfigUpdate
+): Promise<EmbeddingConfig> {
+  const { data } = await api.put<EmbeddingConfig>(
+    "/settings/embedding/tenant",
+    payload
+  );
+  return data;
+}
+
+// ---------- knowledge base / RAG (priority 57) ----------
+export async function fetchDocuments(): Promise<DocumentRead[]> {
+  const { data } = await api.get<DocumentRead[]>("/knowledge/documents");
+  return data;
+}
+
+export async function createDocument(
+  payload: DocumentCreate
+): Promise<DocumentRead> {
+  const { data } = await api.post<DocumentRead>("/knowledge/documents", payload);
+  return data;
+}
+
+export async function deleteDocument(id: string): Promise<void> {
+  await api.delete(`/knowledge/documents/${id}`);
+}
+
+export async function retrieveKnowledge(
+  query: string,
+  topK = 4
+): Promise<RetrieveResult> {
+  const { data } = await api.post<RetrieveResult>("/knowledge/retrieve", {
+    query,
+    top_k: topK,
+  });
   return data;
 }
 
