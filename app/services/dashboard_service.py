@@ -27,7 +27,10 @@ from app.schemas.dashboard import (
     TenantActivityItem,
     TrendPoint,
 )
-from app.services.permission_service import permission_service
+from app.services.permission_service import (
+    is_cross_tenant_viewer,
+    permission_service,
+)
 
 # Upper bound on the trend window. Keeps the GROUP BY scan bounded; the plan's
 # risk table notes "限制 days ≤ 90". Anything larger is clamped to 90.
@@ -76,12 +79,13 @@ class DashboardService:
     ) -> DashboardTrends:
         """Daily conversation + message counts for the last ``days`` days.
 
-        Store users are scoped to their tenant (conversations:read); super_admin
-        gets the cross-tenant aggregate. ``days`` is clamped to [1, 90].
+        Store users are scoped to their tenant (conversations:read);
+        cross-tenant viewers (super_admin / hq_staff) get the platform-wide
+        aggregate. ``days`` is clamped to [1, 90].
         """
         days = max(1, min(days, MAX_TREND_DAYS))
-        is_super_admin = platform_role == "super_admin"
-        if not is_super_admin:
+        cross_tenant = is_cross_tenant_viewer(platform_role)
+        if not cross_tenant:
             await permission_service.require(
                 user_id,
                 tenant_id,
@@ -91,7 +95,7 @@ class DashboardService:
             )
         now = datetime.now(UTC)
         since = now - timedelta(days=days)
-        if is_super_admin:
+        if cross_tenant:
             rows = await self.conversations.daily_trend_all(since)
         else:
             rows = await self.conversations.daily_trend_for_tenant(tenant_id, since)

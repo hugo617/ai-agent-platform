@@ -11,7 +11,7 @@ Two access patterns, two permission guards:
   (super_admin full power + hq_staff read-only HQ panorama).
 """
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import (
@@ -32,17 +32,9 @@ from app.schemas.customer import (
     CustomerUsageRead,
 )
 from app.services.customer_service import CustomerService
-from app.services.errors import NotFoundError
 from app.services.permission_service import permission_service
 
 router = APIRouter(prefix="/customers", tags=["customers"])
-
-
-def _http_exc(e: ValueError) -> HTTPException:
-    """Map a service ValueError to the right HTTP status by exception type."""
-    if isinstance(e, NotFoundError):
-        return HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
-    return HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
 # ----------------------------------------------- HQ view (super_admin + hq_staff)
@@ -70,10 +62,7 @@ async def get_customer_aggregate(
     db: AsyncSession = Depends(get_db),
 ) -> CustomerRead:
     """One customer with every store's profile (super_admin + hq_staff)."""
-    try:
-        return await CustomerService(db).get_customer_aggregate(customer_id)
-    except ValueError as e:
-        raise _http_exc(e) from e
+    return await CustomerService(db).get_customer_aggregate(customer_id)
 
 
 # ----------------------------------------------- AI usage attribution (3/4)
@@ -206,12 +195,9 @@ async def create_profile(
     db: AsyncSession = Depends(get_db),
 ) -> CustomerProfileRead:
     """Create a customer in this store (reuses global identity if it exists)."""
-    try:
-        return await CustomerService(db).create_profile(
-            user.user_id, user.tenant_id, payload, platform_role=user.platform_role
-        )
-    except ValueError as e:
-        raise _http_exc(e) from e
+    return await CustomerService(db).create_profile(
+        user.user_id, user.tenant_id, payload, platform_role=user.platform_role
+    )
 
 
 @router.put(
@@ -226,16 +212,13 @@ async def update_profile(
     db: AsyncSession = Depends(get_db),
 ) -> CustomerProfileRead:
     """Update a store profile (syncs global-identity fields to the Customer)."""
-    try:
-        return await CustomerService(db).update_profile(
-            user.user_id,
-            user.tenant_id,
-            profile_id,
-            payload,
-            platform_role=user.platform_role,
-        )
-    except ValueError as e:
-        raise _http_exc(e) from e
+    return await CustomerService(db).update_profile(
+        user.user_id,
+        user.tenant_id,
+        profile_id,
+        payload,
+        platform_role=user.platform_role,
+    )
 
 
 @router.delete(
@@ -249,12 +232,9 @@ async def delete_profile(
     db: AsyncSession = Depends(get_db),
 ) -> None:
     """Soft-delete a store profile. The global Customer identity is preserved."""
-    try:
-        await CustomerService(db).delete_profile(
-            user.user_id,
-            user.tenant_id,
-            profile_id,
-            platform_role=user.platform_role,
-        )
-    except ValueError as e:
-        raise _http_exc(e) from e
+    await CustomerService(db).delete_profile(
+        user.user_id,
+        user.tenant_id,
+        profile_id,
+        platform_role=user.platform_role,
+    )

@@ -19,37 +19,17 @@ requires a cross-tenant viewer role — a single dependency can't express both.
 bypasses inside ``check`` (its first-line return True).
 """
 
-from datetime import datetime
-
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import CurrentUser, get_current_user
 from app.core.database import get_db
+from app.core.dates import parse_iso_dt
 from app.repositories.log import SystemLogRepository
 from app.schemas.log import SystemLogListResponse, SystemLogRead
 from app.services.permission_service import is_cross_tenant_viewer, permission_service
 
 router = APIRouter(prefix="/logs", tags=["logs"])
-
-
-def _parse_dt(raw: str | None) -> datetime | None:
-    """Parse an ISO-8601 datetime query param. Raises 400 on a bad value.
-
-    Accepted forms include a bare date (``2026-07-01`` → midnight) and a full
-    ``2026-07-01T00:00:00``. Naive datetimes are assumed UTC.
-    """
-    if raw is None:
-        return None
-    try:
-        # ``fromisoformat`` handles both "YYYY-MM-DD" and full datetimes; it
-        # rejects empty strings and malformed values with ValueError.
-        return datetime.fromisoformat(raw)
-    except ValueError as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"非法时间格式: {raw}",
-        ) from e
 
 
 @router.get(
@@ -102,8 +82,8 @@ async def list_logs(
         user_id=scope_user_id,
         action=action or None,
         resource_type=resource_type or None,
-        date_from=_parse_dt(date_from),
-        date_to=_parse_dt(date_to),
+        date_from=parse_iso_dt(date_from),
+        date_to=parse_iso_dt(date_to),
         limit=limit,
         offset=offset,
     )

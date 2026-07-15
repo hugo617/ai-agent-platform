@@ -7,19 +7,24 @@ capability existed before this feature (priority 55).
 
 Design notes (per project 铁律 + plan-data-export.md):
 
-- **Read-only aggregator** calling Repositories directly — same shape as
-  ``/dashboard/overview``, ``/logs``, ``/search``. No Service layer because
-  export is pure serialisation of already-filtered repository reads.
-- **Streaming**: an ``async`` generator yields batches of CSV rows so a large
-  export (up to ``MAX_EXPORT_ROWS``) never holds the whole result set in one
-  string. Each batch flushes its ``StringIO`` to the response as soon as it's
-  written. ``MAX_EXPORT_ROWS`` (100k) caps total memory.
+- **Read-only aggregator** issuing scoped ``select`` queries directly — same
+  shape as ``/dashboard/overview``, ``/logs``, ``/search``. No Service layer
+  because export is pure serialisation of filtered reads.
+- **Server-side streaming**: each row generator uses ``db.stream(stmt)`` and
+  ``async for`` so rows are fetched incrementally from a server-side cursor
+  rather than materialised into one list. ``_stream_rows`` then batches the
+  CSV serialisation so the response body is flushed in chunks — a large export
+  (up to ``MAX_EXPORT_ROWS``) never holds the whole result set in memory.
+- **No N+1**: customers batch-prefetch the global ``Customer`` rows in one
+  ``id IN (...)`` query; conversations compute ``message_count`` via an OUTER
+  JOIN + GROUP BY in the same query that fetches the rows.
 - **UTF-8 BOM** (``\\ufeff``) at the start so Excel decodes Chinese columns
   correctly (Excel guesses GBK on a bare UTF-8 CSV and shows mojibake).
-- **Multi-tenant isolation** stays in the Repository layer (per 铁律). The
-  scope split mirrors ``/logs`` + ``/customers/{id}/usage``: store users are
-  pinned to their tenant; cross-tenant viewers (super_admin / hq_staff) see
-  the whole platform (optionally narrowed by ``tenant_id``).
+- **Multi-tenant isolation**: the scope split mirrors ``/logs`` +
+  ``/customers/{id}/usage`` — store users are pinned to their tenant;
+  cross-tenant viewers (super_admin / hq_staff) see the whole platform
+  (optionally narrowed by ``tenant_id``). The ``tenant_id``/``user_id``
+  predicates live in the query WHERE, not in a service "remember to filter".
 - **Per-entity permission**: the guard is inlined (not a router
   ``dependencies=``) because each entity needs a different read permission
   (customers:read / conversations:read / wallet:read|billing:read /
@@ -39,10 +44,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import CurrentUser, get_current_user
 from app.core.database import get_db
-from app.repositories.conversation import ConversationRepository
-from app.repositories.customer import CustomerProfileRepository, CustomerRepository
+from app.core.dates import parse_iso_dt, row_dt, to_naive_utc
 from app.repositories.log import SystemLogRepository
-from app.repositories.usage_event import UsageEventRepository
 from app.services.permission_service import is_cross_tenant_viewer, permission_service
 
 router = APIRouter(prefix="/exports", tags=["exports"])
@@ -61,50 +64,6 @@ DEFAULT_WINDOW_DAYS = 30
 # The four supported entities, in the order the frontend lists them. Kept as a
 # constant so the 404 path and any future OpenAPI doc stay in sync.
 ENTITIES: tuple[str, ...] = ("customers", "conversations", "usage", "logs")
-
-
-def _parse_dt(raw: str | None) -> datetime | None:
-    """Parse an ISO-8601 datetime query param. Raises 400 on a bad value.
-
-    Mirrors ``app.api.v1.logs._parse_dt``: accepts a bare date
-    (``2026-07-01`` → midnight) and a full ``2026-07-01T00:00:00``. Naive
-    datetimes are assumed UTC. Kept local (not re-imported) so this module
-    stays self-contained.
-    """
-    if raw is None:
-        return None
-    try:
-        return datetime.fromisoformat(raw)
-    except ValueError as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"非法时间格式: {raw}",
-        ) from e
-
-
-def _as_naive_utc(dt: datetime | None) -> datetime | None:
-    """Drop tzinfo (converting to UTC first) so comparisons against SQLite rows work.
-
-    SQLite stores datetimes without timezone info, so a row's ``created_at``
-    arrives as naive (the DB returns whatever was stored, and SQLAlchemy's
-    ``DateTime(timezone=True)`` is a no-op on SQLite). Comparing that against an
-    offset-aware query param raises ``TypeError``. We normalise both sides to
-    naive-UTC for the export's in-Python date filter.
-    """
-    if dt is None:
-        return None
-    if dt.tzinfo is not None:
-        dt = dt.astimezone(UTC).replace(tzinfo=None)
-    return dt
-
-
-def _row_dt(value: datetime | None) -> datetime | None:
-    """Normalise a row's stored datetime to naive for comparison (see above)."""
-    if value is None:
-        return None
-    if value.tzinfo is not None:
-        return value.astimezone(UTC).replace(tzinfo=None)
-    return value
 
 
 def _default_window(date_from: datetime | None, date_to: datetime | None) -> tuple[datetime, datetime | None]:
@@ -202,33 +161,53 @@ async def _customer_rows(
 ) -> AsyncIterator[dict[str, Any]]:
     """Yield customer profile rows joined to the global identity.
 
-    Store scope → ``CustomerProfileRepository.list_for_tenant`` (own store);
-    cross-tenant → ``list_all`` (every store's profiles). The plan's columns
-    (name/identity_key/gender/status/created_at/tags) live across the two
-    models, so we join in Python via the profile's ``customer`` relationship —
-    the Repository already eager-loads it for the list endpoints.
+    Store scope → profiles in one tenant; cross-tenant → every store's
+    profiles. Columns (name/identity_key/gender) live on the platform-level
+    ``Customer``; status/created_at/tags live on the store ``CustomerProfile``.
+
+    N+1 avoidance: the profile columns come from a single scoped query, then
+    the related Customer rows are fetched in ONE batch (``id IN (...)``) and
+    joined in Python — no per-row lookup. Streaming via ``db.stream`` so a
+    large tenant's profiles don't all materialise in memory at once.
     """
-    repo = CustomerProfileRepository(db)
+    from sqlalchemy import select
+
+    from app.models.customer import Customer, CustomerProfile
+
+    naive_from = to_naive_utc(date_from)
+    naive_to = to_naive_utc(date_to)
+
+    prof_stmt = select(CustomerProfile).where(CustomerProfile.is_deleted.is_(False))
     if scope_tenant is not None:
-        profiles = await repo.list_for_tenant(scope_tenant)
-    else:
-        profiles = await repo.list_all()
-    # The global Customer carries name/identity_key/gender; we fetch each by id
-    # to avoid assuming a relationship is eager-loaded on every code path.
-    cust_repo = CustomerRepository(db)
-    # Date filter applies to the profile's created_at (when this store
-    # registered the customer), applied in Python since the list methods don't
-    # take a date window. Kept simple: small per-store lists. Both sides are
-    # normalised to naive-UTC (SQLite stores naive; query params may be aware).
-    naive_from = _as_naive_utc(date_from)
-    naive_to = _as_naive_utc(date_to)
-    for p in profiles:
-        row_created = _row_dt(p.created_at)
+        prof_stmt = prof_stmt.where(CustomerProfile.tenant_id == scope_tenant)
+    prof_stmt = prof_stmt.order_by(CustomerProfile.created_at.desc()).limit(MAX_EXPORT_ROWS)
+
+    # Batch-prefetch the global Customer rows referenced by the profiles so the
+    # join is O(1) per row instead of a query per row (the old N+1). We collect
+    # profile rows first (they're bounded by MAX_EXPORT_ROWS) then one query.
+    profiles: list[CustomerProfile] = []
+    async for p in (await db.stream(prof_stmt)).scalars():
+        row_created = row_dt(p.created_at)
         if naive_from is not None and row_created is not None and row_created < naive_from:
             continue
         if naive_to is not None and row_created is not None and row_created > naive_to:
             continue
-        cust = await cust_repo.get(p.customer_id)
+        profiles.append(p)
+
+    cust_ids = list({p.customer_id for p in profiles})
+    customers_map: dict[str, Customer] = {}
+    if cust_ids:
+        cust_rows = (
+            await db.execute(
+                select(Customer).where(
+                    Customer.id.in_(cust_ids), Customer.is_deleted.is_(False)
+                )
+            )
+        ).scalars().all()
+        customers_map = {c.id: c for c in cust_rows}
+
+    for p in profiles:
+        cust = customers_map.get(p.customer_id)
         yield {
             "name": cust.name if cust else "",
             "identity_key": cust.identity_key if cust else "",
@@ -244,53 +223,50 @@ async def _conversation_rows(
 ) -> AsyncIterator[dict[str, Any]]:
     """Yield conversation rows for a user (store scope) or all (cross-tenant).
 
-    Store scope → the caller's own conversations in their tenant (matches
-    ``ConversationRepository.list_for_user``); cross-tenant → every
-    conversation platform-wide (super_admin / hq_staff panorama). The plan's
-    ``message_count`` isn't a stored column, so we count messages per
-    conversation (cheap on reasonable windows; bounded by MAX_EXPORT_ROWS).
+    Store scope → the caller's own conversations in their tenant; cross-tenant
+    → every conversation platform-wide (super_admin / hq_staff panorama).
+
+    ``message_count`` is computed in a single query via an OUTER JOIN + GROUP BY
+    (one round-trip for conversations + counts), not a per-row count query (the
+    old N+1). We deliberately do NOT reuse ``ConversationRepository.search_all``
+    — it matches on ``title ILIKE`` and would drop NULL-title rows; an export
+    must be lossless. Streaming via ``db.stream``.
     """
     from sqlalchemy import func, select
 
     from app.models.agent import Conversation
     from app.models.message import Message
 
-    repo = ConversationRepository(db)
+    naive_from = to_naive_utc(date_from)
+    naive_to = to_naive_utc(date_to)
+
+    msg_count = func.count(Message.id).label("message_count")
+    stmt = (
+        select(Conversation, msg_count)
+        .outerjoin(Message, Message.conversation_id == Conversation.id)
+        .group_by(Conversation.id)
+        .order_by(Conversation.created_at.desc())
+        .limit(MAX_EXPORT_ROWS)
+    )
     if scope_tenant is not None:
-        # list_for_user is tenant + user scoped; a store owner/admin exporting
-        # their tenant's conversations is the own-user case.
-        conversations = await repo.list_for_user(scope_tenant, user_id or "", limit=MAX_EXPORT_ROWS)
-    else:
-        # Cross-tenant: pull every conversation up to the cap. We deliberately
-        # do NOT reuse ConversationRepository.search_all here — it matches on
-        # ``title ILIKE`` and would silently drop conversations whose title is
-        # NULL (title is nullable); an export must be lossless. A plain select
-        # covers every row regardless of title.
-        stmt = (
-            select(Conversation)
-            .order_by(Conversation.created_at.desc())
-            .limit(MAX_EXPORT_ROWS)
+        stmt = stmt.where(
+            Conversation.tenant_id == scope_tenant,
+            Conversation.user_id == (user_id or ""),
         )
-        conversations = list((await db.execute(stmt)).scalars().all())
-    naive_from = _as_naive_utc(date_from)
-    naive_to = _as_naive_utc(date_to)
-    for c in conversations:
-        row_created = _row_dt(c.created_at)
+
+    result = await db.stream(stmt)
+    async for c, count in result:
+        row_created = row_dt(c.created_at)
         if naive_from is not None and row_created is not None and row_created < naive_from:
             continue
         if naive_to is not None and row_created is not None and row_created > naive_to:
             continue
-        # message_count: count rows on the messages table for this conversation.
-        count_stmt = select(func.count()).select_from(Message).where(
-            Message.conversation_id == c.id
-        )
-        msg_count = int((await db.execute(count_stmt)).scalar_one())
         yield {
             "title": c.title or "",
             "agent_id": c.agent_id,
             "user_id": c.user_id,
             "created_at": c.created_at,
-            "message_count": msg_count,
+            "message_count": int(count),
             "is_pinned": c.is_pinned,
             "is_starred": c.is_starred,
         }
@@ -301,29 +277,23 @@ async def _usage_rows(
 ) -> AsyncIterator[dict[str, Any]]:
     """Yield token usage events (store scope = this tenant; HQ = all).
 
-    Uses ``UsageEventRepository.list_for_tenant`` for store scope and a plain
-    select for the cross-tenant path (no existing list_all helper). The plan's
-    columns (date/conversation_id/model/prompt/completion/total/cost/customer_id)
-    are all columns on UsageEvent, so each row maps 1:1.
+    Columns (date/conversation_id/model/prompt/completion/total/cost/customer_id)
+    are all columns on UsageEvent, so each row maps 1:1. Streaming via
+    ``db.stream``.
     """
+    from sqlalchemy import select
+
     from app.models.usage_event import UsageEvent
 
-    if scope_tenant is not None:
-        repo = UsageEventRepository(db)
-        events = await repo.list_for_tenant(scope_tenant, limit=MAX_EXPORT_ROWS)
-    else:
-        from sqlalchemy import select
+    naive_from = to_naive_utc(date_from)
+    naive_to = to_naive_utc(date_to)
 
-        stmt = (
-            select(UsageEvent)
-            .order_by(UsageEvent.created_at.desc())
-            .limit(MAX_EXPORT_ROWS)
-        )
-        events = list((await db.execute(stmt)).scalars().all())
-    naive_from = _as_naive_utc(date_from)
-    naive_to = _as_naive_utc(date_to)
-    for e in events:
-        row_created = _row_dt(e.created_at)
+    stmt = select(UsageEvent).order_by(UsageEvent.created_at.desc()).limit(MAX_EXPORT_ROWS)
+    if scope_tenant is not None:
+        stmt = stmt.where(UsageEvent.tenant_id == scope_tenant)
+
+    async for e in (await db.stream(stmt)).scalars():
+        row_created = row_dt(e.created_at)
         if naive_from is not None and row_created is not None and row_created < naive_from:
             continue
         if naive_to is not None and row_created is not None and row_created > naive_to:
@@ -448,8 +418,8 @@ async def export_entity(
         # Cross-tenant viewer (super_admin / hq_staff): optional tenant filter.
         scope_tenant = tenant_id
 
-    parsed_from = _parse_dt(date_from)
-    parsed_to = _parse_dt(date_to)
+    parsed_from = parse_iso_dt(date_from)
+    parsed_to = parse_iso_dt(date_to)
     parsed_from, parsed_to = _default_window(parsed_from, parsed_to)
 
     # Build the per-entity async row generator. ``conversations`` needs the

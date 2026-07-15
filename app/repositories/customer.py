@@ -36,6 +36,19 @@ class CustomerRepository(BaseRepository[Customer]):
         )
         return (await self.db.execute(stmt)).scalar_one_or_none()
 
+    async def get_many(self, customer_ids: list[str]) -> list[Customer]:
+        """Fetch live customers by a batch of ids (avoids N+1 in list paths).
+
+        Returns the rows in arbitrary order; callers build a map. Empty input
+        returns [] without hitting the DB (avoids ``IN ()`` SQL error).
+        """
+        if not customer_ids:
+            return []
+        stmt = select(Customer).where(
+            Customer.id.in_(customer_ids), Customer.is_deleted.is_(False)
+        )
+        return list((await self.db.execute(stmt)).scalars().all())
+
     async def get_by_identity(self, identity_key: str) -> Customer | None:
         """Look up a live customer by identity_key (cross-store recognition)."""
         stmt = select(Customer).where(

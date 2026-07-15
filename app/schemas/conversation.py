@@ -5,14 +5,6 @@ from datetime import datetime
 from pydantic import BaseModel, ConfigDict, Field
 
 
-class ConversationCreate(BaseModel):
-    agent_id: str
-    title: str | None = None
-    # Optional customer attribution (Token 费用管理系列 3/4). Nullable: not
-    # every conversation is tied to a customer (staff internal queries).
-    customer_id: str | None = None
-
-
 class ConversationRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: str
