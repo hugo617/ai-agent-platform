@@ -25,17 +25,9 @@ from app.repositories.conversation import MessageRepository
 from app.repositories.usage_event import UsageEventRepository
 from app.schemas.conversation import ChatRequest
 from app.services.conversation_service import ConversationService
-from app.services.errors import NotFoundError
 from app.services.llm_config_service import llm_config_service
 
 router = APIRouter(prefix="/chat", tags=["chat"])
-
-
-def _http_exc(e: ValueError) -> HTTPException:
-    """Map a service ValueError to the right HTTP status by exception type."""
-    if isinstance(e, NotFoundError):
-        return HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
-    return HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
 async def _load_agent(db: AsyncSession, tenant_id: str, agent_id: str) -> Agent:
@@ -144,18 +136,15 @@ async def chat_stream(
     agent = await _load_agent(db, user.tenant_id, payload.agent_id)
 
     conv_service = ConversationService(db)
-    try:
-        conv = await conv_service.create_or_get(
-            user_id=user.user_id,
-            tenant_id=user.tenant_id,
-            agent_id=agent.id,
-            conversation_id=payload.conversation_id,
-            platform_role=user.platform_role,
-            first_message=payload.message,
-            customer_id=payload.customer_id,
-        )
-    except ValueError as e:
-        raise _http_exc(e) from e
+    conv = await conv_service.create_or_get(
+        user_id=user.user_id,
+        tenant_id=user.tenant_id,
+        agent_id=agent.id,
+        conversation_id=payload.conversation_id,
+        platform_role=user.platform_role,
+        first_message=payload.message,
+        customer_id=payload.customer_id,
+    )
 
     # Persist the user's message immediately.
     await conv_service.append_message(conv.tenant_id, conv.id, "user", payload.message)

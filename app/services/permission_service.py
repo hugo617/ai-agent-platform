@@ -140,8 +140,8 @@ class PermissionService:
 
         return await run_in_threadpool(_do)
 
-    # TODO: reserved — expose via a future /roles/permissions or permissions
-    # inspection page. Not currently called by any endpoint.
+    # Backs the ``permissions`` array on ``/auth/me`` (drives the frontend's
+    # menu/button visibility). Returns casbin's flattened policy pairs.
     async def get_implicit_permissions_for_user(
         self, user_id: str, tenant_id: str
     ) -> list[list[str]]:

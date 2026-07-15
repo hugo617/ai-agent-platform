@@ -9,7 +9,7 @@ credential (resolved by the ``ahp_`` bypass in ``get_current_user``) and gets
 back its identity — this is what ``agenthub whoami`` calls.
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import CurrentUser, get_current_user, require_permission
@@ -20,16 +20,8 @@ from app.schemas.api_token import (
     ApiTokenRead,
 )
 from app.services.api_token_service import api_token_service
-from app.services.errors import NotFoundError
 
 router = APIRouter(prefix="/api-tokens", tags=["api-tokens"])
-
-
-def _http_exc(e: ValueError) -> HTTPException:
-    """Map a service ValueError to the right HTTP status by exception type."""
-    if isinstance(e, NotFoundError):
-        return HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
-    return HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
 @router.post(
@@ -75,12 +67,9 @@ async def revoke_token(
     db: AsyncSession = Depends(get_db),
 ) -> None:
     """Revoke (soft-delete) an API token."""
-    try:
-        await api_token_service.revoke(
-            db, user.user_id, user.tenant_id, token_id, platform_role=user.platform_role
-        )
-    except ValueError as e:
-        raise _http_exc(e) from e
+    await api_token_service.revoke(
+        db, user.user_id, user.tenant_id, token_id, platform_role=user.platform_role
+    )
 
 
 @router.get("/verify", response_model=dict)

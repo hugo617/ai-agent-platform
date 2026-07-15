@@ -44,16 +44,8 @@ from app.schemas.billing import (
     WalletUpdate,
 )
 from app.services.billing_service import BillingService
-from app.services.errors import NotFoundError
 
 router = APIRouter(prefix="/billing", tags=["billing"])
-
-
-def _http_exc(e: ValueError) -> HTTPException:
-    """Map a service ValueError to the right HTTP status (mirrors agents.py)."""
-    if isinstance(e, NotFoundError):
-        return HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
-    return HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
 # --------------------------------------------------------------- wallet read
@@ -193,15 +185,12 @@ async def recharge_wallet(
     remark (e.g. "7月采购") is optional.
     """
     service = BillingService(db)
-    try:
-        return await service.recharge(
-            payload.tenant_id,
-            payload.amount,
-            operator_id=user.user_id,
-            remark=payload.remark,
-        )
-    except ValueError as e:
-        raise _http_exc(e) from e
+    return await service.recharge(
+        payload.tenant_id,
+        payload.amount,
+        operator_id=user.user_id,
+        remark=payload.remark,
+    )
 
 
 # --------------------------------------------------------------- pricing

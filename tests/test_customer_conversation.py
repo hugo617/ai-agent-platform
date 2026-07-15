@@ -9,9 +9,8 @@ did serving customer X consume":
   overwrites it on a follow-up turn (reuse path keeps the original binding).
 - ``_record_usage`` — propagates ``conv.customer_id`` onto the UsageEvent so
   the ledger row is attributable.
-- ``UsageEventRepository`` — ``sum_tokens_for_customer`` / ``list_for_customer``
-  aggregation, store-scoped vs global (HQ) views.
-- ``ConversationRepository.list_for_customer`` — chats tied to a customer.
+- ``UsageEventRepository`` — ``sum_tokens_for_customer`` aggregation,
+  store-scoped vs global (HQ) views.
 - API — ``GET /customers/{id}/usage`` store vs HQ scope, permission boundary,
   backward compatibility (NULL customer_id → zero usage).
 
@@ -314,29 +313,6 @@ async def test_sum_tokens_for_customer_no_attribution_returns_zeros(
     assert (prompt, completion, total) == (0, 0, 0)
     assert conv_count == 0
     assert last is None
-
-
-# ----------------------------------------- ConversationRepository.list_for_customer
-
-
-async def test_list_for_customer_returns_attributed_conversations(
-    db_session, test_env
-):
-    """list_for_customer returns only conversations tied to the customer."""
-    from app.repositories.conversation import ConversationRepository
-
-    agent = await _seed_agent(db_session, test_env.tenant_id)
-    customer = await _seed_customer(db_session)
-    conv1 = await _seed_conversation(
-        db_session, test_env.tenant_id, agent.id, customer_id=customer.id
-    )
-    # An unattributed conversation (staff internal) — must NOT appear.
-    await _seed_conversation(db_session, test_env.tenant_id, agent.id)
-
-    result = await ConversationRepository(db_session).list_for_customer(
-        test_env.tenant_id, customer.id
-    )
-    assert [c.id for c in result] == [conv1.id]
 
 
 # ----------------------------------------------------------- API layer

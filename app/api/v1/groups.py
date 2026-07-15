@@ -13,23 +13,15 @@ NOT the usual ``require_permission("groups", act)``:
 tenant roles have no ``groups:*`` grant, and reads bypass casbin entirely.
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import CurrentUser, get_current_user, require_super_admin
 from app.core.database import get_db
 from app.schemas.group import GroupCreate, GroupRead, GroupUpdate
-from app.services.errors import NotFoundError
 from app.services.group_service import GroupService
 
 router = APIRouter(prefix="/groups", tags=["groups"])
-
-
-def _http_exc(e: ValueError) -> HTTPException:
-    """Map a service ValueError to the right HTTP status by exception type."""
-    if isinstance(e, NotFoundError):
-        return HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
-    return HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
 # -------------------------------------------------------------------- reads
@@ -60,12 +52,9 @@ async def get_group(
     user: CurrentUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> GroupRead:
-    try:
-        return await GroupService(db).get(
-            user.tenant_id, group_id, platform_role=user.platform_role
-        )
-    except ValueError as e:
-        raise _http_exc(e) from e
+    return await GroupService(db).get(
+        user.tenant_id, group_id, platform_role=user.platform_role
+    )
 
 
 # ------------------------------------------------------------------- writes
@@ -81,10 +70,7 @@ async def create_group(
     payload: GroupCreate,
     db: AsyncSession = Depends(get_db),
 ) -> GroupRead:
-    try:
-        return await GroupService(db).create(payload)
-    except ValueError as e:
-        raise _http_exc(e) from e
+    return await GroupService(db).create(payload)
 
 
 @router.put(
@@ -97,10 +83,7 @@ async def update_group(
     payload: GroupUpdate,
     db: AsyncSession = Depends(get_db),
 ) -> GroupRead:
-    try:
-        return await GroupService(db).update(group_id, payload)
-    except ValueError as e:
-        raise _http_exc(e) from e
+    return await GroupService(db).update(group_id, payload)
 
 
 @router.delete(
@@ -112,10 +95,7 @@ async def delete_group(
     group_id: str,
     db: AsyncSession = Depends(get_db),
 ) -> None:
-    try:
-        await GroupService(db).delete(group_id)
-    except ValueError as e:
-        raise _http_exc(e) from e
+    await GroupService(db).delete(group_id)
 
 
 # ----------------------------------------------------- tenant attach/detach
@@ -131,10 +111,7 @@ async def attach_tenant(
     tenant_id: str,
     db: AsyncSession = Depends(get_db),
 ) -> None:
-    try:
-        await GroupService(db).attach_tenant(group_id, tenant_id)
-    except ValueError as e:
-        raise _http_exc(e) from e
+    await GroupService(db).attach_tenant(group_id, tenant_id)
 
 
 @router.delete(
@@ -147,7 +124,4 @@ async def detach_tenant(
     tenant_id: str,
     db: AsyncSession = Depends(get_db),
 ) -> None:
-    try:
-        await GroupService(db).detach_tenant(group_id, tenant_id)
-    except ValueError as e:
-        raise _http_exc(e) from e
+    await GroupService(db).detach_tenant(group_id, tenant_id)

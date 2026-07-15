@@ -5,7 +5,7 @@ three system roles). Read access is required for every endpoint; mutations need
 the matching ``roles:*`` permission.
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import CurrentUser, get_current_user, require_permission
@@ -18,21 +18,9 @@ from app.schemas.rbac import (
     RoleRead,
     RoleUpdate,
 )
-from app.services.errors import NotFoundError
 from app.services.rbac_service import RbacService
 
 router = APIRouter(prefix="/roles", tags=["roles"])
-
-
-def _http_exc(e: ValueError) -> HTTPException:
-    """Map a service ValueError to the right HTTP status by exception type.
-
-    Uses the exception type (not a substring match on the message) so the
-    error text can be freely localized without breaking the 404/400 routing.
-    """
-    if isinstance(e, NotFoundError):
-        return HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
-    return HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
 @router.get(
@@ -75,12 +63,9 @@ async def create_role(
     user: CurrentUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> RoleRead:
-    try:
-        return await RbacService(db).create(
-            user.user_id, user.tenant_id, payload, platform_role=user.platform_role
-        )
-    except ValueError as e:
-        raise _http_exc(e) from e
+    return await RbacService(db).create(
+        user.user_id, user.tenant_id, payload, platform_role=user.platform_role
+    )
 
 
 @router.put(
@@ -94,16 +79,13 @@ async def update_role(
     user: CurrentUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> RoleRead:
-    try:
-        return await RbacService(db).update(
-            user.user_id,
-            user.tenant_id,
-            role_id,
-            payload,
-            platform_role=user.platform_role,
-        )
-    except ValueError as e:
-        raise _http_exc(e) from e
+    return await RbacService(db).update(
+        user.user_id,
+        user.tenant_id,
+        role_id,
+        payload,
+        platform_role=user.platform_role,
+    )
 
 
 @router.delete(
@@ -116,12 +98,9 @@ async def delete_role(
     user: CurrentUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> None:
-    try:
-        await RbacService(db).delete(
-            user.user_id, user.tenant_id, role_id, platform_role=user.platform_role
-        )
-    except ValueError as e:
-        raise _http_exc(e) from e
+    await RbacService(db).delete(
+        user.user_id, user.tenant_id, role_id, platform_role=user.platform_role
+    )
 
 
 # ----- role ↔ permission grants (SCD2 history source; resync casbin) -----
@@ -138,12 +117,9 @@ async def list_role_permissions(
     db: AsyncSession = Depends(get_db),
 ) -> list[RolePermissionRead]:
     """Active ``(obj, act)`` grants for a role (current SCD2 state)."""
-    try:
-        return await RbacService(db).list_permissions(
-            user.user_id, user.tenant_id, role_id, platform_role=user.platform_role
-        )
-    except ValueError as e:
-        raise _http_exc(e) from e
+    return await RbacService(db).list_permissions(
+        user.user_id, user.tenant_id, role_id, platform_role=user.platform_role
+    )
 
 
 @router.post(
@@ -159,16 +135,13 @@ async def grant_role_permission(
     db: AsyncSession = Depends(get_db),
 ) -> RolePermissionRead:
     """Grant ``(obj, act)`` to a role — writes SCD2 + resyncs casbin + audits."""
-    try:
-        return await RbacService(db).grant_permission(
-            user.user_id,
-            user.tenant_id,
-            role_id,
-            payload,
-            platform_role=user.platform_role,
-        )
-    except ValueError as e:
-        raise _http_exc(e) from e
+    return await RbacService(db).grant_permission(
+        user.user_id,
+        user.tenant_id,
+        role_id,
+        payload,
+        platform_role=user.platform_role,
+    )
 
 
 @router.delete(
@@ -183,13 +156,10 @@ async def revoke_role_permission(
     db: AsyncSession = Depends(get_db),
 ) -> None:
     """Revoke a permission from a role — closes SCD2 row + resyncs casbin."""
-    try:
-        await RbacService(db).revoke_permission(
-            user.user_id,
-            user.tenant_id,
-            role_id,
-            permission_id,
-            platform_role=user.platform_role,
-        )
-    except ValueError as e:
-        raise _http_exc(e) from e
+    await RbacService(db).revoke_permission(
+        user.user_id,
+        user.tenant_id,
+        role_id,
+        permission_id,
+        platform_role=user.platform_role,
+    )

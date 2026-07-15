@@ -11,7 +11,7 @@ tags, pin/star and batch-delete. Every management mutation reuses the same
 ownership rule as delete: the conversation must belong to the caller.
 """
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import CurrentUser, get_current_user, require_permission
@@ -27,16 +27,8 @@ from app.schemas.conversation import (
     TagAdd,
 )
 from app.services.conversation_service import ConversationService
-from app.services.errors import NotFoundError
 
 router = APIRouter(prefix="/conversations", tags=["conversations"])
-
-
-def _http_exc(e: ValueError) -> HTTPException:
-    """Map a service ValueError to the right HTTP status by exception type."""
-    if isinstance(e, NotFoundError):
-        return HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
-    return HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
 @router.get(
@@ -103,15 +95,12 @@ async def batch_delete_conversations(
     id yields 404 instead of being silently skipped. Returns ``{"deleted": n}``.
     """
     service = ConversationService(db)
-    try:
-        deleted = await service.batch_delete(
-            user.user_id,
-            user.tenant_id,
-            payload.conversation_ids,
-            platform_role=user.platform_role,
-        )
-    except ValueError as e:
-        raise _http_exc(e) from e
+    deleted = await service.batch_delete(
+        user.user_id,
+        user.tenant_id,
+        payload.conversation_ids,
+        platform_role=user.platform_role,
+    )
     return {"deleted": deleted}
 
 
@@ -144,15 +133,12 @@ async def delete_conversation(
 ) -> None:
     """Delete a conversation (hard delete; messages cascade)."""
     service = ConversationService(db)
-    try:
-        await service.delete(
-            user.user_id,
-            user.tenant_id,
-            conversation_id,
-            platform_role=user.platform_role,
-        )
-    except ValueError as e:
-        raise _http_exc(e) from e
+    await service.delete(
+        user.user_id,
+        user.tenant_id,
+        conversation_id,
+        platform_role=user.platform_role,
+    )
 
 
 # ------------------------------------- conversation-management (priority 50)
@@ -175,16 +161,13 @@ async def rename_conversation(
 ) -> ConversationRead:
     """Rename a conversation owned by the caller."""
     service = ConversationService(db)
-    try:
-        return await service.rename(
-            user.user_id,
-            user.tenant_id,
-            conversation_id,
-            payload.title,
-            platform_role=user.platform_role,
-        )
-    except ValueError as e:
-        raise _http_exc(e) from e
+    return await service.rename(
+        user.user_id,
+        user.tenant_id,
+        conversation_id,
+        payload.title,
+        platform_role=user.platform_role,
+    )
 
 
 @router.post(
@@ -200,16 +183,13 @@ async def add_tag(
 ) -> ConversationRead:
     """Append a tag to a conversation owned by the caller (idempotent)."""
     service = ConversationService(db)
-    try:
-        return await service.add_tag(
-            user.user_id,
-            user.tenant_id,
-            conversation_id,
-            payload.tag,
-            platform_role=user.platform_role,
-        )
-    except ValueError as e:
-        raise _http_exc(e) from e
+    return await service.add_tag(
+        user.user_id,
+        user.tenant_id,
+        conversation_id,
+        payload.tag,
+        platform_role=user.platform_role,
+    )
 
 
 @router.delete(
@@ -225,16 +205,13 @@ async def remove_tag(
 ) -> ConversationRead:
     """Remove a tag from a conversation owned by the caller."""
     service = ConversationService(db)
-    try:
-        return await service.remove_tag(
-            user.user_id,
-            user.tenant_id,
-            conversation_id,
-            tag,
-            platform_role=user.platform_role,
-        )
-    except ValueError as e:
-        raise _http_exc(e) from e
+    return await service.remove_tag(
+        user.user_id,
+        user.tenant_id,
+        conversation_id,
+        tag,
+        platform_role=user.platform_role,
+    )
 
 
 @router.patch(
@@ -250,16 +227,13 @@ async def set_pinned(
 ) -> ConversationRead:
     """Set or clear the pinned flag on a conversation owned by the caller."""
     service = ConversationService(db)
-    try:
-        return await service.set_pinned(
-            user.user_id,
-            user.tenant_id,
-            conversation_id,
-            payload.pinned,
-            platform_role=user.platform_role,
-        )
-    except ValueError as e:
-        raise _http_exc(e) from e
+    return await service.set_pinned(
+        user.user_id,
+        user.tenant_id,
+        conversation_id,
+        payload.pinned,
+        platform_role=user.platform_role,
+    )
 
 
 @router.patch(
@@ -275,13 +249,10 @@ async def set_starred(
 ) -> ConversationRead:
     """Set or clear the starred flag on a conversation owned by the caller."""
     service = ConversationService(db)
-    try:
-        return await service.set_starred(
-            user.user_id,
-            user.tenant_id,
-            conversation_id,
-            payload.starred,
-            platform_role=user.platform_role,
-        )
-    except ValueError as e:
-        raise _http_exc(e) from e
+    return await service.set_starred(
+        user.user_id,
+        user.tenant_id,
+        conversation_id,
+        payload.starred,
+        platform_role=user.platform_role,
+    )

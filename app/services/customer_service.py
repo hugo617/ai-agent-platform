@@ -163,13 +163,11 @@ class CustomerService:
                 owner_user_id=resolved.owner_user_id,
                 limit=100,
             )
-        # Batch-load customers to avoid N+1.
+        # Batch-load customers in one query (avoids the per-profile N+1).
         customer_ids = list({p.customer_id for p in profiles})
-        customers_map: dict[str, Customer] = {}
-        for cid in customer_ids:
-            c = await self.customers.get(cid)
-            if c is not None:
-                customers_map[cid] = c
+        customers_map: dict[str, Customer] = {
+            c.id: c for c in await self.customers.get_many(customer_ids)
+        }
         result = []
         for p in profiles:
             c = customers_map.get(p.customer_id)
@@ -324,13 +322,20 @@ class CustomerService:
     async def list_customers_hq(
         self,
     ) -> list[CustomerRead]:
-        """super_admin only: all customers with their cross-store profiles."""
+        """super_admin only: all customers with their cross-store profiles.
+
+        Loads all profiles in ONE query and groups them in Python (avoids the
+        per-customer N+1 that ``list_for_customer`` in a loop would cause).
+        """
         customers = await self.customers.list_all()
-        result = []
-        for c in customers:
-            profiles = await self.profiles.list_for_customer(c.id)
-            result.append(await self._to_customer_read(c, profiles))
-        return result
+        all_profiles = await self.profiles.list_all()
+        profiles_by_customer: dict[str, list] = {}
+        for p in all_profiles:
+            profiles_by_customer.setdefault(p.customer_id, []).append(p)
+        return [
+            await self._to_customer_read(c, profiles_by_customer.get(c.id, []))
+            for c in customers
+        ]
 
     async def get_customer_aggregate(
         self, customer_id: str

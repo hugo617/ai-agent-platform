@@ -44,6 +44,7 @@ from app.repositories.wallet import (
     WalletRepository,
     WalletTransactionRepository,
 )
+from app.services.errors import BizError
 
 # How many decimal places the cost snapshot keeps. Pricing is per-1k-tokens at
 # sub-cent precision, so 6dp is enough to represent a single token's cost for
@@ -212,11 +213,11 @@ class BillingService:
         caller bug, not a recoverable state).
         """
         if amount <= 0:
-            raise ValueError("充值额度必须为正整数")
+            raise BizError("充值额度必须为正整数")
 
         wallet = await self.wallets.get_for_tenant_for_update(tenant_id)
         if wallet is None:
-            raise ValueError(f"租户 {tenant_id} 没有钱包,无法充值")
+            raise BizError(f"租户 {tenant_id} 没有钱包,无法充值")
 
         wallet.balance += amount
         wallet.total_recharged += amount

@@ -9,7 +9,10 @@ from app.models.message import Message
 from app.repositories.conversation import ConversationRepository, MessageRepository
 from app.schemas.conversation import ConversationRead, ConversationStatistics, MessageRead
 from app.services.errors import NotFoundError
-from app.services.permission_service import permission_service
+from app.services.permission_service import (
+    is_cross_tenant_viewer,
+    permission_service,
+)
 
 
 class ConversationService:
@@ -98,18 +101,19 @@ class ConversationService:
     ) -> ConversationStatistics:
         """Conversation counts (total + 7d/30d windows) for the dashboard card.
 
-        Store users are scoped to their tenant; super_admin aggregates across
-        every tenant. Windows are on ``created_at`` (when the chat started).
+        Store users are scoped to their tenant; cross-tenant viewers
+        (super_admin / hq_staff) aggregate across every tenant. Windows are on
+        ``created_at`` (when the chat started).
         """
-        is_super_admin = platform_role == "super_admin"
-        if not is_super_admin:
+        cross_tenant = is_cross_tenant_viewer(platform_role)
+        if not cross_tenant:
             await permission_service.require(
                 user_id, tenant_id, self.OBJECT, "read", platform_role=platform_role
             )
         now = datetime.now(UTC)
         since_7d = now - timedelta(days=7)
         since_30d = now - timedelta(days=30)
-        if is_super_admin:
+        if cross_tenant:
             total = await self.conversations.count_all()
             last_7d = await self.conversations.count_all(since=since_7d)
             last_30d = await self.conversations.count_all(since=since_30d)

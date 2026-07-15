@@ -101,22 +101,3 @@ class UsageEventRepository(TenantScopedRepository[UsageEvent]):
             int(row[4]),
             row[5],
         )
-
-    async def list_for_customer(
-        self, customer_id: str, tenant_id: str | None = None, limit: int = 100
-    ) -> list[UsageEvent]:
-        """Usage events attributed to a customer (drill-down for customer 360).
-
-        ``tenant_id`` None = global (HQ); set = store-scoped.
-        """
-        wheres = [UsageEvent.customer_id == customer_id]
-        if tenant_id is not None:
-            wheres.append(UsageEvent.tenant_id == tenant_id)
-        stmt = (
-            select(UsageEvent)
-            .where(*wheres)
-            .order_by(UsageEvent.created_at.desc())
-            .limit(limit)
-        )
-        result = await self.db.execute(stmt)
-        return list(result.scalars().all())

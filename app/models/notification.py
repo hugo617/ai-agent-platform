@@ -31,6 +31,7 @@ from sqlalchemy import (
     Index,
     String,
     Text,
+    UniqueConstraint,
     func,
 )
 from sqlalchemy.orm import Mapped, mapped_column
@@ -77,6 +78,10 @@ class Notification(Base):
     content: Mapped[str] = mapped_column(Text, nullable=False)
     # Optional in-app path the frontend navigates to on click (e.g. "/billing").
     link: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # Per-user read flag for TARGETED notifications (user_id is set). For
+    # tenant-wide broadcasts (user_id NULL) the read state lives in
+    # ``NotificationRead`` instead — a single shared broadcast row must not flip
+    # to "read" for the whole tenant when one user dismisses it.
     is_read: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default="false", nullable=False
     )
@@ -89,3 +94,45 @@ class Notification(Base):
             f"<Notification {self.id} type={self.type} "
             f"tenant={self.tenant_id} user={self.user_id} read={self.is_read}>"
         )
+
+
+class NotificationRead(Base):
+    """Per-user "I read this broadcast" record.
+
+    Broadcast notifications (``Notification.user_id IS NULL``) are shared across
+    every user in a tenant — one row, many viewers. Storing the read flag on the
+    shared row would make one user's "mark read" flip it for everyone. This
+    join table holds one row per (broadcast notification, user) pair so each
+    user's read state is independent.
+
+    Targeted notifications (``Notification.user_id`` set) do NOT get a row here
+    — they keep using ``Notification.is_read`` since the row is already
+    1:1 with the single recipient.
+    """
+
+    __tablename__ = "notification_reads"
+    __table_args__ = (
+        # One read record per (notification, user) — the upsert mark-read path
+        # relies on this to be idempotent (INSERT ... ON CONFLICT DO NOTHING).
+        UniqueConstraint(
+            "notification_id", "user_id", name="uq_notification_reads_notif_user"
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
+    notification_id: Mapped[str] = mapped_column(
+        String(32),
+        ForeignKey("notifications.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    user_id: Mapped[str] = mapped_column(
+        String(128),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    read_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+    def __repr__(self) -> str:
+        return f"<NotificationRead notif={self.notification_id} user={self.user_id}>"

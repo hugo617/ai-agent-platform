@@ -101,7 +101,9 @@ class NotificationService:
 
         Ownership is enforced in the repository: a user can only flip the read
         flag on a row they could see (own targeted row or tenant-wide broadcast
-        in their tenant). Caller commits.
+        in their tenant). For broadcasts the read is recorded per-user in
+        ``notification_reads`` (see ``NotificationRepository.mark_read``).
+        Caller commits.
         """
         notification = await self.repo.get_for_user(
             notification_id, tenant_id=tenant_id, user_id=user_id
@@ -109,8 +111,9 @@ class NotificationService:
         if notification is None:
             return False
         if notification.is_read:
+            # Already read from this viewer's perspective.
             return True
-        await self.repo.mark_read(notification)
+        await self.repo.mark_read(notification, user_id=user_id)
         await self.db.commit()
         return True
 

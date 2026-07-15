@@ -1,22 +1,14 @@
 """Agent endpoints — CRUD, all guarded by casbin permissions."""
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import CurrentUser, get_current_user, require_permission
 from app.core.database import get_db
 from app.schemas.agent import AgentCreate, AgentRead, AgentStatistics, AgentUpdate
 from app.services.agent_service import AgentService
-from app.services.errors import NotFoundError
 
 router = APIRouter(prefix="/agents", tags=["agents"])
-
-
-def _http_exc(e: ValueError) -> HTTPException:
-    """Map a service ValueError to the right HTTP status by exception type."""
-    if isinstance(e, NotFoundError):
-        return HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
-    return HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
 @router.get(
@@ -89,12 +81,9 @@ async def get_agent(
     db: AsyncSession = Depends(get_db),
 ) -> AgentRead:
     service = AgentService(db)
-    try:
-        return await service.get(
-            user.user_id, user.tenant_id, agent_id, platform_role=user.platform_role
-        )
-    except ValueError as e:
-        raise _http_exc(e) from e
+    return await service.get(
+        user.user_id, user.tenant_id, agent_id, platform_role=user.platform_role
+    )
 
 
 @router.patch(
@@ -109,16 +98,13 @@ async def update_agent(
     db: AsyncSession = Depends(get_db),
 ) -> AgentRead:
     service = AgentService(db)
-    try:
-        return await service.update(
-            user.user_id,
-            user.tenant_id,
-            agent_id,
-            payload,
-            platform_role=user.platform_role,
-        )
-    except ValueError as e:
-        raise _http_exc(e) from e
+    return await service.update(
+        user.user_id,
+        user.tenant_id,
+        agent_id,
+        payload,
+        platform_role=user.platform_role,
+    )
 
 
 @router.delete(
@@ -132,9 +118,6 @@ async def delete_agent(
     db: AsyncSession = Depends(get_db),
 ) -> None:
     service = AgentService(db)
-    try:
-        await service.delete(
-            user.user_id, user.tenant_id, agent_id, platform_role=user.platform_role
-        )
-    except ValueError as e:
-        raise _http_exc(e) from e
+    await service.delete(
+        user.user_id, user.tenant_id, agent_id, platform_role=user.platform_role
+    )

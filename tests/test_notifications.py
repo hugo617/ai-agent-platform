@@ -213,6 +213,47 @@ async def test_mark_all_read(app_client, db_session, test_env):
     assert only_unread.json()["total"] == 0
 
 
+@pytest.mark.asyncio
+async def test_broadcast_read_is_per_user(db_session, test_env):
+    """One user marking a broadcast read does NOT mark it read for others.
+
+    This is the core reason ``notification_reads`` exists: a broadcast row
+    (user_id NULL) is shared by the whole tenant, so the read state must be
+    per-user. Before the fix, ``mark_all_read`` flipped ``is_read`` on the
+    shared row and every other user's bell went silent too.
+    """
+    tnt = test_env.tenant_id
+    user_a = test_env.owner_user
+    user_b = "another-member"
+
+    # Seed a tenant-wide broadcast (user_id NULL).
+    await _seed_notification(db_session, tenant_id=tnt, user_id=None, title="broadcast")
+
+    from app.services.notification_service import NotificationService
+
+    svc = NotificationService(db_session)
+
+    # User A marks all read — the broadcast is now read for A.
+    await svc.mark_all_read(user_id=user_a, tenant_id=tnt)
+    unread_a = await svc.unread_count(user_id=user_a, tenant_id=tnt)
+    assert unread_a == 0  # A has nothing unread
+
+    # User B still sees the broadcast as unread (A's read is per-user).
+    unread_b = await svc.unread_count(user_id=user_b, tenant_id=tnt)
+    assert unread_b == 1
+
+    # B marks the broadcast read via mark_read; A's state is unaffected.
+    rows_b, _ = await svc.list_for_user(user_id=user_b, tenant_id=tnt)
+    broadcast = next(r for r in rows_b if r.user_id is None)
+    await svc.mark_read(
+        notification_id=broadcast.id, user_id=user_b, tenant_id=tnt
+    )
+    unread_a_after = await svc.unread_count(user_id=user_a, tenant_id=tnt)
+    assert unread_a_after == 0  # A still read (her record untouched by B)
+    unread_b_after = await svc.unread_count(user_id=user_b, tenant_id=tnt)
+    assert unread_b_after == 0  # B now read it too
+
+
 # ----------------------------------------------------- triggers
 
 

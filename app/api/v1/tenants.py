@@ -16,21 +16,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import CurrentUser, get_current_user, require_super_admin
 from app.core.database import get_db
 from app.schemas.tenant import TenantCreate, TenantRead, TenantUpdate
-from app.services.errors import NotFoundError
 from app.services.tenant_service import TenantService
 
 router = APIRouter(prefix="/tenants", tags=["tenants"])
-
-
-def _http_exc(e: ValueError) -> HTTPException:
-    """Map a service-layer ValueError to the matching HTTP error.
-
-    Mirrors the agents.py / users.py pattern: NotFoundError -> 404, any other
-    ValueError (bad input) -> 400.
-    """
-    if isinstance(e, NotFoundError):
-        return HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
-    return HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
 # --- user-scoped (any logged-in user) -----------------------------------------
@@ -102,10 +90,7 @@ async def get_tenant_detail(
 ) -> TenantRead:
     """Tenant detail with member_count (super_admin only)."""
     service = TenantService(db)
-    try:
-        return await service.get_detail(tenant_id)
-    except ValueError as e:
-        raise _http_exc(e) from e
+    return await service.get_detail(tenant_id)
 
 
 @router.put(
@@ -120,7 +105,4 @@ async def update_tenant(
 ) -> TenantRead:
     """Edit a tenant's name/status/description/address (super_admin only)."""
     service = TenantService(db)
-    try:
-        return await service.update(tenant_id, payload)
-    except ValueError as e:
-        raise _http_exc(e) from e
+    return await service.update(tenant_id, payload)

@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.tenant import UserTenant
 from app.repositories.tenant import UserRepository, UserTenantRepository
 from app.schemas.user import MemberCreate, MemberRead, MemberUpdate
+from app.services.errors import BizError, NotFoundError
 from app.services.permission_service import permission_service
 
 
@@ -95,7 +96,7 @@ class MemberService:
 
         membership = await self.memberships.current_role(target_user_id, tenant_id)
         if membership is None:
-            raise ValueError(f"user {target_user_id} is not a member of this tenant")
+            raise NotFoundError(f"user {target_user_id} is not a member of this tenant")
 
         # SCD2 write: assign_role closes the current row and opens a new one with
         # the new role; casbin grouping is resynced so the change takes effect at
@@ -135,11 +136,11 @@ class MemberService:
         )
 
         if actor_id == target_user_id:
-            raise ValueError("cannot remove yourself")
+            raise BizError("cannot remove yourself")
 
         membership = await self.memberships.current_role(target_user_id, tenant_id)
         if membership is None:
-            raise ValueError(f"user {target_user_id} is not a member of this tenant")
+            raise NotFoundError(f"user {target_user_id} is not a member of this tenant")
 
         # SCD2 write: close the active row (history preserved, no physical
         # delete) and strip the casbin grouping so access stops immediately.

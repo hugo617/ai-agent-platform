@@ -40,6 +40,7 @@ from app.core.config import settings
 from app.core.database import get_db
 from app.core.metrics import IN_PROGRESS, LATENCY, REQUESTS, render_metrics
 from app.core.validation_errors import localize_message
+from app.services.errors import BizError, NotFoundError
 
 # Paths excluded from request metrics. The infra/observability endpoints would
 # otherwise self-reference (every /metrics scrape inflates its own counter) and
@@ -300,6 +301,20 @@ def create_app() -> FastAPI:
     @app.exception_handler(PermissionError)
     async def _permission_handler(request: Request, exc: PermissionError) -> JSONResponse:
         return JSONResponse(status_code=403, content={"detail": str(exc)})
+
+    # Service-layer business errors → 400/404 automatically. This lets the API
+    # layer drop the ``try/except ValueError: raise _http_exc(e)`` boilerplate
+    # (was duplicated across 10 router modules): a service ``raise BizError(...)``
+    # or ``raise NotFoundError(...)`` now surfaces as the right HTTP status with
+    # no per-endpoint handler code. Both are ValueError subclasses, so existing
+    # ``except ValueError`` callers (if any) still work.
+    @app.exception_handler(BizError)
+    async def _biz_error_handler(request: Request, exc: BizError) -> JSONResponse:
+        return JSONResponse(status_code=400, content={"detail": str(exc)})
+
+    @app.exception_handler(NotFoundError)
+    async def _not_found_handler(request: Request, exc: NotFoundError) -> JSONResponse:
+        return JSONResponse(status_code=404, content={"detail": str(exc)})
 
     @app.exception_handler(RequestValidationError)
     async def _validation_handler(

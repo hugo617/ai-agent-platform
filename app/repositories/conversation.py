@@ -82,26 +82,6 @@ class ConversationRepository(TenantScopedRepository[Conversation]):
         result = await self.db.execute(stmt)
         return list(result.scalars().all())
 
-    async def list_for_customer(
-        self, tenant_id: str, customer_id: str, limit: int = 100
-    ) -> list[Conversation]:
-        """Conversations attributed to a customer in a tenant (customer 360).
-
-        Token 费用管理系列 3/4: lets the customer detail show the chats where
-        a staff member served them.
-        """
-        stmt = (
-            select(Conversation)
-            .where(
-                Conversation.tenant_id == tenant_id,
-                Conversation.customer_id == customer_id,
-            )
-            .order_by(Conversation.updated_at.desc())
-            .limit(limit)
-        )
-        result = await self.db.execute(stmt)
-        return list(result.scalars().all())
-
     async def search_all(self, *, keyword: str, limit: int = 5) -> list[Conversation]:
         """Cross-tenant title search (super_admin global search aggregator).
 

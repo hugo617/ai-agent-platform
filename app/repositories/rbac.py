@@ -5,7 +5,7 @@ from datetime import UTC, datetime
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.rbac import Permission, Role, RolePermission
+from app.models.rbac import Role, RolePermission
 from app.repositories.base import BaseRepository
 
 # "Current/active" SCD2 predicate. Every read that should see only the present
@@ -44,18 +44,6 @@ class RoleRepository(BaseRepository[Role]):
         return (await self.db.execute(stmt)).scalar_one_or_none()
 
 
-# TODO: reserved — these back the unbuilt permission-management UI. No endpoint
-# uses them yet; keep until /roles/permissions CRUD lands.
-class PermissionRepository(BaseRepository[Permission]):
-    """Scaffolded for the permission-management UI (not yet wired)."""
-
-    model = Permission
-
-    def __init__(self, db: AsyncSession) -> None:
-        super().__init__(db)
-
-
-# TODO: reserved — see PermissionRepository above.
 class RolePermissionRepository(BaseRepository[RolePermission]):
     """(role, permission) grants with SCD2 write encapsulation.
 
