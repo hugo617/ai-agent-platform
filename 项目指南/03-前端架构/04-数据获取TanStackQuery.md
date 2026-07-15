@@ -66,14 +66,14 @@ graph LR
 ```ts
 export const qk = {
   tenants: ["tenants"] as const,
+  allTenants: ["tenants", "all"] as const,          // GET /tenants/all(平台级)
   agents: ["agents"] as const,
-  agent: (id) => ["agents", id] as const,
   users: (filters) => ["users", filters] as const,   // 带参数
   userStats: ["users", "statistics"] as const,
   roles: ["roles"] as const,
   roleLabels: ["roles", "labels"] as const,
-  orgTree: ["organizations", "tree"] as const,
-  sessions: ["auth", "sessions"] as const,
+  permissionMatrix: ["permissions", "matrix"] as const,
+  // ... 每个资源一个 key(只列代表性的)
 };
 ```
 
@@ -133,40 +133,82 @@ return <Table data={data.items} />;
 
 ---
 
-## 改数据:useMutation + 失效
+## 改数据:useApiMutation helper + 失效
+
+项目里大多数写操作(mutation)是同一份 5 行骨架:`const qc = useQueryClient();
+return useMutation({ mutationFn, onSuccess: () => qc.invalidateQueries(...) })`。
+`queries.ts` 把它抽成了 `useApiMutation` helper,一行搞定:
 
 ```ts
-export function useCreateUser() {
+function useApiMutation<TVars, TData>(
+  mutationFn: (vars: TVars) => Promise<TData>,
+  invalidate: QueryKey[],                           // 成功后失效这些 key
+  onSuccess?: (data: TData, vars: TVars) => void,   // 可选额外回调
+) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (payload) => createUser(payload),   // 怎么创建
-    onSuccess: () => invalidateUsers(qc),            // 成功后失效用户缓存
+    mutationFn,
+    onSuccess: (data, vars) => {
+      for (const key of invalidate) qc.invalidateQueries({ queryKey: key });
+      onSuccess?.(data, vars);
+    },
   });
-}
-
-function invalidateUsers(qc) {
-  qc.invalidateQueries({ queryKey: ["users"] });  // 失效所有 ["users"] 开头的
 }
 ```
 
-**流程**:
+### 简单场景:一个 invalidate 数组
+
+```ts
+export function useCreateUser() {
+  return useApiMutation(
+    (payload: UserCreate) => createUser(payload),
+    [qk.users, qk.userStats],     // 成功后失效用户列表 + 统计
+  );
+}
+```
+
+`TVars`/`TData` 从 `mutationFn` 的签名自动推断,调用方不用手写泛型。
+
+### 需要读 vars 的场景:onSuccess 回调
+
+有些 mutation 要 invalidate 一个**依赖入参**的 key(比如更新某个 group 后失效该 group
+的权限):
+
+```ts
+export function useGrantRolePermission() {
+  const qc = useQueryClient();
+  return useApiMutation(
+    ({ roleId, payload }) => grantRolePermission(roleId, payload),
+    [qk.permissionMatrix],                          // 固定 key
+    (_data, { roleId }) =>                           // 额外回调:失效该角色的权限
+      qc.invalidateQueries({ queryKey: qk.rolePermissions(roleId) }),
+  );
+}
+```
+
+### 哪些 mutation 不套 helper(保留手写)
+
+不是所有 mutation 都适合套 helper。两种保留手写 `useMutation`:
+- **改密码**(`useChangePassword`):不涉及任何缓存失效,传空数组没意义。
+- **导出 CSV**(`useExportCsv`):是只读副作用(下载文件),无缓存可 invalidate,且 mutationFn
+  里要做 lazy import + 触发下载,逻辑特殊。
+
+> 💡 **判断标准**:只要「发请求 + 成功后失效若干缓存」这个模式成立,就用 `useApiMutation`;
+> 有额外副作用、乐观更新、条件失效等复杂逻辑,保留手写。
+
+**完整流程**(以新建用户为例):
 1. 页面调 `useCreateUser().mutateAsync(payload)` → 发请求创建用户。
-2. 成功 → `onSuccess` 触发 → `invalidateUsers` 让 `["users"]` 缓存失效。
+2. 成功 → helper 的 onSuccess 触发 → 失效 `qk.users` + `qk.userStats`。
 3. TanStack Query 发现缓存失效 → 自动重新请求用户列表 + 统计。
 4. 新数据回来 → 表格自动显示新用户。
 
 **这就是「新建用户后表格自动刷新」的完整机制**。
 
-### invalidateUsers 辅助函数
+### invalidateQueries 是前缀匹配
 
-注意有个专门的辅助:
-```ts
-function invalidateUsers(qc) {
-  qc.invalidateQueries({ queryKey: ["users"] });  // 只写 ["users"] 前缀
-}
-```
-因为 `invalidateQueries` 是**前缀匹配**,写 `["users"]` 能匹配 `["users", filters]` 和
-`["users", "statistics"]`,一次性全刷新。不用一个个失效。
+`invalidateQueries({ queryKey: qk.users })` 失效的是 `["users"]` 前缀——能匹配
+`["users", filters]`(列表)和 `["users", "statistics"]`(统计),一次性全刷新。不用一个个
+失效。`useApiMutation` 的 `invalidate` 数组里传前缀 key 就能批量刷新整个资源族。
 
 ---
 
@@ -207,14 +249,21 @@ export function useProducts() {
 }
 ```
 
-**3. 加写 hook(带失效)**:
+**3. 加写 hook(用 `useApiMutation`)**:
 ```ts
 export function useCreateProduct() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (payload) => createProduct(payload),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["products"] }),
-  });
+  return useApiMutation(
+    (payload: ProductCreate) => createProduct(payload),
+    [qk.products],     // 成功后失效产品缓存
+  );
+}
+
+// 需要失效入参相关 key时,加 onSuccess 回调:
+export function useUpdateProduct() {
+  return useApiMutation(
+    ({ id, payload }) => updateProduct(id, payload),
+    [qk.products],
+  );
 }
 ```
 
@@ -224,15 +273,15 @@ export function useCreateProduct() {
 
 ## 记住三句话
 
-1. **读用 useQuery,改用 useMutation**:改完用 `invalidateQueries` 失效缓存,自动刷新。
+1. **读用 useQuery,改用 useApiMutation**:改完在 `invalidate` 数组里列要失效的 key,缓存自动刷新。
 2. **query key 集中管理**(qk 工厂):保证 key 一致,失效方便。
-3. **invalidateQueries 前缀匹配**:失效 `["users"]` 能刷新所有用户相关查询。
+3. **invalidateQueries 前缀匹配**:失效 `["users"]` 能刷新所有用户相关查询(列表 + 统计)。
 
 ---
 
 **关键文件清单**:
-- 所有数据 hook:`frontend/src/hooks/queries.ts`(`qk` 工厂、`useUsers`、`useCreateUser`...)
-- 全局配置:`frontend/src/App.tsx` 的 `QueryClient`(`staleTime: 30_000`)
+- 所有数据 hook:`frontend/src/hooks/queries.ts`(`qk` 工厂、`useApiMutation` helper、`useUsers`、`useCreateUser`...)
+- 全局配置:`frontend/src/App.tsx` 的 `QueryClient`(`staleTime: 30_000`、`refetchOnWindowFocus: false`)
 - /me 的特殊 key:`frontend/src/components/auth/auth-context.tsx`
 
 **相关文档**:
