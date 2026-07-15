@@ -75,9 +75,7 @@ export function ListState({
     );
   }
   if (isEmpty) {
-    return emptyContent ? (
-      <>{emptyContent}</>
-    ) : (
+    return emptyContent ?? (
       <div className="py-12 text-center text-sm text-muted-foreground">
         {emptyText}
       </div>

@@ -670,7 +670,18 @@ function HqView() {
     });
   };
 
-  const list: CustomerRead[] = customers ?? [];
+  // Client-side filter seeded from ?search= so the global-search-box "查看全部"
+  // deep link carries the term onto this view (the customers endpoint has no
+  // server-side search). Mirrors StoreView's filter above.
+  const [searchParams] = useSearchParams();
+  const search = (searchParams.get("search") ?? "").trim().toLowerCase();
+  const list: CustomerRead[] = search
+    ? (customers ?? []).filter(
+        (c) =>
+          c.name.toLowerCase().includes(search) ||
+          c.identity_key.toLowerCase().includes(search),
+      )
+    : (customers ?? []);
 
   return (
     <div className="space-y-6">

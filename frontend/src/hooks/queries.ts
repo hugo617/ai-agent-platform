@@ -151,7 +151,6 @@ export const qk = {
   tenantConfig: ["tenant-config"] as const,
   apiTokens: ["api-tokens"] as const,
   groups: ["groups"] as const,
-  group: (id: string) => ["groups", id] as const,
   // customers: two query families — store profiles (tenant-scoped CRUD) and
   // HQ aggregation (cross-store, super_admin only).
   customerProfiles: ["customers", "profiles"] as const,
@@ -192,7 +191,7 @@ export const qk = {
  * () => qc.invalidateQueries(...) })``). This helper collapses that to one
  * line for the common case and still allows an extra ``onSuccess`` callback
  * for hooks that need to invalidate a vars-derived key (e.g.
- * ``useUpdateGroup`` invalidates ``qk.group(id)``).
+ * ``useGrantRolePermission`` invalidates ``qk.rolePermissions(roleId)``).
  *
  * Hooks with more involved logic (optimistic updates, conditional
  * invalidation, side-effects) stay as hand-written ``useMutation`` calls.
@@ -262,13 +261,10 @@ export function useCreateGroup() {
 }
 
 export function useUpdateGroup() {
-  const qc = useQueryClient();
   return useApiMutation(
     ({ id, payload }: { id: string; payload: GroupUpdate }) =>
       updateGroup(id, payload),
     [qk.groups],
-    // Also refresh the single-group detail key so an open detail view updates.
-    (_data, { id }) => qc.invalidateQueries({ queryKey: qk.group(id) }),
   );
 }
 
@@ -280,22 +276,18 @@ export function useDeleteGroup() {
 }
 
 export function useAttachTenant() {
-  const qc = useQueryClient();
   return useApiMutation(
     ({ groupId, tenantId }: { groupId: string; tenantId: string }) =>
       attachTenant(groupId, tenantId),
     [qk.groups],
-    (_data, { groupId }) => qc.invalidateQueries({ queryKey: qk.group(groupId) }),
   );
 }
 
 export function useDetachTenant() {
-  const qc = useQueryClient();
   return useApiMutation(
     ({ groupId, tenantId }: { groupId: string; tenantId: string }) =>
       detachTenant(groupId, tenantId),
     [qk.groups],
-    (_data, { groupId }) => qc.invalidateQueries({ queryKey: qk.group(groupId) }),
   );
 }
 
@@ -480,7 +472,9 @@ export function useRoleLabels() {
 export function useCreateRole() {
   return useApiMutation(
     (payload: RoleCreate) => createRole(payload),
-    [["roles"]],
+    // The matrix endpoint returns roles[], so refresh it alongside the list
+    // (consistent with useUpdateRole below).
+    [["roles"], qk.permissionMatrix],
   );
 }
 
@@ -498,7 +492,7 @@ export function useUpdateRole() {
 export function useDeleteRole() {
   return useApiMutation(
     (id: string) => deleteRole(id),
-    [["roles"]],
+    [["roles"], qk.permissionMatrix],
   );
 }
 

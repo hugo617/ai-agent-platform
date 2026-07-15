@@ -7,7 +7,7 @@ import {
   ScrollText,
 } from "lucide-react";
 
-import type { LogFilters, SystemLog, Tenant } from "@/api/types";
+import type { LogFilters, SystemLog } from "@/api/types";
 import { useAuth } from "@/components/auth/auth-context";
 import { isSuperAdmin as isSuperAdminRole } from "@/lib/permission";
 import { useLogs, useAllTenants } from "@/hooks/queries";
@@ -229,7 +229,7 @@ export function LogsPage() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">全平台</SelectItem>
-                    {(tenants as Tenant[] | undefined ?? []).map((t) => (
+                    {(tenants ?? []).map((t) => (
                       <SelectItem key={t.id} value={t.id}>
                         {t.name}
                       </SelectItem>
