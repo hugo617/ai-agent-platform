@@ -14,7 +14,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { FormField as Field } from "@/components/ui/form-field";
 import { useToast } from "@/components/ui/toast";
 import { apiErrorMessage } from "@/api/client";
 import { useAuth } from "@/components/auth/auth-context";
@@ -23,9 +23,7 @@ import {
   useConversations,
   useUpdateMe,
 } from "@/hooks/queries";
-
-const fmt = (s: string | null): string =>
-  s ? new Date(s).toLocaleString() : "-";
+import { formatDateTime as fmt } from "@/lib/format";
 
 /**
  * 个人中心 — self-service account management.
@@ -285,23 +283,4 @@ function SessionsCard() {
 
 // --------------------------------------------------------------- Field helper
 
-function Field({
-  label,
-  error,
-  hint,
-  children,
-}: {
-  label: string;
-  error?: string;
-  hint?: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="space-y-1.5">
-      <Label className="text-sm font-medium">{label}</Label>
-      {children}
-      {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
-      {error && <p className="text-xs text-destructive">{error}</p>}
-    </div>
-  );
-}
+// (FormField is imported from @/components/ui/form-field as `Field`.)

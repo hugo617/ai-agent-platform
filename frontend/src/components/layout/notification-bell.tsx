@@ -17,6 +17,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
+import { formatRelative as relativeTime } from "@/lib/format";
 import type { Notification } from "@/api/types";
 import {
   useMarkAllNotificationsRead,
@@ -45,22 +46,6 @@ function TypeIcon({ type, className }: { type: string; className?: string }) {
   const meta = TYPE_META[type] ?? TYPE_META.system;
   const Icon = meta.icon;
   return <Icon className={cn("h-4 w-4", meta.accent, className)} />;
-}
-
-/** Relative time label ("刚刚" / "3 分钟前" / "2 小时前" / fall back to date). */
-function relativeTime(iso: string): string {
-  const now = Date.now();
-  const then = new Date(iso).getTime();
-  const diff = Math.max(0, now - then);
-  const min = 60 * 1000;
-  const hour = 60 * min;
-  const day = 24 * hour;
-  if (diff < min) return "刚刚";
-  if (diff < hour) return `${Math.floor(diff / min)} 分钟前`;
-  if (diff < day) return `${Math.floor(diff / hour)} 小时前`;
-  if (diff < 7 * day) return `${Math.floor(diff / day)} 天前`;
-  // Beyond a week, show the calendar date.
-  return new Date(iso).toLocaleDateString("zh-CN");
 }
 
 /**

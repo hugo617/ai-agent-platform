@@ -21,6 +21,13 @@ interface AuthState {
   me: MeResponse | undefined;
   isLoading: boolean;
   isAuthenticated: boolean;
+  /**
+   * True when the /me query errored (e.g. a 500, or a non-401 auth failure).
+   * Route guards use this to redirect to /login instead of rendering a blank
+   * page forever — a 401 already triggers signOut via the axios interceptor,
+   * but other /me failures used to leave the user on a permanent white screen.
+   */
+  meError: boolean;
   signIn: (token: string) => void;
   signOut: () => void;
 }
@@ -63,14 +70,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => window.removeEventListener(AUTH_EXPIRED_EVENT, handler);
   }, [signOut]);
 
-  const value: AuthState = {
-    token,
-    me: meQuery.data,
-    isLoading: !!token && meQuery.isLoading,
-    isAuthenticated: !!token && meQuery.isSuccess,
-    signIn,
-    signOut,
-  };
+  // Memoize the context value so consumers only re-render when something they
+  // read actually changes. Without this, every AuthProvider render allocated a
+  // fresh object literal and re-rendered every useAuth() consumer (i.e. almost
+  // every page + the layout) on each /me loading/isSuccess transition.
+  const value = React.useMemo<AuthState>(
+    () => ({
+      token,
+      me: meQuery.data,
+      isLoading: !!token && meQuery.isLoading,
+      isAuthenticated: !!token && meQuery.isSuccess,
+      meError: !!token && meQuery.isError,
+      signIn,
+      signOut,
+    }),
+    [token, meQuery.data, meQuery.isLoading, meQuery.isSuccess, meQuery.isError, signIn, signOut],
+  );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

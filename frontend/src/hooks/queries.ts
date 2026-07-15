@@ -2,6 +2,7 @@ import {
   useMutation,
   useQuery,
   useQueryClient,
+  type QueryKey,
 } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { applyThemeColor } from "@/lib/theme";
@@ -33,7 +34,6 @@ import {
   fetchApiTokens,
   fetchConversations,
   fetchConversationStatistics,
-  fetchCustomerAggregate,
   fetchCustomerProfiles,
   fetchCustomers,
   fetchCustomerStatistics,
@@ -53,7 +53,6 @@ import {
   fetchRoleLabels,
   fetchRolePermissions,
   fetchRoles,
-  fetchSessions,
   fetchTenantLlmConfig,
   fetchTenants,
   fetchTenantConfig,
@@ -72,7 +71,6 @@ import {
   revokeRolePermission,
   setConversationPinned,
   setConversationStarred,
-  terminateSession,
   updateAgent,
   updateCustomerProfile,
   updateGroup,
@@ -129,16 +127,13 @@ export const qk = {
   // member_count). Distinct from qk.tenants (user-scoped "my tenants").
   allTenants: ["tenants", "all"] as const,
   agents: ["agents"] as const,
-  agent: (id: string) => ["agents", id] as const,
   members: ["members"] as const,
   users: (filters: UserFilters) => ["users", filters] as const,
-  user: (id: string) => ["users", id] as const,
   userStats: ["users", "statistics"] as const,
   roles: ["roles"] as const,
   roleLabels: ["roles", "labels"] as const,
   rolePermissions: (id: string) => ["roles", id, "permissions"] as const,
   permissionMatrix: ["permissions", "matrix"] as const,
-  sessions: ["auth", "sessions"] as const,
   // conversation list query key encodes the search/tag filters so each distinct
   // filter set caches independently (a debounced search produces a stream of
   // unique keys). Empty filters collapse to the bare key for the common case.
@@ -161,7 +156,6 @@ export const qk = {
   // HQ aggregation (cross-store, super_admin only).
   customerProfiles: ["customers", "profiles"] as const,
   customers: ["customers"] as const,
-  customer: (id: string) => ["customers", id] as const,
   customerUsage: (id: string) => ["customers", id, "usage"] as const,
   // Token 费用管理系列 4/4 — wallet / ledger / usage / pricing.
   wallet: ["billing", "wallet"] as const,
@@ -189,6 +183,35 @@ export const qk = {
   unreadCount: ["notifications", "unread-count"] as const,
 };
 
+/**
+ * Mutation helper that wires the common shape: ``mutationFn`` + invalidate a
+ * fixed set of query keys on success.
+ *
+ * Most write hooks in this file are the same 5-line skeleton
+ * (``const qc = useQueryClient(); return useMutation({ mutationFn, onSuccess:
+ * () => qc.invalidateQueries(...) })``). This helper collapses that to one
+ * line for the common case and still allows an extra ``onSuccess`` callback
+ * for hooks that need to invalidate a vars-derived key (e.g.
+ * ``useUpdateGroup`` invalidates ``qk.group(id)``).
+ *
+ * Hooks with more involved logic (optimistic updates, conditional
+ * invalidation, side-effects) stay as hand-written ``useMutation`` calls.
+ */
+function useApiMutation<TVars, TData>(
+  mutationFn: (vars: TVars) => Promise<TData>,
+  invalidate: QueryKey[],
+  onSuccess?: (data: TData, vars: TVars) => void,
+) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn,
+    onSuccess: (data, vars) => {
+      for (const key of invalidate) qc.invalidateQueries({ queryKey: key });
+      onSuccess?.(data, vars);
+    },
+  });
+}
+
 // ---------- tenants ----------
 // useTenants/useCreateTenant serve the dashboard "my tenants" card (user-scoped
 // GET /tenants/). The platform-level hooks below drive the store-management
@@ -198,14 +221,10 @@ export function useTenants() {
 }
 
 export function useCreateTenant() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (name: string) => createTenant(name),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: qk.tenants });
-      qc.invalidateQueries({ queryKey: qk.allTenants });
-    },
-  });
+  return useApiMutation(
+    (name: string) => createTenant(name),
+    [qk.tenants, qk.allTenants],
+  );
 }
 
 // Platform-wide tenant list (super_admin only). Also used by the groups page's
@@ -221,17 +240,13 @@ export function useAllTenants(enabled = true) {
 }
 
 export function useUpdateTenant() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: ({ id, payload }: { id: string; payload: TenantUpdate }) =>
+  // Also refresh the user-scoped list: a rename should propagate to the
+  // dashboard "my tenants" card if the edited tenant belongs to the user.
+  return useApiMutation(
+    ({ id, payload }: { id: string; payload: TenantUpdate }) =>
       updateTenant(id, payload),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: qk.allTenants });
-      // Also refresh the user-scoped list: a rename should propagate to the
-      // dashboard "my tenants" card if the edited tenant belongs to the user.
-      qc.invalidateQueries({ queryKey: qk.tenants });
-    },
-  });
+    [qk.allTenants, qk.tenants],
+  );
 }
 
 // ---------- groups (platform-level org + tenant attachment) ----------
@@ -240,55 +255,48 @@ export function useGroups() {
 }
 
 export function useCreateGroup() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (payload: GroupCreate) => createGroup(payload),
-    onSuccess: () => qc.invalidateQueries({ queryKey: qk.groups }),
-  });
+  return useApiMutation(
+    (payload: GroupCreate) => createGroup(payload),
+    [qk.groups],
+  );
 }
 
 export function useUpdateGroup() {
   const qc = useQueryClient();
-  return useMutation({
-    mutationFn: ({ id, payload }: { id: string; payload: GroupUpdate }) =>
+  return useApiMutation(
+    ({ id, payload }: { id: string; payload: GroupUpdate }) =>
       updateGroup(id, payload),
-    onSuccess: (_data, { id }) => {
-      qc.invalidateQueries({ queryKey: qk.groups });
-      qc.invalidateQueries({ queryKey: qk.group(id) });
-    },
-  });
+    [qk.groups],
+    // Also refresh the single-group detail key so an open detail view updates.
+    (_data, { id }) => qc.invalidateQueries({ queryKey: qk.group(id) }),
+  );
 }
 
 export function useDeleteGroup() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (id: string) => deleteGroup(id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: qk.groups }),
-  });
+  return useApiMutation(
+    (id: string) => deleteGroup(id),
+    [qk.groups],
+  );
 }
 
 export function useAttachTenant() {
   const qc = useQueryClient();
-  return useMutation({
-    mutationFn: ({ groupId, tenantId }: { groupId: string; tenantId: string }) =>
+  return useApiMutation(
+    ({ groupId, tenantId }: { groupId: string; tenantId: string }) =>
       attachTenant(groupId, tenantId),
-    onSuccess: (_data, { groupId }) => {
-      qc.invalidateQueries({ queryKey: qk.groups });
-      qc.invalidateQueries({ queryKey: qk.group(groupId) });
-    },
-  });
+    [qk.groups],
+    (_data, { groupId }) => qc.invalidateQueries({ queryKey: qk.group(groupId) }),
+  );
 }
 
 export function useDetachTenant() {
   const qc = useQueryClient();
-  return useMutation({
-    mutationFn: ({ groupId, tenantId }: { groupId: string; tenantId: string }) =>
+  return useApiMutation(
+    ({ groupId, tenantId }: { groupId: string; tenantId: string }) =>
       detachTenant(groupId, tenantId),
-    onSuccess: (_data, { groupId }) => {
-      qc.invalidateQueries({ queryKey: qk.groups });
-      qc.invalidateQueries({ queryKey: qk.group(groupId) });
-    },
-  });
+    [qk.groups],
+    (_data, { groupId }) => qc.invalidateQueries({ queryKey: qk.group(groupId) }),
+  );
 }
 
 // ---------- customers (global identity + per-store profile) ----------
@@ -303,55 +311,35 @@ export function useCustomerProfiles(enabled: boolean = true) {
 }
 
 export function useCreateCustomerProfile() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (payload: CustomerProfileCreate) => createCustomerProfile(payload),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: qk.customerProfiles });
-      qc.invalidateQueries({ queryKey: qk.customers });
-    },
-  });
+  return useApiMutation(
+    (payload: CustomerProfileCreate) => createCustomerProfile(payload),
+    [qk.customerProfiles, qk.customers],
+  );
 }
 
 export function useUpdateCustomerProfile() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: ({
+  return useApiMutation(
+    ({
       id,
       payload,
     }: {
       id: string;
       payload: CustomerProfileUpdate;
     }) => updateCustomerProfile(id, payload),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: qk.customerProfiles });
-      qc.invalidateQueries({ queryKey: qk.customers });
-    },
-  });
+    [qk.customerProfiles, qk.customers],
+  );
 }
 
 export function useDeleteCustomerProfile() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (id: string) => deleteCustomerProfile(id),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: qk.customerProfiles });
-      qc.invalidateQueries({ queryKey: qk.customers });
-    },
-  });
+  return useApiMutation(
+    (id: string) => deleteCustomerProfile(id),
+    [qk.customerProfiles, qk.customers],
+  );
 }
 
 // HQ view hooks: cross-store aggregation (super_admin only).
 export function useCustomers() {
   return useQuery({ queryKey: qk.customers, queryFn: fetchCustomers });
-}
-
-export function useCustomerAggregate(id: string | null) {
-  return useQuery({
-    queryKey: qk.customer(id ?? ""),
-    queryFn: () => fetchCustomerAggregate(id as string),
-    enabled: !!id,
-  });
 }
 
 // Token 费用管理系列 3/4: AI usage attributed to a customer (customer 360).
@@ -382,28 +370,25 @@ export function useAgentStatistics() {
 }
 
 export function useCreateAgent() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (payload: AgentCreate) => createAgent(payload),
-    onSuccess: () => qc.invalidateQueries({ queryKey: qk.agents }),
-  });
+  return useApiMutation(
+    (payload: AgentCreate) => createAgent(payload),
+    [qk.agents],
+  );
 }
 
 export function useUpdateAgent() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: ({ id, payload }: { id: string; payload: AgentUpdate }) =>
+  return useApiMutation(
+    ({ id, payload }: { id: string; payload: AgentUpdate }) =>
       updateAgent(id, payload),
-    onSuccess: () => qc.invalidateQueries({ queryKey: qk.agents }),
-  });
+    [qk.agents],
+  );
 }
 
 export function useDeleteAgent() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (id: string) => deleteAgent(id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: qk.agents }),
-  });
+  return useApiMutation(
+    (id: string) => deleteAgent(id),
+    [qk.agents],
+  );
 }
 
 // ---------- members (tenant-membership UI not built yet) ----------
@@ -412,28 +397,25 @@ export function useMembers() {
 }
 
 export function useAddMember() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (payload: MemberCreate) => addMember(payload),
-    onSuccess: () => qc.invalidateQueries({ queryKey: qk.members }),
-  });
+  return useApiMutation(
+    (payload: MemberCreate) => addMember(payload),
+    [qk.members],
+  );
 }
 
 export function useUpdateMember() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: ({ userId, payload }: { userId: string; payload: MemberUpdate }) =>
+  return useApiMutation(
+    ({ userId, payload }: { userId: string; payload: MemberUpdate }) =>
       updateMember(userId, payload),
-    onSuccess: () => qc.invalidateQueries({ queryKey: qk.members }),
-  });
+    [qk.members],
+  );
 }
 
 export function useRemoveMember() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (userId: string) => removeMember(userId),
-    onSuccess: () => qc.invalidateQueries({ queryKey: qk.members }),
-  });
+  return useApiMutation(
+    (userId: string) => removeMember(userId),
+    [qk.members],
+  );
 }
 
 // ---------- users (full CRUD) ----------
@@ -445,51 +427,45 @@ export function useUserStatistics() {
   return useQuery({ queryKey: qk.userStats, queryFn: fetchUserStatistics });
 }
 
-function invalidateUsers(qc: ReturnType<typeof useQueryClient>) {
-  qc.invalidateQueries({ queryKey: ["users"] });
-}
+// All user mutations invalidate the ["users"] key family (list + statistics).
+const USER_KEYS: QueryKey[] = [["users"]];
 
 export function useCreateUser() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (payload: UserFormData) => createUser(payload),
-    onSuccess: () => invalidateUsers(qc),
-  });
+  return useApiMutation(
+    (payload: UserFormData) => createUser(payload),
+    USER_KEYS,
+  );
 }
 
 export function useUpdateUser() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: ({ id, payload }: { id: string; payload: Partial<UserFormData> }) =>
+  return useApiMutation(
+    ({ id, payload }: { id: string; payload: Partial<UserFormData> }) =>
       updateUser(id, payload),
-    onSuccess: () => invalidateUsers(qc),
-  });
+    USER_KEYS,
+  );
 }
 
 export function useDeleteUser() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (id: string) => deleteUser(id),
-    onSuccess: () => invalidateUsers(qc),
-  });
+  return useApiMutation(
+    (id: string) => deleteUser(id),
+    USER_KEYS,
+  );
 }
 
 export function useChangeUserStatus() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: ({ id, status }: { id: string; status: UserStatus }) =>
+  return useApiMutation(
+    ({ id, status }: { id: string; status: UserStatus }) =>
       changeUserStatus(id, status),
-    onSuccess: () => invalidateUsers(qc),
-  });
+    USER_KEYS,
+  );
 }
 
 export function useResetUserPassword() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: ({ id, password }: { id: string; password: string }) =>
+  return useApiMutation(
+    ({ id, password }: { id: string; password: string }) =>
       resetUserPassword(id, password),
-    onSuccess: () => invalidateUsers(qc),
-  });
+    USER_KEYS,
+  );
 }
 
 // ---------- roles (full CRUD + permission grants) ----------
@@ -502,34 +478,28 @@ export function useRoleLabels() {
 }
 
 export function useCreateRole() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (payload: RoleCreate) => createRole(payload),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["roles"] }),
-  });
+  return useApiMutation(
+    (payload: RoleCreate) => createRole(payload),
+    [["roles"]],
+  );
 }
 
 export function useUpdateRole() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: ({ id, payload }: { id: string; payload: RoleUpdate }) =>
+  // data_scope lives on the role and the matrix endpoint returns roles[],
+  // so refresh the matrix too (the permissions-page data_scope selector
+  // goes through this hook).
+  return useApiMutation(
+    ({ id, payload }: { id: string; payload: RoleUpdate }) =>
       updateRole(id, payload),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["roles"] });
-      // data_scope lives on the role and the matrix endpoint returns roles[],
-      // so refresh the matrix too (the permissions-page data_scope selector
-      // goes through this hook).
-      qc.invalidateQueries({ queryKey: qk.permissionMatrix });
-    },
-  });
+    [["roles"], qk.permissionMatrix],
+  );
 }
 
 export function useDeleteRole() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (id: string) => deleteRole(id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["roles"] }),
-  });
+  return useApiMutation(
+    (id: string) => deleteRole(id),
+    [["roles"]],
+  );
 }
 
 // role ↔ permission grants
@@ -551,36 +521,34 @@ export function usePermissionMatrix() {
 
 export function useGrantRolePermission() {
   const qc = useQueryClient();
-  return useMutation({
-    mutationFn: ({
+  return useApiMutation(
+    ({
       roleId,
       payload,
     }: {
       roleId: string;
       payload: RolePermissionGrant;
     }) => grantRolePermission(roleId, payload),
-    onSuccess: (_data, { roleId }) => {
-      qc.invalidateQueries({ queryKey: qk.rolePermissions(roleId) });
-      qc.invalidateQueries({ queryKey: qk.permissionMatrix });
-    },
-  });
+    [qk.permissionMatrix],
+    (_data, { roleId }) =>
+      qc.invalidateQueries({ queryKey: qk.rolePermissions(roleId) }),
+  );
 }
 
 export function useRevokeRolePermission() {
   const qc = useQueryClient();
-  return useMutation({
-    mutationFn: ({
+  return useApiMutation(
+    ({
       roleId,
       permissionId,
     }: {
       roleId: string;
       permissionId: string;
     }) => revokeRolePermission(roleId, permissionId),
-    onSuccess: (_data, { roleId }) => {
-      qc.invalidateQueries({ queryKey: qk.rolePermissions(roleId) });
-      qc.invalidateQueries({ queryKey: qk.permissionMatrix });
-    },
-  });
+    [qk.permissionMatrix],
+    (_data, { roleId }) =>
+      qc.invalidateQueries({ queryKey: qk.rolePermissions(roleId) }),
+  );
 }
 
 // ---------- auth ----------
@@ -590,28 +558,14 @@ export function useRevokeRolePermission() {
 // directly before clearing local state. Wrapping them in mutations would just
 // duplicate that wiring.
 
-// Sessions UI is not built yet — these power the future "active sessions" page.
-export function useSessions() {
-  return useQuery({ queryKey: qk.sessions, queryFn: fetchSessions });
-}
-
-export function useTerminateSession() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (sessionId: string) => terminateSession(sessionId),
-    onSuccess: () => qc.invalidateQueries({ queryKey: qk.sessions }),
-  });
-}
-
 // Self-service profile + password (PUT /auth/me, PUT /auth/me/password).
 // The /me query key is owned by auth-context (["auth","me",token]), so
 // invalidating ["auth","me"] forces it to refetch the updated identity.
 export function useUpdateMe() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (payload: ProfileUpdate) => updateMe(payload),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["auth", "me"] }),
-  });
+  return useApiMutation(
+    (payload: ProfileUpdate) => updateMe(payload),
+    [["auth", "me"]],
+  );
 }
 
 export function useChangePassword() {
@@ -629,11 +583,10 @@ export function usePlatformLlmConfig() {
 }
 
 export function useUpdatePlatformLlmConfig() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (payload: LlmConfigUpdate) => updatePlatformLlmConfig(payload),
-    onSuccess: () => qc.invalidateQueries({ queryKey: qk.llmConfigPlatform }),
-  });
+  return useApiMutation(
+    (payload: LlmConfigUpdate) => updatePlatformLlmConfig(payload),
+    [qk.llmConfigPlatform],
+  );
 }
 
 export function useTenantLlmConfig() {
@@ -644,11 +597,10 @@ export function useTenantLlmConfig() {
 }
 
 export function useUpdateTenantLlmConfig() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (payload: LlmConfigUpdate) => updateTenantLlmConfig(payload),
-    onSuccess: () => qc.invalidateQueries({ queryKey: qk.llmConfigTenant }),
-  });
+  return useApiMutation(
+    (payload: LlmConfigUpdate) => updateTenantLlmConfig(payload),
+    [qk.llmConfigTenant],
+  );
 }
 
 export function useEffectiveModels() {
@@ -671,11 +623,10 @@ export function useTenantConfig() {
 }
 
 export function useUpdateTenantConfig() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (payload: TenantConfigUpdate) => updateTenantConfig(payload),
-    onSuccess: () => qc.invalidateQueries({ queryKey: qk.tenantConfig }),
-  });
+  return useApiMutation(
+    (payload: TenantConfigUpdate) => updateTenantConfig(payload),
+    [qk.tenantConfig],
+  );
 }
 
 /**
@@ -732,67 +683,60 @@ export function useMessages(conversationId: string | null) {
 }
 
 export function useDeleteConversation() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (conversationId: string) => deleteConversation(conversationId),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["conversations"] }),
-  });
+  return useApiMutation(
+    (conversationId: string) => deleteConversation(conversationId),
+    [["conversations"]],
+  );
 }
 
 // conversation-management mutations (priority 50). Each invalidates the whole
 // conversations family so the list (any active filter view) refetches.
 export function useRenameConversation() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: ({ id, title }: { id: string; title: string }) =>
+  return useApiMutation(
+    ({ id, title }: { id: string; title: string }) =>
       renameConversation(id, title),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["conversations"] }),
-  });
+    [["conversations"]],
+  );
 }
 
 export function useAddConversationTag() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: ({ id, tag }: { id: string; tag: string }) =>
+  return useApiMutation(
+    ({ id, tag }: { id: string; tag: string }) =>
       addConversationTag(id, tag),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["conversations"] }),
-  });
+    [["conversations"]],
+  );
 }
 
 export function useRemoveConversationTag() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: ({ id, tag }: { id: string; tag: string }) =>
+  return useApiMutation(
+    ({ id, tag }: { id: string; tag: string }) =>
       removeConversationTag(id, tag),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["conversations"] }),
-  });
+    [["conversations"]],
+  );
 }
 
 export function useSetConversationPinned() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: ({ id, pinned }: { id: string; pinned: boolean }) =>
+  return useApiMutation(
+    ({ id, pinned }: { id: string; pinned: boolean }) =>
       setConversationPinned(id, pinned),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["conversations"] }),
-  });
+    [["conversations"]],
+  );
 }
 
 export function useSetConversationStarred() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: ({ id, starred }: { id: string; starred: boolean }) =>
+  return useApiMutation(
+    ({ id, starred }: { id: string; starred: boolean }) =>
       setConversationStarred(id, starred),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["conversations"] }),
-  });
+    [["conversations"]],
+  );
 }
 
 export function useBatchDeleteConversations() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (conversationIds: string[]) =>
+  return useApiMutation(
+    (conversationIds: string[]) =>
       batchDeleteConversations(conversationIds),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["conversations"] }),
-  });
+    [["conversations"]],
+  );
 }
 
 // ---------- api tokens (AtoA) ----------
@@ -801,19 +745,17 @@ export function useApiTokens() {
 }
 
 export function useCreateApiToken() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (payload: ApiTokenCreate) => createApiToken(payload),
-    onSuccess: () => qc.invalidateQueries({ queryKey: qk.apiTokens }),
-  });
+  return useApiMutation(
+    (payload: ApiTokenCreate) => createApiToken(payload),
+    [qk.apiTokens],
+  );
 }
 
 export function useRevokeApiToken() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (id: string) => revokeApiToken(id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: qk.apiTokens }),
-  });
+  return useApiMutation(
+    (id: string) => revokeApiToken(id),
+    [qk.apiTokens],
+  );
 }
 
 // ---------- billing (Token 费用管理系列 4/4) ----------
@@ -842,16 +784,15 @@ export function useUsage() {
 /** Super-admin: credit a tenant's wallet. Invalidates wallet + ledger. */
 export function useRecharge() {
   const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (payload: RechargeRequest) => recharge(payload),
-    onSuccess: (_data, { tenant_id }) => {
-      // Refresh the affected tenant's wallet + the global wallet list, plus the
-      // caller-side ledger (super_admin may be viewing transactions too).
-      qc.invalidateQueries({ queryKey: qk.walletByTenant(tenant_id) });
-      qc.invalidateQueries({ queryKey: qk.wallet });
-      qc.invalidateQueries({ queryKey: qk.transactions });
-    },
-  });
+  return useApiMutation(
+    (payload: RechargeRequest) => recharge(payload),
+    // Refresh the global wallet list + the caller-side ledger (super_admin may
+    // be viewing transactions too).
+    [qk.wallet, qk.transactions],
+    // Plus the specific affected tenant's wallet (vars-derived key).
+    (_data, { tenant_id }) =>
+      qc.invalidateQueries({ queryKey: qk.walletByTenant(tenant_id) }),
+  );
 }
 
 /** Effective pricing for the caller (tenant overrides + platform defaults). */
@@ -860,28 +801,25 @@ export function useModelPricing() {
 }
 
 export function useCreatePricing() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (payload: ModelPricingUpsert) => createPricing(payload),
-    onSuccess: () => qc.invalidateQueries({ queryKey: qk.pricing }),
-  });
+  return useApiMutation(
+    (payload: ModelPricingUpsert) => createPricing(payload),
+    [qk.pricing],
+  );
 }
 
 export function useUpdatePricing() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: ({ id, payload }: { id: string; payload: ModelPricingUpsert }) =>
+  return useApiMutation(
+    ({ id, payload }: { id: string; payload: ModelPricingUpsert }) =>
       updatePricing(id, payload),
-    onSuccess: () => qc.invalidateQueries({ queryKey: qk.pricing }),
-  });
+    [qk.pricing],
+  );
 }
 
 export function useDeletePricing() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (id: string) => deletePricing(id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: qk.pricing }),
-  });
+  return useApiMutation(
+    (id: string) => deletePricing(id),
+    [qk.pricing],
+  );
 }
 
 // ---------- dashboard analytics ----------
@@ -981,24 +919,18 @@ export function useUnreadCount() {
 
 /** Mark one notification read; invalidates unread-count + the open list. */
 export function useMarkNotificationRead() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (id: string) => markNotificationRead(id),
-    onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: ["notifications"] });
-    },
-  });
+  return useApiMutation(
+    (id: string) => markNotificationRead(id),
+    [["notifications"]],
+  );
 }
 
 /** Mark all visible notifications read; invalidates unread-count + the list. */
 export function useMarkAllNotificationsRead() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: () => markAllNotificationsRead(),
-    onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: ["notifications"] });
-    },
-  });
+  return useApiMutation(
+    (_: void) => markAllNotificationsRead(),
+    [["notifications"]],
+  );
 }
 
 // ---------- CSV export (priority 55) ----------

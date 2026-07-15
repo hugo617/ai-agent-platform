@@ -5,8 +5,6 @@ import {
   ArrowDownCircle,
   ArrowUpCircle,
   Coins,
-  Download,
-  Loader2,
   RefreshCw,
   Wallet as WalletIcon,
 } from "lucide-react";
@@ -20,6 +18,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { StatCard as CounterCard } from "@/components/ui/stat-card";
 import {
   Table,
   TableBody,
@@ -29,6 +28,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useAuth } from "@/components/auth/auth-context";
+import { isSuperAdmin } from "@/lib/permission";
 import { cn } from "@/lib/utils";
 import type {
   UsageEventItem,
@@ -39,36 +39,14 @@ import {
   useTransactions,
   useUsage,
   useWallet,
-  useExportCsv,
 } from "@/hooks/queries";
-import { useToast } from "@/components/ui/toast";
-import { apiErrorMessage } from "@/api/client";
-
-const fmt = (s: string | null | undefined): string =>
-  s ? new Date(s).toLocaleString() : "-";
-
-/** Format an integer token count with a thousands separator. */
-const fmtTokens = (n: number): string => n.toLocaleString("en-US");
-
-/** Format a cost (Decimal snapshot) with a ¥ prefix and 4 decimals. */
-const fmtCost = (n: number | null | undefined): string =>
-  n === null || n === undefined ? "-" : `¥${n.toFixed(4)}`;
-
-/** Relative time like "3 小时前" / "2 天前" from an ISO string. */
-function fmtRelative(iso: string | null | undefined): string {
-  if (!iso) return "-";
-  const then = new Date(iso).getTime();
-  const now = Date.now();
-  const diff = Math.max(0, now - then);
-  const min = Math.floor(diff / 60_000);
-  if (min < 1) return "刚刚";
-  if (min < 60) return `${min} 分钟前`;
-  const hr = Math.floor(min / 60);
-  if (hr < 24) return `${hr} 小时前`;
-  const day = Math.floor(hr / 24);
-  if (day < 30) return `${day} 天前`;
-  return fmt(iso);
-}
+import {
+  formatDateTime as fmt,
+  formatRelative as fmtRelative,
+  formatTokens as fmtTokens,
+  formatCurrency as fmtCost,
+} from "@/lib/format";
+import { ExportCsvButton } from "@/components/ui/export-csv-button";
 
 const TX_TYPE_LABEL: Record<string, string> = {
   recharge: "充值",
@@ -120,13 +98,10 @@ function buildDailyTrend(
 
 export function BillingPage() {
   const { me } = useAuth();
-  const isSuperAdmin = me?.platform_role === "super_admin";
 
   const walletQ = useWallet();
   const txQ = useTransactions();
   const usageQ = useUsage();
-  const exportMut = useExportCsv();
-  const toast = useToast();
   const [trendDays, setTrendDays] = useState<7 | 30>(7);
 
   const wallet = walletQ.data ?? null;
@@ -146,19 +121,6 @@ export function BillingPage() {
   const anyFetching =
     walletQ.isFetching || txQ.isFetching || usageQ.isFetching;
 
-  const handleExportUsage = async () => {
-    // Usage export mirrors the /billing/usage scope (billing:read or
-    // wallet:read on the backend). Default 30-day window keeps the CSV aligned
-    // with the trend chart above.
-    const filename = `usage_${new Date().toISOString().slice(0, 10)}.csv`;
-    try {
-      await exportMut.mutateAsync({ entity: "usage", filename });
-      toast.success("已导出用量明细");
-    } catch (err) {
-      toast.error("导出失败", apiErrorMessage(err));
-    }
-  };
-
   const trend = buildDailyTrend(usage?.items ?? [], trendDays);
   const trendMax = Math.max(1, ...trend.map((b) => b.value));
 
@@ -170,23 +132,16 @@ export function BillingPage() {
           <h1 className="text-3xl font-bold tracking-tight">费用管理</h1>
           <p className="text-muted-foreground">
             查看本店 Token 余额、消耗趋势、流水明细与用量钻取。
-            {!isSuperAdmin && "（只读视图）"}
+            {!isSuperAdmin(me) && "（只读视图）"}
           </p>
         </div>
         <div className="flex gap-2">
-          <Button
-            variant="outline"
+          <ExportCsvButton
+            entity="usage"
             size="sm"
-            onClick={handleExportUsage}
-            disabled={exportMut.isPending}
-          >
-            {exportMut.isPending ? (
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            ) : (
-              <Download className="mr-2 h-4 w-4" />
-            )}
-            导出用量
-          </Button>
+            label="导出用量"
+            successMessage="已导出用量明细"
+          />
           <Button
             variant="outline"
             size="sm"
@@ -517,27 +472,5 @@ export function BillingPage() {
         </CardContent>
       </Card>
     </div>
-  );
-}
-
-function CounterCard({
-  title,
-  value,
-  icon,
-}: {
-  title: string;
-  value: string;
-  icon: React.ReactNode;
-}) {
-  return (
-    <Card>
-      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-        <CardTitle className="text-sm font-medium">{title}</CardTitle>
-        {icon}
-      </CardHeader>
-      <CardContent>
-        <div className="text-2xl font-bold">{value}</div>
-      </CardContent>
-    </Card>
   );
 }

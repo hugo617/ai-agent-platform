@@ -1,6 +1,6 @@
 import { Fragment, useState } from "react";
 import { useForm } from "react-hook-form";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import {
@@ -8,8 +8,6 @@ import {
   ChevronDown,
   ChevronRight,
   Contact,
-  Download,
-  Loader2,
   MessageSquare,
   MoreHorizontal,
   Pencil,
@@ -42,7 +40,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { FormField as Field } from "@/components/ui/form-field";
 import {
   Select,
   SelectContent,
@@ -61,7 +59,7 @@ import {
 import { useToast } from "@/components/ui/toast";
 import { apiErrorMessage } from "@/api/client";
 import { useAuth } from "@/components/auth/auth-context";
-import { hasPermission } from "@/lib/permission";
+import { hasPermission, isSuperAdmin } from "@/lib/permission";
 import type {
   CustomerProfileCreate,
   CustomerProfileRead,
@@ -75,8 +73,9 @@ import {
   useCustomers,
   useDeleteCustomerProfile,
   useUpdateCustomerProfile,
-  useExportCsv,
 } from "@/hooks/queries";
+import { formatDateTime as fmt, formatTokens } from "@/lib/format";
+import { ExportCsvButton } from "@/components/ui/export-csv-button";
 
 const GENDERS = ["male", "female", "other"] as const;
 const GENDER_LABEL: Record<string, string> = {
@@ -85,9 +84,6 @@ const GENDER_LABEL: Record<string, string> = {
   other: "其他",
 };
 const STATUSES = ["active", "inactive", "vip", "blacklist"] as const;
-
-const fmt = (s: string | null): string =>
-  s ? new Date(s).toLocaleString() : "-";
 
 function statusBadge(status: string) {
   if (status === "vip") return <Badge variant="default">VIP</Badge>;
@@ -120,13 +116,12 @@ const EMPTY_FORM: FormValues = {
 
 export function CustomersPage() {
   const { me } = useAuth();
-  const isSuperAdmin = me?.platform_role === "super_admin";
 
   // super_admin sees the HQ aggregate view by default; everyone else sees
   // their own store's profiles. The backend enforces the boundary (HQ
   // endpoints are require_super_admin), so a non-super_admin calling
   // useCustomers would get 403 — we split the query by role to match.
-  return isSuperAdmin ? <HqView /> : <StoreView />;
+  return isSuperAdmin(me) ? <HqView /> : <StoreView />;
 }
 
 // ============================================================ store view
@@ -141,7 +136,6 @@ function StoreView() {
   const createMut = useCreateCustomerProfile();
   const updateMut = useUpdateCustomerProfile();
   const deleteMut = useDeleteCustomerProfile();
-  const exportMut = useExportCsv();
 
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<CustomerProfileRead | null>(null);
@@ -252,20 +246,20 @@ function StoreView() {
     }
   };
 
-  const handleExport = async () => {
-    // Store view exports this tenant's customer profiles (default 30-day
-    // window; the backend enforces customers:read). Filename includes today
-    // so repeated exports don't overwrite each other.
-    const filename = `customers_${new Date().toISOString().slice(0, 10)}.csv`;
-    try {
-      await exportMut.mutateAsync({ entity: "customers", filename });
-      toast.success("已导出客户列表");
-    } catch (err) {
-      toast.error("导出失败", apiErrorMessage(err));
-    }
-  };
-
-  const list = profiles ?? [];
+  // Client-side filter seeded from ?search= so the global-search-box "查看全部"
+  // deep link carries the term onto this page (the profiles endpoint has no
+  // server-side search). Matches against name + identity_key + remark + status.
+  const [searchParams] = useSearchParams();
+  const search = (searchParams.get("search") ?? "").trim().toLowerCase();
+  const list = search
+    ? (profiles ?? []).filter(
+        (p) =>
+          p.customer.name.toLowerCase().includes(search) ||
+          p.customer.identity_key.toLowerCase().includes(search) ||
+          (p.remark ?? "").toLowerCase().includes(search) ||
+          p.status.toLowerCase().includes(search),
+      )
+    : (profiles ?? []);
 
   return (
     <div className="space-y-6">
@@ -281,18 +275,7 @@ function StoreView() {
             <Plus className="mr-2 h-4 w-4" /> 新增客户
           </Button>
         )}
-        <Button
-          variant="outline"
-          onClick={handleExport}
-          disabled={exportMut.isPending}
-        >
-          {exportMut.isPending ? (
-            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-          ) : (
-            <Download className="mr-2 h-4 w-4" />
-          )}
-          导出 CSV
-        </Button>
+        <ExportCsvButton entity="customers" successMessage="已导出客户列表" />
       </div>
 
       <Card>
@@ -600,16 +583,16 @@ function CustomerUsageDialog({
               />
               <Metric
                 label="Token 总消耗"
-                value={usage.total_tokens.toLocaleString()}
+                value={formatTokens(usage.total_tokens)}
                 icon={<Activity className="h-4 w-4" />}
               />
               <Metric
                 label="输入 Token"
-                value={usage.prompt_tokens.toLocaleString()}
+                value={formatTokens(usage.prompt_tokens)}
               />
               <Metric
                 label="输出 Token"
-                value={usage.completion_tokens.toLocaleString()}
+                value={formatTokens(usage.completion_tokens)}
               />
             </div>
             {usage.total_cost !== null && (
@@ -835,23 +818,5 @@ function HqView() {
 }
 
 // ---------------- shared field ----------------
-function Field({
-  label,
-  error,
-  hint,
-  children,
-}: {
-  label: string;
-  error?: string;
-  hint?: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="space-y-1.5">
-      <Label className="text-sm font-medium">{label}</Label>
-      {children}
-      {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
-      {error && <p className="text-xs text-destructive">{error}</p>}
-    </div>
-  );
-}
+// (FormField is imported from @/components/ui/form-field as `Field`.)
+

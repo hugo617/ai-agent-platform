@@ -37,6 +37,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { FormField as Field } from "@/components/ui/form-field";
 import {
   Select,
   SelectContent,
@@ -66,9 +67,7 @@ import {
   useRolePermissions,
   useUpdateRole,
 } from "@/hooks/queries";
-
-const fmt = (s: string | null): string =>
-  s ? new Date(s).toLocaleString() : "-";
+import { formatDateTime as fmt } from "@/lib/format";
 
 // ---------- create/edit form schema ----------
 const formSchema = z.object({
@@ -507,20 +506,4 @@ function PermissionDialog({
 
 // ---------------- shared field ----------------
 
-function Field({
-  label,
-  error,
-  children,
-}: {
-  label: string;
-  error?: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="space-y-2">
-      <Label>{label}</Label>
-      {children}
-      {error && <p className="text-xs text-destructive">{error}</p>}
-    </div>
-  );
-}
+// (FormField is imported from @/components/ui/form-field as `Field`.)

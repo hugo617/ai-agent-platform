@@ -17,6 +17,18 @@
 import type { MeResponse } from "@/api/types";
 
 /**
+ * Is the current user a platform super admin?
+ *
+ * A thin helper so call sites read ``isSuperAdmin(me)`` instead of the raw
+ * ``me?.platform_role === "super_admin"`` string compare repeated across 9+
+ * pages. The backend treats super_admin as a short-circuit for every
+ * permission check, so this is the platform-level "everything" gate.
+ */
+export function isSuperAdmin(me: MeResponse | null | undefined): boolean {
+  return me?.platform_role === "super_admin";
+}
+
+/**
  * Does the current user hold the `<obj>:<act>` permission?
  *
  * super_admin short-circuits to true (bypasses all checks; the backend returns
@@ -48,21 +60,4 @@ export function canViewMenu(
   if (!me) return false;
   if (me.platform_role === "super_admin") return true;
   return me.permissions.includes(menuCode);
-}
-
-/** Tenant-scoped role codes that grant user-management access. */
-const USER_MANAGER_ROLES = new Set(["owner", "admin"]);
-
-/**
- * @deprecated Use `hasPermission(me, obj, act)` instead. This helper hardcodes
- *   the {owner, admin} role set and cannot express finer-grained checks. It is
- *   retained while call sites migrate to permission-code-based guards.
- *
- * True for platform super admins and for tenant owners/admins. Plain members
- * get the user-management UI hidden and its routes blocked.
- */
-export function canManageUsers(me: MeResponse | null | undefined): boolean {
-  if (!me) return false;
-  if (me.platform_role === "super_admin") return true;
-  return me.roles.some((r) => USER_MANAGER_ROLES.has(r));
 }

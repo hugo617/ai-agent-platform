@@ -28,7 +28,7 @@ import {
 import { useToast } from "@/components/ui/toast";
 import { apiErrorMessage } from "@/api/client";
 import { useAuth } from "@/components/auth/auth-context";
-import { hasPermission } from "@/lib/permission";
+import { hasPermission, isSuperAdmin } from "@/lib/permission";
 import type { DataScope, PermissionItem, Role } from "@/api/types";
 import {
   useGrantRolePermission,
@@ -49,7 +49,6 @@ const DATA_SCOPE_OPTIONS: { value: DataScope; label: string; hint: string }[] = 
 
 export function PermissionsPage() {
   const { me } = useAuth();
-  const isSuperAdmin = me?.platform_role === "super_admin";
   // Editing the matrix requires roles:update (the same perm the backend's
   // grant/revoke endpoints check). super_admin bypasses via hasPermission.
   const canManage = hasPermission(me, "roles", "update");
@@ -162,7 +161,7 @@ export function PermissionsPage() {
       {/* 超管锁定行:平台级全权信息展示,不可配置(plan §Step3)。后端 super_admin
           通过 permission_service.check 的 bypass 拥有全部权限,不进矩阵 roles,
           这里只是让超管权限「可见可理解」。非超管登录不显示(超管是平台概念)。 */}
-      {isSuperAdmin && (
+      {isSuperAdmin(me) && (
         <Card className="border-amber-500/40 bg-amber-50/50 dark:bg-amber-950/20">
           <CardContent className="flex items-center gap-3 py-4">
             <Shield className="h-5 w-5 text-amber-600 dark:text-amber-500" />

@@ -26,13 +26,16 @@ const PATH_MENU: Record<string, string> = {
 };
 
 export function RequireUserManagement() {
-  const { me, isLoading } = useAuth();
+  const { me, isLoading, meError } = useAuth();
   const location = useLocation();
 
   // While /me is loading we can't decide yet — render nothing to avoid a
   // false redirect flash (ProtectedRoute already shows a skeleton for auth
   // loading, so this is a safe empty state during the brief window).
-  if (isLoading || !me) return null;
+  if (isLoading) return null;
+  // Non-401 /me failure (e.g. 500) used to render null forever (blank page);
+  // bounce to /login instead. See require-super-admin for the 401 reasoning.
+  if (meError || !me) return <Navigate to="/login" state={{ from: location }} replace />;
 
   const menuCode = PATH_MENU[location.pathname];
   // Unknown path under this guard: default to denying (redirect home) rather
@@ -60,10 +63,11 @@ const PATH_API_PERM: Record<string, { obj: string; act: string }> = {
  * current path. The backend still enforces 403 — this is a UX guard.
  */
 export function RequireApiPermission() {
-  const { me, isLoading } = useAuth();
+  const { me, isLoading, meError } = useAuth();
   const location = useLocation();
 
-  if (isLoading || !me) return null;
+  if (isLoading) return null;
+  if (meError || !me) return <Navigate to="/login" state={{ from: location }} replace />;
 
   const perm = PATH_API_PERM[location.pathname];
   if (!perm || !hasPermission(me, perm.obj, perm.act)) {

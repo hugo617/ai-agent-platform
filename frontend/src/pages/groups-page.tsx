@@ -36,7 +36,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { FormField as Field } from "@/components/ui/form-field";
 import {
   Select,
   SelectContent,
@@ -55,6 +55,7 @@ import {
 import { useToast } from "@/components/ui/toast";
 import { apiErrorMessage } from "@/api/client";
 import { useAuth } from "@/components/auth/auth-context";
+import { isSuperAdmin } from "@/lib/permission";
 import type { Group } from "@/api/types";
 import {
   useAttachTenant,
@@ -65,9 +66,7 @@ import {
   useAllTenants,
   useUpdateGroup,
 } from "@/hooks/queries";
-
-const fmt = (s: string | null): string =>
-  s ? new Date(s).toLocaleString() : "-";
+import { formatDateTime as fmt } from "@/lib/format";
 
 // ---------- create/edit form schema ----------
 // tenant_ids are managed outside react-hook-form (Checkbox list), so the schema
@@ -96,7 +95,7 @@ export function GroupsPage() {
   const { me } = useAuth();
   // Group is platform-level: only super_admin may create/edit/delete. Tenant
   // owner/admin still get a read-only view of their own groups.
-  const canManage = me?.platform_role === "super_admin";
+  const canManage = isSuperAdmin(me);
 
   const { data: groups, isLoading } = useGroups();
   // Only super_admin can attach stores, so only they need the full tenant
@@ -539,17 +538,4 @@ export function GroupsPage() {
 }
 
 // ---------------- shared field ----------------
-function Field({
-  label,
-  children,
-}: {
-  label: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="space-y-1.5">
-      <Label className="text-sm font-medium">{label}</Label>
-      {children}
-    </div>
-  );
-}
+// (FormField is imported from @/components/ui/form-field as `Field`.)

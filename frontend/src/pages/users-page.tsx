@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -45,6 +46,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { FormField as Field } from "@/components/ui/form-field";
 import {
   Select,
   SelectContent,
@@ -64,6 +66,7 @@ import { Pagination } from "@/components/ui/pagination";
 import { useToast } from "@/components/ui/toast";
 import { apiErrorMessage } from "@/api/client";
 import { useAuth } from "@/components/auth/auth-context";
+import { isSuperAdmin as isSuperAdminRole } from "@/lib/permission";
 import type { UserFilters, UserFull, UserStatistics, UserStatus } from "@/api/types";
 import {
   useChangeUserStatus,
@@ -75,6 +78,7 @@ import {
   useUserStatistics,
   useUsers,
 } from "@/hooks/queries";
+import { formatDateTime as fmt } from "@/lib/format";
 
 const STATUSES: { value: UserStatus; label: string }[] = [
   { value: "active", label: "活跃" },
@@ -93,9 +97,6 @@ const roleBadgeVariant = (code: string) => {
   if (code === "admin") return "default" as const;
   return "secondary" as const;
 };
-
-const fmt = (s: string | null): string =>
-  s ? new Date(s).toLocaleString() : "-";
 
 // ---------- form schema ----------
 const formSchema = z.object({
@@ -121,14 +122,19 @@ const EMPTY_FORM = {
 
 export function UsersPage() {
   const toast = useToast();
+  // Seed the search box from a ?search= URL param so the global-search-box
+  // "查看全部" deep link carries the term into this page instead of being
+  // silently dropped (the page used to initialize search to "" unconditionally).
+  const [searchParams] = useSearchParams();
+  const initialSearch = searchParams.get("search") ?? "";
   const { me } = useAuth();
-  const isSuperAdmin = me?.platform_role === "super_admin";
+  const isSuperAdmin = isSuperAdminRole(me);
 
   // ---- filters / pagination state ----
   const [filters, setFilters] = useState<UserFilters>({
     page: 1,
     limit: 10,
-    search: "",
+    search: initialSearch,
     status: "all",
     role: "all",
     sort_by: "created_at",
@@ -136,7 +142,7 @@ export function UsersPage() {
   });
 
   // debounce-free live search via a separate input state
-  const [searchInput, setSearchInput] = useState(filters.search ?? "");
+  const [searchInput, setSearchInput] = useState(initialSearch);
 
   const { data, isLoading } = useUsers(filters);
   const { data: stats } = useUserStatistics();
@@ -700,20 +706,4 @@ function Filters({
   );
 }
 
-function Field({
-  label,
-  error,
-  children,
-}: {
-  label: string;
-  error?: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="space-y-2">
-      <Label>{label}</Label>
-      {children}
-      {error && <p className="text-xs text-destructive">{error}</p>}
-    </div>
-  );
-}
+// (FormField is imported from @/components/ui/form-field as `Field`.)

@@ -12,7 +12,6 @@ import {
   UserCog,
 } from "lucide-react";
 
-import { apiErrorMessage } from "@/api/client";
 import type { Notification } from "@/api/types";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -37,6 +36,8 @@ import {
   useMarkNotificationRead,
   useNotifications,
 } from "@/hooks/queries";
+import { formatDateTime as fmt } from "@/lib/format";
+import { ListState } from "@/components/ui/list-state";
 
 const PAGE_SIZE = 20;
 
@@ -62,8 +63,6 @@ function TypeBadge({ type }: { type: string }) {
     </Badge>
   );
 }
-
-const fmt = (s: string): string => new Date(s).toLocaleString("zh-CN");
 
 export function NotificationsPage() {
   const navigate = useNavigate();
@@ -160,27 +159,15 @@ export function NotificationsPage() {
           </div>
         </CardHeader>
         <CardContent>
-          {isError ? (
-            <div className="py-8 text-center text-sm text-destructive">
-              加载失败:{apiErrorMessage(error)}
-              <Button
-                variant="outline"
-                size="sm"
-                className="ml-3"
-                onClick={() => refetch()}
-              >
-                重试
-              </Button>
-            </div>
-          ) : isLoading ? (
-            <div className="flex items-center justify-center py-12 text-muted-foreground">
-              <Loader2 className="mr-2 h-5 w-5 animate-spin" /> 加载中…
-            </div>
-          ) : items.length === 0 ? (
-            <div className="py-12 text-center text-sm text-muted-foreground">
-              {unreadOnly === "unread" ? "没有未读通知" : "暂无通知"}
-            </div>
-          ) : (
+          <ListState
+            isError={isError}
+            error={error}
+            onRetry={refetch}
+            isLoading={isLoading}
+            showSpinner
+            isEmpty={items.length === 0}
+            emptyText={unreadOnly === "unread" ? "没有未读通知" : "暂无通知"}
+          >
             <>
               <ul className="divide-y">
                 {items.map((item) => {
@@ -248,7 +235,7 @@ export function NotificationsPage() {
                 />
               </div>
             </>
-          )}
+          </ListState>
         </CardContent>
       </Card>
     </div>
