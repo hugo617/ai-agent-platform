@@ -1258,3 +1258,45 @@
   - (c) 或转向其他方向(文档更新 / 真实环境端到端验证既有 11 功能 / 新需求)
 
 ---
+
+### Session 103 — 2026-07-15(前端跨功能深度审查 + PR #64)
+- **本轮目标**: 承接 #63(后端深度审查),对**最近两天(功能 46-62 共 11 个)的前端代码**做跨功能深度审查。用户指令:清理废代码、修 bug、补全考虑不周处、提升代码复用,然后走 ship-it(commit→PR→CI 守门→合并)
+- **范围决策(AskUserQuestion 3 问,均选推荐项)**: 全量重构(含 queries.ts mutation helper)+ 扩展前端 MeResponse 类型 + 纳入 React.lazy 代码分割
+- **ship-it 流程(全过,0 次修红)**:
+  - **清理/审查/修复**(阶段 1-2):两个 explore agent 语义审查 queries.ts 重构 + 6 项 bug 修复 + 3 个新组件;逐项亲自核实,剔除 SSE parser `\n\n` 误报(JSON 转义保证 payload 不含字面 `\n\n`,Python 实测验证)
+  - **二次审查**(走 PR 前):对 b796094 再审一轮,确认无 🔴 bug,清 4 处遗留异味 + 1 处深链遗漏 → commit `b457f13`
+  - **PR(阶段 4)**:**#64**,base `main`,https://github.com/hugo617/ai-agent-platform/pull/64
+  - **CI 守门(阶段 5)**:**4 个 job 一次全绿,0 次修红**。Migrations 47s ✅、Frontend(typecheck+build+lint)34s ✅、E2E(Playwright)1m57s ✅、Backend(pytest+ruff)4m36s ✅
+  - **合并(阶段 6)**:squash 合并入 `main`,commit `7ae6d3c`,删除远端 frontend-deep-review-v2 分支
+- **改动总览(33 文件,855+/846-,纯前端无后端)**:
+  - **P0 清死代码**:删 6 项 Tier-1 死导出(fetchAgent/fetchUser/ApiError/canManageUsers/useCustomerAggregate/useSessions+useTerminateSession)+ 连带 Tier-2(qk.agent/qk.user/fetchCustomerAggregate/fetchSessions/terminateSession/qk.sessions/SessionRead)+ 2 个零引用脚手架资产(hero.png/vite.svg)
+  - **P1 修 bug 8 处**:🔴 logs 页租户下拉错 endpoint(污染共享缓存键 qk.allTenants)→ useAllTenants;🔴 chat regenerate 重复用户消息+上下文污染(handleSend base 改 localMessages ?? history);🟡 guard 空白页死胡同(/me 非 401 错 → meError 字段 + Navigate);🟡 全局搜索深链被忽略(users/agents/customers/chat 补 useSearchParams);🟡 chat 多选被 refetch 清空(依赖改 id 摘要);🟡 settings setState-in-render(改 useEffect([data]));🟢 auth value 未 memo;🟢 chat 复制静默失败(加 toast.error)
+  - **P2 抽公共 7 项**:`lib/format.ts`(15 处替换)、`lib/permission.ts` 加 isSuperAdmin(9 处)、`ui/form-field.tsx`(删 7 处本地定义 + useId 可访问性)、`ui/list-state.tsx`(15+ 处三态)、`ui/stat-card.tsx`、`ui/export-csv-button.tsx`(合并 3 处)、`useApiMutation` helper(queries.ts ~30 个 mutation 样板,1030→962 行)
+  - **P2 代码分割**:App.tsx 17 页 → React.lazy + named-export shim + Suspense;**收益:单 chunk 1065KB → main 318KB**,vite >500KB 警告消除
+  - **二次审查清理 5 处**:删死 key qk.group(+ 3 处 no-op invalidate + 误导注释)、useCreateRole/useDeleteRole 补 permissionMatrix(对齐 useUpdateRole)、HqView 补 ?search= 深链(super_admin 全局搜客户→查看全部之前丢词)、logs 页删多余 as 强转、list-state 去冗余 Fragment
+- **运行过的验证**(全过):
+  - `cd frontend && npm run build` → 0 error 0 warning(tsc + vite,chunk 分割生效)
+  - `cd frontend && npx oxlint src/` → 0 warning
+  - `./init.sh` → 全绿(后端 ruff + pytest **485 passed**)
+  - GitHub Actions PR #64 → 4/4 pass
+- **不在本次范围(已评估)**:
+  - ❌ SSE parser `\n\n` 切割 —— 误报(JSON 转义)
+  - ❌ profile 表单预填 —— 后端 MeResponse 不返回 display_name 等,需后端改,推迟独立任务
+  - ❌ useCrudDialogs / usePagination 抽 hook —— 改动面大,推迟独立 PR
+  - ❌ token 存 localStorage —— 文档已标的 MVP 策略,Logto OIDC 独立 TODO
+- **环境备注**: push 阶段遇代理 127.0.0.1:9910 未运行(所有常见代理端口关闭,直连 443 超时)→ 请用户开启代理后一次 push 成功。无代码返工
+- **clean-state checklist 核对(全勾)**:
+  - [x] 基础验证可用:./init.sh 全绿(485 passed)+ frontend build 0 error 0 warning + oxlint 0 warning
+  - [x] 进度已记录:progress.md Session 103(本条)
+  - [x] 功能状态真实:feature_list.json 56 passing / 2 not_started / 0 in_progress(本次是审查非新功能,计数不变)
+  - [x] 无半成品:0 in_progress
+  - [x] 无调试残留:前端无 console.log/debugger 残留(build + lint 全过)
+  - [x] 遵守架构铁律:纯前端改动,未触后端分层/多租户隔离
+  - [x] 可无缝接手:git 干净(main,与 origin 同步,无遗留分支)+ init.sh 绿 + 指针清晰(57)
+- **当前状态**: main 干净、与 origin/main 同步、工作树无改动。56/58 passing
+- **下一步最佳动作**: 由用户决定
+  - (a) 更新前端文档(03-认证与路由守卫 meError / 04-数据获取 useApiMutation / 05-UI组件与页面模式 新公共组件 + React.lazy);
+  - (b) 配置真实 embedding 服务后执行 57 knowledge-base-rag;
+  - (c) 或执行 58 multi-agent-orchestration
+
+---
