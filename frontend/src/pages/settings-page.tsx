@@ -6,6 +6,7 @@ import {
   Eye,
   EyeOff,
   KeyRound,
+  Layers,
   Palette,
   Plus,
   Server,
@@ -56,18 +57,24 @@ import { hasPermission, isSuperAdmin } from "@/lib/permission";
 import type {
   ApiToken,
   ApiTokenCreated,
+  EmbeddingConfig,
+  EmbeddingConfigUpdate,
   LlmConfig,
   LlmConfigUpdate,
 } from "@/api/types";
 import {
   useApiTokens,
   useCreateApiToken,
+  usePlatformEmbeddingConfig,
   usePlatformLlmConfig,
   useRevokeApiToken,
   useTenantConfig,
+  useTenantEmbeddingConfig,
   useTenantLlmConfig,
+  useUpdatePlatformEmbeddingConfig,
   useUpdatePlatformLlmConfig,
   useUpdateTenantConfig,
+  useUpdateTenantEmbeddingConfig,
   useUpdateTenantLlmConfig,
 } from "@/hooks/queries";
 import { formatDateTime as fmt } from "@/lib/format";
@@ -94,6 +101,13 @@ export function SettingsPage() {
       {isSuperAdmin(me) && <PlatformLlmCard />}
 
       {canManageLlm && <TenantLlmCard />}
+
+      {/* Embedding config (RAG, priority 57). Separate provider from the chat
+          LLM — DeepSeek does NOT expose embeddings, so this targets OpenAI by
+          default. Same two-scope pattern as the LLM card above. */}
+      {isSuperAdmin(me) && <PlatformEmbeddingCard />}
+
+      {canManageLlm && <TenantEmbeddingCard />}
 
       {canManageLlm && <TenantBrandingCard />}
 
@@ -134,6 +148,40 @@ function TenantLlmCard() {
     <LlmConfigCard
       title="租户级配置"
       description="覆盖当前租户的平台级配置。留空字段将使用平台级 / 环境默认值。"
+      config={data}
+      isLoading={isLoading}
+      onSubmit={(payload) => updateMut.mutateAsync(payload)}
+      pending={updateMut.isPending}
+    />
+  );
+}
+
+// ------------------------------------------------- embedding config cards
+
+/** Platform-wide embedding config card — super admin only. */
+function PlatformEmbeddingCard() {
+  const { data, isLoading } = usePlatformEmbeddingConfig();
+  const updateMut = useUpdatePlatformEmbeddingConfig();
+  return (
+    <EmbeddingConfigCard
+      title="平台级 Embedding 配置"
+      description="所有租户的默认向量检索配置（知识库 RAG）。DeepSeek 不提供 embedding，需配置 OpenAI 等。"
+      config={data}
+      isLoading={isLoading}
+      onSubmit={(payload) => updateMut.mutateAsync(payload)}
+      pending={updateMut.isPending}
+    />
+  );
+}
+
+/** Tenant-level embedding config card — owner/admin/super_admin. */
+function TenantEmbeddingCard() {
+  const { data, isLoading } = useTenantEmbeddingConfig();
+  const updateMut = useUpdateTenantEmbeddingConfig();
+  return (
+    <EmbeddingConfigCard
+      title="租户级 Embedding 配置"
+      description="覆盖当前租户的平台级向量检索配置。留空字段将使用平台级 / 环境默认值。"
       config={data}
       isLoading={isLoading}
       onSubmit={(payload) => updateMut.mutateAsync(payload)}
@@ -486,6 +534,131 @@ function LlmConfigCard({
                   <Plus className="h-4 w-4" />
                 </Button>
               </div>
+            </div>
+
+            <Button onClick={handleSave} disabled={pending}>
+              {pending ? "保存中…" : "保存"}
+            </Button>
+          </>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+/** Shared embedding-config card — like LlmConfigCard but simpler: embeddings use
+ * a single model (no selectable list), so there's no model tag editor. The
+ * same masked-key / leave-empty-to-keep UX applies. Powers the RAG pipeline. */
+function EmbeddingConfigCard({
+  title,
+  description,
+  config,
+  isLoading,
+  onSubmit,
+  pending,
+}: {
+  title: string;
+  description: string;
+  config: EmbeddingConfig | null | undefined;
+  isLoading: boolean;
+  onSubmit: (payload: EmbeddingConfigUpdate) => Promise<unknown>;
+  pending: boolean;
+}) {
+  const toast = useToast();
+  const [showKey, setShowKey] = useState(false);
+  const [baseUrl, setBaseUrl] = useState("");
+  const [model, setModel] = useState("");
+  const [apiKey, setApiKey] = useState("");
+
+  useEffect(() => {
+    setBaseUrl(config?.base_url ?? "");
+    setModel(config?.model ?? "");
+  }, [config]);
+
+  const handleSave = async () => {
+    const payload: EmbeddingConfigUpdate = {
+      base_url: baseUrl,
+      model,
+    };
+    if (apiKey.trim()) {
+      payload.api_key = apiKey.trim();
+    }
+    try {
+      await onSubmit(payload);
+      toast.success("已保存", title);
+      setApiKey("");
+    } catch (err) {
+      toast.error("保存失败", apiErrorMessage(err));
+    }
+  };
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Layers className="h-5 w-5" /> {title}
+        </CardTitle>
+        <CardDescription>{description}</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {isLoading ? (
+          <p className="py-6 text-center text-sm text-muted-foreground">加载中…</p>
+        ) : (
+          <>
+            <div className="space-y-2">
+              <Label>API Key</Label>
+              <div className="relative">
+                <KeyRound className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  type={showKey ? "text" : "password"}
+                  value={apiKey}
+                  onChange={(e) => setApiKey(e.target.value)}
+                  placeholder={
+                    config?.api_key_hint
+                      ? `当前 ${config.api_key_hint}（留空则不修改）`
+                      : "输入 API Key（如 sk-...）"
+                  }
+                  className="pl-9 pr-9"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowKey((v) => !v)}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                  aria-label={showKey ? "隐藏" : "显示"}
+                >
+                  {showKey ? (
+                    <EyeOff className="h-4 w-4" />
+                  ) : (
+                    <Eye className="h-4 w-4" />
+                  )}
+                </button>
+              </div>
+              {config?.api_key_hint && (
+                <p className="text-xs text-muted-foreground">
+                  当前存储的 Key：{config.api_key_hint}
+                </p>
+              )}
+            </div>
+
+            <div className="space-y-2">
+              <Label>Base URL</Label>
+              <Input
+                value={baseUrl}
+                onChange={(e) => setBaseUrl(e.target.value)}
+                placeholder="https://api.openai.com"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label>Embedding 模型</Label>
+              <Input
+                value={model}
+                onChange={(e) => setModel(e.target.value)}
+                placeholder="text-embedding-3-small"
+              />
+              <p className="text-xs text-muted-foreground">
+                text-embedding-3-small（1536 维,OpenAI）。更换模型需同步调整向量维度。
+              </p>
             </div>
 
             <Button onClick={handleSave} disabled={pending}>

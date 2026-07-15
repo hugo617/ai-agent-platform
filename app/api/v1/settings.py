@@ -14,6 +14,12 @@ A read endpoint for the effective model list (``/settings/models``) is open to
 any authenticated user — it backs the agent-creation dropdown and leaks no
 secrets (just model names).
 
+The same two-scope pattern backs the **embedding** config
+(``/settings/embedding/{platform,tenant}``) used by the RAG pipeline (priority
+57). It is a separate table from the LLM config because the embeddings endpoint
+differs from the chat LLM (DeepSeek does NOT expose embeddings), so they need
+independent api_key / base_url.
+
 Permission granularity: the tenant endpoints use ``settings:read`` (GET) and
 ``settings:update`` (PUT) — the coarse ``settings:manage`` was split in the
 permission-unified-model task so a role can be granted read-only settings.
@@ -28,7 +34,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import CurrentUser, get_current_user, require_permission, require_super_admin
 from app.core.database import get_db
+from app.schemas.embedding_config import EmbeddingConfigRead, EmbeddingConfigUpdate
 from app.schemas.llm_config import LlmConfigRead, LlmConfigUpdate
+from app.services.embedding_config_service import embedding_config_service
 from app.services.llm_config_service import llm_config_service
 
 router = APIRouter(prefix="/settings", tags=["settings"])
@@ -109,3 +117,70 @@ async def list_effective_models(
     keys, URLs, or any secret material.
     """
     return await llm_config_service.list_models(db, user.tenant_id)
+
+
+# ===========================================================================
+# Embedding config (RAG pipeline, priority 57).
+# Separate table from the LLM config above because the embeddings endpoint
+# differs from the chat LLM (DeepSeek does NOT expose embeddings). Same two-
+# scope pattern: platform (super admin) + tenant (owner/admin), tenant >
+# platform > env fallback. See EmbeddingConfigService.get_effective.
+# ===========================================================================
+
+
+# ----- platform-wide embedding config (super admin only) -----
+
+
+@router.get(
+    "/embedding/platform",
+    response_model=EmbeddingConfigRead | None,
+    dependencies=[Depends(require_super_admin())],
+)
+async def get_platform_embedding_config(
+    db: AsyncSession = Depends(get_db),
+) -> EmbeddingConfigRead | None:
+    """The platform-wide embedding config (masked key). None if unset."""
+    return await embedding_config_service.get_platform(db)
+
+
+@router.put(
+    "/embedding/platform",
+    response_model=EmbeddingConfigRead,
+    dependencies=[Depends(require_super_admin())],
+)
+async def update_platform_embedding_config(
+    payload: EmbeddingConfigUpdate,
+    db: AsyncSession = Depends(get_db),
+) -> EmbeddingConfigRead:
+    """Create or update the platform-wide embedding config."""
+    return await embedding_config_service.upsert_platform(db, payload)
+
+
+# ----- tenant-level embedding config (owner/admin; super admin short-circuits) -----
+
+
+@router.get(
+    "/embedding/tenant",
+    response_model=EmbeddingConfigRead | None,
+    dependencies=[Depends(require_permission("settings", "read"))],
+)
+async def get_tenant_embedding_config(
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> EmbeddingConfigRead | None:
+    """The caller's tenant-level embedding config (masked key). None if unset."""
+    return await embedding_config_service.get_tenant(db, user.tenant_id)
+
+
+@router.put(
+    "/embedding/tenant",
+    response_model=EmbeddingConfigRead,
+    dependencies=[Depends(require_permission("settings", "update"))],
+)
+async def update_tenant_embedding_config(
+    payload: EmbeddingConfigUpdate,
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> EmbeddingConfigRead:
+    """Create or update the caller's tenant-level embedding config."""
+    return await embedding_config_service.upsert_tenant(db, user.tenant_id, payload)

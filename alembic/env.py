@@ -18,6 +18,8 @@ from app.models import (  # noqa: F401
     agent,
     api_token,
     customer,
+    document,
+    embedding_config,
     group,
     llm_config,
     log,

@@ -1,8 +1,15 @@
-"""Minimal LangGraph agent with one tool.
+"""Minimal LangGraph agent with tools.
 
-The tool ``get_my_agents`` lets the LLM list the agents owned by the current
-tenant — proving that the agent's tool calls are themselves subject to the
-multi-tenant permission model (no cross-tenant data leakage).
+Two tools are bound per (user, tenant) context:
+
+- ``get_my_agents`` — list the agents owned by the current tenant, proving that
+  tool calls are subject to the multi-tenant permission model.
+- ``retrieve_knowledge`` (RAG, priority 57) — search the tenant's knowledge base
+  for relevant context and return it so the agent can ground its answer in the
+  tenant's own documents (manuals, FAQs, scripts).
+
+Each tool performs its own permission check before touching data, so the agent
+cannot bypass authorization regardless of what the LLM emits.
 """
 
 import asyncio
@@ -60,7 +67,38 @@ def _build_tenant_tools(user_id: str, tenant_id: str, db: AsyncSession) -> list[
             return "no agents found"
         return "\n".join(f"- {a.name} (model={a.model})" for a in agents)
 
-    return [get_my_agents]
+    @tool
+    async def retrieve_knowledge(query: str) -> str:
+        """Search the tenant knowledge base for information relevant to a query.
+
+        Call this when the user asks about business-specific content the
+        assistant would not otherwise know — product manuals, FAQs, service
+        scripts, store policies. Returns the most relevant passages joined by
+        a separator, or a 'not found' notice if nothing matches. Only searches
+        the current tenant's documents (cross-tenant isolation enforced in the
+        repository layer).
+        """
+        allowed = await permission_service.check(
+            user_id, tenant_id, "knowledge", "read"
+        )
+        if not allowed:
+            return "ERROR: permission denied"
+        # Imported here to avoid a circular import at module load time
+        # (knowledge_service imports embedding_config_service which imports
+        # repositories; graph is imported early by the chat route).
+        from app.services.knowledge_service import KnowledgeService
+
+        try:
+            hits = await KnowledgeService(db).retrieve(query, tenant_id, top_k=4)
+        except Exception:
+            # Embedding/vector failures must never break the conversation —
+            # surface a benign "not found" so the agent keeps chatting.
+            return "未找到相关知识"
+        if not hits:
+            return "未找到相关知识"
+        return "\n---\n".join(content for content, _score, _doc_id in hits)
+
+    return [get_my_agents, retrieve_knowledge]
 
 
 def _build_llm_kwargs(

@@ -15,12 +15,15 @@ jobs:
   migrations:
     name: Migrations (alembic upgrade on Postgres)
     runs-on: ubuntu-latest
-    # The migration chain is Postgres-only (uses now(), JSONB, +psycopg). Spin
-    # up a real Postgres so CI actually applies every migration head — this
-    # catches broken upgrades / type drift (e.g. the R9 JSONB fix) before merge.
+    # The migration chain is Postgres-only (uses now(), JSONB, +psycopg, and
+    # since priority 57 also `CREATE EXTENSION vector`). Spin up a real Postgres
+    # so CI actually applies every migration head — this catches broken
+    # upgrades / type drift (e.g. the R9 JSONB fix) before merge. The pgvector
+    # image is required because priority 57's migration enables the vector
+    # extension (a plain postgres:16 image lacks the binary and would fail).
     services:
       postgres:
-        image: postgres:16
+        image: pgvector/pgvector:pg16
         env:
           POSTGRES_USER: aap
           POSTGRES_PASSWORD: aap_secret

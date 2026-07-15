@@ -33,6 +33,10 @@ casbin-sqlalchemy-adapter==1.4.0
 langgraph==0.2.61
 langchain-openai==0.2.14
 langchain-core==0.3.28
+# Text splitter for RAG chunking (priority 57). Imported from
+# ``langchain_text_splitters`` — the ``langchain`` umbrella package is NOT a dep,
+# so this dedicated package is required for RecursiveCharacterTextSplitter.
+langchain-text-splitters==0.3.4
 
 # Scheduled jobs (balance-warning scan, cleanup, ...) — priority 54
 APScheduler==3.11.0

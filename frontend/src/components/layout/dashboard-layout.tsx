@@ -2,6 +2,7 @@ import { useState } from "react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import {
   Bot,
+  BookOpen,
   Building2,
   Contact,
   Coins,
@@ -67,6 +68,13 @@ const NAV_ITEMS: NavItem[] = [
   { to: "/chat", label: "对话", icon: MessageSquare, menuCode: "menu:chat" },
   { to: "/groups", label: "组织", icon: Building2, menuCode: "menu:groups" },
   { to: "/customers", label: "客户", icon: Contact, menuCode: "menu:customers" },
+  // 知识库 / RAG (priority 57) — tenant-scoped documents feeding retrieval.
+  {
+    to: "/knowledge",
+    label: "知识库",
+    icon: BookOpen,
+    menuCode: "menu:knowledge",
+  },
   // Token 费用管理系列 4/4 — store-level billing. No menu:billing permission is
   // seeded (the series ships wallet:read on owner/admin/member instead), so we
   // gate the nav item on the api permission directly. super_admin bypasses.

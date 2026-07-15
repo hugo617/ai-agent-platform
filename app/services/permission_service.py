@@ -463,6 +463,9 @@ DEFAULT_OWNER_PERMS: list[tuple[str, str]] = [
     ("wallet", "read"), ("wallet", "update"),
     ("billing", "read"),
     ("logs", "read"),
+    # knowledge: no "update" act — documents have no edit path (delete +
+    # recreate), so only read/create/delete are seeded. See knowledge_service.
+    ("knowledge", "read"), ("knowledge", "create"), ("knowledge", "delete"),
 ]
 DEFAULT_ADMIN_PERMS: list[tuple[str, str]] = [
     ("agents", "read"), ("agents", "create"), ("agents", "update"), ("agents", "export"),
@@ -475,6 +478,7 @@ DEFAULT_ADMIN_PERMS: list[tuple[str, str]] = [
     ("wallet", "read"), ("wallet", "update"),
     ("billing", "read"),
     ("logs", "read"),
+    ("knowledge", "read"), ("knowledge", "create"),
 ]
 DEFAULT_MEMBER_PERMS: list[tuple[str, str]] = [
     ("agents", "read"),
@@ -482,6 +486,7 @@ DEFAULT_MEMBER_PERMS: list[tuple[str, str]] = [
     ("roles", "read"),
     ("customers", "read"),
     ("billing", "read"),
+    ("knowledge", "read"),
 ]
 
 # ---------------------------------------------------------------------------
@@ -502,14 +507,14 @@ DEFAULT_MEMBER_PERMS: list[tuple[str, str]] = [
 DEFAULT_MENU_PERMS: dict[str, list[str]] = {
     "owner": [
         "dashboard", "agents", "chat", "groups", "customers",
-        "members", "users", "roles", "permissions", "settings",
+        "members", "users", "roles", "permissions", "settings", "knowledge",
     ],
     "admin": [
         "dashboard", "agents", "chat", "groups", "customers",
-        "members", "users", "roles", "permissions", "settings",
+        "members", "users", "roles", "permissions", "settings", "knowledge",
     ],
     "member": [
-        "dashboard", "agents", "chat", "groups", "customers",
+        "dashboard", "agents", "chat", "groups", "customers", "knowledge",
     ],
 }
 
@@ -530,6 +535,7 @@ OBJ_CN: dict[str, str] = {
     "wallet": "钱包",
     "billing": "计费",
     "logs": "审计日志",
+    "knowledge": "知识库",
     "menu": "菜单",
 }
 ACT_CN: dict[str, str] = {
@@ -558,6 +564,7 @@ MENU_CN: dict[str, str] = {
     "permissions": "权限矩阵",
     "settings": "设置",
     "tenants": "门店",
+    "knowledge": "知识库",
 }
 
 

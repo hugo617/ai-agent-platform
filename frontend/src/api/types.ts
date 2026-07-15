@@ -222,6 +222,58 @@ export interface LlmConfigUpdate {
   available_models?: string[];
 }
 
+// ============= embedding settings (RAG, priority 57) =============
+// Separate from LlmConfig because embeddings target a different provider
+// (DeepSeek does NOT expose embeddings; default is OpenAI).
+
+export interface EmbeddingConfig {
+  id: string;
+  tenant_id: string | null; // null = platform-wide
+  api_key_hint: string; // masked, e.g. "sk-***wxyz"
+  base_url: string;
+  model: string; // single model (no selectable list)
+  is_active: boolean;
+  updated_at: string;
+}
+
+export interface EmbeddingConfigUpdate {
+  api_key?: string; // omit/empty = keep stored key
+  base_url?: string;
+  model?: string;
+}
+
+// ============= knowledge base / RAG (priority 57) =============
+
+export interface DocumentRead {
+  id: string;
+  tenant_id: string;
+  name: string;
+  source_type: string; // "text" | "upload"
+  content: string;
+  chunk_count: number;
+  status: string; // pending | indexed | failed
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DocumentCreate {
+  name: string;
+  content: string;
+  source_type?: "text" | "upload";
+}
+
+export interface RetrieveHit {
+  content: string;
+  score: number; // cosine similarity (0-1, higher = better)
+  document_id: string;
+  document_name: string;
+}
+
+export interface RetrieveResult {
+  query: string;
+  hits: RetrieveHit[];
+}
+
 // ============= tenant branding config (white-label, priority 52) =============
 
 /** One tenant's white-label brand: display name, logo, theme color, login text.

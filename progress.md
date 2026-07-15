@@ -8,7 +8,7 @@
 - **标准启动路径**: `./init.sh`(装依赖 + ruff + pytest)
 - **标准验证路径**: `./init.sh`(同上,后端快速验证,SQLite 内存库)
 - **完整验证路径**(需 docker): `alembic upgrade head && alembic check` + `cd frontend && npm run build`
-- **当前最高优先级未完成功能**: **`knowledge-base-rag`(priority 57,知识库 + RAG)** —— file-upload-storage(56)✅ 已合并 main(PR #62,StorageBackend Local/S3/OSS + POST /uploads/upload + 前端 FileUpload 组件 + settings-page logo 接入;CI 4/4 全绿首轮)。46-56 全部已合并入 main。57 做 知识库文档(复用 uploadFile)+ pgvector RAG 检索。前置(file-upload-storage)已就绪。剩余 not_started:57 knowledge-base-rag / 58 multi-agent-orchestration。
+- **当前最高优先级未完成功能**: **`multi-agent-orchestration`(priority 58,多 Agent 编排)** —— knowledge-base-rag(57)✅ 已在 feat/knowledge-base-rag 分支实现完成(待用户决定 commit/PR)。57 激活 pgvector + 完整 RAG 管线(文档录入→分块→embedding→向量检索→Agent 工具注入)+ 知识库管理 UI + 独立 EmbeddingConfig 配置(settings UI 管理)。剩余 not_started:58 multi-agent-orchestration(无前置,plan 建议在 RAG 之后做,specialist 可共享 retrieve_knowledge)。
 - **当前 blocker**: 无
 
 ## 后续任务规划
@@ -1300,3 +1300,53 @@
   - (c) 或执行 58 multi-agent-orchestration
 
 ---
+
+### Session 104 — 2026-07-16(knowledge-base-rag 实现,57/58)
+- **本轮目标**: 执行 `knowledge-base-rag`(priority 57,激活 pgvector + RAG)—— 用户指示「项目还有两个任务,挑一个分析+制定计划+实现」。57 优先(业务价值最高 + 激活幽灵能力 pgvector + 前置 file-upload 就绪)
+- **决策对齐(AskUserQuestion 两轮 5 问)**:① 任务选 57 RAG(非 58 多 agent);② embedding 模型 = OpenAI text-embedding-3-small(1536 维);③ embedding 配置 = 做 settings 页 UI 管理(独立 EmbeddingConfig 表,因 DeepSeek 不提供 embedding);④ 文档格式 = 纯文本(textarea + .txt 上传);⑤ 前端基线 = 当前 main(新分支 feat/knowledge-base-rag)
+- **三大技术坑(调研确认,全部规避)**:① CI migrations job 用普通 postgres:16(非 pgvector)→ 改镜像 pgvector/pgvector:pg16;② SQLite 不支持 Vector 列 → `Vector(1536).with_variant(JSON,"sqlite")` 降级建表(实测验证);③ langchain-text-splitters 未安装 → 加依赖
+- **已完成(对照 plan 21 步,全栈)**:
+  - **Phase 0 基础设施**:requirements.txt 加 langchain-text-splitters==0.3.4;ci.yml migrations 镜像改 pgvector;config.py 加 embedding_api_key/base_url/model env 兜底;切 feat/knowledge-base-rag 分支
+  - **Phase 1 EmbeddingConfig(独立表,仿 LlmConfig)**:models/embedding_config.py(删 available_models,default_model→model)+ repositories(BaseRepository 非 TenantScoped,因 tenant_id 可空)+ schemas(Update/Read/Effective 三件套,dimension=1536 常量)+ service(get_effective 三级 fallback + upsert + 复用 crypto)+ 迁移 f1a2b3c4d5e6;settings.py 4 端点(GET/PUT embedding/platform + tenant);前端 settings-page 加 PlatformEmbeddingCard + TenantEmbeddingCard + 共享 EmbeddingConfigCard(仿 LlmConfigCard 删模型列表)
+  - **Phase 2 知识库数据层**:models/document.py(Document 软删除 + DocumentChunk embedding 列 Vector(1536).with_variant(JSON,"sqlite"))+ 迁移 f2b3c4d5e6f7(CREATE EXTENSION IF NOT EXISTS vector + dialect 判断 SQLite 跳过)+ repositories(DocumentRepository 软删除覆写 + DocumentChunkRepository cosine_distance 检索返回 (chunk, distance))+ schemas(DocumentCreate/Read + RetrieveRequest/Hit/Result)+ EmbeddingService(OpenAIEmbeddings 显式传 model)+ KnowledgeService(ingest 分块+embed+存;retrieve cosine 转相似度;CRUD 权限校验;commit 后 re-fetch 防 expire bug)+ knowledge.py 4 端点 + retrieve_knowledge 工具挂 graph.py(权限自检 + 失败不阻断对话)+ 权限 seed 3 处同步(permission_service DEFAULT_*_PERMS + OBJ_CN + MENU_CN + conftest _make_casbin)
+  - **Phase 3 知识库前端**:types/endpoints/queries 加 Document + Retrieve 三层;knowledge-page.tsx(文档列表 ListState 三态 + 录入 Dialog textarea/.txt 读取 + 删除确认 + 检索调试面板带相似度分数)+ App.tsx lazy import + 路由 /knowledge + dashboard-layout 侧边栏 BookOpen 图标 menuCode:menu:knowledge
+  - **Phase 4 测试**:test_embedding_config.py(5 测:三级 fallback / upsert 留空不改 key / 掩码不回显)+ test_knowledge_rag.py(10 测:分块纯函数 2 + ingest 入库 mock + CRUD 4 + 权限边界 2 + retrieve debug 2)+ test_permission_service 2 个目录断言更新(11/6 business menus)
+- **运行过的验证**(全过):
+  - `./init.sh` → ruff `All checks passed!` + pytest **483 passed**(基线 468 + 新增 15)
+  - `cd frontend && npm run build` → tsc + vite 成功 0 类型错误;knowledge-page 独立 chunk 8.90KB(代码分割生效)
+  - `npx oxlint src/` → 0 warnings 0 errors
+- **已记录证据**: feature_list.json knowledge-base-rag.evidence(9 条),status → passing
+- **技术要点(与 plan 的实现差异)**:
+  - **EmbeddingConfig 独立于 LlmConfig**:DeepSeek 不提供 embedding,api_key/base_url 不同,不能复用 LlmConfig 表。照搬 LlmConfig 范式但删 available_models(单模型)+ default_model→model
+  - **SQLite Vector 兼容**:`Vector(1536).with_variant(JSON,"sqlite")` 让 create_all 成功(实测验证);cosine 算子 SQLite 不可用,检索测试 mock service 层
+  - **commit 后 re-fetch 防 lazy load bug**:_ingest 的 commit() 让 doc expire,_to_read 访问 updated_at 触发 greenlet 错误 → 改用 get_for_tenant re-fetch(照 customer_service 范式)
+  - **retrieve 返回真实相似度**:DocumentChunkRepository.search_by_embedding 用 select(chunk, distance) 同时返回距离,service 转 1-distance;调试面板显示真实分数
+  - **retrieve_knowledge 工具容错**:try/except 失败返回"未找到相关知识"不阻断对话(embedding 配置缺失/向量库错误对用户透明降级)
+- **提交记录**: 待用户决定 commit + PR(feat/knowledge-base-rag 分支,约 25 文件改动:11 后端新建 + 6 后端改 + 1 前端新建 + 6 前端改 + 2 迁移 + 2 测试 + ci.yml + requirements.txt + feature_list.json + progress.md)
+- **已知风险**: 无功能风险。迁移未在真实 Postgres 手动跑(CI migrations job 覆盖,已改 pgvector 镜像);真实 embedding 端到端验证需配 OpenAI key(init.sh 用 SQLite 不跑向量 SQL);手动浏览器验证未跑(需前后端启动 + 真实 key),build(tsc)+ oxlint + pytest(含 mock embedding)+ CI 已覆盖类型/规范/行为/迁移链
+- **下一步最佳动作**:
+  - (a) commit + PR + CI 守门 + 合并 knowledge-base-rag 到 main;
+  - (b) 执行 `multi-agent-orchestration`(priority 58,最后一个 not_started,现在 specialist 可共享 retrieve_knowledge 工具)
+
+---
+
+### Session 105 — 2026-07-16(ship-it 收尾 knowledge-base-rag,57)
+- **本轮目标**: ship-it 端到端交付 `knowledge-base-rag`(priority 57)—— 清理 + 审查 + PR + CI 守门 + 合并入 `main`,承接 Session 104 的未提交工作树(feat/knowledge-base-rag 分支,33 文件改动)
+- **实现方式**: 全自动 ship-it 流水线,无中断。阶段 0 环境探测 → 阶段 1 清理 → 阶段 2 审查 → 阶段 3 提交 → 阶段 4 PR → 阶段 5 CI 守门 → 阶段 6 合并 → 阶段 7 收尾
+- **清理 + 审查(阶段 1-2,3 处真实修复,均在 RAG 功能范围内)**:
+  - 🟡 **死权限 knowledge:update**:`DEFAULT_OWNER_PERMS`/`DEFAULT_ADMIN_PERMS` seed 了 `("knowledge","update")`,但全仓库无 knowledge:update 端点/Service 方法/工具(文档无编辑路径,只删 + 重建,仅 read/create/delete)。从 perms + conftest _make_casbin(owner/admin)+ test_permission_service 目录断言 + test_knowledge_rag docstring 同步移除。backfill 脚本读 DEFAULT_*_PERMS 常量自动适配,无需改
+  - 🟡 **死方法 DocumentChunkRepository.count_for_document**:全仓库无调用方(定义后从未使用,chunk_count 在 _ingest 里直接 `len(rows)` 算)。删除
+  - 🟡 **误导字段 RetrieveHit.chunk_index**:`retrieve_for_debug` 对所有 hit 硬编码 `chunk_index=0`(retrieve 内部返回 (content, score, doc_id) 三元组,真实 chunk 位置拿不到),前端 knowledge-page 不消费此字段。永远为 0 的字段是误导数据 → 从 schema/service/TS type 三处移除
+  - 审查通过(无需改):架构合规(Controller→Service→Repository 单向;DocumentRepository 继承 TenantScopedRepository 且 list/get 都带 is_deleted=False 软删除过滤;DocumentChunkRepository.search_by_embedding 在 Repository 层注入 tenant_id 过滤,跨租户隔离);retrieve_knowledge 工具 try/except 容错不阻断对话;迁移链 e5f6a7b8c9d0(main head)→ f1a2b3c4d5e6 → f2b3c4d5e6f7 正确;无 print/breakpoint/pdb/console.log/debugger 残留;无 TODO/FIXME;前端 useApiMutation/hasPermission/isSuperAdmin/ListState 全匹配 Session 103 公共组件约定
+- **运行过的验证**(全过):
+  - `./init.sh` → ruff `All checks passed!` + **pytest 514 passed**(清理后基线,含 15 个 RAG 新测试)
+  - `cd frontend && npm run build` → tsc + vite 成功 0 类型错误(knowledge-page 独立 chunk 8.90KB)
+  - `cd frontend && npx oxlint src/` → Found 0 warnings and 0 errors(60 文件)
+- **已记录证据**: feature_list.json 的 knowledge-base-rag.evidence 追加 ship-it 收尾条目(3 处清理 + 验证命令)
+- **提交记录**: 见下文 commit/PR 字段(待阶段 3-6 执行)
+- **已知风险**: 无新风险。真实 embedding 端到端验证仍需配 OpenAI key + pgvector Postgres(Session 104 已标注,CI migrations job 用 pgvector 镜像覆盖迁移链)
+- **下一步最佳动作**: 执行 `multi-agent-orchestration`(priority 58,最后一个 not_started)
+
+---
+
+
