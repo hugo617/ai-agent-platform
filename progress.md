@@ -8,7 +8,7 @@
 - **标准启动路径**: `./init.sh`(装依赖 + ruff + pytest)
 - **标准验证路径**: `./init.sh`(同上,后端快速验证,SQLite 内存库)
 - **完整验证路径**(需 docker): `alembic upgrade head && alembic check` + `cd frontend && npm run build`
-- **当前最高优先级未完成功能**: **`multi-agent-orchestration`(priority 58,多 Agent 编排)** —— knowledge-base-rag(57)✅ 已在 feat/knowledge-base-rag 分支实现完成(待用户决定 commit/PR)。57 激活 pgvector + 完整 RAG 管线(文档录入→分块→embedding→向量检索→Agent 工具注入)+ 知识库管理 UI + 独立 EmbeddingConfig 配置(settings UI 管理)。剩余 not_started:58 multi-agent-orchestration(无前置,plan 建议在 RAG 之后做,specialist 可共享 retrieve_knowledge)。
+- **当前最高优先级未完成功能**: **无 —— 全部 58/58 功能已 passing**。`multi-agent-orchestration`(priority 58)✅ 已在 feat/multi-agent-orchestration 分支实现完成并端到端验证(真实 DeepSeek key supervisor 路由 4 测全过),待用户决定 commit/PR。58 实现 Supervisor 编排器模式(StateGraph + Command 路由)+ 新建 agent_specialists M2M 关联表 + Agent 加 is_orchestrator/specialty 字段 + 前端 Switch 首次启用 + chat-page 编排器提示。这是 feature_list.json 最后一个 not_started,完成后全部功能已实现。
 - **当前 blocker**: 无
 
 ## 后续任务规划
@@ -1346,6 +1346,38 @@
 - **提交记录**: 见下文 commit/PR 字段(待阶段 3-6 执行)
 - **已知风险**: 无新风险。真实 embedding 端到端验证仍需配 OpenAI key + pgvector Postgres(Session 104 已标注,CI migrations job 用 pgvector 镜像覆盖迁移链)
 - **下一步最佳动作**: 执行 `multi-agent-orchestration`(priority 58,最后一个 not_started)
+
+---
+
+### Session 106 — 2026-07-16(multi-agent-orchestration 实现 + 真实 LLM 端到端,58/58 全部完成)
+- **本轮目标**: 全栈实现 `multi-agent-orchestration`(priority 58,feature_list.json 最后一个 not_started)—— Supervisor 编排器模式 + agent_specialists M2M 关联表 + 前端配置 + 真实 DeepSeek key 端到端验证。用户决策:Supervisor 模式(非 Swarm)/ 新建 agent_specialists 关联表 / 需真实 LLM 端到端验证。22 步 5 阶段 plan 已 ExitPlanMode 批准。
+- **实现方式**: 细化 plan 文档 → 后端数据层(模型+迁移+Repository+Service)→ 编排引擎(graph.py 自建 StateGraph+Command)→ API+19 测试 → 前端(types/endpoints/queries/agents-page/chat-page)→ 标准验证 → 真实 LLM 端到端 → ship-it。
+- **关键技术决策(基于 LangGraph 0.2.61 源码核实)**:
+  - **Supervisor 节点不进 ReAct**:supervisor 只做一次结构化路由决策(with_structured_output),specialist 才用 create_react_agent(保留 retrieve_knowledge 工具能力)
+  - **单轮 MVP 不做 supervisor 回收循环**:specialist 回答完直接 END,避免 token 爆炸 + 延迟。handoff 二级转交列入「不做的事」
+  - **事件冒泡靠 child callback**:specialist 的 create_react_agent 作图节点,内部 ChatOpenAI 的 on_chat_model_stream 事件冒泡到外层 astream_events,usage 契约自动保留(已核实源码 + 真实 LLM 验证)
+  - **agent_specialists 照 GroupTenant 范式**:无软删除 + UniqueConstraint + CASCADE + id 主键(非 SCD2,编排关系无历史维度需求)
+  - **降级三重保险**:① orchestrator 无 specialist → 降级普通 agent ② supervisor 路由 LLM 失败 → fallback 第一个 specialist ③ specialist 是 orchestrator → attach 时拒绝(防环)
+- **改动文件(15 文件,+1070/-174)**:
+  - 后端:`app/models/agent.py`(加 is_orchestrator/specialty)+ `app/models/agent_specialist.py`(新,M2M)+ `alembic/versions/2026_07_16_0100_a3b4c5d6e7f8_add_agent_orchestration.py`(新迁移)+ `app/repositories/agent_specialist.py`(新)+ `app/repositories/agent.py`(加 list_for_tenant_by_role)+ `app/services/agent_service.py`(加 attach/detach/list_specialists + 5 重校验)+ `app/agents/graph.py`(加 build_orchestrator/stream_orchestrator + _build_supervisor_prompt + _resolve_route_target)+ `app/api/v1/chat.py`(event_source 分支)+ `app/api/v1/agents.py`(3 个 specialist 端点)+ `app/schemas/agent.py`(加编排字段)+ `alembic/env.py`+`tests/conftest.py`(注册 agent_specialist)
+  - 前端:`api/types.ts`+`api/endpoints.ts`+`hooks/queries.ts`(3 hook)+ `pages/agents-page.tsx`(Switch 首次启用 + specialty + 双模式 specialist 多选 + 类型列)+ `pages/chat-page.tsx`(编排器路由提示)
+  - 测试:`tests/test_multi_agent.py`(新,19 测:纯路由逻辑 + mock stream + CRUD + 权限 + 级联)
+- **运行过的验证**(全过):
+  - `./init.sh` → ruff `All checks passed!` + **pytest 533 passed**(基线 514 + 新增 19)
+  - `cd frontend && npm run build` → tsc + vite 成功 0 类型错误(agents-page 13.09KB chunk)
+  - `cd frontend && npx oxlint src/` → Found 0 warnings and 0 errors(60 文件)
+  - `alembic upgrade head` → f2b3c4d5e6f7 → a3b4c5d6e7f8 成功(agents 加 2 列 + 建 agent_specialists 表)
+- **真实 DeepSeek key 端到端验证(4 测全过,用户要求)**:
+  - 起后端 + /dev/bootstrap 建 e2e 租户 + /dev/token 鉴权 + 更新平台 LLM 配置为真实 key(sk-***ec3a)
+  - **(1) CRUD 全链路**:建 2 specialist(健康顾问 specialty=理疗针灸/预约专员 specialty=预约排班)+ 1 orchestrator,attach 2 specialists(204),GET /agents/{orch} 返回 specialist_ids 正确 hydration,GET /agents/{orch}/specialists 返回完整 Agent 对象含 specialty
+  - **(2) 路由准确率**:预约问题「我想预约下周三下午的理疗」→ orchestrator 路由到预约专员(回复含「预约信息」);健康问题「肩膀酸痛想做针灸」→ 路由到健康顾问(回复含「针灸治疗肩膀酸痛」)
+  - **(3) 降级**:无 specialist 的 orchestrator → 降级普通 agent(回复「你好!有什么可以帮你的吗」)
+  - **(4) 向后兼容**:普通 agent 直接对话不受影响(SSE 流正常,以 [DONE] 结束)
+  - 后端全程 200 OK,无 exception/traceback
+- **审查通过**:依赖单向(Controller→Service→Repository→Model,Repository 不 import service/api,Model 不 import repo/service);多租户隔离在 Repository 层(list_specialist_agents 注入 tenant_id 过滤);attach_specialist 5 重校验(权限/同租户/is_orchestrator/非自挂/非编排器作 specialist/非重复);CASCADE FK 自引用无环;向后兼容(普通 agent 走原 stream_agent 零回归);无 print/pdb/console.log/TODO/FIXME 残留;ruff 全绿
+- **已记录证据**: feature_list.json 的 multi-agent-orchestration.status → passing + evidence 8 条(含真实 LLM 4 测结果)
+- **已知风险**: 无新风险。Swarm 模式/supervisor 回收循环/handoff 二级转交/实时 specialist 来源显示 留作增强(plan §不做的事)
+- **下一步最佳动作**: 用户决定是否 ship-it(commit + PR + CI + 合并入 main)。完成后全部 58/58 功能 passing,项目可进入维护/增强阶段。
 
 ---
 

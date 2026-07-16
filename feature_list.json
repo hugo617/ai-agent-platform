@@ -1436,7 +1436,7 @@
       "area": "AI 内核",
       "title": "多 Agent 编排(LangGraph 多节点图,Agent 协作/转交)",
       "user_visible_behavior": "复杂场景下多个 Agent 协作:客服 Agent 遇专业问题转交专家 Agent;编排 Agent 分派子任务给子 Agent。从单 agent 升级到智能体协作",
-      "status": "not_started",
+      "status": "passing",
       "plan": "harness/docs/plan-multi-agent-orchestration.md",
       "verification": [
         "LangGraph 多节点图:orchestrator agent 路由/分派 + 多个 specialist agent + 状态传递",
@@ -1446,8 +1446,17 @@
         "pytest 覆盖转交/上下文保留/多轮协作 + ./init.sh 全绿",
         "npm run build 通过"
       ],
-      "evidence": [],
-      "notes": "第三梯队 V2 大投入。现状:单 ReAct agent(create_react_agent),一个 agent 调不了另一个,无工作流编排。差异化卖点(复杂业务智能体协作)。成本高(重写编排层+多agent状态管理+调试)。详细 plan 执行到时写。独立模块。"
+      "evidence": [
+        "实现范围:Supervisor 编排器模式(StateGraph + Command 路由,非 Swarm)+ 新建 agent_specialists M2M 关联表(照 GroupTenant 范式:无软删除 + UniqueConstraint + CASCADE)+ Agent 加 is_orchestrator/specialty 字段 + specialist attach/detach CRUD + 前端 Switch 首次启用 + chat-page 编排器提示。",
+        "MVP 决策:单轮路由(specialist 回答后直接 END,不做 supervisor 回收循环,避免 token 爆炸);降级三重保险(orchestrator 无 specialist→普通 agent / 路由 LLM 失败→第一个 specialist / specialist 是 orchestrator→attach 拒绝);事件冒泡靠 child callback(create_react_agent 作图节点,on_chat_model_stream 冒泡到外层 astream_events,usage 契约保留)。",
+        "./init.sh 全绿:ruff + pytest 533 passed(基线 514 + 新增 19 测 test_multi_agent.py)。",
+        "cd frontend && npm run build:0 类型错误。",
+        "cd frontend && npx oxlint src/:0 warnings 0 errors。",
+        "alembic upgrade head:f2b3c4d5e6f7 → a3b4c5d6e7f8 迁移成功(agents 加 2 列 + 建 agent_specialists 表 + UniqueConstraint + Index + CASCADE FK)。",
+        "真实 DeepSeek key 端到端验证(4 测全过):(1) 创建 2 specialist(健康顾问 specialty=理疗针灸/预约专员 specialty=预约排班)+ 1 orchestrator,attach 2 specialists,GET /agents/{orch}/specialists 返回正确 hydration;(2) 预约问题「我想预约下周三下午的理疗」→ orchestrator 路由到预约专员(回复含「预约信息」);(3) 健康问题「肩膀酸痛想做针灸」→ 路由到健康顾问(回复含「针灸治疗肩膀酸痛」);(4) 无 specialist 的 orchestrator 降级为普通 agent(回复「你好!有什么可以帮你的吗」);(5) 普通 agent 直接对话不受影响(向后兼容)。",
+        "后端无报错:uvicorn log 全程 200 OK,无 exception/traceback。"
+      ],
+      "notes": "第三梯队 V2 大投入。现状:单 ReAct agent(create_react_agent),一个 agent 调不了另一个,无工作流编排。差异化卖点(复杂业务智能体协作)。成本高(重写编排层+多agent状态管理+调试)。详细 plan 执行到时写。独立模块。实际实现:Supervisor 模式 MVP(单轮路由),Swarm 模式/supervisor 回收循环/handoff 二级转交/实时 specialist 来源显示 留作增强(详见 plan §不做的事)。"
     }
   ]
 }
