@@ -16,6 +16,12 @@ class AgentBase(BaseModel):
     temperature: float = Field(0.7, ge=0.0, le=2.0)
     max_tokens: int | None = Field(None, ge=1, le=32768)
     top_p: float | None = Field(None, ge=0.0, le=1.0)
+    # Orchestration (priority 58). ``is_orchestrator=True`` turns this Agent
+    # into a supervisor that routes to its specialists; ``specialty`` is a
+    # free-text role description the supervisor LLM reads when routing — only
+    # meaningful for specialists.
+    is_orchestrator: bool = False
+    specialty: str | None = None
 
 
 class AgentCreate(AgentBase):
@@ -30,6 +36,8 @@ class AgentUpdate(BaseModel):
     temperature: float | None = Field(None, ge=0.0, le=2.0)
     max_tokens: int | None = Field(None, ge=1, le=32768)
     top_p: float | None = Field(None, ge=0.0, le=1.0)
+    is_orchestrator: bool | None = None
+    specialty: str | None = None
 
 
 class AgentRead(AgentBase):
@@ -37,6 +45,12 @@ class AgentRead(AgentBase):
     id: str
     tenant_id: str
     created_at: datetime
+    # Specialist Agent ids attached to this orchestrator (empty for regular
+    # agents). Populated by the service layer — the ORM row itself has no such
+    # attribute, so default to [] when not supplied (model_validate fills it
+    # via the default because the Agent model lacks the attr only if we pass
+    # it explicitly; we always set it from the service layer).
+    specialist_ids: list[str] = Field(default_factory=list)
 
 
 class AgentStatistics(BaseModel):
