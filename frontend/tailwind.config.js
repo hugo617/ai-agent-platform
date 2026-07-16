@@ -45,11 +45,57 @@ export default {
           DEFAULT: "hsl(var(--card))",
           foreground: "hsl(var(--card-foreground))",
         },
+        // Sidebar — its own surface (nav panel). Consumed by the layout's
+        // <aside> so the nav reads as a distinct panel from the main content.
+        sidebar: {
+          DEFAULT: "hsl(var(--sidebar))",
+          foreground: "hsl(var(--sidebar-foreground))",
+          border: "hsl(var(--sidebar-border))",
+          accent: "hsl(var(--sidebar-accent))",
+          "accent-foreground": "hsl(var(--sidebar-accent-foreground))",
+        },
+        // Chart palette — five hues for data viz (chart.tsx). Indexed 1..5 and
+        // mapped to CSS vars that swap between light/dark automatically.
+        chart: {
+          1: "hsl(var(--chart-1))",
+          2: "hsl(var(--chart-2))",
+          3: "hsl(var(--chart-3))",
+          4: "hsl(var(--chart-4))",
+          5: "hsl(var(--chart-5))",
+        },
       },
       borderRadius: {
         lg: "var(--radius)",
         md: "calc(var(--radius) - 2px)",
         sm: "calc(var(--radius) - 4px)",
+      },
+      // Animations — four CSS keyframe families backing the motion budget
+      // (plan §6: most motion is CSS; motion lib is reserved for 4 specific
+      // cases). These are utilities like `animate-fade-in`, `animate-shimmer`.
+      keyframes: {
+        "fade-in": {
+          from: { opacity: "0" },
+          to: { opacity: "1" },
+        },
+        "slide-in-right": {
+          from: { transform: "translateX(100%)" },
+          to: { transform: "translateX(0)" },
+        },
+        "slide-in-up": {
+          from: { opacity: "0", transform: "translateY(8px)" },
+          to: { opacity: "1", transform: "translateY(0)" },
+        },
+        shimmer: {
+          "100%": { transform: "translateX(100%)" },
+        },
+      },
+      animation: {
+        "fade-in": "fade-in 0.2s ease-out",
+        "slide-in-right": "slide-in-right 0.25s ease-out",
+        "slide-in-up": "slide-in-up 0.25s ease-out",
+        // Shimmer sweep for skeletons: a translucent gradient band that wipes
+        // across the box. Pair with `relative overflow-hidden` + a `::before`.
+        shimmer: "shimmer 1.5s infinite",
       },
     },
   },

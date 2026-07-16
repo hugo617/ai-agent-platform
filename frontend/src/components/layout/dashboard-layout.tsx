@@ -37,6 +37,7 @@ import { canViewMenu, hasPermission, isSuperAdmin } from "@/lib/permission";
 import { logout } from "@/api/endpoints";
 import { GlobalSearchBox } from "@/components/layout/global-search-box";
 import { NotificationBell } from "@/components/layout/notification-bell";
+import { ThemeToggle } from "@/components/theme/theme-toggle";
 import { SecureImage } from "@/components/ui/secure-image";
 import { useApplyTenantTheme, useTenantConfig } from "@/hooks/queries";
 
@@ -210,6 +211,9 @@ export function DashboardLayout() {
             <GlobalSearchBox />
           </div>
           <div className="flex items-center gap-3">
+            {/* 主题切换(亮/暗/跟随系统) — 持久化在 localStorage,由 ThemeProvider
+                管理 .dark 类。放通知铃铛前,顶栏右侧。 */}
+            <ThemeToggle />
             {/* 通知铃铛(priority 54) — 未读数 badge + 下拉。Every authenticated
                 user reads their own notifications, so no permission guard. */}
             <NotificationBell />
