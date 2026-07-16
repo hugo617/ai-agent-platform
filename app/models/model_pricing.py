@@ -19,8 +19,8 @@ Resolution order in ``BillingService.calc_cost``:
   model=Y) > "unconfigured" (cost = 0 — allow the chat, record cost=0).
 
 Prices are ``Numeric(10,6)`` to hold sub-cent precision (e.g. DeepSeek's
-per-million pricing ÷ 1000). ``currency`` is stored but the MVP only charges
-in CNY; it is a forward-looking field for multi-currency.
+per-million pricing ÷ 1000). The MVP charges in CNY only; a currency column
+was removed as a dead field (multi-currency can be re-added when needed).
 """
 
 import uuid
@@ -69,9 +69,6 @@ class ModelPricing(Base):
     )
     output_price_per_1k: Mapped[Decimal] = mapped_column(
         Numeric(10, 6), nullable=False
-    )
-    currency: Mapped[str] = mapped_column(
-        String(8), default="CNY", server_default="CNY", nullable=False
     )
     is_active: Mapped[bool] = mapped_column(
         Boolean, default=True, server_default=text("true"), nullable=False

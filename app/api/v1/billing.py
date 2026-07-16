@@ -231,7 +231,6 @@ async def _upsert_pricing(
     if existing is not None:
         existing.input_price_per_1k = payload.input_price_per_1k
         existing.output_price_per_1k = payload.output_price_per_1k
-        existing.currency = payload.currency
         existing.is_active = payload.is_active
         await db.commit()
         await db.refresh(existing)
@@ -241,7 +240,6 @@ async def _upsert_pricing(
         model=payload.model,
         input_price_per_1k=payload.input_price_per_1k,
         output_price_per_1k=payload.output_price_per_1k,
-        currency=payload.currency,
         is_active=payload.is_active,
     )
     await repo.add(row)
@@ -287,7 +285,6 @@ async def update_pricing(
     row.model = payload.model
     row.input_price_per_1k = payload.input_price_per_1k
     row.output_price_per_1k = payload.output_price_per_1k
-    row.currency = payload.currency
     row.is_active = payload.is_active
     await db.commit()
     await db.refresh(row)

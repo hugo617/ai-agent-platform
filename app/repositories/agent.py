@@ -7,20 +7,57 @@ from app.repositories.base import TenantScopedRepository
 
 
 class AgentRepository(TenantScopedRepository[Agent]):
+    """Agent data access, tenant-scoped.
+
+    All reads filter ``is_deleted=False`` — Agent uses soft delete (mirrors
+    Customer/Role/Document/Wallet) so deleting an Agent keeps its history
+    (Conversations, UsageEvents) joinable instead of CASCADE-destroying it.
+    """
+
     model = Agent
 
+    async def get_for_tenant(self, obj_id: str, tenant_id: str) -> Agent | None:
+        """A live (non-deleted) agent by id within a tenant."""
+        stmt = select(Agent).where(
+            Agent.id == obj_id,
+            Agent.tenant_id == tenant_id,
+            Agent.is_deleted.is_(False),
+        )
+        return (await self.db.execute(stmt)).scalar_one_or_none()
+
+    async def list_for_tenant(
+        self, tenant_id: str, limit: int = 100, offset: int = 0
+    ) -> list[Agent]:
+        """All live agents in a tenant, newest first."""
+        stmt = (
+            select(Agent)
+            .where(
+                Agent.tenant_id == tenant_id,
+                Agent.is_deleted.is_(False),
+            )
+            .order_by(Agent.created_at.desc())
+            .limit(limit)
+            .offset(offset)
+        )
+        return list((await self.db.execute(stmt)).scalars().all())
+
     async def count_for_tenant(self, tenant_id: str) -> int:
-        """Count agents in a tenant (used by the dashboard stat card)."""
+        """Count live agents in a tenant (used by the dashboard stat card)."""
         stmt = (
             select(func.count())
             .select_from(Agent)
-            .where(Agent.tenant_id == tenant_id)
+            .where(
+                Agent.tenant_id == tenant_id,
+                Agent.is_deleted.is_(False),
+            )
         )
         return int((await self.db.execute(stmt)).scalar_one())
 
     async def count_all(self) -> int:
-        """Count agents across every tenant (super_admin overview)."""
-        stmt = select(func.count()).select_from(Agent)
+        """Count live agents across every tenant (super_admin overview)."""
+        stmt = select(func.count()).select_from(Agent).where(
+            Agent.is_deleted.is_(False)
+        )
         return int((await self.db.execute(stmt)).scalar_one())
 
     async def search(
@@ -35,7 +72,10 @@ class AgentRepository(TenantScopedRepository[Agent]):
         like = f"%{keyword}%"
         stmt = (
             select(Agent)
-            .where(Agent.name.ilike(like))
+            .where(
+                Agent.name.ilike(like),
+                Agent.is_deleted.is_(False),
+            )
             .order_by(Agent.created_at.desc())
             .limit(limit)
         )
@@ -51,6 +91,7 @@ class AgentRepository(TenantScopedRepository[Agent]):
             .where(
                 Agent.tenant_id == tenant_id,
                 Agent.name.ilike(like),
+                Agent.is_deleted.is_(False),
             )
             .order_by(Agent.created_at.desc())
             .limit(limit)
@@ -72,6 +113,7 @@ class AgentRepository(TenantScopedRepository[Agent]):
             .where(
                 Agent.tenant_id == tenant_id,
                 Agent.is_orchestrator.is_(is_orchestrator),
+                Agent.is_deleted.is_(False),
             )
             .order_by(Agent.created_at.desc())
         )

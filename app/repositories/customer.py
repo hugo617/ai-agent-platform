@@ -210,6 +210,7 @@ class CustomerProfileRepository(TenantScopedRepository[CustomerProfile]):
         tenant_id: str,
         group_tenant_ids: list[str] | None = None,
         owner_user_id: str | None = None,
+        status_filter: str | None = None,
         limit: int = 100,
     ) -> list[CustomerProfile]:
         """Keyword search that honours the resolved row-level data scope.
@@ -224,8 +225,15 @@ class CustomerProfileRepository(TenantScopedRepository[CustomerProfile]):
         - ``tenant``  → ``tenant_id == tenant_id``
         - ``group``   → ``tenant_id IN (group_tenant_ids)``
         - ``self``    → ``tenant_id == tenant_id AND created_by == owner_user_id``
+
+        ``status_filter`` optionally narrows to one status value (None = all).
         """
         like = f"%{keyword}%"
+        status_clause = (
+            CustomerProfile.status == status_filter
+            if status_filter is not None
+            else None
+        )
         if scope == "all":
             tenant_clause = CustomerProfile.is_deleted.is_(False)
         elif scope == "group":
@@ -243,6 +251,8 @@ class CustomerProfileRepository(TenantScopedRepository[CustomerProfile]):
             tenant_clause = CustomerProfile.is_deleted.is_(False) & (
                 CustomerProfile.tenant_id == tenant_id
             )
+        if status_clause is not None:
+            tenant_clause = tenant_clause & status_clause
         stmt = (
             select(CustomerProfile)
             .join(Customer, Customer.id == CustomerProfile.customer_id)
@@ -292,6 +302,7 @@ class CustomerProfileRepository(TenantScopedRepository[CustomerProfile]):
         tenant_id: str,
         group_tenant_ids: list[str] | None = None,
         owner_user_id: str | None = None,
+        status_filter: str | None = None,
     ) -> list[CustomerProfile]:
         """Live profiles filtered by the caller's resolved row-level data scope.
 
@@ -303,8 +314,15 @@ class CustomerProfileRepository(TenantScopedRepository[CustomerProfile]):
         - ``tenant``  → ``tenant_id == tenant_id`` (the pre-feature default)
         - ``group``   → ``tenant_id IN (group_tenant_ids)``
         - ``self``    → ``tenant_id == tenant_id AND created_by == owner_user_id``
+
+        ``status_filter`` narrows to one status value (active/inactive/vip/
+        blacklist) when provided; None returns every status so the 4-state
+        enum is consumable by an optional UI filter without changing the
+        default "show all" behaviour.
         """
         base = CustomerProfile.is_deleted.is_(False)
+        if status_filter is not None:
+            base = base & (CustomerProfile.status == status_filter)
         if scope == "all":
             where = base
         elif scope == "group":

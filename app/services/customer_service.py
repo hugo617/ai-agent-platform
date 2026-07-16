@@ -118,6 +118,7 @@ class CustomerService:
         platform_role: str | None = None,
         *,
         search: str | None = None,
+        status_filter: str | None = None,
     ) -> list[CustomerProfileRead]:
         """Store view filtered by the caller's row-level data scope.
 
@@ -129,6 +130,10 @@ class CustomerService:
         ``search`` (when provided) narrows to profiles whose Customer name or
         identity_key matches the keyword (ILIKE). Empty/None returns the full
         scoped list — matching the users-list convention.
+
+        ``status_filter`` (when provided) narrows to one profile status
+        (active/inactive/vip/blacklist); None returns every status so the
+        front-end 4-state filter is purely opt-in (default still shows all).
         """
         is_cross_tenant = is_cross_tenant_viewer(platform_role)
         if not is_cross_tenant:
@@ -149,6 +154,7 @@ class CustomerService:
                 tenant_id=tenant_id,
                 group_tenant_ids=resolved.tenant_ids or None,
                 owner_user_id=resolved.owner_user_id,
+                status_filter=status_filter,
             )
         else:
             # Search path delegates to search_for_scope so the same scope
@@ -161,6 +167,7 @@ class CustomerService:
                 tenant_id=tenant_id,
                 group_tenant_ids=resolved.tenant_ids or None,
                 owner_user_id=resolved.owner_user_id,
+                status_filter=status_filter,
                 limit=100,
             )
         # Batch-load customers in one query (avoids the per-profile N+1).

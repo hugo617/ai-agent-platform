@@ -147,12 +147,16 @@ class ConversationService:
         completion_tokens: int | None = None,
         total_tokens: int | None = None,
         model: str | None = None,
+        status: str = "completed",
+        error: str | None = None,
     ) -> Message:
         """Append a message and optionally record its token usage.
 
         The token/model kwargs are only meaningful for assistant messages
         produced by an LLM call; user messages and older callers that don't
         pass them simply leave the columns NULL (backward compatible).
+        ``status``/``error`` mark failed turns so a provider/LLM failure is
+        auditable instead of a silent SSE drop (defaults to completed/None).
         """
         msg = Message(
             conversation_id=conversation_id,
@@ -163,6 +167,8 @@ class ConversationService:
             completion_tokens=completion_tokens,
             total_tokens=total_tokens,
             model=model,
+            status=status,
+            error=error,
         )
         await self.messages.add(msg)
         # Bump the conversation's updated_at so the list ordering reflects

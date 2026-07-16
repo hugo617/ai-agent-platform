@@ -1457,6 +1457,24 @@
         "后端无报错:uvicorn log 全程 200 OK,无 exception/traceback。"
       ],
       "notes": "第三梯队 V2 大投入。现状:单 ReAct agent(create_react_agent),一个 agent 调不了另一个,无工作流编排。差异化卖点(复杂业务智能体协作)。成本高(重写编排层+多agent状态管理+调试)。详细 plan 执行到时写。独立模块。实际实现:Supervisor 模式 MVP(单轮路由),Swarm 模式/supervisor 回收循环/handoff 二级转交/实时 specialist 来源显示 留作增强(详见 plan §不做的事)。"
+    },
+    {
+      "id": "db-design-cleanup-and-scenario-rebuild",
+      "priority": 59,
+      "area": "数据库",
+      "title": "数据库设计修复 + 大健康连锁场景清空重建(12 项问题修复)",
+      "user_visible_behavior": "修复数据库设计问题:钱包开关生效、Agent 软删除保历史、死字段/死表清理、关键 FK 补齐、失败消息落库。后续阶段重建演示场景并产出对外文档",
+      "status": "passing",
+      "plan": "harness/docs/plan-db-revamp-and-scenario-rebuild.md",
+      "verification": [
+        "阶段1(本次完成):S1 钱包 is_active 过滤生效 / S3 Agent 软删除保留历史 / M1-M6 死字段死表清理 / L2 关键 FK 补齐 / L3 失败消息 status=failed 落库",
+        "迁移 b4c5d6e7f8a9 聚合所有改动,down_revision=a3b4c5d6e7f8",
+        "ruff check app/ cli/ tests/ scripts/ alembic/ → All checks passed",
+        "pytest → 535 passed(基线 533 + S1/S3 新增 2 用例)",
+        "frontend npm run build → tsc + vite 成功(currency/Role.status 类型清理无报错)"
+      ],
+      "evidence": "Session 110: ./init.sh 全绿(ruff All checks passed + 535 passed in 230s); frontend build 成功; 迁移 b4c5d6e7f8a9 已建; S1/S3 新增测试 test_inactive_wallet_is_not_usable + test_delete_agent_is_soft_and_keeps_history 通过",
+      "notes": "阶段1已完成并验证。阶段2(清空重建+真key)/阶段3(seed重写)/阶段4(登录预填)/阶段5(4份文档)待用户决策后执行——阶段2需 docker + 用户提供真 DeepSeek/OpenAI key。挑刺审查发现计划的 7 处问题已修订(见计划 §8)。注意:L3 失败落库改用 status=failed 字段(非 [生成中断] 文本 hack);S2 降为体验增强(后端可选 status 过滤已加,前端筛选器可选)"
     }
   ]
 }

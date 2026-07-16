@@ -45,7 +45,9 @@ class UsageEvent(Base):
     )
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
-    tenant_id: Mapped[str] = mapped_column(String(32), index=True)
+    tenant_id: Mapped[str] = mapped_column(
+        String(32), ForeignKey("tenants.id", ondelete="CASCADE"), index=True
+    )
     conversation_id: Mapped[str] = mapped_column(
         String(32),
         ForeignKey("conversations.id", ondelete="CASCADE"),
@@ -64,7 +66,11 @@ class UsageEvent(Base):
     # Filled by task 3 (customer-conversation-link). Nullable now because not
     # every conversation is tied to a customer (e.g. staff internal queries).
     customer_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
-    user_id: Mapped[str] = mapped_column(String(128))
+    # SET NULL on user delete so historical usage stats survive (the user row
+    # may go away but the ledger entry must keep its place for tenant totals).
+    user_id: Mapped[str | None] = mapped_column(
+        String(128), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
     model: Mapped[str] = mapped_column(String(64))
     prompt_tokens: Mapped[int] = mapped_column(Integer)
     completion_tokens: Mapped[int] = mapped_column(Integer)

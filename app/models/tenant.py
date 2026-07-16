@@ -12,9 +12,7 @@ from sqlalchemy import (
     func,
     text,
 )
-from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from sqlalchemy.types import JSON
 
 from app.core.database import Base
 
@@ -89,7 +87,7 @@ class User(Base):
     display_name: Mapped[str | None] = mapped_column(String(128), nullable=True)
     real_name: Mapped[str | None] = mapped_column(String(100), nullable=True, index=True)
     phone: Mapped[str | None] = mapped_column(String(20), nullable=True, index=True)
-    avatar: Mapped[str] = mapped_column(String(255), default="/avatars/default.jpg")
+    avatar: Mapped[str] = mapped_column(String(255), default="")
     # bcrypt hash; null for OIDC-only accounts.
     password: Mapped[str | None] = mapped_column(String(255), nullable=True)
     password_updated_at: Mapped[datetime] = mapped_column(
@@ -105,12 +103,6 @@ class User(Base):
         String(32), nullable=True, default=None
     )
 
-    # ``metadata`` is reserved by SQLAlchemy's DeclarativeBase, so the Python
-    # attribute is ``info_json`` while the DB column stays ``metadata``.
-    # JSONB on Postgres, plain JSON on SQLite (tests).
-    info_json: Mapped[dict] = mapped_column(
-        JSONB().with_variant(JSON, "sqlite"), name="metadata", default=dict
-    )
     is_deleted: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
     deleted_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True

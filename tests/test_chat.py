@@ -498,7 +498,8 @@ async def test_assistant_partial_reply_persisted_on_error(app_client, db_session
     assert "[DONE]" not in resp.text  # stream aborted, no completion frame
     assert "error" in resp.text
 
-    # The partial assistant reply was persisted with the interruption marker.
+    # The failed turn is persisted with status='failed' (L3: failed replies are
+    # now auditable via the status/error columns instead of a text marker).
     from sqlalchemy import select
 
     from app.models.message import Message
@@ -508,7 +509,8 @@ async def test_assistant_partial_reply_persisted_on_error(app_client, db_session
     assistant_msgs = [m for m in all_msgs if m.role == "assistant"]
     assert len(assistant_msgs) == 1
     assert "partial reply" in assistant_msgs[0].content
-    assert "[生成中断]" in assistant_msgs[0].content
+    assert assistant_msgs[0].status == "failed"
+    assert assistant_msgs[0].error is not None
 
 
 # ------------------------------- context engineering: LLM timeout protection

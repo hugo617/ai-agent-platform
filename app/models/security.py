@@ -46,7 +46,6 @@ class UserSession(Base):
     device_type: Mapped[str | None] = mapped_column(String(20), nullable=True)
     device_name: Mapped[str | None] = mapped_column(String(200), nullable=True)
     platform: Mapped[str | None] = mapped_column(String(100), nullable=True)
-    token_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
     ip_address: Mapped[str | None] = mapped_column(String(45), nullable=True)
     user_agent: Mapped[str | None] = mapped_column(Text, nullable=True)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
@@ -89,31 +88,6 @@ class UserLoginMethod(Base):
     last_used_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
-
-
-class VerificationCode(Base):
-    """SMS / email one-time codes for login or password reset."""
-
-    __tablename__ = "verification_codes"
-    __table_args__ = (
-        Index("idx_verification_codes_expires_at", "expires_at"),
-    )
-
-    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
-    phone: Mapped[str] = mapped_column(String(20), nullable=False)
-    code: Mapped[str] = mapped_column(String(10), nullable=False)
-    type: Mapped[str] = mapped_column(String(20), nullable=False)
-    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    used_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
-    tenant_id: Mapped[str | None] = mapped_column(
-        String(32), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=True
-    )
-    ip: Mapped[str | None] = mapped_column(String(50), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

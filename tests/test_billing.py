@@ -104,7 +104,6 @@ async def _seed_pricing(db_session, model: str, in_price: Decimal, out_price: De
         model=model,
         input_price_per_1k=in_price,
         output_price_per_1k=out_price,
-        currency="CNY",
         is_active=True,
     )
     db_session.add(p)
@@ -590,3 +589,22 @@ async def test_wallet_tenant_isolation(db_session, test_env):
     repo = WalletRepository(db_session)
     assert (await repo.get_for_tenant(tid_a)) is not None
     assert (await repo.get_for_tenant(tid_b)) is None
+
+
+@pytest.mark.asyncio
+async def test_inactive_wallet_is_not_usable(db_session, test_env):
+    """S1: an inactive wallet is treated as "no wallet" — get_for_tenant and the
+    FOR UPDATE variant both skip it, so chats/billing on a disabled wallet are
+    blocked (previously is_active was written but never read).
+    """
+    from app.models.wallet import Wallet
+    from app.repositories.wallet import WalletRepository
+
+    tid = test_env.tenant_id
+    db_session.add(Wallet(tenant_id=tid, balance=100, is_active=False))
+    await db_session.commit()
+
+    repo = WalletRepository(db_session)
+    # Both lookups honour is_active now (the fix).
+    assert (await repo.get_for_tenant(tid)) is None
+    assert (await repo.get_for_tenant_for_update(tid)) is None

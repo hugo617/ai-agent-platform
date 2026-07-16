@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -183,7 +185,13 @@ class AgentService:
             user_id, tenant_id, self.OBJECT, "delete", platform_role=platform_role
         )
         agent = await self._owned(agent_id, tenant_id)
-        await self.repo.delete(agent)
+        # Soft delete: hard-deleting would CASCADE-delete the agent's
+        # Conversations (agent_id FK) and SET NULL its UsageEvents, destroying
+        # all history. Soft-delete keeps the row so history stays joinable;
+        # every read in AgentRepository filters is_deleted=False.
+        agent.is_deleted = True
+        agent.deleted_at = datetime.now(UTC)
+        await self.db.flush()
         await self.db.commit()
 
     # ------------------------------------------- orchestration (priority 58)

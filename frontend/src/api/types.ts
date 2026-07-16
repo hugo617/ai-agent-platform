@@ -135,7 +135,6 @@ export interface Role {
   description: string | null;
   is_system: boolean;
   sort_order: number;
-  status: string;
   data_scope: DataScope; // 权限重构系列 3/4,矩阵页可配置
   created_at: string | null;
 }
@@ -158,7 +157,6 @@ export interface RoleUpdate {
   name?: string;
   description?: string;
   sort_order?: number;
-  status?: string;
   data_scope?: DataScope;
 }
 
@@ -640,7 +638,6 @@ export interface ModelPricing {
   model: string;
   input_price_per_1k: number;
   output_price_per_1k: number;
-  currency: string;
   is_active: boolean;
   created_at: string;
   updated_at: string;
@@ -652,7 +649,6 @@ export interface ModelPricingUpsert {
   model: string;
   input_price_per_1k: number;
   output_price_per_1k: number;
-  currency?: string;
   is_active?: boolean;
 }
 
