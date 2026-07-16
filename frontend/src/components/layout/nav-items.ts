@@ -45,10 +45,26 @@ export interface NavItem {
   permission?: { obj: string; act: string };
 }
 
+export interface NavSubgroup {
+  /** Collapsible sub-heading inside a group (e.g. "业务管理" under 管理). */
+  label: string;
+  items: NavItem[];
+}
+
 export interface NavGroup {
   /** Section heading (null = no heading, e.g. the primary 工作台 group). */
   label: string;
+  /**
+   * Direct flat items rendered as a one-level list (used by 工作台 / 平台).
+   * Ignored by the sidebar when ``subgroups`` is present.
+   */
   items: NavItem[];
+  /**
+   * Optional collapsible sub-groups (used by 管理). When present, the sidebar
+   * renders an accordion of these instead of the flat ``items``. The command
+   * palette flattens both ``items`` and ``subgroups[].items`` into one list.
+   */
+  subgroups?: NavSubgroup[];
 }
 
 // Flat item list (single source). Grouping is applied by GROUPS below. Order
@@ -106,6 +122,13 @@ const ITEMS: NavItem[] = [
   { to: "/billing/admin", label: "计费管理", icon: Coins, platformOnly: true },
 ];
 
+/** Pick a single item from the flat source by its `to`. */
+const pick = (to: string): NavItem => {
+  const found = ITEMS.find((i) => i.to === to);
+  if (!found) throw new Error(`nav-items: unknown route ${to}`);
+  return found;
+};
+
 const GROUPS: NavGroup[] = [
   {
     label: "工作台",
@@ -115,19 +138,23 @@ const GROUPS: NavGroup[] = [
   },
   {
     label: "管理",
-    items: ITEMS.filter((i) =>
-      [
-        "/groups",
-        "/customers",
-        "/billing",
-        "/members",
-        "/users",
-        "/roles",
-        "/permissions",
-        "/settings",
-        "/logs",
-      ].includes(i.to),
-    ),
+    // 9 项拆成 3 个可折叠二级组,缓解侧边栏过长(§sidebar-collapsible)。
+    // items 留空,侧边栏只渲染 subgroups;命令面板拍平后与历史一致。
+    items: [],
+    subgroups: [
+      {
+        label: "业务管理",
+        items: ["/groups", "/customers", "/billing"].map(pick),
+      },
+      {
+        label: "人员与权限",
+        items: ["/members", "/users", "/roles", "/permissions"].map(pick),
+      },
+      {
+        label: "系统设置",
+        items: ["/settings", "/logs"].map(pick),
+      },
+    ],
   },
   {
     label: "平台",
@@ -147,8 +174,17 @@ export function canSeeItem(me: MeResponse | null | undefined, item: NavItem): bo
 export function visibleGroups(
   me: MeResponse | null | undefined,
 ): NavGroup[] {
-  return GROUPS.map((g) => ({
-    ...g,
-    items: g.items.filter((item) => canSeeItem(me, item)),
-  })).filter((g) => g.items.length > 0);
+  return GROUPS.map((g) => {
+    const items = g.items.filter((item) => canSeeItem(me, item));
+    const subgroups = g.subgroups
+      ?.map((sg) => ({
+        ...sg,
+        items: sg.items.filter((item) => canSeeItem(me, item)),
+      }))
+      .filter((sg) => sg.items.length > 0);
+    return { ...g, items, subgroups };
+  }).filter(
+    // 丢弃直接项与子组全空的 group(管理区某用户一项都看不到就整区不渲染)。
+    (g) => g.items.length > 0 || (g.subgroups?.length ?? 0) > 0,
+  );
 }

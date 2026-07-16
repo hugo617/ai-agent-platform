@@ -1,7 +1,7 @@
 import { useState } from "react";
-import { NavLink, Outlet, useNavigate } from "react-router-dom";
+import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { AnimatePresence, motion } from "motion/react";
-import { LogOut, Menu, Shield, UserCircle, X } from "lucide-react";
+import { ChevronRight, LogOut, Menu, Shield, UserCircle, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -25,6 +25,7 @@ import {
   useOpenOnCmdK,
 } from "@/components/layout/command-menu";
 import { visibleGroups } from "@/components/layout/nav-items";
+import type { NavItem, NavSubgroup } from "@/components/layout/nav-items";
 import { useApplyTenantTheme, useTenantConfig } from "@/hooks/queries";
 
 /**
@@ -241,6 +242,9 @@ function Sidebar({
   onSignOut: () => void;
   embedded?: boolean;
 }) {
+  // 当前路由 —— 用于手风琴默认展开「当前页所在」的二级组。
+  const { pathname } = useLocation();
+
   return (
     <aside
       className={cn(
@@ -264,34 +268,31 @@ function Sidebar({
         <span className="truncate text-lg font-semibold">{brandName}</span>
       </div>
 
-      {/* Grouped nav */}
+      {/* Grouped nav — 平铺分组(工作台/平台)与可折叠分组(管理)共用 NavLink。 */}
       <nav className="flex-1 space-y-4 overflow-y-auto p-3">
         {groups.map((group) => (
           <div key={group.label}>
             <div className="px-3 py-1.5 text-xs font-medium uppercase tracking-wider text-muted-foreground/70">
               {group.label}
             </div>
-            <div className="space-y-0.5">
-              {group.items.map((item) => (
-                <NavLink
-                  key={item.to}
-                  to={item.to}
-                  end={item.to === "/"}
-                  onClick={onNavigate}
-                  className={({ isActive }) =>
-                    cn(
-                      "flex items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors",
-                      isActive
-                        ? "bg-primary text-primary-foreground"
-                        : "text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
-                    )
-                  }
-                >
-                  <item.icon className="h-4 w-4" />
-                  {item.label}
-                </NavLink>
-              ))}
-            </div>
+            {group.subgroups && group.subgroups.length > 0 ? (
+              <div className="space-y-0.5">
+                {group.subgroups.map((sg) => (
+                  <NavAccordion
+                    key={sg.label}
+                    subgroup={sg}
+                    pathname={pathname}
+                    onNavigate={onNavigate}
+                  />
+                ))}
+              </div>
+            ) : (
+              <div className="space-y-0.5">
+                {group.items.map((item) => (
+                  <NavLinkItem key={item.to} item={item} onNavigate={onNavigate} />
+                ))}
+              </div>
+            )}
           </div>
         ))}
       </nav>
@@ -322,5 +323,96 @@ function Sidebar({
         </div>
       </div>
     </aside>
+  );
+}
+
+/**
+ * Single nav entry — 共用渲染:平铺分组(工作台/平台)与可折叠分组(管理)
+ * 的子项都用它,确保 active 高亮规则单一来源,改一处即全局同步。
+ */
+function NavLinkItem({
+  item,
+  onNavigate,
+}: {
+  item: NavItem;
+  onNavigate: () => void;
+}) {
+  return (
+    <NavLink
+      to={item.to}
+      end={item.to === "/"}
+      onClick={onNavigate}
+      className={({ isActive }) =>
+        cn(
+          "flex items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors",
+          isActive
+            ? "bg-primary text-primary-foreground"
+            : "text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
+        )
+      }
+    >
+      <item.icon className="h-4 w-4" />
+      {item.label}
+    </NavLink>
+  );
+}
+
+/**
+ * Collapsible sub-group (accordion) — 管理 section 的二级菜单。
+ *
+ * 默认展开「当前路由命中」的那个 sub-group,其余收起,保持侧边栏紧凑。
+ * 用户点击标题切换;展开状态在本组件实例内保持(桌面 rail 与移动抽屉
+ * 各自独立,符合直觉)。收起/展开用 CSS grid 0fr→1fr 过渡,零新依赖。
+ */
+function NavAccordion({
+  subgroup,
+  pathname,
+  onNavigate,
+}: {
+  subgroup: NavSubgroup;
+  pathname: string;
+  onNavigate: () => void;
+}) {
+  // 初始:命中当前路由的 sub-group 展开;否则收起。
+  const initiallyOpen = subgroup.items.some((item) =>
+    item.to === "/" ? pathname === "/" : pathname.startsWith(item.to),
+  );
+  const [open, setOpen] = useState(initiallyOpen);
+  const panelId = `nav-sub-${subgroup.label}`;
+
+  return (
+    <div>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        aria-controls={panelId}
+        className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+      >
+        <ChevronRight
+          className={cn(
+            "h-4 w-4 shrink-0 transition-transform",
+            open && "rotate-90",
+          )}
+        />
+        <span className="flex-1 text-left">{subgroup.label}</span>
+      </button>
+      {/* grid 0fr→1fr 过渡:open 时展开子项区。overflow-hidden 裁掉收起态。 */}
+      <div
+        id={panelId}
+        className={cn(
+          "grid transition-[grid-template-rows] duration-200 ease-out",
+          open ? "grid-rows-[1fr]" : "grid-rows-[0fr]",
+        )}
+      >
+        <div className="overflow-hidden">
+          <div className="ml-3 space-y-0.5 border-l border-sidebar-border pl-2">
+            {subgroup.items.map((item) => (
+              <NavLinkItem key={item.to} item={item} onNavigate={onNavigate} />
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }

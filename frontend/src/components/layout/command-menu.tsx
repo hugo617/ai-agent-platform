@@ -142,27 +142,35 @@ export function CommandMenu({
           {isFetching ? "搜索中…" : "无匹配结果"}
         </Command.Empty>
 
-        {/* 1. 导航 — only show when not actively searching the backend. */}
+        {/* 1. 导航 — only show when not actively searching the backend.
+            管理区在侧边栏是可折叠二级组,但 ⌘K 面板保持扁平:把 items 与
+            subgroups[].items 拍平成一张列表,搜索/直达体验不变。 */}
         {!showSearch &&
-          groups.map((group) => (
-            <Command.Group
-              key={group.label}
-              heading={group.label}
-              className="overflow-hidden p-1 text-muted-foreground [&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-1.5 [&_[cmdk-group-heading]]:text-xs [&_[cmdk-group-heading]]:font-medium"
-            >
-              {group.items.map((item) => (
-                <Command.Item
-                  key={item.to}
-                  value={`${item.label} ${group.label}`}
-                  onSelect={() => run(() => navigate(item.to))}
-                  className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm data-[selected=true]:bg-accent data-[selected=true]:text-accent-foreground"
-                >
-                  <item.icon className="h-4 w-4" />
-                  <span>{item.label}</span>
-                </Command.Item>
-              ))}
-            </Command.Group>
-          ))}
+          groups.map((group) => {
+            const flatItems = [
+              ...group.items,
+              ...(group.subgroups ?? []).flatMap((sg) => sg.items),
+            ];
+            return (
+              <Command.Group
+                key={group.label}
+                heading={group.label}
+                className="overflow-hidden p-1 text-muted-foreground [&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-1.5 [&_[cmdk-group-heading]]:text-xs [&_[cmdk-group-heading]]:font-medium"
+              >
+                {flatItems.map((item) => (
+                  <Command.Item
+                    key={item.to}
+                    value={`${item.label} ${group.label}`}
+                    onSelect={() => run(() => navigate(item.to))}
+                    className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm data-[selected=true]:bg-accent data-[selected=true]:text-accent-foreground"
+                  >
+                    <item.icon className="h-4 w-4" />
+                    <span>{item.label}</span>
+                  </Command.Item>
+                ))}
+              </Command.Group>
+            );
+          })}
 
         {/* 2. 搜索 — cross-entity hits. */}
         {showSearch &&
