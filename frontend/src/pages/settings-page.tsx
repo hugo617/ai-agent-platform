@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import {
   AlertTriangle,
+  Brain,
   Copy,
   Check,
   Eye,
@@ -11,12 +12,14 @@ import {
   Plus,
   Server,
   ShieldCheck,
+  Sparkles,
   Trash2,
   X,
 } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { PageHeader } from "@/components/layout/page-header";
 import {
   Card,
   CardContent,
@@ -88,38 +91,111 @@ export function SettingsPage() {
   const canManageTokens = hasPermission(me, "api_tokens", "read");
   const canManage = canManageLlm || canManageTokens;
 
-  return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold tracking-tight">设置</h1>
-        <p className="text-muted-foreground">
-          管理 LLM 提供商配置（API Key、Base URL、可用模型）与 API Token（供
-          agenthub CLI 等外部 Agent 接入）。
-        </p>
-      </div>
+  // Build the tab list from the caller's permissions so a tab never shows an
+  // empty content panel. Each tab groups the cards that were previously
+  // rendered in a flat vertical stack — now they're under a left nav so the
+  // user jumps straight to the section they need.
+  type Tab = {
+    id: string;
+    label: string;
+    icon: typeof Brain;
+    show: boolean;
+    content: React.ReactNode;
+  };
+  const tabs: Tab[] = [
+    {
+      id: "llm",
+      label: "AI 模型",
+      icon: Brain,
+      show: canManageLlm || isSuperAdmin(me),
+      content: (
+        <div className="space-y-6">
+          {isSuperAdmin(me) && <PlatformLlmCard />}
+          {canManageLlm && <TenantLlmCard />}
+        </div>
+      ),
+    },
+    {
+      id: "embedding",
+      label: "知识库嵌入",
+      icon: Sparkles,
+      show: canManageLlm || isSuperAdmin(me),
+      content: (
+        <div className="space-y-6">
+          {isSuperAdmin(me) && <PlatformEmbeddingCard />}
+          {canManageLlm && <TenantEmbeddingCard />}
+        </div>
+      ),
+    },
+    {
+      id: "branding",
+      label: "品牌定制",
+      icon: Palette,
+      show: canManageLlm,
+      content: <TenantBrandingCard />,
+    },
+    {
+      id: "tokens",
+      label: "API Token",
+      icon: KeyRound,
+      show: canManageTokens,
+      content: <ApiTokenCard />,
+    },
+  ];
+  const visibleTabs = tabs.filter((t) => t.show);
+  const [activeId, setActiveId] = useState(visibleTabs[0]?.id ?? "");
+  const active = visibleTabs.find((t) => t.id === activeId) ?? visibleTabs[0];
 
-      {isSuperAdmin(me) && <PlatformLlmCard />}
-
-      {canManageLlm && <TenantLlmCard />}
-
-      {/* Embedding config (RAG, priority 57). Separate provider from the chat
-          LLM — DeepSeek does NOT expose embeddings, so this targets OpenAI by
-          default. Same two-scope pattern as the LLM card above. */}
-      {isSuperAdmin(me) && <PlatformEmbeddingCard />}
-
-      {canManageLlm && <TenantEmbeddingCard />}
-
-      {canManageLlm && <TenantBrandingCard />}
-
-      {canManageTokens && <ApiTokenCard />}
-
-      {!isSuperAdmin(me) && !canManage && (
+  if (!isSuperAdmin(me) && !canManage) {
+    return (
+      <div className="space-y-6">
+        <PageHeader
+          title="设置"
+          subtitle="管理 LLM 提供商配置（API Key、Base URL、可用模型）与 API Token（供 agenthub CLI 等外部 Agent 接入）。"
+        />
         <Card>
           <CardContent className="py-12 text-center text-sm text-muted-foreground">
             需要管理员权限才能查看设置。
           </CardContent>
         </Card>
-      )}
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      <PageHeader
+        title="设置"
+        subtitle="管理 LLM 提供商配置（API Key、Base URL、可用模型）与 API Token（供 agenthub CLI 等外部 Agent 接入）。"
+      />
+
+      <div className="grid gap-6 lg:grid-cols-[200px_1fr]">
+        {/* left nav — vertical tab list. A plain button list (no new Radix
+            Tabs wrapper component) keeps this self-contained. */}
+        <nav className="flex flex-row gap-1 overflow-x-auto lg:flex-col lg:overflow-visible">
+          {visibleTabs.map((t) => {
+            const isActive = t.id === active?.id;
+            return (
+              <button
+                key={t.id}
+                type="button"
+                onClick={() => setActiveId(t.id)}
+                className={`flex shrink-0 items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors ${
+                  isActive
+                    ? "bg-accent text-accent-foreground"
+                    : "text-muted-foreground hover:bg-accent/50 hover:text-foreground"
+                }`}
+              >
+                <t.icon className="h-4 w-4" />
+                {t.label}
+              </button>
+            );
+          })}
+        </nav>
+
+        {/* right content — the active tab's cards. */}
+        <div className="min-w-0">{active?.content}</div>
+      </div>
     </div>
   );
 }

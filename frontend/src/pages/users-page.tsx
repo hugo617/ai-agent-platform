@@ -63,6 +63,10 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Pagination } from "@/components/ui/pagination";
+import { ListState } from "@/components/ui/list-state";
+import {
+  PageHeader as SharedPageHeader,
+} from "@/components/layout/page-header";
 import { useToast } from "@/components/ui/toast";
 import { apiErrorMessage } from "@/api/client";
 import { useAuth } from "@/components/auth/auth-context";
@@ -312,14 +316,18 @@ export function UsersPage() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          {isLoading ? (
-            <div className="py-12 text-center text-sm text-muted-foreground">加载中…</div>
-          ) : users.length === 0 ? (
-            <div className="flex flex-col items-center gap-3 py-12 text-center">
-              <UsersIcon className="h-10 w-10 text-muted-foreground" />
-              <p className="text-sm text-muted-foreground">暂无用户，点击右上角「新增用户」</p>
-            </div>
-          ) : (
+          <ListState
+            isLoading={isLoading}
+            isEmpty={users.length === 0}
+            loadingVariant="skeleton"
+            skeletonRows={6}
+            emptyContent={
+              <div className="flex flex-col items-center gap-3 py-12 text-center">
+                <UsersIcon className="h-10 w-10 text-muted-foreground" />
+                <p className="text-sm text-muted-foreground">暂无用户，点击右上角「新增用户」</p>
+              </div>
+            }
+          >
             <>
               <Table>
                 <TableHeader>
@@ -428,7 +436,7 @@ export function UsersPage() {
                 />
               </div>
             </>
-          )}
+          </ListState>
         </CardContent>
       </Card>
 
@@ -593,17 +601,19 @@ function PageHeader({
   ];
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">用户</h1>
-          <p className="text-muted-foreground">
-            {isSuperAdmin ? "管理全平台用户账号、角色与状态" : "管理当前租户的用户账号、角色与状态"}
-          </p>
-        </div>
-        <Button onClick={onCreate}>
-          <Plus className="mr-2 h-4 w-4" /> 新增用户
-        </Button>
-      </div>
+      <SharedPageHeader
+        title="用户"
+        subtitle={
+          isSuperAdmin
+            ? "管理全平台用户账号、角色与状态"
+            : "管理当前租户的用户账号、角色与状态"
+        }
+        actions={
+          <Button onClick={onCreate}>
+            <Plus className="mr-2 h-4 w-4" /> 新增用户
+          </Button>
+        }
+      />
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
         {cards.map((c) => (
           <Card key={c.label}>

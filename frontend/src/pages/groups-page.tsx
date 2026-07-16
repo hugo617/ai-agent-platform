@@ -52,6 +52,9 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { ListState } from "@/components/ui/list-state";
+import { EmptyState } from "@/components/ui/empty-state";
+import { PageHeader } from "@/components/layout/page-header";
 import { useToast } from "@/components/ui/toast";
 import { apiErrorMessage } from "@/api/client";
 import { useAuth } from "@/components/auth/auth-context";
@@ -225,19 +228,17 @@ export function GroupsPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">组织</h1>
-          <p className="text-muted-foreground">
-            管理跨租户的经营主体，并将门店挂载到组织下。
-          </p>
-        </div>
-        {canManage && (
-          <Button onClick={openCreate}>
-            <Plus className="mr-2 h-4 w-4" /> 新建组织
-          </Button>
-        )}
-      </div>
+      <PageHeader
+        title="组织"
+        subtitle="管理跨租户的经营主体，并将门店挂载到组织下。"
+        actions={
+          canManage ? (
+            <Button onClick={openCreate}>
+              <Plus className="mr-2 h-4 w-4" /> 新建组织
+            </Button>
+          ) : undefined
+        }
+      />
 
       <Card>
         <CardHeader>
@@ -248,20 +249,23 @@ export function GroupsPage() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          {isLoading ? (
-            <div className="py-12 text-center text-sm text-muted-foreground">
-              加载中…
-            </div>
-          ) : list.length === 0 ? (
-            <div className="flex flex-col items-center gap-3 py-12 text-center">
-              <Building2 className="h-10 w-10 text-muted-foreground" />
-              <p className="text-sm text-muted-foreground">
-                {canManage
-                  ? "暂无组织，点击右上角「新建组织」"
-                  : "您还未归属任何组织，请联系总部"}
-              </p>
-            </div>
-          ) : (
+          <ListState
+            isLoading={isLoading}
+            isEmpty={list.length === 0}
+            loadingVariant="skeleton"
+            skeletonRows={4}
+            emptyContent={
+              <EmptyState
+                icon={Building2}
+                title={canManage ? "暂无组织" : "您还未归属任何组织"}
+                description={
+                  canManage
+                    ? "点击右上角「新建组织」"
+                    : "请联系总部将您加入组织"
+                }
+              />
+            }
+          >
             <Table>
               <TableHeader>
                 <TableRow>
@@ -334,7 +338,7 @@ export function GroupsPage() {
                 ))}
               </TableBody>
             </Table>
-          )}
+          </ListState>
         </CardContent>
       </Card>
 
