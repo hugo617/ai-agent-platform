@@ -1412,4 +1412,37 @@
 
 ---
 
+### Session 108 — 2026-07-16(前端 UI/UX 全面改造收官 —— 阶段 3 第二/三批,19 页全部完成)
+- **本轮目标**: 执行前端 UI/UX 改造计划最后两批(阶段 3 第二批 + 第三批),完成「19 页全部精修」收官。延续 Session 107 的约束:仅改 `frontend/`,每批独立 PR,合入前 build/lint/e2e 全绿,e2e `data-testid` 全保留。
+- **已完成**: 阶段 3 第二批(PR #72,已合并)+ 阶段 3 第三批(PR #73,已合并)。**整个改造计划(阶段 0-3,19 页,6 PR #68-73)全部交付**。
+- **阶段 3 第二批(PR #72,c450329,7 页管理类)**:
+  - **Users**: 引入共享 PageHeader(局部 PageHeader 子组件标题行改用 SharedPageHeader);Table+Pagination 包 ListState skeleton。**保留服务端分页/排序/筛选/批量选择**(逻辑零改动)
+  - **Members / Roles / Groups**: 统一 PageHeader + ListState skeleton + EmptyState(icon 分别 Users/Shield/Building2)
+  - **Customers**: StoreView/HqView 双视图统一 PageHeader + ListState skeleton + EmptyState
+  - **Permissions**: PageHeader(矩阵视觉本已精致:粘性列、勾选格、data_scope 下拉,全部保留)
+  - **Settings(REWRITE)**: 扁平卡片堆 → **左侧 tab 垂直导航 + 右侧内容**。Tab 由权限构建 `{id,label,icon,show,content}`(llm/embedding/branding/tokens 4 tab,Brain/Sparkles/Palette/KeyRound 图标),`visibleTabs` 过滤,activeId 状态
+- **阶段 3 第三批(PR #73,f47627e,7 页平台/低频)**:
+  - **Tenants**: PageHeader + ListState skeleton + EmptyState(icon=Store)
+  - **Billing**: PageHeader + 消耗趋势 **CSS 手写条形图 → recharts AreaChartMini**(移除 trendMax);AreaChartMini 已在阶段 2 准备好
+  - **Billing-admin**: PageHeader(总部计费汇总,逻辑不动)
+  - **Logs**: PageHeader(ScrollText 图标);既有 ListState + 过滤卡保留
+  - **Notifications**: PageHeader(Bell 图标);未读指示「未读」文字 → `<Badge variant="dot-success">未读</Badge>`
+  - **Profile**: PageHeader 加到 ProfilePage 主组件
+  - **NotFound(REWRITE)**: 巨型 404(`text-[10rem] sm:text-[14rem] text-primary/20`)+ 径向渐变装饰背景 + 标题/描述 + 双 CTA(返回首页 / 去对话),无持续动画(尊重动效预算)
+- **运行过的验证(全过)**:
+  - PR #72 CI 4 项全绿;PR #73 CI 4 项全绿(Migrations / Frontend typecheck+build+lint / E2E Playwright / Backend pytest+ruff)
+  - e2e main-flow.spec.ts 全程通过,**所有 data-testid 保留**(login-identifier/password/submit + create-agent-btn/agent-name-input/agent-submit + message-input/send-btn/assistant-message + aria-label="选择会话")
+  - 截图核验视觉:Settings 左侧 tab、Permissions 矩阵、Members skeleton、404 巨字径向渐变
+- **TanStack Table 推广结论(Session 107 「建议推广」的实际落地)**: **按需推广,不强推**。Agents(第一批)试点成立;但 Users 走服务端分页/排序(前端再排序会双重排序),Members/Roles 是小列表(ListState 统一加载已足够)。**最终仅 Agents 一处用 TanStack Table**,符合「不为了用而用」。
+- **不越界核对**: 仅改 frontend/(第二批 7 文件 + 第三批 7 文件);未碰后端 API/数据库/RBAC/权限守卫;applyThemeColor 租户白标逻辑未改;4 个路由守卫未碰;theme.ts token 体系未碰。
+- **完成定义 4 条核对**:
+  1. ✅ 阶段 0-3 全部实现(19 页精修 + 4 依赖 + 骨架 + 组件库)
+  2. ✅ 每个 PR 的 build/lint/e2e 真跑过(CI 全绿 + 本地 e2e 全过)
+  3. ✅ 证据已记录(progress.md Session 107 + 108)
+  4. ✅ 仓库仍能按 `./init.sh` + `cd frontend && npm install && npm run build` 重新开始
+- **已知遗留(非阻塞)**: dashboard/chat chunk 因 recharts+motion 增大(已路由级 React.lazy 隔离,无持续动画);建议后续整体跑一次 Lighthouse 对比改造前基线。
+- **下一步最佳动作**: 前端 UI/UX 改造计划已全部交付。回到 `feature_list.json` 选下一个 `not_started` 最高优先级功能(WIP=1)。
+
+---
+
 
