@@ -1381,4 +1381,35 @@
 
 ---
 
+### Session 107 — 2026-07-16(前端 UI/UX 全面改造 —— 阶段 0/1/2/3 第一批)
+- **本轮目标**: 执行 `docs/frontend-ui-ux-revamp-plan.md` —— React 前端 UI/UX 全面改造。**仅改 `frontend/`**,不碰后端 API/数据库/RBAC。分 4 阶段(地基→骨架→组件库→19 页精修),每阶段独立 PR,合入前 `npm run build && npm run lint && npx playwright test` 全绿。阶段 3 分 3 批,**第一批(5 页)是 GO/NO-GO 硬闸门**。
+- **已完成**: 阶段 0(PR #68)+ 阶段 1(PR #69)+ 阶段 2(PR #70)+ **阶段 3 第一批(PR #71,已合并)**。
+- **阶段 0 地基(PR #68)**: 装 recharts/motion/sonner/cmdk 4 依赖;自写 ThemeProvider(localStorage key="theme",light/dark/system,mounted inside QueryClientProvider);theme-toggle 三选下拉;**P0-2 对比度修复**(`bestForeground` 计算前景黑白对比,绿/黄等浅色现在用深色文字 ≥4.5:1);index.css 加 sidebar/chart-1~5/ring token(light+dark);applyThemeColor 用模式感知默认值 + bestForeground。
+- **阶段 1 骨架(PR #69)**: nav-items.ts 分组导航模型(3 组:工作台/管理/平台,复用 canViewMenu/hasPermission 守卫);PageHeader 组件;⌘K CommandMenu(cmdk,导航+搜索+快捷操作);EmptyState;ListState 加 skeleton 变体;dashboard-layout 重写(分组侧边栏 + 移动端 motion drawer + 顶栏 ⌘K/ThemeToggle/通知/超管徽标 + 底部用户卡)。
+- **阶段 2 组件库(PR #70)**: Card 加 glow 变体(::before conic-gradient 流光环);Button 加 loading 属性;Badge 加 4 dot 变体(success/warning/destructive);Toast 加 loading 变体 + promise 助手 + slide-in-up(向后兼容 163 调用点);chart.tsx(recharts 包装:AreaChartMini/BarChartMini/DonutChartMini,主题翻转自动重绘)。
+- **阶段 3 第一批(PR #71,已合并,GO/NO-GO 闸门)**: 5 页精修
+  - **Dashboard**: Number Ticker(数字滚动,motion use-case #4)+ recharts AreaChart(趋势)+ recharts 横向 BarChart(Top10)+ Bento Grid 快速操作区 + glow 主卡
+  - **Agents(TanStack Table 试点)**: 手写 Table → TanStack Table(列排序 + 卡片/表格视图切换)+ skeleton + EmptyState + PageHeader
+  - **Chat(motion stagger,use-case #1)**: 消息进场 stagger(30ms,delay 上限 0.3s)+ 三点 typing 指示器(纯 CSS)
+  - **Knowledge**: Badge dot 状态(绿/琥珀/红)+ PageHeader + skeleton
+  - **Login**: shadcn login-04 split(左品牌区 + 右表单区,移动端单列)
+- **运行过的验证(全过)**:
+  - `cd frontend && npm run build` → tsc + vite 成功(dashboard/chat chunk 因引入 recharts/motion 增大,已路由级 React.lazy 懒加载)
+  - `cd frontend && npm run lint`(oxlint)→ 0 warnings 0 errors
+  - `cd frontend && npx playwright test`(main-flow.spec.ts)→ 1 passed(login→create agent→chat→view history 全链路,**所有 data-testid 保留**:login-identifier/password/submit + create-agent-btn/agent-name-input/agent-submit + message-input/send-btn/assistant-message + aria-label="选择会话")
+  - PR #71 CI 4 项全绿(Migrations 1m08s / Frontend 35s / E2E 2m10s / Backend 5m30s)
+  - 截图核验 5 页视觉(1280×800):分割登录 + 5 指标卡+图表 dashboard + 排序表格/卡片网格 agents + dot 状态 knowledge + 分栏 chat
+- **动效合规(P1-8)**: 新增 motion 仅 2 处(NumberTicker use-case #4 + Chat stagger use-case #1),均在计划批准的 4 类内。typing 指示器 = 纯 CSS。theme-toggle 的图标 crossfade 来自阶段 0 P0-3 探针(150ms 一次性)。
+- **⚠️ GO/NO-GO 闸门评估结论(第一批 → 第二批)**: **GO**
+  1. **视觉达标?** ✅ 达标。recharts 图表 + Number Ticker + 统一 PageHeader + Bento Grid + Badge dot + 分屏登录,克制无过度装饰。
+  2. **性能回归?** ⚠️ trade-off。Dashboard/chat chunk 增大(recharts+motion),但路由级 React.lazy 隔离,无持续动画。**无持续 CPU 消耗**(Ticker/stagger 仅 mount 一次)。建议第二批后整体跑一次 Lighthouse 对比基线。
+  3. **TanStack Table 推广?** ✅ **建议推广**。Agents 试点零成本(列排序 + 视图切换,代码量与手写 Table 相当,类型安全更好)。**第二批 Users/Members/Roles 推广 TanStack Table**。
+  4. **动效克制?** ✅ 合规(见上)。
+- **不越界核对**: 仅改 frontend/(6 文件 + 1 新组件 number-ticker.tsx);未碰后端 API/数据库/RBAC;applyThemeColor 租户白标逻辑未改;4 个路由守卫(ProtectedRoute/RequireApiPermission/RequireUserManagement/RequireSuperAdmin)未碰。
+- **已记录证据**: 本条 progress.md 记录(含 GO/NO-GO 结论)
+- **已知风险**: dashboard/chat chunk 增大(已懒加载隔离,非阻塞);TanStack Table 推广需第二批验证复杂场景(权限矩阵列、嵌套数据)
+- **下一步最佳动作**: 执行阶段 3 第二批(Users/Members/Roles/Permissions/Groups/Customers/Settings 7 页)—— TanStack Table 推广到 Users/Members/Roles;Permissions 做权限矩阵网格;Settings 改左侧 tab 导航。再之后第三批(Tenants/Billing/Billing-admin/Logs/Notifications/Profile/404 7 页)。
+
+---
+
 
