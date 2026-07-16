@@ -30,10 +30,16 @@ class WalletRepository(TenantScopedRepository[Wallet]):
     model = Wallet
 
     async def get_for_tenant(self, tenant_id: str) -> Wallet | None:
-        """Return the *live* (non-deleted) wallet for a tenant, or None."""
+        """Return the *live usable* wallet for a tenant, or None.
+
+        "Usable" = not soft-deleted AND ``is_active=True``. An inactive wallet
+        is administratively disabled and must not serve chats/billing (the
+        ``is_active`` toggle is honoured here, not just written and ignored).
+        """
         stmt = select(Wallet).where(
             Wallet.tenant_id == tenant_id,
             Wallet.is_deleted.is_(False),
+            Wallet.is_active.is_(True),
         )
         result = await self.db.execute(stmt)
         return result.scalar_one_or_none()
@@ -47,7 +53,11 @@ class WalletRepository(TenantScopedRepository[Wallet]):
         """
         stmt = (
             select(Wallet)
-            .where(Wallet.tenant_id == tenant_id, Wallet.is_deleted.is_(False))
+            .where(
+                Wallet.tenant_id == tenant_id,
+                Wallet.is_deleted.is_(False),
+                Wallet.is_active.is_(True),
+            )
             .with_for_update()
         )
         result = await self.db.execute(stmt)

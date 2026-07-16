@@ -70,6 +70,53 @@ async def test_delete_agent(app_client):
 
 
 @pytest.mark.asyncio
+async def test_delete_agent_is_soft_and_keeps_history(app_client, db_session, test_env):
+    """S3: deleting an agent is a SOFT delete — the row stays (is_deleted=True)
+    so its Conversations/UsageEvents keep a valid agent_id and history survives.
+
+    Previously delete() hard-deleted the row, which CASCADE-deleted the agent's
+    Conversations (agent_id FK) — destroying all chat history irrecoverably.
+    """
+    from sqlalchemy import select
+
+    from app.models.agent import Agent, Conversation
+
+    create = await app_client.post(
+        "/api/v1/agents/", json={"name": "Historical"}, headers=AUTH
+    )
+    agent_id = create.json()["id"]
+
+    # Attach a conversation so we can prove history survives the delete.
+    conv = Conversation(
+        tenant_id=test_env.tenant_id,
+        agent_id=agent_id,
+        user_id="test-user",
+        title="before deletion",
+    )
+    db_session.add(conv)
+    await db_session.commit()
+    await db_session.refresh(conv)
+
+    await app_client.delete(f"/api/v1/agents/{agent_id}", headers=AUTH)
+
+    # The agent row is still in the DB, soft-deleted.
+    agent = (
+        await db_session.execute(select(Agent).where(Agent.id == agent_id))
+    ).scalar_one()
+    assert agent.is_deleted is True
+    assert agent.deleted_at is not None
+
+    # The conversation is NOT cascade-deleted — history survives (the whole
+    # point of switching to soft delete).
+    conv_after = (
+        await db_session.execute(
+            select(Conversation).where(Conversation.id == conv.id)
+        )
+    ).scalar_one()
+    assert conv_after.agent_id == agent_id
+
+
+@pytest.mark.asyncio
 async def test_get_unknown_returns_404(app_client):
     resp = await app_client.get(
         "/api/v1/agents/nonexistent", headers=AUTH

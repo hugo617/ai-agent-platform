@@ -128,8 +128,12 @@ async def test_delete_nonexistent_role_returns_404(app_client):
 
 
 @pytest.mark.asyncio
-async def test_update_role_description_and_status(app_client):
-    """PUT role can update description + status + sort_order in one call."""
+async def test_update_role_description_and_sort_order(app_client):
+    """PUT role can update description + sort_order in one call.
+
+    (Role.status was a dead column and has been removed; this test no longer
+    exercises it.)
+    """
     role = (
         await app_client.post(
             "/api/v1/roles/",
@@ -139,13 +143,12 @@ async def test_update_role_description_and_status(app_client):
     ).json()
     resp = await app_client.put(
         f"/api/v1/roles/{role['id']}",
-        json={"description": "updated desc", "status": "inactive", "sort_order": 9},
+        json={"description": "updated desc", "sort_order": 9},
         headers=AUTH,
     )
     assert resp.status_code == 200, resp.text
     body = resp.json()
     assert body["description"] == "updated desc"
-    assert body["status"] == "inactive"
     assert body["sort_order"] == 9
 
 

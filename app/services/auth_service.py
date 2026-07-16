@@ -14,7 +14,6 @@ explicitly so the user understands *why* they cannot log in.
 
 from __future__ import annotations
 
-import hashlib
 from datetime import UTC, datetime, timedelta
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -133,7 +132,6 @@ class AuthService:
                 device_type=_guess_device_type(user_agent),
                 device_name=None,
                 platform=_guess_platform(user_agent),
-                token_hash=_sha256(token),
                 ip_address=ip,
                 user_agent=user_agent,
                 expires_at=expires_at,
@@ -194,11 +192,6 @@ def _guess_platform(user_agent: str | None) -> str | None:
     if "iphone" in ua or "ipad" in ua:
         return "iOS"
     return None
-
-
-def _sha256(token: str) -> str:
-    """Hex SHA-256 of an access token, for revocation lookup without storing it."""
-    return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
 __all__ = ["AuthService", "AuthError"]

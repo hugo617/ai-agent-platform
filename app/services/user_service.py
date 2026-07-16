@@ -204,7 +204,7 @@ class UserService:
             display_name=payload.display_name,
             real_name=payload.real_name,
             phone=payload.phone,
-            avatar=payload.avatar or "/avatars/default.jpg",
+            avatar=payload.avatar or "",
             status=payload.status,
             created_by=actor_id,
             updated_by=actor_id,

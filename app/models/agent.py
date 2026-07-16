@@ -58,6 +58,17 @@ class Agent(Base):
         Boolean, default=False, server_default=text("false")
     )
     specialty: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # Soft delete (mirrors Customer/Role/Document/Wallet). Hard-deleting an
+    # Agent would CASCADE-delete its Conversations (agent_id has ondelete
+    # CASCADE) and SET NULL its UsageEvents.agent_id, destroying all history.
+    # Soft-delete keeps the row so history stays joinable; every query filters
+    # is_deleted=False (AgentRepository).
+    is_deleted: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=text("false"), index=True
+    )
+    deleted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
@@ -89,7 +100,9 @@ class Conversation(Base):
     agent_id: Mapped[str] = mapped_column(
         String(32), ForeignKey("agents.id", ondelete="CASCADE"), index=True
     )
-    user_id: Mapped[str] = mapped_column(String(128), index=True)
+    user_id: Mapped[str | None] = mapped_column(
+        String(128), ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
+    )
     # Optional customer attribution (Token 费用管理系列 3/4). Nullable: not
     # every conversation is tied to a customer (staff internal queries). SET
     # NULL on hard-delete so historical conversations survive; soft-delete

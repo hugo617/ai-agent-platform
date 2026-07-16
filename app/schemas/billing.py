@@ -84,7 +84,6 @@ class ModelPricingRead(BaseModel):
     model: str
     input_price_per_1k: Decimal
     output_price_per_1k: Decimal
-    currency: str
     is_active: bool
     created_at: datetime
     updated_at: datetime
@@ -101,5 +100,4 @@ class ModelPricingUpsert(BaseModel):
     model: str = Field(min_length=1, max_length=64)
     input_price_per_1k: Decimal = Field(ge=0)
     output_price_per_1k: Decimal = Field(ge=0)
-    currency: str = Field("CNY", max_length=8)
     is_active: bool = True

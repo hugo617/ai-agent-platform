@@ -135,19 +135,25 @@ async def list_profiles(
         default=None,
         description="Substring match on customer name or identity_key (ILIKE)",
     ),
+    status: str | None = Query(
+        default=None,
+        description="Filter by profile status: active | inactive | vip | blacklist",
+    ),
     user: CurrentUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> list[CustomerProfileRead]:
     """List customer profiles, optionally filtered by a name/identity search.
 
     Store users see their tenant; super_admin sees all. ``search`` matches the
-    customer's name or identity_key (case-insensitive substring).
+    customer's name or identity_key (case-insensitive substring). ``status``
+    optionally narrows to one of the 4 profile states (default: show all).
     """
     return await CustomerService(db).list_profiles(
         user.user_id,
         user.tenant_id,
         platform_role=user.platform_role,
         search=search,
+        status_filter=status,
     )
 
 

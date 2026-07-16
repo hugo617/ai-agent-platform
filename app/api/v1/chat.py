@@ -255,24 +255,28 @@ async def chat_stream(
                     usage_data = item
         except Exception as e:  # noqa: BLE001 - surface to client then close
             yield f"data: {json.dumps({'error': str(e)}, ensure_ascii=False)}\n\n"
-            # Fault tolerance: if the stream produced a partial reply before
-            # failing, persist what we have (marked interrupted) so the
-            # conversation history stays continuous — otherwise the user sees
-            # their question with no answer on reload. An empty reply is
-            # skipped to avoid storing a blank assistant message. Token usage
-            # (if any was captured before the failure) is still recorded.
+            # Fault tolerance + auditability: persist the failed turn with
+            # status="failed" and the exception text so the failure is
+            # auditable and the UI can offer a retry. Any partial reply the
+            # stream produced before failing is kept as the content (so the
+            # conversation history stays continuous); an empty partial still
+            # records a row — a pure provider failure with no content must not
+            # vanish silently. Token usage captured before the failure is
+            # recorded too.
             partial = "".join(full_reply)
-            if partial.strip():
-                msg = await conv_service.append_message(
-                    conv.tenant_id,
-                    conv.id,
-                    "assistant",
-                    partial + "\n\n[生成中断]",
-                    prompt_tokens=_u(usage_data, "input_tokens"),
-                    completion_tokens=_u(usage_data, "output_tokens"),
-                    total_tokens=_u(usage_data, "total_tokens"),
-                    model=usage_data.get("model") if usage_data else None,
-                )
+            msg = await conv_service.append_message(
+                conv.tenant_id,
+                conv.id,
+                "assistant",
+                partial,
+                prompt_tokens=_u(usage_data, "input_tokens"),
+                completion_tokens=_u(usage_data, "output_tokens"),
+                total_tokens=_u(usage_data, "total_tokens"),
+                model=usage_data.get("model") if usage_data else None,
+                status="failed",
+                error=str(e),
+            )
+            if usage_data and _u(usage_data, "total_tokens"):
                 event = await _record_usage(
                     db, conv, msg, agent, user, usage_data
                 )

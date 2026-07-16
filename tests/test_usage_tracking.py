@@ -266,7 +266,8 @@ async def test_interrupted_stream_records_partial_usage(app_client, db_session, 
         m for m in (await db_session.execute(select(Message))).scalars().all()
         if m.role == "assistant"
     )
-    assert "[生成中断]" in assistant.content
+    assert "partial" in assistant.content
+    assert assistant.status == "failed"
     assert assistant.total_tokens == 8
     assert assistant.prompt_tokens == 5
     assert assistant.completion_tokens == 3

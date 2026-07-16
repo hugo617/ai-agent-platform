@@ -391,7 +391,6 @@ const pricingSchema = z.object({
   output_price_per_1k: z
     .number({ error: "请输入数字" })
     .min(0, "单价不能为负"),
-  currency: z.string().max(8).default("CNY"),
   is_active: z.boolean().default(true),
 });
 type PricingValues = z.input<typeof pricingSchema>;
@@ -400,7 +399,6 @@ const EMPTY_PRICING: PricingValues = {
   model: "",
   input_price_per_1k: 0,
   output_price_per_1k: 0,
-  currency: "CNY",
   is_active: true,
 };
 
@@ -432,7 +430,6 @@ function PricingSection() {
       model: p.model,
       input_price_per_1k: Number(p.input_price_per_1k),
       output_price_per_1k: Number(p.output_price_per_1k),
-      currency: p.currency,
       is_active: p.is_active,
     });
     setFormOpen(true);
@@ -447,7 +444,6 @@ function PricingSection() {
         model: values.model,
         input_price_per_1k: values.input_price_per_1k,
         output_price_per_1k: values.output_price_per_1k,
-        currency: values.currency || "CNY",
         is_active: values.is_active,
       };
       if (editing) {
@@ -508,7 +504,6 @@ function PricingSection() {
                 <TableHead>模型</TableHead>
                 <TableHead>输入单价 / 1k</TableHead>
                 <TableHead>输出单价 / 1k</TableHead>
-                <TableHead>币种</TableHead>
                 <TableHead>范围</TableHead>
                 <TableHead>状态</TableHead>
                 <TableHead className="text-right">操作</TableHead>
@@ -527,9 +522,6 @@ function PricingSection() {
                   </TableCell>
                   <TableCell className="font-mono tabular-nums">
                     {fmtPrice(Number(p.output_price_per_1k))}
-                  </TableCell>
-                  <TableCell className="text-muted-foreground">
-                    {p.currency}
                   </TableCell>
                   <TableCell>
                     {p.tenant_id === null ? (
@@ -595,13 +587,6 @@ function PricingSection() {
                 <Input
                   {...form.register("model")}
                   placeholder="如 gpt-4o-mini"
-                />
-              </Field>
-              <Field label="币种">
-                <Input
-                  {...form.register("currency")}
-                  placeholder="CNY"
-                  disabled
                 />
               </Field>
               <Field

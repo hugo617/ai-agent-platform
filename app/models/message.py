@@ -45,6 +45,15 @@ class Message(Base):
     completion_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
     total_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
     model: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # Outcome of an assistant turn. "completed" is the normal case; "failed"
+    # marks a turn that errored (LLM/provider failure) — the chat endpoint
+    # persists such a row so the failure is auditable and the UI can surface a
+    # retry affordance instead of a silent SSE drop. ``error`` carries the
+    # exception text for failed turns (NULL otherwise).
+    status: Mapped[str] = mapped_column(
+        String(20), default="completed", server_default="completed"
+    )
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

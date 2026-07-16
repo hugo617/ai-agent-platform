@@ -27,6 +27,8 @@ class MessageRead(BaseModel):
     id: str
     role: str
     content: str
+    status: str = "completed"
+    error: str | None = None
     created_at: datetime
 
 

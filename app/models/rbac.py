@@ -56,7 +56,6 @@ class Role(Base):
         DateTime(timezone=True), nullable=True
     )
     sort_order: Mapped[int] = mapped_column(default=0)
-    status: Mapped[str] = mapped_column(String(20), default="active")
     # Row-level data scope for the role (权限重构系列 3/4). Four levels:
     #   "all"     — platform-wide, no filter (only super_admin/hq_staff via bypass)
     #   "tenant"  — this tenant's rows (default; owner/admin/member)
@@ -94,11 +93,8 @@ class Permission(Base):
         String(32), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False
     )
     type: Mapped[str] = mapped_column(String(20), default="api")
-    description: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    sort_order: Mapped[int] = mapped_column(default=0)
     is_system: Mapped[bool] = mapped_column(Boolean, default=False)
     is_deleted: Mapped[bool] = mapped_column(Boolean, default=False)
-    status: Mapped[str] = mapped_column(String(20), default="active")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

@@ -1446,3 +1446,47 @@
 ---
 
 
+
+## Session 110(2026-07-16):计划挑刺审查 + 修订 + 阶段1 数据库设计修复执行
+
+### 任务来源
+用户要求复核 `harness/docs/plan-db-revamp-and-scenario-rebuild.md`(Session 109 产出的数据库修复+场景重建计划)的准确性,修订后再执行。
+
+### 第一阶段:挑刺审查(只读)
+对照源码逐条核实 §1 的 12 条发现 + 迁移策略 + 种子 + 登录 + 证据链。**结论:约 80% 准确**,发现 7 处问题:
+1. **S3 级联方向错**:计划称 Conversation.agent_id 被 SET NULL,实为 CASCADE(删 Agent 连对话一起删,更严重)
+2. **S2 因果错**:计划称 list 把 vip 过滤掉看不见,实为 list 全显示(status 只在统计计数用),bug 降为体验增强
+3. **§2.3 坑3 误报**:称 SQLite 跑迁移会炸(vector 无守卫),实际迁移已有方言守卫
+4. **L2 类型陷阱**:审查阶段误判 String(128)≠User.id,执行时二次核实 User.id 实为 String(128)(误读成 Tenant.id),类型一致可加 FK(审查结论本身也需复核)
+5. **M5 连带低估**:Role.status 经 RoleRead/RoleUpdate schema 透传且可写,连带面更大
+6. **§3 方法名**:KnowledgeService.ingest_document 不存在,应为 create_document
+7. **L3 行号**:点 184 为余额不足,256 才是生成失败
+
+全部修订进计划(见计划 §8 修订日志),并增补「挑刺结论也需复核」教训。
+
+### 第二阶段:阶段1 数据库设计修复(已执行完成)
+按修订版计划 §1.2 改动清单,分 5 层落地:
+- **models**:`agent.py`(S3 软删 is_deleted/deleted_at + L2 user_id FK SET NULL)、`usage_event.py`(L2 tenant_id CASCADE + user_id FK)、`message.py`(L3 status/error)、`tenant.py`(M1 删 info_json + L1 avatar 默认空)、`rbac.py`(M2 删 Permission 三列 + M5 删 Role.status)、`security.py`(M3 删 VerificationCode + M6 删 token_hash)、`model_pricing.py`(M4 删 currency)
+- **repositories**:`wallet.py`(S1 get_for_tenant + get_for_tenant_for_update 加 is_active 过滤)、`agent.py`(S3 override get/list + 4 个自定义查询全加 is_deleted)、`customer.py`(S2 list_for_scope/search_for_scope 加可选 status_filter)
+- **services**:`agent_service.py`(S3 delete 改软删)、`auth_service.py`(M6 移除 token_hash 赋值 + 删 _sha256/hashlib)、`rbac_service.py`(M5 update 循环移除 status)、`user_service.py`(L1 avatar fallback 空)、`conversation_service.py`(L3 append_message 支持 status/error)
+- **api/schema**:`billing.py`+schema(M4 移除 currency 三处)、`chat.py`(L3 失败分支改 status=failed + error 落库,移除 [生成中断] 文本 hack)、`customers.py`+service(S2 透传 status 参数)、`rbac.py` schema(M5 RoleRead/RoleUpdate 移除 status)、`conversation.py` schema(L3 MessageRead 加 status/error)
+- **frontend**:`types.ts`(M4 currency 两处 + M5 Role.status 两处)、`billing-admin-page.tsx`(M4 移除 currency schema/表格列/表单框 6 处)
+- **迁移**:`b4c5d6e7f8a9_db_design_cleanup.py`(down_revision=a3b4c5d6e7f8,聚合所有 add/drop column + drop table + add FK,含 downgrade)
+- **测试**:新增 S1 `test_inactive_wallet_is_not_usable`、S3 `test_delete_agent_is_soft_and_keeps_history`;改写 `test_update_role_description_and_status`→移除 status、`test_assistant_partial_reply_persisted_on_error` + `test_interrupted_stream_records_partial_usage`→断言 status=failed 而非 [生成中断] 文本;`test_billing._seed_pricing` 移除 currency
+
+### 验证(完成定义 4 条全满足)
+1. ✅ 目标行为已实现:12 项问题全修(S1/S2/S3/M1-M6/L1-L3)
+2. ✅ 验证真跑过:`./init.sh` 全绿(**ruff All checks passed + 535 passed in 230s**,基线 533 + 新增 2);`cd frontend && npm run build` 成功(tsc+vite)
+3. ✅ 证据记录:feature_list.json 登记 `db-design-cleanup-and-scenario-rebuild`(priority 59, area 数据库)
+4. ✅ 仓库仍能按 `./init.sh` 重新开始
+
+### 待续(阶段 2-5,需用户决策)
+- **阶段2**(清空重建 + 真 key):需 docker(PG+Logto)+ 用户提供真 DeepSeek/OpenAI key(只进 .gitignore 忽略的 .env)
+- **阶段3**(seed_demo 重写):保留架构重写内容 + 新增知识库灌入(用 KnowledgeService.create_document)+ orchestrator 演示
+- **阶段4**(登录预填):.env 驱动 + /auth/login-hint 端点(生产返 null)
+- **阶段5**(4 份对外文档):docs/demo-scenario/ 新目录
+
+### 不越界核对
+仅改后端 model/repo/service/api/schema + 前端 types/billing-admin + 新迁移 + 测试 + 计划文档;未碰 RBAC 权限模型/认证管线/前端 UI 框架(除 billing-admin 移 currency);未加新表(orchestrator 已存在)。S2 前端筛选器留作可选增强(后端已支持)。
+
+---

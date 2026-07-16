@@ -114,7 +114,7 @@ class RbacService:
         role = await self.roles.get_for_tenant(tenant_id, role_id)
         if role is None:
             raise NotFoundError(f"role {role_id} not found")
-        for field in ("name", "description", "sort_order", "status", "data_scope"):
+        for field in ("name", "description", "sort_order", "data_scope"):
             v = getattr(payload, field)
             if v is not None:
                 setattr(role, field, v)
