@@ -9,6 +9,7 @@ import {
 } from "@/components/auth/require-permission";
 import { RequireSuperAdmin } from "@/components/auth/require-super-admin";
 import { ToastProvider } from "@/components/ui/toast";
+import { ThemeProvider } from "@/components/theme/theme-provider";
 import { DashboardLayout } from "@/components/layout/dashboard-layout";
 import { LoginPage } from "@/pages/login-page";
 
@@ -94,6 +95,7 @@ const queryClient = new QueryClient({
 export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
+      <ThemeProvider>
       <ToastProvider>
         <BrowserRouter>
           <AuthProvider>
@@ -164,6 +166,7 @@ export default function App() {
           </AuthProvider>
         </BrowserRouter>
       </ToastProvider>
+      </ThemeProvider>
     </QueryClientProvider>
   );
 }

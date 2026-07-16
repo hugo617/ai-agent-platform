@@ -10,7 +10,10 @@
     --card-foreground: 222.2 84% 4.9%;
     --popover: 0 0% 100%;
     --popover-foreground: 222.2 84% 4.9%;
-    --primary: 222.2 47.4% 11.2%;
+    /* Primary — a confident brand blue (Linear/Stripe family) replacing the
+       conservative deep-slate default. Tenant white-label overrides --primary
+       at runtime (see lib/theme.ts); this is the platform default. */
+    --primary: 221.2 83.2% 53.3%;
     --primary-foreground: 210 40% 98%;
     --secondary: 210 40% 96.1%;
     --secondary-foreground: 222.2 47.4% 11.2%;
@@ -22,8 +25,29 @@
     --destructive-foreground: 210 40% 98%;
     --border: 214.3 31.8% 91.4%;
     --input: 214.3 31.8% 91.4%;
-    --ring: 222.2 84% 4.9%;
-    --radius: 0.5rem;
+    --ring: 221.2 83.2% 53.3%;
+    --radius: 0.625rem;
+
+    /* Sidebar tokens — distinct from the main surface so the nav reads as a
+       panel (subtly tinted background, its own border + hover accent). The
+       platform sidebar uses a very light slate; tenants do NOT override these
+       (only --primary is white-labeled), so the sidebar stays cohesive across
+       brand colors. */
+    --sidebar: 0 0% 100%;
+    --sidebar-foreground: 222.2 47.4% 11.2%;
+    --sidebar-border: 214.3 31.8% 91.4%;
+    --sidebar-accent: 210 40% 96.1%;
+    --sidebar-accent-foreground: 222.2 47.4% 11.2%;
+
+    /* Chart palette — five distinct hues tuned for data viz (adapted from
+       recharts/Tremor defaults). Light and dark variants differ in lightness
+       so contrast holds against each background. Consumed by chart.tsx and
+       via Tailwind's `chart-{1..5}` color utilities. */
+    --chart-1: 221.2 83.2% 53.3%;
+    --chart-2: 142.1 76.2% 36.3%;
+    --chart-3: 24.6 95% 53.1%;
+    --chart-4: 280 87% 60%;
+    --chart-5: 199 89% 48%;
   }
 
   .dark {
@@ -33,7 +57,10 @@
     --card-foreground: 210 40% 98%;
     --popover: 222.2 84% 4.9%;
     --popover-foreground: 210 40% 98%;
-    --primary: 210 40% 98%;
+    /* Dark-mode primary stays the brand blue (the tenant override layer applies
+       the same hex; in dark mode primary paints accents/buttons that must pop
+       against the near-black background). */
+    --primary: 217.2 91.2% 59.8%;
     --primary-foreground: 222.2 47.4% 11.2%;
     --secondary: 217.2 32.6% 17.5%;
     --secondary-foreground: 210 40% 98%;
@@ -45,7 +72,23 @@
     --destructive-foreground: 210 40% 98%;
     --border: 217.2 32.6% 17.5%;
     --input: 217.2 32.6% 17.5%;
-    --ring: 212.7 26.8% 83.9%;
+    --ring: 224.3 76.3% 48%;
+
+    /* Sidebar: in dark mode, slightly lifted from the page background so the
+       nav panel reads as its own surface. */
+    --sidebar: 224 71.4% 7.5%;
+    --sidebar-foreground: 210 40% 98%;
+    --sidebar-border: 215 27.9% 16.9%;
+    --sidebar-accent: 215 27.9% 16.9%;
+    --sidebar-accent-foreground: 210 40% 98%;
+
+    /* Dark chart palette — lighter, more saturated hues for visibility on the
+       near-black background. */
+    --chart-1: 217.2 91.2% 59.8%;
+    --chart-2: 142.1 70.6% 45.3%;
+    --chart-3: 24.6 95% 60%;
+    --chart-4: 280 87% 65%;
+    --chart-5: 199 89% 55%;
   }
 }
 

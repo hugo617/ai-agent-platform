@@ -6,6 +6,7 @@ import {
 } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { applyThemeColor } from "@/lib/theme";
+import { useTheme } from "@/components/theme/theme-provider";
 import {
   addMember,
   addConversationTag,
@@ -733,9 +734,15 @@ export function useUpdateTenantConfig() {
  * ``:root``. The cleanup restores the platform default on unmount / tenant
  * switch / logout so a stale brand never bleeds across tenants. No-op while the
  * config is still loading or when no color is set (defaults preserved).
+ *
+ * Theme-aware re-application (P0-2): when the user flips light/dark, the
+ * ``--primary`` foreground contrast must be re-derived against the active mode
+ * (the revert path restores mode-specific platform defaults). So this hook also
+ * re-runs ``applyThemeColor`` whenever ``resolvedTheme`` changes.
  */
 export function useApplyTenantTheme() {
   const { data } = useTenantConfig();
+  const { resolvedTheme } = useTheme();
   useEffect(() => {
     applyThemeColor(data?.theme_color ?? null);
     return () => {
@@ -743,7 +750,7 @@ export function useApplyTenantTheme() {
       // tenant switch) so a stale brand never bleeds across tenants.
       applyThemeColor(null);
     };
-  }, [data?.theme_color]);
+  }, [data?.theme_color, resolvedTheme]);
 }
 
 // ---------- conversations (chat history; streaming is NOT a query) ----------
