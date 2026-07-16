@@ -121,8 +121,11 @@ export function DashboardLayout() {
         )}
       </AnimatePresence>
 
-      {/* Main column */}
-      <div className="flex flex-1 flex-col lg:pl-64">
+      {/* Main column — no left padding: the desktop sidebar is `lg:sticky`
+          (below), which stays in flex flow occupying w-64, so the main column
+          simply sits next to it. (The old `lg:pl-64` double-counted the
+          sidebar width and produced a 256px gap.) */}
+      <div className="flex flex-1 flex-col min-w-0">
         <header className="sticky top-0 z-30 flex h-16 items-center justify-between gap-2 border-b bg-background/80 px-4 backdrop-blur lg:px-6">
           <div className="flex items-center gap-2">
             <Button
@@ -198,7 +201,12 @@ export function DashboardLayout() {
         </header>
 
         <main className="flex-1 overflow-y-auto p-4 lg:p-6">
-          <Outlet />
+          {/* Centered max-width wrapper so wide viewports don't stretch page
+              content edge-to-edge (which reads as sparse). 7xl (1280px) keeps
+              the common 1440 laptop filled while bounding ultra-wide screens. */}
+          <div className="mx-auto w-full max-w-7xl">
+            <Outlet />
+          </div>
         </main>
       </div>
 
@@ -239,7 +247,7 @@ function Sidebar({
         "flex flex-col border-r bg-sidebar text-sidebar-foreground",
         embedded
           ? "h-full w-full"
-          : "fixed inset-y-0 left-0 z-40 w-64 lg:static lg:translate-x-0",
+          : "fixed inset-y-0 left-0 z-40 w-64 lg:sticky lg:top-0 lg:h-screen lg:translate-x-0",
       )}
     >
       {/* Brand header */}
