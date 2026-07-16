@@ -28,6 +28,7 @@ import {
 import { useToast } from "@/components/ui/toast";
 import { apiErrorMessage } from "@/api/client";
 import { useAuth } from "@/components/auth/auth-context";
+import { PageHeader } from "@/components/layout/page-header";
 import { hasPermission, isSuperAdmin } from "@/lib/permission";
 import type { DataScope, PermissionItem, Role } from "@/api/types";
 import {
@@ -140,23 +141,21 @@ export function PermissionsPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-start justify-between">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">权限矩阵</h1>
-          <p className="text-muted-foreground">
-            统一管理三类权限:菜单可见性、操作授权、数据范围。勾选表示该角色拥有此权限。
-          </p>
-        </div>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => refetch()}
-          disabled={isFetching}
-        >
-          <RefreshCw className={cn("h-4 w-4", isFetching && "animate-spin")} />
-          刷新
-        </Button>
-      </div>
+      <PageHeader
+        title="权限矩阵"
+        subtitle="统一管理三类权限:菜单可见性、操作授权、数据范围。勾选表示该角色拥有此权限。"
+        actions={
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => refetch()}
+            disabled={isFetching}
+          >
+            <RefreshCw className={cn("h-4 w-4", isFetching && "animate-spin")} />
+            刷新
+          </Button>
+        }
+      />
 
       {/* 超管锁定行:平台级全权信息展示,不可配置(plan §Step3)。后端 super_admin
           通过 permission_service.check 的 bypass 拥有全部权限,不进矩阵 roles,

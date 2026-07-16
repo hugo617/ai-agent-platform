@@ -42,6 +42,9 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { ListState } from "@/components/ui/list-state";
+import { EmptyState } from "@/components/ui/empty-state";
+import { PageHeader } from "@/components/layout/page-header";
 import { useToast } from "@/components/ui/toast";
 import { apiErrorMessage } from "@/api/client";
 import { useAuth } from "@/components/auth/auth-context";
@@ -140,19 +143,17 @@ export function MembersPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">成员</h1>
-          <p className="text-muted-foreground">
-            管理当前租户的成员、角色与访问权限。
-          </p>
-        </div>
-        {canManage && (
-          <Button onClick={openAdd}>
-            <UserPlus className="mr-2 h-4 w-4" /> 添加成员
-          </Button>
-        )}
-      </div>
+      <PageHeader
+        title="成员"
+        subtitle="管理当前租户的成员、角色与访问权限。"
+        actions={
+          canManage ? (
+            <Button onClick={openAdd}>
+              <UserPlus className="mr-2 h-4 w-4" /> 添加成员
+            </Button>
+          ) : undefined
+        }
+      />
 
       <Card>
         <CardHeader>
@@ -160,18 +161,21 @@ export function MembersPage() {
           <CardDescription>共 {list.length} 名成员</CardDescription>
         </CardHeader>
         <CardContent>
-          {isLoading ? (
-            <div className="py-12 text-center text-sm text-muted-foreground">
-              加载中…
-            </div>
-          ) : list.length === 0 ? (
-            <div className="flex flex-col items-center gap-3 py-12 text-center">
-              <Users className="h-10 w-10 text-muted-foreground" />
-              <p className="text-sm text-muted-foreground">
-                暂无成员，点击右上角「添加成员」
-              </p>
-            </div>
-          ) : (
+          <ListState
+            isLoading={isLoading}
+            isEmpty={list.length === 0}
+            loadingVariant="skeleton"
+            skeletonRows={4}
+            emptyContent={
+              <EmptyState
+                icon={Users}
+                title="暂无成员"
+                description={
+                  canManage ? "点击右上角「添加成员」" : "当前租户还没有成员"
+                }
+              />
+            }
+          >
             <Table>
               <TableHeader>
                 <TableRow>
@@ -237,7 +241,7 @@ export function MembersPage() {
                 ))}
               </TableBody>
             </Table>
-          )}
+          </ListState>
         </CardContent>
       </Card>
 

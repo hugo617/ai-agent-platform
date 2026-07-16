@@ -56,6 +56,9 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { ListState } from "@/components/ui/list-state";
+import { EmptyState } from "@/components/ui/empty-state";
+import { PageHeader } from "@/components/layout/page-header";
 import { useToast } from "@/components/ui/toast";
 import { apiErrorMessage } from "@/api/client";
 import { useAuth } from "@/components/auth/auth-context";
@@ -263,20 +266,20 @@ function StoreView() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">客户</h1>
-          <p className="text-muted-foreground">
-            管理本店客户档案。同一客户（按手机号/证件号识别）跨店复用全局身份。
-          </p>
-        </div>
-        {canCreate && (
-          <Button onClick={openCreate}>
-            <Plus className="mr-2 h-4 w-4" /> 新增客户
-          </Button>
-        )}
-        <ExportCsvButton entity="customers" successMessage="已导出客户列表" />
-      </div>
+      <PageHeader
+        title="客户"
+        subtitle="管理本店客户档案。同一客户（按手机号/证件号识别）跨店复用全局身份。"
+        actions={
+          <>
+            {canCreate && (
+              <Button onClick={openCreate}>
+                <Plus className="mr-2 h-4 w-4" /> 新增客户
+              </Button>
+            )}
+            <ExportCsvButton entity="customers" successMessage="已导出客户列表" />
+          </>
+        }
+      />
 
       <Card>
         <CardHeader>
@@ -287,20 +290,21 @@ function StoreView() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          {isLoading ? (
-            <div className="py-12 text-center text-sm text-muted-foreground">
-              加载中…
-            </div>
-          ) : list.length === 0 ? (
-            <div className="flex flex-col items-center gap-3 py-12 text-center">
-              <Contact className="h-10 w-10 text-muted-foreground" />
-              <p className="text-sm text-muted-foreground">
-                {canCreate
-                  ? "暂无客户，点击右上角「新增客户」"
-                  : "本店暂无客户档案"}
-              </p>
-            </div>
-          ) : (
+          <ListState
+            isLoading={isLoading}
+            isEmpty={list.length === 0}
+            loadingVariant="skeleton"
+            skeletonRows={6}
+            emptyContent={
+              <EmptyState
+                icon={Contact}
+                title="暂无客户"
+                description={
+                  canCreate ? "点击右上角「新增客户」" : "本店暂无客户档案"
+                }
+              />
+            }
+          >
             <Table>
               <TableHeader>
                 <TableRow>
@@ -375,7 +379,7 @@ function StoreView() {
                 ))}
               </TableBody>
             </Table>
-          )}
+          </ListState>
         </CardContent>
       </Card>
 
@@ -685,12 +689,10 @@ function HqView() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold tracking-tight">客户（总部视图）</h1>
-        <p className="text-muted-foreground">
-          跨店聚合：查看每个客户在所有门店的档案。此视图为只读，写操作请切换到门店视角。
-        </p>
-      </div>
+      <PageHeader
+        title="客户（总部视图）"
+        subtitle="跨店聚合：查看每个客户在所有门店的档案。此视图为只读，写操作请切换到门店视角。"
+      />
 
       <Card>
         <CardHeader>
@@ -700,16 +702,15 @@ function HqView() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          {isLoading ? (
-            <div className="py-12 text-center text-sm text-muted-foreground">
-              加载中…
-            </div>
-          ) : list.length === 0 ? (
-            <div className="flex flex-col items-center gap-3 py-12 text-center">
-              <Contact className="h-10 w-10 text-muted-foreground" />
-              <p className="text-sm text-muted-foreground">暂无客户</p>
-            </div>
-          ) : (
+          <ListState
+            isLoading={isLoading}
+            isEmpty={list.length === 0}
+            loadingVariant="skeleton"
+            skeletonRows={6}
+            emptyContent={
+              <EmptyState icon={Contact} title="暂无客户" description="跨全部门店暂无客户档案" />
+            }
+          >
             <Table>
               <TableHeader>
                 <TableRow>
@@ -813,7 +814,7 @@ function HqView() {
                 })}
               </TableBody>
             </Table>
-          )}
+          </ListState>
         </CardContent>
       </Card>
 

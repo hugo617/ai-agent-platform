@@ -53,6 +53,9 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { ListState } from "@/components/ui/list-state";
+import { EmptyState } from "@/components/ui/empty-state";
+import { PageHeader } from "@/components/layout/page-header";
 import { useToast } from "@/components/ui/toast";
 import { apiErrorMessage } from "@/api/client";
 import { useAuth } from "@/components/auth/auth-context";
@@ -167,20 +170,17 @@ export function RolesPage() {
 
   return (
     <div className="space-y-6">
-      {/* header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">角色</h1>
-          <p className="text-muted-foreground">
-            管理当前租户的角色定义与权限分配。角色由后端 pycasbin RBAC 模型驱动。
-          </p>
-        </div>
-        {canManage && (
-          <Button onClick={openCreate}>
-            <Plus className="mr-2 h-4 w-4" /> 新增角色
-          </Button>
-        )}
-      </div>
+      <PageHeader
+        title="角色"
+        subtitle="管理当前租户的角色定义与权限分配。角色由后端 pycasbin RBAC 模型驱动。"
+        actions={
+          canManage ? (
+            <Button onClick={openCreate}>
+              <Plus className="mr-2 h-4 w-4" /> 新增角色
+            </Button>
+          ) : undefined
+        }
+      />
 
       {/* list */}
       <Card>
@@ -189,18 +189,21 @@ export function RolesPage() {
           <CardDescription>共 {list.length} 个角色</CardDescription>
         </CardHeader>
         <CardContent>
-          {isLoading ? (
-            <div className="py-12 text-center text-sm text-muted-foreground">
-              加载中…
-            </div>
-          ) : list.length === 0 ? (
-            <div className="flex flex-col items-center gap-3 py-12 text-center">
-              <Shield className="h-10 w-10 text-muted-foreground" />
-              <p className="text-sm text-muted-foreground">
-                暂无角色，点击右上角「新增角色」
-              </p>
-            </div>
-          ) : (
+          <ListState
+            isLoading={isLoading}
+            isEmpty={list.length === 0}
+            loadingVariant="skeleton"
+            skeletonRows={4}
+            emptyContent={
+              <EmptyState
+                icon={Shield}
+                title="暂无角色"
+                description={
+                  canManage ? "点击右上角「新增角色」" : "当前租户还没有角色"
+                }
+              />
+            }
+          >
             <Table>
               <TableHeader>
                 <TableRow>
@@ -274,7 +277,7 @@ export function RolesPage() {
                 ))}
               </TableBody>
             </Table>
-          )}
+          </ListState>
         </CardContent>
       </Card>
 
