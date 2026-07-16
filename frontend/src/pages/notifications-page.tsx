@@ -30,6 +30,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Pagination } from "@/components/ui/pagination";
+import { PageHeader } from "@/components/layout/page-header";
 import { cn } from "@/lib/utils";
 import {
   useMarkAllNotificationsRead,
@@ -94,43 +95,41 @@ export function NotificationsPage() {
 
   return (
     <div className="mx-auto max-w-4xl space-y-6 p-6">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10">
-            <Bell className="h-5 w-5 text-primary" />
+      <PageHeader
+        title={
+          <span className="flex items-center gap-2">
+            <Bell className="h-6 w-6 text-primary" />
+            通知中心
+          </span>
+        }
+        subtitle="查看您收到的小站消息(余额预警、充值、角色变更等)"
+        actions={
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={markAllRead.isPending}
+              onClick={() => markAllRead.mutate()}
+            >
+              <CheckCheck className="mr-2 h-4 w-4" />
+              全部已读
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={isFetching}
+              onClick={() => refetch()}
+            >
+              {isFetching ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <RefreshCw className="mr-2 h-4 w-4" />
+              )}
+              刷新
+            </Button>
           </div>
-          <div>
-            <h1 className="text-xl font-semibold">通知中心</h1>
-            <p className="text-sm text-muted-foreground">
-              查看您收到的小站消息(余额预警、充值、角色变更等)
-            </p>
-          </div>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={markAllRead.isPending}
-            onClick={() => markAllRead.mutate()}
-          >
-            <CheckCheck className="mr-2 h-4 w-4" />
-            全部已读
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={isFetching}
-            onClick={() => refetch()}
-          >
-            {isFetching ? (
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            ) : (
-              <RefreshCw className="mr-2 h-4 w-4" />
-            )}
-            刷新
-          </Button>
-        </div>
-      </div>
+        }
+      />
 
       <Card>
         <CardHeader className="flex-row items-center justify-between space-y-0">
@@ -189,9 +188,7 @@ export function NotificationsPage() {
                         <div className="flex flex-wrap items-center gap-2">
                           <TypeBadge type={item.type} />
                           {!item.is_read && (
-                            <span className="text-[11px] font-medium text-destructive">
-                              未读
-                            </span>
+                            <Badge variant="dot-success">未读</Badge>
                           )}
                           <span className="text-xs text-muted-foreground">
                             {fmt(item.created_at)}

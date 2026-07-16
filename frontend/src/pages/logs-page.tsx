@@ -40,6 +40,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Pagination } from "@/components/ui/pagination";
+import { PageHeader } from "@/components/layout/page-header";
 
 const PAGE_SIZE = 20;
 
@@ -122,44 +123,44 @@ export function LogsPage() {
 
   return (
     <div className="mx-auto max-w-7xl space-y-6 p-6">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10">
-            <ScrollText className="h-5 w-5 text-primary" />
+      <PageHeader
+        title={
+          <span className="flex items-center gap-2">
+            <ScrollText className="h-6 w-6 text-primary" />
+            审计日志
+          </span>
+        }
+        subtitle={
+          isSuperAdmin ? "全平台操作记录(可按门店筛选)" : "本门店操作记录"
+        }
+        actions={
+          <div className="flex gap-2">
+            <ExportCsvButton
+              entity="logs"
+              size="sm"
+              successMessage="已导出审计日志"
+              params={{
+                date_from: filters.date_from,
+                date_to: filters.date_to,
+                tenant_id: filters.tenant_id,
+              }}
+            />
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={isFetching}
+              onClick={() => refetch()}
+            >
+              {isFetching ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <RefreshCw className="mr-2 h-4 w-4" />
+              )}
+              刷新
+            </Button>
           </div>
-          <div>
-            <h1 className="text-xl font-semibold">审计日志</h1>
-            <p className="text-sm text-muted-foreground">
-              {isSuperAdmin ? "全平台操作记录(可按门店筛选)" : "本门店操作记录"}
-            </p>
-          </div>
-        </div>
-        <div className="flex gap-2">
-          <ExportCsvButton
-            entity="logs"
-            size="sm"
-            successMessage="已导出审计日志"
-            params={{
-              date_from: filters.date_from,
-              date_to: filters.date_to,
-              tenant_id: filters.tenant_id,
-            }}
-          />
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={isFetching}
-            onClick={() => refetch()}
-          >
-            {isFetching ? (
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            ) : (
-              <RefreshCw className="mr-2 h-4 w-4" />
-            )}
-            刷新
-          </Button>
-        </div>
-      </div>
+        }
+      />
 
       <Card>
         <CardHeader>
