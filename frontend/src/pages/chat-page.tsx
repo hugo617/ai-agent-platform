@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useSearchParams } from "react-router-dom";
+import { motion } from "motion/react";
 import {
   Check,
   Copy,
@@ -749,9 +750,15 @@ export function ChatPage() {
               const isLastAssistant =
                 isAssistant && idx === messages.length - 1;
               return (
-                <div
+                <motion.div
                   key={msg.id}
                   data-testid={isAssistant ? "assistant-message" : "user-message"}
+                  // Stagger each message in by 30ms (motion use-case #1, revamp
+                  // plan §7). ``initial`` only runs on mount, so this is a one-
+                  // time entrance — not a re-animation on every stream delta.
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.2, delay: Math.min(idx * 0.03, 0.3) }}
                   className={`group flex ${
                     isAssistant ? "justify-start" : "justify-end"
                   }`}
@@ -767,7 +774,14 @@ export function ChatPage() {
                           <MarkdownView content={msg.content} />
                         </div>
                       ) : (
-                        <span className="text-muted-foreground">…</span>
+                        // Typing indicator — three pulsing dots while the
+                        // assistant placeholder is still empty (before the
+                        // first delta arrives). Pure CSS, no motion dep.
+                        <span className="inline-flex items-center gap-1">
+                          <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-muted-foreground/60 [animation-delay:-0.3s] [animation-duration:0.8s]" />
+                          <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-muted-foreground/60 [animation-delay:-0.15s] [animation-duration:0.8s]" />
+                          <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-muted-foreground/60 [animation-duration:0.8s]" />
+                        </span>
                       )
                     ) : (
                       <div className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]">
@@ -802,7 +816,7 @@ export function ChatPage() {
                       </div>
                     )}
                   </div>
-                </div>
+                </motion.div>
               );
             })
           )}

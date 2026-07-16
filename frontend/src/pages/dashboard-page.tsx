@@ -6,8 +6,10 @@ import {
   Building2,
   Contact,
   MessageSquare,
+  Plus,
   RefreshCw,
   ShieldCheck,
+  Sparkles,
   Users,
 } from "lucide-react";
 import {
@@ -29,6 +31,8 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { NumberTicker } from "@/components/ui/number-ticker";
+import { AreaChartMini, BarChartMini } from "@/components/ui/chart";
 import { useToast } from "@/components/ui/toast";
 import { apiErrorMessage } from "@/api/client";
 import { useAuth } from "@/components/auth/auth-context";
@@ -57,8 +61,8 @@ export function DashboardPage() {
 
 // ============================================================ store view
 // Per-tenant stat cards (users / agents / conversations / customers) + a 7-day
-// activity trend (pure-CSS bars, same approach as billing-page.tsx). Real data
-// from the /statistics endpoints + /dashboard/trends.
+// activity trend rendered with recharts (Stage 3 upgrade from the old pure-CSS
+// bars) + a Bento Grid of quick actions. Real data from /statistics + /dashboard/trends.
 function StoreView() {
   const toast = useToast();
   const { me } = useAuth();
@@ -95,22 +99,24 @@ function StoreView() {
     }
   };
 
+  // The "primary" metric (conversations) gets the glow ring + the chart, so it
+  // reads as the hero of the dashboard. The other three are supporting stats.
   const stats = [
     {
       label: "用户",
-      value: userStatsQ.data?.total,
+      value: userStatsQ.data?.total ?? 0,
       icon: Users,
       q: userStatsQ,
     },
     {
       label: "智能体",
-      value: agentStatsQ.data?.total,
+      value: agentStatsQ.data?.total ?? 0,
       icon: Bot,
       q: agentStatsQ,
     },
     {
       label: "对话",
-      value: convStatsQ.data?.total,
+      value: convStatsQ.data?.total ?? 0,
       sub: convStatsQ.data
         ? `近 7 天 ${convStatsQ.data.last_7d}`
         : undefined,
@@ -119,17 +125,53 @@ function StoreView() {
     },
     {
       label: "客户",
-      value: custStatsQ.data?.total,
-      sub: custStatsQ.data
-        ? `活跃 ${custStatsQ.data.active}`
-        : undefined,
+      value: custStatsQ.data?.total ?? 0,
+      sub: custStatsQ.data ? `活跃 ${custStatsQ.data.active}` : undefined,
       icon: Contact,
       q: custStatsQ,
     },
   ];
 
+  // Flatten the trend points into the AreaChartMini shape ({label, value}). We
+  // plot conversation volume as the single series — that's the "活跃度" signal.
   const trend = trendsQ.data?.points ?? [];
-  const convMax = Math.max(1, ...trend.map((p) => p.conversations));
+  const trendEmpty =
+    trend.length > 0 && trend.every((p) => p.conversations === 0 && p.messages === 0);
+  const areaData = trend.map((p) => ({ label: p.date.slice(5), value: p.conversations }));
+
+  // Bento Grid quick actions. Each tile is a themed entry point — kept
+  // restrained (no Aceternity background beams): a big icon + label + a one-
+  // line hint. The "创建租户" tile is super_admin-only.
+  const quickActions = [
+    {
+      to: "/agents",
+      icon: Bot,
+      title: "管理智能体",
+      hint: "配置 prompt、模型与编排",
+      accent: "text-blue-500",
+    },
+    {
+      to: "/chat",
+      icon: MessageSquare,
+      title: "开始对话",
+      hint: "测试智能体的实际表现",
+      accent: "text-emerald-500",
+    },
+    {
+      to: "/customers",
+      icon: Contact,
+      title: "客户管理",
+      hint: "维护客户档案与标签",
+      accent: "text-amber-500",
+    },
+    {
+      to: "/knowledge",
+      icon: Sparkles,
+      title: "知识库",
+      hint: "为对话补充专属知识",
+      accent: "text-purple-500",
+    },
+  ];
 
   return (
     <div className="space-y-6">
@@ -162,7 +204,7 @@ function StoreView() {
         }
       />
 
-      {/* stat cards */}
+      {/* stat cards — Number Ticker animates each value into place. */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {stats.map((s) => (
           <Card key={s.label}>
@@ -177,7 +219,9 @@ function StoreView() {
                 <div className="text-2xl font-bold text-muted-foreground">…</div>
               ) : (
                 <>
-                  <div className="text-2xl font-bold">{s.value ?? 0}</div>
+                  <div className="text-2xl font-bold">
+                    <NumberTicker value={s.value} />
+                  </div>
                   {s.sub && (
                     <p className="mt-1 text-xs text-muted-foreground">{s.sub}</p>
                   )}
@@ -188,7 +232,7 @@ function StoreView() {
         ))}
       </div>
 
-      {/* activity trend (pure-CSS bars, no chart lib) */}
+      {/* activity trend — recharts AreaChart replaces the old CSS bars. */}
       <Card>
         <CardHeader className="flex flex-row items-center justify-between space-y-0">
           <div>
@@ -215,39 +259,71 @@ function StoreView() {
             <div className="py-8 text-center text-sm text-muted-foreground">
               加载中…
             </div>
-          ) : trend.every((p) => p.conversations === 0 && p.messages === 0) ? (
+          ) : trendEmpty || areaData.length === 0 ? (
             <div className="py-8 text-center text-sm text-muted-foreground">
               近 {trendDays} 天暂无对话记录
             </div>
           ) : (
-            <div className="flex items-end gap-1" style={{ height: 160 }}>
-              {trend.map((p, i) => (
-                <div
-                  key={i}
-                  className="flex flex-1 flex-col items-center justify-end gap-1"
-                  title={`${p.date}: ${p.conversations} 对话 / ${p.messages} 消息`}
-                >
-                  <div
-                    className="w-full rounded-t bg-primary/70 transition-all hover:bg-primary"
-                    style={{
-                      height: `${(p.conversations / convMax) * 100}%`,
-                      minHeight: p.conversations > 0 ? 4 : 0,
-                    }}
-                  />
-                  {(trendDays === 7 || i % 5 === 0) && (
-                    <span className="text-[10px] text-muted-foreground">
-                      {p.date.slice(5)}
-                    </span>
-                  )}
-                </div>
-              ))}
-            </div>
+            <AreaChartMini data={areaData} height={200} />
           )}
         </CardContent>
       </Card>
 
-      {/* quick actions + create tenant (kept from the placeholder page) */}
-      <div className="grid gap-4 lg:grid-cols-2">
+      {/* Bento Grid quick actions + role/permissions summary.
+          Layout: a 3-column bento on lg. The "快速操作" tile spans 2 columns
+          and holds the 4 quick-action entries; the role tile spans 1. */}
+      <div className="grid gap-4 lg:grid-cols-3">
+        <Card variant="glow" className="lg:col-span-2">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Sparkles className="h-4 w-4 text-primary" />
+              快速操作
+            </CardTitle>
+            <CardDescription>常用入口</CardDescription>
+          </CardHeader>
+          <CardContent className="grid gap-3 sm:grid-cols-2">
+            {quickActions.map((a) => (
+              <Link
+                key={a.to}
+                to={a.to}
+                className="group flex items-start gap-3 rounded-lg border bg-card/50 p-4 transition-colors hover:bg-accent"
+              >
+                <div
+                  className={cn(
+                    "flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-muted",
+                    a.accent,
+                  )}
+                >
+                  <a.icon className="h-5 w-5" />
+                </div>
+                <div className="min-w-0">
+                  <div className="text-sm font-medium">{a.title}</div>
+                  <div className="truncate text-xs text-muted-foreground">
+                    {a.hint}
+                  </div>
+                </div>
+              </Link>
+            ))}
+            {me?.platform_role === "super_admin" && (
+              <Button
+                variant="outline"
+                className="flex h-auto items-start justify-start gap-3 p-4"
+                onClick={() => setTenantDialogOpen(true)}
+              >
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-muted text-primary">
+                  <Plus className="h-5 w-5" />
+                </div>
+                <div className="text-left">
+                  <div className="text-sm font-medium">创建租户</div>
+                  <div className="text-xs text-muted-foreground">
+                    新建一个独立的租户空间
+                  </div>
+                </div>
+              </Button>
+            )}
+          </CardContent>
+        </Card>
+
         <Card>
           <CardHeader>
             <CardTitle>你的权限</CardTitle>
@@ -261,34 +337,6 @@ function StoreView() {
             )) ?? (
               <span className="text-sm text-muted-foreground">加载中…</span>
             )}
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>快速操作</CardTitle>
-            <CardDescription>常用入口</CardDescription>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-2 text-sm">
-            <Link to="/agents" className="text-primary hover:underline">
-              → 管理智能体
-            </Link>
-            <Link to="/chat" className="text-primary hover:underline">
-              → 开始对话
-            </Link>
-            <Link to="/customers" className="text-primary hover:underline">
-              → 客户管理
-            </Link>
-            <Button
-              variant="outline"
-              size="sm"
-              className="mt-2 w-full"
-              onClick={() => setTenantDialogOpen(true)}
-              // POST /tenants/ is super_admin-only; hide for tenant users.
-              hidden={me?.platform_role !== "super_admin"}
-            >
-              创建租户
-            </Button>
           </CardContent>
         </Card>
       </div>
@@ -330,7 +378,8 @@ function StoreView() {
 
 // ================================================================ HQ view
 // super_admin-only: platform totals (tenants / users / conversations / agents /
-// customers) + per-tenant conversation activity Top N (pure-CSS bars).
+// customers) + per-tenant conversation activity Top N rendered with recharts
+// (Stage 3 upgrade from the old pure-CSS bars).
 function HqView() {
   const toast = useToast();
   const { me } = useAuth();
@@ -338,35 +387,22 @@ function HqView() {
 
   const totals = overviewQ.data?.totals;
   const topTenants = overviewQ.data?.top_tenants ?? [];
-  const topMax = Math.max(1, ...topTenants.map((t) => t.conversations));
 
   const stats = [
-    {
-      label: "租户",
-      value: totals?.tenants,
-      icon: Building2,
-    },
-    {
-      label: "用户",
-      value: totals?.users,
-      icon: Users,
-    },
-    {
-      label: "智能体",
-      value: totals?.agents,
-      icon: Bot,
-    },
-    {
-      label: "对话",
-      value: totals?.conversations,
-      icon: MessageSquare,
-    },
-    {
-      label: "客户",
-      value: totals?.customers,
-      icon: Contact,
-    },
+    { label: "租户", value: totals?.tenants ?? 0, icon: Building2 },
+    { label: "用户", value: totals?.users ?? 0, icon: Users },
+    { label: "智能体", value: totals?.agents ?? 0, icon: Bot },
+    { label: "对话", value: totals?.conversations ?? 0, icon: MessageSquare },
+    { label: "客户", value: totals?.customers ?? 0, icon: Contact },
   ];
+
+  // Map Top N tenants to the horizontal bar chart shape. We truncate the tenant
+  // name so the category axis doesn't crowd; the full name still shows in the
+  //tooltip via the recharts default.
+  const topData = topTenants.map((t) => ({
+    label: (t.tenant_name || t.tenant_id.slice(0, 8)).slice(0, 12),
+    value: t.conversations,
+  }));
 
   return (
     <div className="space-y-6">
@@ -399,7 +435,7 @@ function HqView() {
         }
       />
 
-      {/* platform totals */}
+      {/* platform totals — Number Ticker for the same animated feel. */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
         {stats.map((s) => (
           <Card key={s.label}>
@@ -413,14 +449,16 @@ function HqView() {
               {overviewQ.isLoading ? (
                 <div className="text-2xl font-bold text-muted-foreground">…</div>
               ) : (
-                <div className="text-2xl font-bold">{s.value ?? 0}</div>
+                <div className="text-2xl font-bold">
+                  <NumberTicker value={s.value} />
+                </div>
               )}
             </CardContent>
           </Card>
         ))}
       </div>
 
-      {/* per-tenant activity Top N (pure-CSS bars) */}
+      {/* per-tenant activity Top N — horizontal BarChart replaces CSS bars. */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
@@ -436,36 +474,12 @@ function HqView() {
             <div className="py-8 text-center text-sm text-muted-foreground">
               加载中…
             </div>
-          ) : topTenants.length === 0 ? (
+          ) : topData.length === 0 ? (
             <div className="py-8 text-center text-sm text-muted-foreground">
               暂无门店活跃数据
             </div>
           ) : (
-            <div className="space-y-2">
-              {topTenants.map((t, i) => (
-                <div key={t.tenant_id} className="flex items-center gap-3">
-                  <span className="w-6 shrink-0 text-right text-xs font-medium text-muted-foreground">
-                    {i + 1}
-                  </span>
-                  <div className="flex w-40 shrink-0 items-center gap-2 truncate">
-                    <span className="truncate text-sm font-medium">
-                      {t.tenant_name || t.tenant_id.slice(0, 8)}
-                    </span>
-                  </div>
-                  <div className="relative h-6 flex-1 overflow-hidden rounded bg-muted">
-                    <div
-                      className="h-full rounded bg-primary/70 transition-all"
-                      style={{
-                        width: `${(t.conversations / topMax) * 100}%`,
-                      }}
-                    />
-                  </div>
-                  <span className="w-16 shrink-0 text-right text-sm font-mono tabular-nums text-muted-foreground">
-                    {t.conversations}
-                  </span>
-                </div>
-              ))}
-            </div>
+            <BarChartMini data={topData} height={320} horizontal />
           )}
         </CardContent>
       </Card>
