@@ -418,6 +418,32 @@ export async function fetchAgentStatistics(): Promise<AgentStatistics> {
   return data;
 }
 
+// ---------- agent orchestration (priority 58) ----------
+// Specialists attached to an orchestrator. Attach/detach are immediate
+// (per-row), mirroring the group-tenant mount pattern.
+export async function fetchOrchestratorSpecialists(
+  orchestratorId: string,
+): Promise<Agent[]> {
+  const { data } = await api.get<Agent[]>(
+    `/agents/${orchestratorId}/specialists`,
+  );
+  return data;
+}
+
+export async function attachSpecialist(
+  orchestratorId: string,
+  specialistId: string,
+): Promise<void> {
+  await api.post(`/agents/${orchestratorId}/specialists/${specialistId}`);
+}
+
+export async function detachSpecialist(
+  orchestratorId: string,
+  specialistId: string,
+): Promise<void> {
+  await api.delete(`/agents/${orchestratorId}/specialists/${specialistId}`);
+}
+
 // ---------- members (tenant membership) ----------
 // Member endpoints moved to /tenants/me/members/ when /users/ became a full
 // user-profile CRUD. Role-only operations on existing members live here.

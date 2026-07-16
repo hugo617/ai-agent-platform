@@ -120,6 +120,7 @@ async def test_env() -> AsyncIterator[_TestEnv]:
     # Ensure models are imported so they register on metadata.
     from app.models import (  # noqa: F401
         agent,
+        agent_specialist,
         api_token,
         customer,
         document,

@@ -199,22 +199,55 @@ async def chat_stream(
                 if agent.model in llm_cfg.available_models
                 else llm_cfg.default_model
             )
-            async for item in stream_agent(
-                user_id=user.user_id,
-                tenant_id=user.tenant_id,
-                db=db,
-                api_key=llm_cfg.api_key,
-                base_url=llm_cfg.base_url,
-                model=model,
-                system_prompt=agent.system_prompt,
-                history=history,
-                user_message=payload.message,
-                temperature=agent.temperature,
-                max_tokens=agent.max_tokens,
-                top_p=agent.top_p,
-            ):
-                # stream_agent yields str chunks during streaming and a
-                # single {"usage": {...}, "model": str} dict at the end.
+            # Orchestration (priority 58): an orchestrator Agent routes the
+            # message to one of its attached specialists via a supervisor
+            # graph instead of answering itself. We look up the specialists
+            # here; if the orchestrator has none attached we silently fall
+            # back to the plain single-agent path (graceful degradation — the
+            # user still gets a reply rather than a dead end).
+            stream_kwargs = {
+                "user_id": user.user_id,
+                "tenant_id": user.tenant_id,
+                "db": db,
+                "api_key": llm_cfg.api_key,
+                "base_url": llm_cfg.base_url,
+                "model": model,
+                "history": history,
+                "user_message": payload.message,
+                "temperature": agent.temperature,
+                "max_tokens": agent.max_tokens,
+                "top_p": agent.top_p,
+            }
+            if getattr(agent, "is_orchestrator", False):
+                from app.agents.graph import stream_orchestrator
+                from app.repositories.agent_specialist import (
+                    AgentSpecialistRepository,
+                )
+
+                specialists = await AgentSpecialistRepository(
+                    db
+                ).list_specialist_agents(agent.id, user.tenant_id)
+                if specialists:
+                    stream = stream_orchestrator(
+                        orchestrator=agent,
+                        specialists=specialists,
+                        **stream_kwargs,
+                    )
+                else:
+                    # Empty orchestrator → degrade to plain agent so the chat
+                    # still works (the user will just get the orchestrator's
+                    # own system_prompt as if it were a normal agent).
+                    stream = stream_agent(
+                        system_prompt=agent.system_prompt, **stream_kwargs
+                    )
+            else:
+                stream = stream_agent(
+                    system_prompt=agent.system_prompt, **stream_kwargs
+                )
+            async for item in stream:
+                # Both stream_agent and stream_orchestrator yield str chunks
+                # during streaming and a single {"usage": {...}, "model": str}
+                # dict at the end — same contract, so one handler covers both.
                 if isinstance(item, str):
                     full_reply.append(item)
                     yield f"data: {json.dumps({'delta': item}, ensure_ascii=False)}\n\n"

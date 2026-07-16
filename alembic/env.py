@@ -16,6 +16,7 @@ from app.core.database import Base
 # Import every module that defines models so they register on Base.metadata.
 from app.models import (  # noqa: F401
     agent,
+    agent_specialist,
     api_token,
     customer,
     document,

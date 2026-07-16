@@ -1,9 +1,9 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { Bot, Pencil, Plus, Trash2 } from "lucide-react";
+import { Bot, Pencil, Plus, Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -23,6 +23,14 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
+import {
   Table,
   TableBody,
   TableCell,
@@ -34,9 +42,12 @@ import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/components/ui/toast";
 import {
   useAgents,
+  useAttachSpecialist,
   useCreateAgent,
   useDeleteAgent,
+  useDetachSpecialist,
   useEffectiveModels,
+  useOrchestratorSpecialists,
   useUpdateAgent,
 } from "@/hooks/queries";
 import { apiErrorMessage } from "@/api/client";
@@ -46,6 +57,10 @@ import { formatDateTime } from "@/lib/format";
 // max_tokens / top_p are kept as strings in the form (empty = "not set") and
 // normalized to number|null on submit. temperature always has a numeric value
 // (slider), so it uses z.number() + valueAsNumber.
+// is_orchestrator/specialty drive the Supervisor multi-agent orchestration
+// (feature 58): an orchestrator routes incoming messages to its specialists.
+// specialist_ids are managed outside react-hook-form (checkbox list on create,
+// dedicated attach/detach panel on edit — same pattern as groups-page tenants).
 const agentSchema = z.object({
   name: z.string().min(1, "名称不能为空").max(128),
   system_prompt: z.string().default(""),
@@ -54,6 +69,8 @@ const agentSchema = z.object({
   temperature: z.number().min(0).max(2).default(0.7),
   max_tokens: z.string().default(""),
   top_p: z.string().default(""),
+  is_orchestrator: z.boolean().default(false),
+  specialty: z.string().default(""),
 });
 
 type AgentFormValues = z.input<typeof agentSchema>;
@@ -64,6 +81,8 @@ export function AgentsPage() {
   const createMut = useCreateAgent();
   const updateMut = useUpdateAgent();
   const deleteMut = useDeleteAgent();
+  const attachMut = useAttachSpecialist();
+  const detachMut = useDetachSpecialist();
   const toast = useToast();
 
   // Client-side filter seeded from ?search= so the global-search-box "查看全部"
@@ -81,12 +100,25 @@ export function AgentsPage() {
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Agent | null>(null);
+  // specialist_ids chosen at creation time (Checkbox list). Unused in edit
+  // mode, where attachment is done via the dedicated attach/detach panel.
+  const [selectedSpecialistIds, setSelectedSpecialistIds] = useState<string[]>(
+    [],
+  );
+  // which specialist is pending attach in the edit dialog's dropdown
+  const [attachPick, setAttachPick] = useState("");
 
   // Available models come from the backend (GET /settings/models), not a
   // hardcoded list — so the agent dropdown always matches the configured
   // provider. Default to deepseek-chat until the list resolves.
   const models = effectiveModels ?? [];
   const defaultModel = models[0] ?? "deepseek-chat";
+
+  // Fetch specialists of the editing orchestrator (enabled only when an
+  // orchestrator is being edited).
+  const { data: editingSpecialists } = useOrchestratorSpecialists(
+    editing?.is_orchestrator ? editing.id : undefined,
+  );
 
   const form = useForm<AgentFormValues>({
     resolver: zodResolver(agentSchema),
@@ -98,6 +130,8 @@ export function AgentsPage() {
       temperature: 0.7,
       max_tokens: "",
       top_p: "",
+      is_orchestrator: false,
+      specialty: "",
     },
   });
 
@@ -111,7 +145,11 @@ export function AgentsPage() {
       temperature: 0.7,
       max_tokens: "",
       top_p: "",
+      is_orchestrator: false,
+      specialty: "",
     });
+    setSelectedSpecialistIds([]);
+    setAttachPick("");
     setDialogOpen(true);
   };
 
@@ -125,8 +163,65 @@ export function AgentsPage() {
       temperature: agent.temperature,
       max_tokens: agent.max_tokens != null ? String(agent.max_tokens) : "",
       top_p: agent.top_p != null ? String(agent.top_p) : "",
+      is_orchestrator: agent.is_orchestrator,
+      specialty: agent.specialty ?? "",
     });
+    setAttachPick("");
     setDialogOpen(true);
+  };
+
+  // Specialists that may be picked as members of an orchestrator: every other
+  // non-orchestrator agent in this tenant. Orchestrators cannot be attached as
+  // specialists (prevents cycles, enforced both client and server side).
+  const candidateSpecialists = useMemo(
+    () => (agents ?? []).filter((a) => !a.is_orchestrator),
+    [agents],
+  );
+
+  const toggleCreateSpecialist = (id: string) => {
+    setSelectedSpecialistIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
+    );
+  };
+
+  // specialists not yet attached to the editing orchestrator (drives the
+  // attach dropdown). Excludes the orchestrator itself and already-attached.
+  const attachableSpecialists = useMemo(() => {
+    if (!editing) return [];
+    const attached = new Set(editingSpecialists?.map((s) => s.id) ?? []);
+    return candidateSpecialists.filter(
+      (a) => a.id !== editing.id && !attached.has(a.id),
+    );
+  }, [editing, editingSpecialists, candidateSpecialists]);
+
+  const handleAttach = async () => {
+    if (!editing || !attachPick) return;
+    try {
+      await attachMut.mutateAsync({
+        orchestratorId: editing.id,
+        specialistId: attachPick,
+      });
+      toast.success("已挂载 specialist");
+      setAttachPick("");
+    } catch (err) {
+      toast.error("挂载失败", apiErrorMessage(err));
+    }
+  };
+
+  const handleDetach = async (
+    specialistId: string,
+    specialistName?: string | null,
+  ) => {
+    if (!editing) return;
+    try {
+      await detachMut.mutateAsync({
+        orchestratorId: editing.id,
+        specialistId,
+      });
+      toast.success("已卸载 specialist", specialistName ?? specialistId);
+    } catch (err) {
+      toast.error("卸载失败", apiErrorMessage(err));
+    }
   };
 
   const onSubmit = async (values: AgentFormValues) => {
@@ -142,13 +237,32 @@ export function AgentsPage() {
       ...values,
       max_tokens: parseNum(values.max_tokens),
       top_p: parseNum(values.top_p),
+      // specialty only meaningful for specialists (is_orchestrator=false).
+      // Orchestrator itself has no specialty — clear it to avoid confusion.
+      specialty:
+        !values.is_orchestrator && (values.specialty ?? "").trim()
+          ? (values.specialty ?? "").trim()
+          : null,
     };
     try {
       if (editing) {
         await updateMut.mutateAsync({ id: editing.id, payload });
         toast.success("已更新", `智能体「${values.name}」`);
       } else {
-        await createMut.mutateAsync(payload);
+        // Backend has no specialist_ids on AgentCreate — orchestrator is
+        // created first, then specialists attached via the dedicated endpoint
+        // (same lifecycle as Group-tenant attachment).
+        const created = await createMut.mutateAsync(payload);
+        if (values.is_orchestrator && selectedSpecialistIds.length > 0) {
+          await Promise.all(
+            selectedSpecialistIds.map((specialistId) =>
+              attachMut.mutateAsync({
+                orchestratorId: created.id,
+                specialistId,
+              }),
+            ),
+          );
+        }
         toast.success("已创建", `智能体「${values.name}」`);
       }
       setDialogOpen(false);
@@ -207,6 +321,7 @@ export function AgentsPage() {
               <TableHeader>
                 <TableRow>
                   <TableHead>名称</TableHead>
+                  <TableHead>类型</TableHead>
                   <TableHead>模型</TableHead>
                   <TableHead>创建时间</TableHead>
                   <TableHead className="text-right">操作</TableHead>
@@ -221,6 +336,15 @@ export function AgentsPage() {
                         <p className="text-xs font-normal text-muted-foreground">
                           {agent.description}
                         </p>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      {agent.is_orchestrator ? (
+                        <Badge>编排器</Badge>
+                      ) : agent.specialty ? (
+                        <Badge variant="secondary">specialist</Badge>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">普通</span>
                       )}
                     </TableCell>
                     <TableCell>
@@ -307,6 +431,133 @@ export function AgentsPage() {
                 placeholder="用于区分智能体用途，如「客服助手」「代码生成」"
                 {...form.register("description")}
               />
+            </div>
+            {/* ---- orchestration: supervisor / specialist ---- */}
+            <div className="space-y-3 rounded-md border p-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <Label htmlFor="is_orchestrator">编排器（Supervisor）</Label>
+                  <p className="text-xs text-muted-foreground">
+                    开启后该智能体作为路由编排器，会根据问题自动转发给挂载的 specialist。
+                  </p>
+                </div>
+                <Switch
+                  id="is_orchestrator"
+                  checked={form.watch("is_orchestrator")}
+                  onCheckedChange={(v) =>
+                    form.setValue("is_orchestrator", v, {
+                      shouldDirty: true,
+                    })
+                  }
+                />
+              </div>
+              {!form.watch("is_orchestrator") && (
+                <div className="space-y-2">
+                  <Label htmlFor="specialty">职责描述（specialty）</Label>
+                  <Input
+                    id="specialty"
+                    placeholder="如「预约/排班」「理疗/针灸」，供编排器路由参考"
+                    {...form.register("specialty")}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    当作为 specialist 被编排器调用时，此描述帮助 supervisor 判断是否路由给你。
+                  </p>
+                </div>
+              )}
+              {form.watch("is_orchestrator") &&
+                (!editing ? (
+                  <div className="space-y-2">
+                    <Label>挂载 specialist（创建时挂载，可后续增删）</Label>
+                    {candidateSpecialists.length === 0 ? (
+                      <p className="text-sm text-muted-foreground">
+                        暂无可选 specialist（其他智能体要么是编排器，要么不存在）
+                      </p>
+                    ) : (
+                      <div className="max-h-40 space-y-2 overflow-y-auto rounded-md border p-3">
+                        {candidateSpecialists.map((s) => (
+                          <label
+                            key={s.id}
+                            className="flex cursor-pointer items-center gap-2 text-sm"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={selectedSpecialistIds.includes(s.id)}
+                              onChange={() => toggleCreateSpecialist(s.id)}
+                              className="h-4 w-4"
+                            />
+                            <span>{s.name}</span>
+                            {s.specialty && (
+                              <span className="text-xs text-muted-foreground">
+                                ({s.specialty})
+                              </span>
+                            )}
+                          </label>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    <Label>
+                      {`挂载 specialist（${editingSpecialists?.length ?? 0} 个）`}
+                    </Label>
+                    <div className="flex flex-wrap gap-2">
+                      {(editingSpecialists ?? []).length === 0 ? (
+                        <span className="text-sm text-muted-foreground">
+                          暂未挂载 specialist
+                        </span>
+                      ) : (
+                        (editingSpecialists ?? []).map((s) => (
+                          <Badge
+                            key={s.id}
+                            variant="secondary"
+                            className="gap-1 pr-1"
+                          >
+                            {s.name}
+                            <button
+                              type="button"
+                              onClick={() => handleDetach(s.id, s.name)}
+                              disabled={detachMut.isPending}
+                              className="ml-0.5 rounded-full hover:bg-muted"
+                              aria-label={`卸载 ${s.name}`}
+                            >
+                              <X className="h-3 w-3" />
+                            </button>
+                          </Badge>
+                        ))
+                      )}
+                    </div>
+                    {attachableSpecialists.length > 0 && (
+                      <div className="mt-2 flex items-center gap-2">
+                        <Select
+                          value={attachPick}
+                          onValueChange={setAttachPick}
+                        >
+                          <SelectTrigger className="flex-1">
+                            <SelectValue placeholder="+ 添加 specialist" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {attachableSpecialists.map((s) => (
+                              <SelectItem key={s.id} value={s.id}>
+                                {s.name}
+                                {s.specialty ? `（${s.specialty}）` : ""}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={handleAttach}
+                          disabled={!attachPick || attachMut.isPending}
+                        >
+                          挂载
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                ))}
             </div>
             <div className="space-y-2">
               <div className="flex items-center justify-between">

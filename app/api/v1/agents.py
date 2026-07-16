@@ -121,3 +121,72 @@ async def delete_agent(
     await service.delete(
         user.user_id, user.tenant_id, agent_id, platform_role=user.platform_role
     )
+
+
+# ------------------------------------------- orchestration (priority 58)
+#
+# Specialist attach/detach for orchestrator Agents. These are multi-segment
+# paths (/agents/{id}/specialists/...) so they never collide with the
+# single-segment /{agent_id} routes above, regardless of declaration order.
+@router.get(
+    "/{orchestrator_id}/specialists",
+    response_model=list[AgentRead],
+    dependencies=[Depends(require_permission("agents", "read"))],
+)
+async def list_orchestrator_specialists(
+    orchestrator_id: str,
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> list[AgentRead]:
+    """List the specialist Agents attached to an orchestrator."""
+    service = AgentService(db)
+    return await service.list_specialists(
+        user.user_id,
+        user.tenant_id,
+        orchestrator_id,
+        platform_role=user.platform_role,
+    )
+
+
+@router.post(
+    "/{orchestrator_id}/specialists/{specialist_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(require_permission("agents", "update"))],
+)
+async def attach_specialist(
+    orchestrator_id: str,
+    specialist_id: str,
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    """Attach a specialist Agent to an orchestrator (idempotent-safe: 400 on dup)."""
+    service = AgentService(db)
+    await service.attach_specialist(
+        user.user_id,
+        user.tenant_id,
+        orchestrator_id,
+        specialist_id,
+        platform_role=user.platform_role,
+    )
+
+
+@router.delete(
+    "/{orchestrator_id}/specialists/{specialist_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(require_permission("agents", "update"))],
+)
+async def detach_specialist(
+    orchestrator_id: str,
+    specialist_id: str,
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    """Detach a specialist Agent from an orchestrator."""
+    service = AgentService(db)
+    await service.detach_specialist(
+        user.user_id,
+        user.tenant_id,
+        orchestrator_id,
+        specialist_id,
+        platform_role=user.platform_role,
+    )

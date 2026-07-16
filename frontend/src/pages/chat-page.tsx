@@ -660,6 +660,21 @@ export function ChatPage() {
               </SelectContent>
             </Select>
 
+            {/* Multi-agent orchestration (priority 58): when an orchestrator is
+                selected, hint that messages will be routed to specialists. MVP
+                does not show real-time specialist attribution (SSE frames carry
+                no source field); only this static hint. */}
+            {(() => {
+              const agent = agents?.find((a) => a.id === selectedAgentId);
+              if (!agent?.is_orchestrator) return null;
+              const n = agent.specialist_ids.length;
+              return (
+                <span className="rounded-md bg-accent px-2 py-1 text-xs text-muted-foreground">
+                  编排器{n > 0 ? `:将路由到 ${n} 个 specialist` : ":未挂载 specialist"}
+                </span>
+              );
+            })()}
+
             {/* Token 费用管理系列 3/4: optional customer attribution picker.
                 Store users can tag a NEW chat as "serving customer X". Hidden
                 for super_admin (they don't serve store customers) and disabled

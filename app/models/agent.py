@@ -49,6 +49,15 @@ class Agent(Base):
     )
     max_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True, default=None)
     top_p: Mapped[float | None] = mapped_column(Float, nullable=True, default=None)
+    # Orchestration (priority 58). ``is_orchestrator=True`` turns this Agent
+    # into a supervisor: instead of answering directly it routes the user's
+    # message to one of its attached specialists (see ``agent_specialists``).
+    # ``specialty`` is a free-text role description the supervisor LLM reads to
+    # decide routing (e.g. "理疗/针灸咨询"); only meaningful for specialists.
+    is_orchestrator: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=text("false")
+    )
+    specialty: Mapped[str | None] = mapped_column(String(255), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

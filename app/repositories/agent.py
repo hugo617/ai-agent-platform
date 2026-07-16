@@ -56,3 +56,23 @@ class AgentRepository(TenantScopedRepository[Agent]):
             .limit(limit)
         )
         return list((await self.db.execute(stmt)).scalars().all())
+
+    async def list_for_tenant_by_role(
+        self, *, tenant_id: str, is_orchestrator: bool
+    ) -> list[Agent]:
+        """Agents in a tenant filtered by ``is_orchestrator`` flag.
+
+        Used by the agents-page UI to populate the specialist picker
+        (``is_orchestrator=False`` candidates) and to mark orchestrators.
+        Ordering matches ``list_for_tenant`` (created_at desc) for a stable
+        display order across the two views.
+        """
+        stmt = (
+            select(Agent)
+            .where(
+                Agent.tenant_id == tenant_id,
+                Agent.is_orchestrator.is_(is_orchestrator),
+            )
+            .order_by(Agent.created_at.desc())
+        )
+        return list((await self.db.execute(stmt)).scalars().all())

@@ -324,6 +324,12 @@ export interface Agent {
   temperature: number;
   max_tokens: number | null;
   top_p: number | null;
+  // Orchestration (priority 58). ``is_orchestrator=true`` turns this Agent
+  // into a supervisor that routes to its ``specialist_ids``. ``specialty`` is
+  // a free-text role description the supervisor reads when routing.
+  is_orchestrator: boolean;
+  specialty: string | null;
+  specialist_ids: string[];
   created_at: string;
 }
 
@@ -335,6 +341,8 @@ export interface AgentCreate {
   temperature?: number;
   max_tokens?: number | null;
   top_p?: number | null;
+  is_orchestrator?: boolean;
+  specialty?: string | null;
 }
 
 export interface AgentUpdate {
@@ -345,6 +353,8 @@ export interface AgentUpdate {
   temperature?: number;
   max_tokens?: number | null;
   top_p?: number | null;
+  is_orchestrator?: boolean;
+  specialty?: string | null;
 }
 
 export interface MeResponse {
