@@ -42,6 +42,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { ListState } from "@/components/ui/list-state";
+import { PageHeader } from "@/components/layout/page-header";
 import { useToast } from "@/components/ui/toast";
 import { apiErrorMessage } from "@/api/client";
 import { retrieveKnowledge } from "@/api/endpoints";
@@ -55,12 +56,15 @@ import {
 } from "@/hooks/queries";
 import { formatDateTime as fmt } from "@/lib/format";
 
-/** Badge for the embedding-pipeline status shown in the list. */
+/** Badge for the embedding-pipeline status shown in the list. Uses the dot
+ *  variants so the status reads at a glance: green dot = indexed, amber dot =
+ *  pending, red dot = failed. */
 function statusBadge(status: string) {
-  if (status === "indexed") return <Badge variant="success">已索引</Badge>;
+  if (status === "indexed")
+    return <Badge variant="dot-success">已索引</Badge>;
   if (status === "failed")
-    return <Badge variant="destructive">索引失败</Badge>;
-  return <Badge variant="secondary">待处理</Badge>;
+    return <Badge variant="dot-destructive">索引失败</Badge>;
+  return <Badge variant="dot-warning">待处理</Badge>;
 }
 
 export function KnowledgePage() {
@@ -153,20 +157,17 @@ export function KnowledgePage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">知识库</h1>
-          <p className="text-muted-foreground">
-            管理本租户的知识文档(产品手册 / FAQ / 话术库)。文档经分块与向量化后,
-            智能体对话时可检索相关知识作答。
-          </p>
-        </div>
-        {canCreate && (
-          <Button onClick={openCreate}>
-            <Plus className="mr-2 h-4 w-4" /> 录入文档
-          </Button>
-        )}
-      </div>
+      <PageHeader
+        title="知识库"
+        subtitle="管理本租户的知识文档(产品手册 / FAQ / 话术库)。文档经分块与向量化后,智能体对话时可检索相关知识作答。"
+        actions={
+          canCreate ? (
+            <Button onClick={openCreate}>
+              <Plus className="mr-2 h-4 w-4" /> 录入文档
+            </Button>
+          ) : undefined
+        }
+      />
 
       <Card>
         <CardHeader>
@@ -184,6 +185,8 @@ export function KnowledgePage() {
             isError={isError}
             error={error}
             onRetry={() => refetch()}
+            loadingVariant="skeleton"
+            skeletonRows={5}
             emptyContent={
               <div className="flex flex-col items-center gap-3 py-12 text-center">
                 <FileText className="h-10 w-10 text-muted-foreground" />
