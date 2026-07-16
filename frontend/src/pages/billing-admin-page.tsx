@@ -77,6 +77,7 @@ import {
   useUpdatePricing,
 } from "@/hooks/queries";
 import { formatTokens as fmtTokens, formatCurrency as fmtPrice } from "@/lib/format";
+import { PageHeader } from "@/components/layout/page-header";
 
 // ============================================================ tenant wallets
 // The billing backend exposes GET /billing/wallet/{tenant_id} (per-tenant) but
@@ -125,29 +126,26 @@ export function BillingAdminPage() {
 
   return (
     <div className="space-y-6">
-      {/* header */}
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">计费管理（总部）</h1>
-          <p className="text-muted-foreground">
-            各门店 Token 钱包汇总、充值操作与模型定价维护。仅超级管理员可见。
-          </p>
-        </div>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={refetchAll}
-          disabled={tenantsQ.isFetching || anyWalletFetching}
-        >
-          <RefreshCw
-            className={cn(
-              "h-4 w-4",
-              (tenantsQ.isFetching || anyWalletFetching) && "animate-spin",
-            )}
-          />
-          刷新
-        </Button>
-      </div>
+      <PageHeader
+        title="计费管理（总部）"
+        subtitle="各门店 Token 钱包汇总、充值操作与模型定价维护。仅超级管理员可见。"
+        actions={
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={refetchAll}
+            disabled={tenantsQ.isFetching || anyWalletFetching}
+          >
+            <RefreshCw
+              className={cn(
+                "h-4 w-4",
+                (tenantsQ.isFetching || anyWalletFetching) && "animate-spin",
+              )}
+            />
+            刷新
+          </Button>
+        }
+      />
 
       {/* aggregate counters */}
       <div className="grid gap-4 md:grid-cols-3">

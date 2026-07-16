@@ -44,6 +44,9 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { ListState } from "@/components/ui/list-state";
+import { EmptyState } from "@/components/ui/empty-state";
+import { PageHeader } from "@/components/layout/page-header";
 import { useToast } from "@/components/ui/toast";
 import { apiErrorMessage } from "@/api/client";
 import type { Tenant } from "@/api/types";
@@ -139,17 +142,15 @@ export function TenantsPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">门店管理</h1>
-          <p className="text-muted-foreground">
-            平台级门店（租户）列表，可查看、创建、编辑所有门店。
-          </p>
-        </div>
-        <Button onClick={openCreate}>
-          <Plus className="mr-2 h-4 w-4" /> 新建门店
-        </Button>
-      </div>
+      <PageHeader
+        title="门店管理"
+        subtitle="平台级门店（租户）列表，可查看、创建、编辑所有门店。"
+        actions={
+          <Button onClick={openCreate}>
+            <Plus className="mr-2 h-4 w-4" /> 新建门店
+          </Button>
+        }
+      />
 
       <Card>
         <CardHeader>
@@ -157,18 +158,19 @@ export function TenantsPage() {
           <CardDescription>共 {list.length} 家门店</CardDescription>
         </CardHeader>
         <CardContent>
-          {isLoading ? (
-            <div className="py-12 text-center text-sm text-muted-foreground">
-              加载中…
-            </div>
-          ) : list.length === 0 ? (
-            <div className="flex flex-col items-center gap-3 py-12 text-center">
-              <Store className="h-10 w-10 text-muted-foreground" />
-              <p className="text-sm text-muted-foreground">
-                暂无门店，点击右上角「新建门店」
-              </p>
-            </div>
-          ) : (
+          <ListState
+            isLoading={isLoading}
+            isEmpty={list.length === 0}
+            loadingVariant="skeleton"
+            skeletonRows={5}
+            emptyContent={
+              <EmptyState
+                icon={Store}
+                title="暂无门店"
+                description="点击右上角「新建门店」创建第一个"
+              />
+            }
+          >
             <Table>
               <TableHeader>
                 <TableRow>
@@ -233,7 +235,7 @@ export function TenantsPage() {
                 ))}
               </TableBody>
             </Table>
-          )}
+          </ListState>
         </CardContent>
       </Card>
 

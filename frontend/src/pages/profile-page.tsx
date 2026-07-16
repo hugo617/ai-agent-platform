@@ -18,6 +18,7 @@ import { Input } from "@/components/ui/input";
 import { FormField as Field } from "@/components/ui/form-field";
 import { FileUpload } from "@/components/ui/file-upload";
 import { SecureImage } from "@/components/ui/secure-image";
+import { PageHeader } from "@/components/layout/page-header";
 import { useToast } from "@/components/ui/toast";
 import { apiErrorMessage } from "@/api/client";
 import { useAuth } from "@/components/auth/auth-context";
@@ -41,12 +42,10 @@ import { formatDateTime as fmt } from "@/lib/format";
 export function ProfilePage() {
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold tracking-tight">个人中心</h1>
-        <p className="text-muted-foreground">
-          管理你的账号资料、密码，并查看最近的会话记录。
-        </p>
-      </div>
+      <PageHeader
+        title="个人中心"
+        subtitle="管理你的账号资料、密码，并查看最近的会话记录。"
+      />
 
       <ProfileCard />
       <PasswordCard />

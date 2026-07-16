@@ -19,6 +19,8 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { StatCard as CounterCard } from "@/components/ui/stat-card";
+import { AreaChartMini } from "@/components/ui/chart";
+import { PageHeader } from "@/components/layout/page-header";
 import {
   Table,
   TableBody,
@@ -122,37 +124,37 @@ export function BillingPage() {
     walletQ.isFetching || txQ.isFetching || usageQ.isFetching;
 
   const trend = buildDailyTrend(usage?.items ?? [], trendDays);
-  const trendMax = Math.max(1, ...trend.map((b) => b.value));
 
   return (
     <div className="space-y-6">
-      {/* header */}
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">费用管理</h1>
-          <p className="text-muted-foreground">
+      <PageHeader
+        title="费用管理"
+        subtitle={
+          <>
             查看本店 Token 余额、消耗趋势、流水明细与用量钻取。
             {!isSuperAdmin(me) && "（只读视图）"}
-          </p>
-        </div>
-        <div className="flex gap-2">
-          <ExportCsvButton
-            entity="usage"
-            size="sm"
-            label="导出用量"
-            successMessage="已导出用量明细"
-          />
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={refetchAll}
-            disabled={anyFetching}
-          >
-            <RefreshCw className={cn("h-4 w-4", anyFetching && "animate-spin")} />
-            刷新
-          </Button>
-        </div>
-      </div>
+          </>
+        }
+        actions={
+          <div className="flex gap-2">
+            <ExportCsvButton
+              entity="usage"
+              size="sm"
+              label="导出用量"
+              successMessage="已导出用量明细"
+            />
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={refetchAll}
+              disabled={anyFetching}
+            >
+              <RefreshCw className={cn("h-4 w-4", anyFetching && "animate-spin")} />
+              刷新
+            </Button>
+          </div>
+        }
+      />
 
       {/* balance card + counters */}
       {walletQ.isLoading ? (
@@ -234,7 +236,8 @@ export function BillingPage() {
         </div>
       )}
 
-      {/* consumption trend (pure-CSS bars, no chart lib) */}
+      {/* consumption trend — recharts AreaChart (was pure-CSS bars). Same data
+          shape ({label, value}) so AreaChartMini drops in directly. */}
       <Card>
         <CardHeader className="flex flex-row items-center justify-between space-y-0">
           <div>
@@ -266,28 +269,7 @@ export function BillingPage() {
               近 {trendDays} 天暂无消耗记录
             </div>
           ) : (
-            <div className="flex items-end gap-1" style={{ height: 160 }}>
-              {trend.map((b, i) => (
-                <div
-                  key={i}
-                  className="flex flex-1 flex-col items-center justify-end gap-1"
-                  title={`${b.label}: ${fmtTokens(b.value)} tokens`}
-                >
-                  <div
-                    className="w-full rounded-t bg-primary/70 transition-all hover:bg-primary"
-                    style={{
-                      height: `${(b.value / trendMax) * 100}%`,
-                      minHeight: b.value > 0 ? 4 : 0,
-                    }}
-                  />
-                  {(trendDays === 7 || i % 5 === 0) && (
-                    <span className="text-[10px] text-muted-foreground">
-                      {b.label}
-                    </span>
-                  )}
-                </div>
-              ))}
-            </div>
+            <AreaChartMini data={trend} height={200} />
           )}
         </CardContent>
       </Card>
