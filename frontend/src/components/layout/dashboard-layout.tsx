@@ -1,26 +1,7 @@
 import { useState } from "react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
-import {
-  Bot,
-  BookOpen,
-  Building2,
-  Contact,
-  Coins,
-  LayoutDashboard,
-  LogOut,
-  Menu,
-  MessageSquare,
-  ScrollText,
-  Settings,
-  Shield,
-  ShieldCheck,
-  Store,
-  UserCircle,
-  Users,
-  UserCog,
-  Wallet,
-  X,
-} from "lucide-react";
+import { AnimatePresence, motion } from "motion/react";
+import { LogOut, Menu, Shield, UserCircle, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -33,88 +14,52 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useAuth } from "@/components/auth/auth-context";
-import { canViewMenu, hasPermission, isSuperAdmin } from "@/lib/permission";
+import { isSuperAdmin } from "@/lib/permission";
 import { logout } from "@/api/endpoints";
 import { GlobalSearchBox } from "@/components/layout/global-search-box";
 import { NotificationBell } from "@/components/layout/notification-bell";
 import { ThemeToggle } from "@/components/theme/theme-toggle";
 import { SecureImage } from "@/components/ui/secure-image";
+import {
+  CommandMenu,
+  useOpenOnCmdK,
+} from "@/components/layout/command-menu";
+import { visibleGroups } from "@/components/layout/nav-items";
 import { useApplyTenantTheme, useTenantConfig } from "@/hooks/queries";
 
-interface NavItem {
-  to: string;
-  label: string;
-  icon: React.ComponentType<{ className?: string }>;
-  /**
-   * The menu permission code that gates this item's visibility (e.g.
-   * "menu:agents"). When set, the item shows iff `canViewMenu(me, menuCode)`.
-   */
-  menuCode?: string;
-  /**
-   * Platform-level items have no tenant-scoped menu permission (super_admin
-   * bypass covers them); gate purely on platform_role === "super_admin".
-   */
-  platformOnly?: boolean;
-  /**
-   * Gate visibility on an api permission code (e.g. "wallet:read") instead of a
-   * menu code. Used when a feature has no seeded menu permission but its api
-   * permission is granted to the right roles. super_admin short-circuits true.
-   */
-  permission?: { obj: string; act: string };
-}
-
-const NAV_ITEMS: NavItem[] = [
-  { to: "/", label: "概览", icon: LayoutDashboard, menuCode: "menu:dashboard" },
-  { to: "/agents", label: "智能体", icon: Bot, menuCode: "menu:agents" },
-  { to: "/chat", label: "对话", icon: MessageSquare, menuCode: "menu:chat" },
-  { to: "/groups", label: "组织", icon: Building2, menuCode: "menu:groups" },
-  { to: "/customers", label: "客户", icon: Contact, menuCode: "menu:customers" },
-  // 知识库 / RAG (priority 57) — tenant-scoped documents feeding retrieval.
-  {
-    to: "/knowledge",
-    label: "知识库",
-    icon: BookOpen,
-    menuCode: "menu:knowledge",
-  },
-  // Token 费用管理系列 4/4 — store-level billing. No menu:billing permission is
-  // seeded (the series ships wallet:read on owner/admin/member instead), so we
-  // gate the nav item on the api permission directly. super_admin bypasses.
-  {
-    to: "/billing",
-    label: "费用管理",
-    icon: Wallet,
-    permission: { obj: "wallet", act: "read" },
-  },
-  { to: "/tenants", label: "门店", icon: Store, platformOnly: true },
-  // HQ-level billing — super_admin only (recharge + pricing policy).
-  { to: "/billing/admin", label: "计费管理", icon: Coins, platformOnly: true },
-  { to: "/members", label: "成员", icon: UserCog, menuCode: "menu:members" },
-  { to: "/users", label: "用户", icon: Users, menuCode: "menu:users" },
-  { to: "/roles", label: "角色", icon: Shield, menuCode: "menu:roles" },
-  { to: "/permissions", label: "权限矩阵", icon: ShieldCheck, menuCode: "menu:permissions" },
-  { to: "/settings", label: "设置", icon: Settings, menuCode: "menu:settings" },
-  // 审计日志 — owner/admin see their store; super_admin/hq_staff see all.
-  // No menu:logs permission is seeded, so gate on the api permission directly.
-  {
-    to: "/logs",
-    label: "审计日志",
-    icon: ScrollText,
-    permission: { obj: "logs", act: "read" },
-  },
-];
+/**
+ * Application shell — grouped sidebar + top bar + command palette.
+ *
+ * Sidebar (§1.1): the flat 16-item nav is grouped into three sections
+ * (工作台 / 管理 / 平台) via ``visibleGroups``, each permission-filtered. A user
+ * card (avatar + name + tenant + sign-out) pins to the bottom. On mobile the
+ * sidebar becomes a drawer animated with ``motion`` (§1.1) — AnimatePresence
+ * handles the enter/exit sweep.
+ *
+ * Top bar (§1.2): hamburger (mobile) + ⌘K trigger (with the shortcut hint) on
+ * the left; the cross-entity search box fills the center; ThemeToggle +
+ * NotificationBell + super-admin badge + role badge + user dropdown on the
+ * right. The ⌘K command palette (§1.3) is mounted here and toggled by a global
+ * keydown listener.
+ */
 
 export function DashboardLayout() {
   const { me, signOut } = useAuth();
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [commandOpen, setCommandOpen] = useState(false);
+  // ⌘K / Ctrl+K toggles the command palette from anywhere.
+  useOpenOnCmdK(setCommandOpen);
+
   // Tenant white-label branding (priority 52): apply the theme color globally
-  // and surface the display name + logo in the sidebar header. The config is
-  // open to any authenticated member of the tenant; the theme effect restores
-  // the platform default on logout/tenant switch via its cleanup.
+  // and surface the display name + logo in the sidebar header. The theme effect
+  // restores the platform default on logout/tenant switch via its cleanup.
   const { data: tenantConfig } = useTenantConfig();
   useApplyTenantTheme();
   const brandName = tenantConfig?.display_name ?? "智能体云平台";
   const brandLogo = tenantConfig?.logo_url;
+
+  const groups = visibleGroups(me);
 
   const handleSignOut = async () => {
     // Ask the backend to revoke the session row (best-effort: a network error
@@ -130,86 +75,85 @@ export function DashboardLayout() {
 
   return (
     <div className="flex min-h-screen bg-muted/20">
-      {/* Sidebar — fixed on desktop, drawer on mobile */}
-      <aside
-        className={cn(
-          "fixed inset-y-0 left-0 z-40 w-64 border-r bg-background transition-transform lg:static lg:translate-x-0",
-          sidebarOpen ? "translate-x-0" : "-translate-x-full"
-        )}
-      >
-        <div className="flex h-16 items-center gap-2 border-b px-6">
-          {brandLogo ? (
-            <SecureImage
-              src={brandLogo}
-              alt={brandName}
-              className="h-7 w-7 shrink-0 rounded object-contain"
-            />
-          ) : (
-            <Shield className="h-6 w-6 text-primary" />
-          )}
-          <span className="truncate text-lg font-semibold">{brandName}</span>
-        </div>
-        <nav className="flex flex-col gap-1 p-4">
-          {NAV_ITEMS.filter((item) => {
-            // Platform-level items (e.g. /tenants, /billing/admin) have no
-            // tenant menu perm — show them purely on platform_role.
-            if (item.platformOnly) return isSuperAdmin(me);
-            // Api-permission-gated items (e.g. /billing on wallet:read).
-            if (item.permission)
-              return hasPermission(
-                me,
-                item.permission.obj,
-                item.permission.act,
-              );
-            // Otherwise visibility is driven by the menu permission code.
-            return canViewMenu(me, item.menuCode ?? "");
-          }).map((item) => (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              end={item.to === "/"}
-              onClick={() => setSidebarOpen(false)}
-              className={({ isActive }) =>
-                cn(
-                  "flex items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors",
-                  isActive
-                    ? "bg-primary text-primary-foreground"
-                    : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
-                )
-              }
-            >
-              <item.icon className="h-4 w-4" />
-              {item.label}
-            </NavLink>
-          ))}
-        </nav>
-      </aside>
+      {/* Sidebar — fixed on desktop (always visible), drawer on mobile */}
+      <Sidebar
+        groups={groups}
+        brandName={brandName}
+        brandLogo={brandLogo}
+        me={me}
+        onNavigate={() => setSidebarOpen(false)}
+        onSignOut={handleSignOut}
+      />
 
-      {/* Mobile overlay */}
-      {sidebarOpen && (
-        <div
-          className="fixed inset-0 z-30 bg-black/40 lg:hidden"
-          onClick={() => setSidebarOpen(false)}
-        />
-      )}
+      {/* Mobile drawer — motion-animated sweep (§1.1). AnimatePresence drives
+          the exit so the drawer glides out instead of vanishing. */}
+      <AnimatePresence>
+        {sidebarOpen && (
+          <>
+            <motion.div
+              key="overlay"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.2 }}
+              className="fixed inset-0 z-40 bg-black/40 lg:hidden"
+              onClick={() => setSidebarOpen(false)}
+            />
+            <motion.aside
+              key="drawer"
+              initial={{ x: "-100%" }}
+              animate={{ x: 0 }}
+              exit={{ x: "-100%" }}
+              transition={{ type: "tween", duration: 0.25, ease: "easeOut" }}
+              className="fixed inset-y-0 left-0 z-50 w-64 lg:hidden"
+            >
+              <Sidebar
+                groups={groups}
+                brandName={brandName}
+                brandLogo={brandLogo}
+                me={me}
+                onNavigate={() => setSidebarOpen(false)}
+                onSignOut={handleSignOut}
+                embedded
+              />
+            </motion.aside>
+          </>
+        )}
+      </AnimatePresence>
 
       {/* Main column */}
-      <div className="flex flex-1 flex-col">
-        <header className="flex h-16 items-center justify-between border-b bg-background px-4 lg:px-6">
-          <Button
-            variant="ghost"
-            size="icon"
-            className="lg:hidden"
-            onClick={() => setSidebarOpen((v) => !v)}
-          >
-            {sidebarOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
-          </Button>
+      <div className="flex flex-1 flex-col lg:pl-64">
+        <header className="sticky top-0 z-30 flex h-16 items-center justify-between gap-2 border-b bg-background/80 px-4 backdrop-blur lg:px-6">
+          <div className="flex items-center gap-2">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="lg:hidden"
+              onClick={() => setSidebarOpen((v) => !v)}
+              aria-label="切换侧边栏"
+            >
+              {sidebarOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+            </Button>
+            {/* ⌘K trigger — shows the shortcut hint; the real listener is global. */}
+            <Button
+              variant="outline"
+              size="sm"
+              className="hidden gap-2 text-muted-foreground sm:flex"
+              onClick={() => setCommandOpen(true)}
+            >
+              <span>搜索或命令…</span>
+              <kbd className="rounded border bg-muted px-1.5 py-0.5 text-[10px] font-medium">
+                ⌘K
+              </kbd>
+            </Button>
+          </div>
+
           {/* 全局搜索框 — top-bar cross-entity search (priority 51). Hidden on
-              small screens (the mobile hamburger takes the space); the flexible
-              spacer keeps the right-side badges pinned to the edge. */}
-          <div className="hidden flex-1 justify-center px-4 sm:flex">
+              small screens (the ⌘K palette + hamburger take the space). */}
+          <div className="hidden flex-1 justify-center px-4 md:flex">
             <GlobalSearchBox />
           </div>
+
           <div className="flex items-center gap-3">
             {/* 主题切换(亮/暗/跟随系统) — 持久化在 localStorage,由 ThemeProvider
                 管理 .dark 类。放通知铃铛前,顶栏右侧。 */}
@@ -218,13 +162,11 @@ export function DashboardLayout() {
                 user reads their own notifications, so no permission guard. */}
             <NotificationBell />
             {isSuperAdmin(me) && (
-              <Badge className="bg-amber-100 text-amber-800 hover:bg-amber-100 border-amber-300">
+              <Badge className="border-amber-300 bg-amber-100 text-amber-800 hover:bg-amber-100">
                 🛡️ 超级管理员
               </Badge>
             )}
-            {me?.roles?.[0] && (
-              <Badge variant="secondary">{me.roles[0]}</Badge>
-            )}
+            {me?.roles?.[0] && <Badge variant="secondary">{me.roles[0]}</Badge>}
             {/* 用户菜单 — 头像下拉：「个人中心」+「退出登录」。Every
                 authenticated user can reach their own profile, so no permission
                 guard on the entry. */}
@@ -259,6 +201,118 @@ export function DashboardLayout() {
           <Outlet />
         </main>
       </div>
+
+      {/* ⌘K command palette (§1.3) — mounted once, toggled globally. */}
+      <CommandMenu open={commandOpen} onOpenChange={setCommandOpen} />
     </div>
+  );
+}
+
+/**
+ * The sidebar surface itself. Rendered twice: as the static desktop rail (in
+ * normal flow, ``embedded=false`` so it's ``fixed``) and as the mobile drawer's
+ * content (``embedded=true``, positioned by the parent motion.aside).
+ *
+ * Keeping one component means the brand header, nav groups, and user card stay
+ * identical between the two — no drift.
+ */
+function Sidebar({
+  groups,
+  brandName,
+  brandLogo,
+  me,
+  onNavigate,
+  onSignOut,
+  embedded = false,
+}: {
+  groups: ReturnType<typeof visibleGroups>;
+  brandName: string;
+  brandLogo?: string | null;
+  me: ReturnType<typeof useAuth>["me"];
+  onNavigate: () => void;
+  onSignOut: () => void;
+  embedded?: boolean;
+}) {
+  return (
+    <aside
+      className={cn(
+        "flex flex-col border-r bg-sidebar text-sidebar-foreground",
+        embedded
+          ? "h-full w-full"
+          : "fixed inset-y-0 left-0 z-40 w-64 lg:static lg:translate-x-0",
+      )}
+    >
+      {/* Brand header */}
+      <div className="flex h-16 shrink-0 items-center gap-2 border-b border-sidebar-border px-6">
+        {brandLogo ? (
+          <SecureImage
+            src={brandLogo}
+            alt={brandName}
+            className="h-7 w-7 shrink-0 rounded object-contain"
+          />
+        ) : (
+          <Shield className="h-6 w-6 text-primary" />
+        )}
+        <span className="truncate text-lg font-semibold">{brandName}</span>
+      </div>
+
+      {/* Grouped nav */}
+      <nav className="flex-1 space-y-4 overflow-y-auto p-3">
+        {groups.map((group) => (
+          <div key={group.label}>
+            <div className="px-3 py-1.5 text-xs font-medium uppercase tracking-wider text-muted-foreground/70">
+              {group.label}
+            </div>
+            <div className="space-y-0.5">
+              {group.items.map((item) => (
+                <NavLink
+                  key={item.to}
+                  to={item.to}
+                  end={item.to === "/"}
+                  onClick={onNavigate}
+                  className={({ isActive }) =>
+                    cn(
+                      "flex items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors",
+                      isActive
+                        ? "bg-primary text-primary-foreground"
+                        : "text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
+                    )
+                  }
+                >
+                  <item.icon className="h-4 w-4" />
+                  {item.label}
+                </NavLink>
+              ))}
+            </div>
+          </div>
+        ))}
+      </nav>
+
+      {/* User card pinned to the bottom */}
+      <div className="shrink-0 border-t border-sidebar-border p-3">
+        <div className="flex items-center gap-2 rounded-md px-2 py-2">
+          <UserCircle className="h-8 w-8 shrink-0 text-muted-foreground" />
+          <div className="min-w-0 flex-1">
+            <div className="truncate text-sm font-medium">
+              {me?.email ?? me?.user_id}
+            </div>
+            {me?.roles?.[0] && (
+              <div className="truncate text-xs text-muted-foreground">
+                {me.roles[0]}
+              </div>
+            )}
+          </div>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8 shrink-0"
+            onClick={onSignOut}
+            aria-label="退出登录"
+          >
+            <LogOut className="h-4 w-4" />
+          </Button>
+        </div>
+      </div>
+    </aside>
   );
 }
