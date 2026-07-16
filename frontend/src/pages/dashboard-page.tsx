@@ -33,6 +33,7 @@ import { useToast } from "@/components/ui/toast";
 import { apiErrorMessage } from "@/api/client";
 import { useAuth } from "@/components/auth/auth-context";
 import { isSuperAdmin } from "@/lib/permission";
+import { PageHeader } from "@/components/layout/page-header";
 import { cn } from "@/lib/utils";
 import {
   useAgentStatistics,
@@ -132,38 +133,34 @@ function StoreView() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">
-            门店概览 · {tenantLabel}
-          </h1>
-          <p className="text-muted-foreground">
-            欢迎回来，{me?.email ?? me?.user_id}。这是你门店的实时数据看板。
-          </p>
-        </div>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => {
-            void userStatsQ.refetch();
-            void agentStatsQ.refetch();
-            void convStatsQ.refetch();
-            void custStatsQ.refetch();
-            void trendsQ.refetch();
-          }}
-        >
-          <RefreshCw
-            className={cn(
-              "h-4 w-4",
-              (userStatsQ.isFetching ||
-                agentStatsQ.isFetching ||
-                trendsQ.isFetching) &&
-                "animate-spin",
-            )}
-          />
-          刷新
-        </Button>
-      </div>
+      <PageHeader
+        title={`门店概览 · ${tenantLabel}`}
+        subtitle={`欢迎回来，${me?.email ?? me?.user_id}。这是你门店的实时数据看板。`}
+        actions={
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              void userStatsQ.refetch();
+              void agentStatsQ.refetch();
+              void convStatsQ.refetch();
+              void custStatsQ.refetch();
+              void trendsQ.refetch();
+            }}
+          >
+            <RefreshCw
+              className={cn(
+                "h-4 w-4",
+                (userStatsQ.isFetching ||
+                  agentStatsQ.isFetching ||
+                  trendsQ.isFetching) &&
+                  "animate-spin",
+              )}
+            />
+            刷新
+          </Button>
+        }
+      />
 
       {/* stat cards */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -373,34 +370,34 @@ function HqView() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h1 className="flex items-center gap-2 text-3xl font-bold tracking-tight">
+      <PageHeader
+        title={
+          <span className="flex items-center gap-2">
             <ShieldCheck className="h-7 w-7 text-primary" />
             平台总览
-          </h1>
-          <p className="text-muted-foreground">
-            跨全部门店汇总。{me?.email ?? me?.user_id}（super_admin 视图）
-          </p>
-        </div>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => {
-            void overviewQ.refetch().catch((e) => {
-              toast.error("刷新失败", apiErrorMessage(e));
-            });
-          }}
-        >
-          <RefreshCw
-            className={cn(
-              "h-4 w-4",
-              overviewQ.isFetching && "animate-spin",
-            )}
-          />
-          刷新
-        </Button>
-      </div>
+          </span>
+        }
+        subtitle={`跨全部门店汇总。${me?.email ?? me?.user_id}（super_admin 视图）`}
+        actions={
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              void overviewQ.refetch().catch((e) => {
+                toast.error("刷新失败", apiErrorMessage(e));
+              });
+            }}
+          >
+            <RefreshCw
+              className={cn(
+                "h-4 w-4",
+                overviewQ.isFetching && "animate-spin",
+              )}
+            />
+            刷新
+          </Button>
+        }
+      />
 
       {/* platform totals */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
