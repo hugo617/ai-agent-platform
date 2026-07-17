@@ -8,7 +8,7 @@
 - **标准启动路径**: `./init.sh`(装依赖 + ruff + pytest)
 - **标准验证路径**: `./init.sh`(同上,后端快速验证,SQLite 内存库)
 - **完整验证路径**(需 docker): `alembic upgrade head && alembic check` + `cd frontend && npm run build`
-- **当前最高优先级未完成功能**: **无 —— 全部 58/58 功能已 passing**。`multi-agent-orchestration`(priority 58)✅ 已在 feat/multi-agent-orchestration 分支实现完成并端到端验证(真实 DeepSeek key supervisor 路由 4 测全过),待用户决定 commit/PR。58 实现 Supervisor 编排器模式(StateGraph + Command 路由)+ 新建 agent_specialists M2M 关联表 + Agent 加 is_orchestrator/specialty 字段 + 前端 Switch 首次启用 + chat-page 编排器提示。这是 feature_list.json 最后一个 not_started,完成后全部功能已实现。
+- **当前最高优先级未完成功能**: **无 —— 全部已登记功能 passing(含 Session 114 新增的 priority 60 `api-token-fine-grained-scopes`,已合并 main PR #82)**。最新合并:`api-token-fine-grained-scopes`(priority 60)✅ ship-it 流水线零修复合入 —— API Token 细粒度 scope 收敛闭环(restricted/full 双模式 + contextvar 闸门,scope_mode 列 + 迁移 d6e7f8a9b0c1 + 前端 scope 矩阵 + 22 测试)。
 - **当前 blocker**: 无
 
 ## 后续任务规划
@@ -1689,8 +1689,11 @@ Session 110 完成阶段 1(数据库设计修复)后,用户指示「推进阶段
 - **backfill 决策简化**:plan v2 §backfill 写「scopes=全集」,实际 full 模式运行时动态求 grantor perms 不读 scopes,所以 backfill 只改 scope_mode 不动 scopes(行为完全等价,避免大表 JSON 写入)
 - **spike 产物处理**:token_context.py / ResolvedToken 扩展 / deps set 逻辑保留(Step 2 最终实现);spike print + spike 测试 + spike 脚本删除
 
-### 提交记录
-待用户决定是否 ship-it(commit + PR + 合并入 main)。本任务 files:app/api/token_context.py(新)+ app/models/api_token.py + app/schemas/api_token.py + app/services/api_token_service.py + app/services/permission_service.py + app/services/errors.py + app/api/deps.py + app/api/v1/api_tokens.py + app/main.py + alembic/versions/2026_07_17_0200_d6e7f8a9b0c1_add_api_token_scope_mode.py(新)+ frontend types.ts/endpoints.ts/queries.ts/settings-page.tsx + tests/test_api_token_scopes.py(新)+ test_api_tokens.py/test_service_platform_role.py/test_permission_service.py(改)+ scripts/seed_demo.py + feature_list.json + progress.md
+### 提交记录(ship-it 已完成)
+**已合并入 main**:PR [#82](https://github.com/hugo617/ai-agent-platform/pull/82),squash merge commit `5263116`,分支 `feat/api-token-fine-grained-scopes` 已删。ship-it 流水线全程零修复:CI 4 job(Migrations/Backend/Frontend/E2E)首次全绿,无需修红。
+- ship-it 阶段对抗式审查:🔴 0 / 🟡 8 项核实无问题 / 🟢 死代码 0。
+- 额外验证(超出 plan):真 PG `alembic downgrade -1 → upgrade head` 循环 + `alembic check` 无 drift;ScopeError→422 handler 解析实测;backfill 幂等性核实(迁移后无 restricted+空 scopes 行)。
+- files:app/api/token_context.py(新)+ app/models/api_token.py + app/schemas/api_token.py + app/services/api_token_service.py + app/services/permission_service.py + app/services/errors.py + app/api/deps.py + app/api/v1/api_tokens.py + app/main.py + alembic/versions/2026_07_17_0200_d6e7f8a9b0c1_add_api_token_scope_mode.py(新)+ frontend types.ts/endpoints.ts/queries.ts/settings-page.tsx + tests/test_api_token_scopes.py(新)+ test_api_tokens.py/test_service_platform_role.py/test_permission_service.py(改)+ scripts/seed_demo.py + feature_list.json + progress.md
 
 ### 下一步
-由用户决定是否 ship-it。完成后 AtoA 系列的安全闭环(scope 收敛)落地,budget/model_allowlist/RPM 推迟到独立后续任务。
+AtoA 系列的安全闭环(scope 收敛)已落地入 main。budget/model_allowlist/RPM 推迟到独立后续任务(`plan-api-token-ai-risk-controls`,等真实生产数据)。
