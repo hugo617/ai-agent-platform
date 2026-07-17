@@ -178,9 +178,15 @@ async def _resolve_api_token(token: str, db: AsyncSession) -> CurrentUser:
     Re-validates the issuer account (exists, active, still a member) so a token
     is voided the moment its user is disabled or removed from the tenant, even
     though the token itself has no expiry. ``last_used_at`` is refreshed.
+
+    Populates ``current_token_ctx`` with the token's scope context so that
+    ``permission_service.check`` (and the LangGraph tool-internal checks, which
+    run in the StreamingResponse's child task) can enforce the restricted-scope
+    gate. See ``app/api/token_context.py`` for why this is a contextvar.
     """
     # Lazy import avoids a circular dependency at module load time: the service
     # imports repos which import models, and deps is imported very early.
+    from app.api.token_context import TokenCtx, current_token_ctx
     from app.services.api_token_service import api_token_service
 
     resolved = await api_token_service.verify(db, token)
@@ -212,6 +218,17 @@ async def _resolve_api_token(token: str, db: AsyncSession) -> CurrentUser:
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=f"token issuer account is {user.status}; access denied",
         )
+
+    # Populate the request-scoped token context. Set BEFORE returning so the
+    # downstream ``require_permission`` dependency, the endpoint body, and the
+    # StreamingResponse generator (run in a child task that inherits this
+    # contextvar via asyncio's copy_context) all observe it.
+    ctx = TokenCtx(
+        token_id=resolved.token_id,
+        scopes=list(resolved.scopes),
+        scope_mode=resolved.scope_mode,
+    )
+    current_token_ctx.set(ctx)
 
     return CurrentUser(
         user_id=user_id,

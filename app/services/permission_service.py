@@ -32,6 +32,7 @@ from fastapi.concurrency import run_in_threadpool
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.token_context import current_token_ctx
 from app.core import casbin_enforcer as _casbin_mod
 from app.models.rbac import Permission, Role
 from app.repositories.rbac import RolePermissionRepository, RoleRepository
@@ -55,14 +56,47 @@ class PermissionService:
         act: str,
         platform_role: str | None = None,
     ) -> bool:
-        """Return True if ``user_id`` may perform ``act`` on ``obj`` in ``tenant_id``.
+        """Return True if ``user_id`` may perform ``act`` on ``obj`` in ``tenant_id`.
 
         Platform super admins bypass all permission checks. ``hq_staff``(总部
         业务员)is a cross-tenant read-only viewer: any ``read`` action is allowed,
         while writes fall through to the normal casbin path (no tenant-scoped
         policy → 403), so hq_staff is effectively read-only unless a store
         explicitly granted it a role.
+
+        API token scope gate (api-token-fine-grained-scopes): when the request
+        is authenticated by an ``ahp_`` token in ``restricted`` mode, the token
+        may only do what its ``scopes`` allow — and the gate runs BEFORE the
+        super_admin / hq_staff bypass, so even a super_admin-issued restricted
+        token is bound by its scopes. Writes (update/delete/create) and
+        conversational/export actions imply the ``read`` on the same object, so
+        a token scoped to ``customers:update`` automatically satisfies a
+        ``customers:read`` check. ``scope_mode="full"`` and the JWT path
+        (``current_token_ctx is None``) skip this gate entirely.
         """
+        # API token scope gate. Runs FIRST (before any bypass) so restricted
+        # tokens — including super_admin-issued ones — stay bounded.
+        ctx = current_token_ctx.get()
+        if ctx is not None and ctx.scope_mode == "restricted":
+            # The required scope set for this (obj, act). A token passes if it
+            # holds ANY of these. The semantics (hard constraint #5):
+            #   * Direct match: ``<obj>:<act>`` or the legacy ``<obj>:manage``.
+            #   * Write implies read: a token scoped to ``<obj>:update`` can
+            #     also do ``<obj>:read`` (someone who can edit can obviously
+            #     view). Symmetrically, when the CALLER asks for a write act,
+            #     the gate also accepts the explicit ``<obj>:read`` scope on
+            #     the token (though that direction is unusual — it would let
+            #     a read-only token perform writes, which we DON'T want, so
+            #     it's NOT included; only the write→read direction holds).
+            required = {f"{obj}:{act}", f"{obj}:manage"}
+            # Read actions are also satisfied by any write/conversational/
+            # export scope on the same object (write implies read).
+            if act == "read":
+                required |= {
+                    f"{obj}:{w}" for w in ("create", "update", "delete", "chat", "export")
+                }
+            if not (set(ctx.scopes) & required):
+                return False
 
         if platform_role == "super_admin":
             return True

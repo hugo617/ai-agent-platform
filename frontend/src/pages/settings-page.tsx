@@ -68,6 +68,7 @@ import type {
 import {
   useApiTokens,
   useCreateApiToken,
+  usePermissionsCatalogue,
   usePlatformEmbeddingConfig,
   usePlatformLlmConfig,
   useRevokeApiToken,
@@ -755,10 +756,20 @@ function ApiTokenCard() {
   const { data: tokens, isLoading } = useApiTokens();
   const createMut = useCreateApiToken();
   const revokeMut = useRevokeApiToken();
+  // Permission catalogue (api perms only — menu perms aren't selectable scopes
+  // for a token; they drive frontend nav visibility, not backend auth). Used to
+  // render the scope picker in the issue dialog.
+  const { data: catalogue } = usePermissionsCatalogue("api");
 
   const [issueOpen, setIssueOpen] = useState(false);
   const [name, setName] = useState("");
   const [expiresDays, setExpiresDays] = useState("0"); // 0 = never
+  // scope_mode: "restricted" (default, least-privilege) or "full" (inherits
+  // grantor's current perms, equivalent to legacy tokens).
+  const [scopeMode, setScopeMode] = useState<"full" | "restricted">("restricted");
+  // Selected scope codes for restricted mode. Empty = caller must pick at least
+  // one (the backend rejects restricted + empty intersection with 422).
+  const [selectedScopes, setSelectedScopes] = useState<Set<string>>(new Set());
   // The freshly issued token — shown once with a copy button + warning until
   // the user acknowledges. null = no token to reveal (issue dialog closed).
   const [revealed, setRevealed] = useState<ApiTokenCreated | null>(null);
@@ -768,6 +779,8 @@ function ApiTokenCard() {
   const resetForm = () => {
     setName("");
     setExpiresDays("0");
+    setScopeMode("restricted");
+    setSelectedScopes(new Set());
   };
 
   const openIssue = () => {
@@ -775,9 +788,25 @@ function ApiTokenCard() {
     setIssueOpen(true);
   };
 
+  const toggleScope = (code: string) => {
+    setSelectedScopes((prev) => {
+      const next = new Set(prev);
+      if (next.has(code)) {
+        next.delete(code);
+      } else {
+        next.add(code);
+      }
+      return next;
+    });
+  };
+
   const handleIssue = async () => {
     if (!name.trim()) {
       toast.error("请填写 Token 名称");
+      return;
+    }
+    if (scopeMode === "restricted" && selectedScopes.size === 0) {
+      toast.error("请至少选择一个权限范围", "或改用「继承全部权限」模式");
       return;
     }
     const days = Number.parseInt(expiresDays, 10);
@@ -789,6 +818,8 @@ function ApiTokenCard() {
       const created = await createMut.mutateAsync({
         name: name.trim(),
         expires_at,
+        scope_mode: scopeMode,
+        scopes: scopeMode === "restricted" ? Array.from(selectedScopes) : [],
       });
       // Switch the dialog to the "reveal" view: the plaintext is shown only now.
       setRevealed(created);
@@ -858,6 +889,7 @@ function ApiTokenCard() {
               <TableRow>
                 <TableHead>名称</TableHead>
                 <TableHead>前缀</TableHead>
+                <TableHead>权限范围</TableHead>
                 <TableHead>状态</TableHead>
                 <TableHead>创建时间</TableHead>
                 <TableHead>最后使用</TableHead>
@@ -873,6 +905,15 @@ function ApiTokenCard() {
                     <code className="rounded bg-muted px-1.5 py-0.5 text-xs">
                       {t.token_prefix}
                     </code>
+                  </TableCell>
+                  <TableCell>
+                    {t.scope_mode === "full" ? (
+                      <Badge variant="secondary">全部权限</Badge>
+                    ) : (
+                      <Badge variant="outline" title={t.scopes.join(", ")}>
+                        {t.scopes.length} 项
+                      </Badge>
+                    )}
                   </TableCell>
                   <TableCell>
                     <Badge variant={t.is_active ? "success" : "secondary"}>
@@ -939,9 +980,33 @@ function ApiTokenCard() {
                 </SelectContent>
               </Select>
             </div>
-            <p className="text-xs text-muted-foreground">
-              权限范围:继承你的全部权限(细粒度 scope 编辑暂不支持)
-            </p>
+            <div className="space-y-2">
+              <Label>权限范围</Label>
+              <Select
+                value={scopeMode}
+                onValueChange={(v) => setScopeMode(v as "full" | "restricted")}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="restricted">指定权限(推荐,最小权限)</SelectItem>
+                  <SelectItem value="full">继承我的全部权限</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                {scopeMode === "restricted"
+                  ? "Token 只能调用下方勾选的权限(并与你当前权限取交集)。写/对话/导出操作自动包含读。"
+                  : "Token 继承你当前的全部权限;你被降权时 Token 自动跟随降权。适合内部可信 Agent。"}
+              </p>
+            </div>
+            {scopeMode === "restricted" && (
+              <ScopePicker
+                catalogue={catalogue}
+                selected={selectedScopes}
+                onToggle={toggleScope}
+              />
+            )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setIssueOpen(false)}>
@@ -1038,5 +1103,86 @@ function ApiTokenCard() {
         </DialogContent>
       </Dialog>
     </Card>
+  );
+}
+
+/**
+ * Scope picker for the API token issue dialog.
+ *
+ * Renders the permission catalogue grouped by object (智能体 / 对话 / …), each
+ * group showing its actions as toggle chips. The visual idiom mirrors
+ * permissions-page's PermCell (green = selected, muted = not), but as inline
+ * chips rather than table cells because there's no role context here — the
+ * caller is picking a flat set of scope codes.
+ */
+function ScopePicker({
+  catalogue,
+  selected,
+  onToggle,
+}: {
+  catalogue: import("@/api/types").PermissionItem[] | undefined;
+  selected: Set<string>;
+  onToggle: (code: string) => void;
+}) {
+  if (!catalogue || catalogue.length === 0) {
+    return (
+      <p className="text-xs text-muted-foreground">权限目录加载中…</p>
+    );
+  }
+
+  // Group by obj_label so each resource renders as one row with its action
+  // chips. Stable order by obj then act (catalogue is already code-sorted).
+  const groups = new Map<string, { objLabel: string; items: typeof catalogue }>();
+  for (const item of catalogue) {
+    const key = item.obj;
+    if (!groups.has(key)) {
+      groups.set(key, { objLabel: item.obj_label, items: [] });
+    }
+    groups.get(key)!.items.push(item);
+  }
+
+  return (
+    <div className="space-y-2 rounded-md border p-3">
+      <div className="flex items-center justify-between">
+        <Label className="text-xs">选择权限范围</Label>
+        <span className="text-xs text-muted-foreground">
+          已选 {selected.size} 项
+        </span>
+      </div>
+      <div className="max-h-64 space-y-2 overflow-y-auto">
+        {Array.from(groups.entries()).map(([obj, group]) => (
+          <div key={obj} className="space-y-1">
+            <p className="text-xs font-medium text-muted-foreground">
+              {group.objLabel}
+            </p>
+            <div className="flex flex-wrap gap-1.5">
+              {group.items.map((item) => {
+                const on = selected.has(item.code);
+                return (
+                  <button
+                    key={item.code}
+                    type="button"
+                    onClick={() => onToggle(item.code)}
+                    aria-pressed={on}
+                    className={`inline-flex items-center gap-1 rounded px-2 py-1 text-xs transition-colors ${
+                      on
+                        ? "bg-emerald-500 text-white"
+                        : "bg-muted text-muted-foreground hover:bg-muted/80"
+                    }`}
+                  >
+                    {on ? (
+                      <Check className="h-3 w-3" />
+                    ) : (
+                      <Plus className="h-3 w-3" />
+                    )}
+                    {item.act_label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }

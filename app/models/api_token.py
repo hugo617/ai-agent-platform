@@ -64,6 +64,18 @@ class ApiToken(Base):
         default=list,
         server_default=text("'[]'"),
     )
+    # Scope gate mode (api-token-fine-grained-scopes):
+    #   "full"       — token inherits the grantor's CURRENT permissions at check
+    #                  time (permission_service.check skips the scope gate). This
+    #                  is the behaviour-equivalent mode legacy tokens are
+    #                  backfilled into.
+    #   "restricted" — only ``scopes`` (intersected live with the grantor's
+    #                  current permissions) are allowed; ``check`` enforces it.
+    # server_default "restricted" so new rows always have a concrete value
+    # (backfill then flips legacy rows to "full", see the migration).
+    scope_mode: Mapped[str] = mapped_column(
+        String(16), default="restricted", server_default="restricted"
+    )
     last_used_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )

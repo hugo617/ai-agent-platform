@@ -1649,3 +1649,48 @@ Session 110 完成阶段 1(数据库设计修复)后,用户指示「推进阶段
 由用户决定是否 ship-it(commit + PR + 合并入 main)。本任务把 Session 112 的「向量搁置」反转,.priority 57 从 mock-passing 变为真 passing。
 
 
+
+---
+
+## Session 114(2026-07-17):API Token 细粒度 Scope(scope 收敛闭环)
+
+### 任务来源
+用户提出实现 `harness/docs/plan-api-token-fine-grained-scopes.md`(v2,经两轮对抗式审查)。任务硬约束:必须先做 Step 0 spike 验证 contextvar 跨 StreamingResponse task 边界,三环境全过后才继续 plan v2 四阶段。
+
+### Step 0 spike(定生死)
+- **三路探查**(并行):测试范式(test_api_tokens + test_chat mock 范式)/ contextvar 源码验证(starlette 0.41.3 + anyio 4.14.1 + fastapi 0.115.6,确认 StreamingResponse 用 anyio task group spawn 子任务,CPython create_task 默认 copy_context)/ 60 处 caller 清单(55 require + 5 check,plan v2 "30+" 是低估)
+- **三环境实测全 SUCCESS**:
+  - (a) pytest TestClient:set ctx token_id=2cf70880 → generator 读到 TokenCtx(token_id='2cf70880...')
+  - (b) uvicorn 单 worker:set ctx token_id=28f0a5f7 → graph.get_my_agents 工具 check 读到(DeepSeek 真实调用工具,端到端)
+  - (c) uvicorn --workers 2:set ctx token_id=a43ed402 → 工具 check 读到(多 worker 每进程独立)
+- 用户确认继续 plan v2
+
+### Step 1-4 实现
+- **Step 1 Schema**:api_token 加 scope_mode 列(default restricted,server_default restricted)+ 迁移 d6e7f8a9b0c1(加列 + backfill 旧 token scope_mode='full' WHERE scopes='[]',行为等价)+ DTO 三类加 scope_mode
+- **Step 2 鉴权链路**:新建 token_context.py(TokenCtx + current_token_ctx contextvar,项目首次引入)+ ResolvedToken 扩展三字段 + verify 回填 + deps._resolve_api_token set ctx + permission_service.check 开头插 scope 闸门(在 super_admin bypass 之前,硬约束 #3)+ 写/对话/导出蕴含读(read 操作被任何写 scope 满足,硬约束 #5)+ issue 加 scope 收敛(super_admin 特判用 _all_known_scope_codes 含 MENU_CN keys,硬约束 #1/#4)+ ScopeError(BizError 子类)→ 全局 handler 422
+- **Step 3 API**:verify 端点回显 scopes + scope_mode(ahp_ 路径)/ null(JWT 路径)
+- **Step 4 前端**:types.ts ApiToken/Create/Created 加 scope_mode + endpoints.ts 加 fetchPermissionCatalogue + queries.ts 加 usePermissionsCatalogue + settings-page.tsx 颁发 Dialog 重构(scope_mode 选择 + scope 矩阵 catalogue 全量 35 项按 obj 分组 chip 切换 + 表格 scope 列)
+- **Step 4 测试**:test_api_token_scopes.py 18 用例(收敛/特判/闸门/蕴含/零回归/verify)+ test_permission_service.py +4 用例(contextvar 边界)
+
+### 运行过的验证(全过)
+- `./init.sh` → ruff All checks passed + **561 passed**(基线 539 + 新增 22)
+- `cd frontend && npm run build` → tsc + vite 成功 0 类型错误
+- `npx oxlint src/` → 0 warnings 0 errors(68 文件)
+- `alembic upgrade head` → 迁移 d6e7f8a9b0c1 成功;`alembic check` → No new upgrade operations detected
+- 迁移效果验证:scope_mode 列已加(server_default 'restricted');旧 demo token(scopes=[])backfill 到 full;新 spike token(scopes=['agents:read'])保持 restricted
+
+### 已记录证据
+`feature_list.json` 的 `api-token-fine-grained-scopes.evidence`(10 条,含 spike 三环境 stdout + 硬约束 7 条映射 + 迁移验证),status=passing,priority 60
+
+### 技术要点
+- **contextvar 是项目首次引入的新范式**:token_context.py 带详细注释解释为什么不用改 check 签名(60 处直调 caller + graph.py 工具内 check 拿不到 CurrentUser,contextvar 零 caller 改动 + 跨 StreamingResponse task + JWT 路径短路)
+- **硬约束 #5 语义澄清**:验收标准 #10「customers:update 自动满足 customers:read」是 write→read 方向(token 有 write scope 就能做 read 操作),不是双向;实现上 read 操作的 required set 包含所有写 scope
+- **caller 清单事实更正**:plan v2 "30+ 处"实际 60 处(55 require + 5 check),add_policy 0 外部 caller(plan 笔误);但 contextvar 方案零 caller 改动,清单大小不影响实现
+- **backfill 决策简化**:plan v2 §backfill 写「scopes=全集」,实际 full 模式运行时动态求 grantor perms 不读 scopes,所以 backfill 只改 scope_mode 不动 scopes(行为完全等价,避免大表 JSON 写入)
+- **spike 产物处理**:token_context.py / ResolvedToken 扩展 / deps set 逻辑保留(Step 2 最终实现);spike print + spike 测试 + spike 脚本删除
+
+### 提交记录
+待用户决定是否 ship-it(commit + PR + 合并入 main)。本任务 files:app/api/token_context.py(新)+ app/models/api_token.py + app/schemas/api_token.py + app/services/api_token_service.py + app/services/permission_service.py + app/services/errors.py + app/api/deps.py + app/api/v1/api_tokens.py + app/main.py + alembic/versions/2026_07_17_0200_d6e7f8a9b0c1_add_api_token_scope_mode.py(新)+ frontend types.ts/endpoints.ts/queries.ts/settings-page.tsx + tests/test_api_token_scopes.py(新)+ test_api_tokens.py/test_service_platform_role.py/test_permission_service.py(改)+ scripts/seed_demo.py + feature_list.json + progress.md
+
+### 下一步
+由用户决定是否 ship-it。完成后 AtoA 系列的安全闭环(scope 收敛)落地,budget/model_allowlist/RPM 推迟到独立后续任务。
