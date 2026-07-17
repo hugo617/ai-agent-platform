@@ -1490,3 +1490,48 @@
 仅改后端 model/repo/service/api/schema + 前端 types/billing-admin + 新迁移 + 测试 + 计划文档;未碰 RBAC 权限模型/认证管线/前端 UI 框架(除 billing-admin 移 currency);未加新表(orchestrator 已存在)。S2 前端筛选器留作可选增强(后端已支持)。
 
 ---
+
+## Session 111(2026-07-17):阶段 2-5 推进 —— 真实环境数据重建 + 登录预填 + 对外文档
+
+### 任务来源
+Session 110 完成阶段 1(数据库设计修复)后,用户指示「推进阶段 2-5」。
+
+### 阶段 2:配置 + 真实环境数据重建(完成)
+- **config.py**:`demo_llm_api_key` / `demo_embedding_api_key` / `demo_login_username` / `demo_login_password` 4 个字段(seed 读 .env 驱动,留空用占位符)
+- **.env.example**:补 DEMO_LLM_API_KEY / DEMO_EMBEDDING_API_KEY / DEMO_LOGIN_* / EMBEDDING_* 占位段(真 key 只进 .gitignore 忽略的 .env)
+- **真实 PG 迁移验证**:`alembic upgrade head` 在运行中的 aap-postgres(pgvector)上成功执行 `b4c5d6e7f8a9` —— 这是阶段 1 迁移的真正考验(SQLite 测试不能代表 PG)。`alembic check` 报 **No new upgrade operations detected**(模型与 DB 零 drift)
+- **数据重建**:`seed_demo.py --reset` 在真 PG 跑通,3 门店 + 8 用户 + 2 组织 + 8 客户档案(含 active/vip/inactive/blacklist 4 态)+ 7 Agent(含编排器+2专科)+ 5 对话 + 3 RAG 文档 + LLM/Embedding 配置 + 钱包/定价/token。幂等验证:无参数重跑 created=0 / exists=34
+
+### 阶段 3:seed_demo 重写(完成,含 2 个执行中发现的 bug 修复)
+保留架构增量重写,关键改动:
+- **key 动态化**:LLM/Embedding key 从 `settings.demo_*` 读,有值用真 key,无值用占位符;`LLM_DEMO_KEY_IS_REAL` 标志驱动文档灌入行为
+- **客户扩到 8 条**:含跨店复用(张先生朝阳+海淀、刘女士朝阳+王府井)+ **4 态枚举**(active/vip/inactive/blacklist 各档,演示 S2 筛选)
+- **新增知识库灌入**:`_seed_documents` 每店灌 1 份 RAG 文档(颈椎理疗规范/中药针灸禁忌/艾灸注意事项)
+- **新增编排器演示**:`_seed_orchestrator` 建 1 个 orchestrator Agent + 2 个专科顾问(朝阳理疗/中医专科),演示 priority 58 多 Agent 路由
+- **reset 清理同步**:加 Document/DocumentChunk/EmbeddingConfig 清理;orchestrator + 专科 agent 名字加进白名单
+- **修复 bug 1(文档卡网络)**:`create_document` 内部 `_ingest` 会真发 embedding HTTP 请求,占位符 key 下 httpx 卡在重试超时(seed 挂死)。改为占位符时直接插 Document(status=failed)跳过 ingest,真 key 时才走 create_document
+- **修复 bug 2(orchestrator 跨租户挂载)**:原设计让编排器(朝阳 tenant)挂海淀 tenant 的 specialist,但 `attach_specialist` 强制同租户。改为编排器 + 2 专科顾问都在朝阳 tenant
+
+### 阶段 4:登录预填(完成)
+- **后端**:`GET /auth/login-hint` 公开端点 + `LoginHint` schema。仅 `app_env in (development,testing)` 返真值,生产返 null(无安全风险)
+- **前端**:`fetchLoginHint` + `login-page.tsx` useEffect mount 时调,有值则 setState 预填(非受控,用户可改),失败静默(不阻塞登录页)
+
+### 阶段 5:4 份对外文档(完成,docs/demo-scenario/)
+1. `01-业务场景说明.md` —— 行业痛点/颐和堂设定/6 大核心能力/商业价值/架构图
+2. `02-演示账号清单.md` —— 8 账号总表/各账号首屏/权限矩阵/三种身份对比
+3. `03-日常使用剧本.md` —— 4 个角色 walk-through(馆长/资深理疗师/督导/超管),用准确前端路由
+4. `04-种子数据复现指南.md` —— 一键复现/.env 配置/数据全景表/重置/6 个常见问题
+
+### 验证(完成定义全满足)
+1. ✅ `./init.sh` 全绿:**ruff All checks passed + 535 passed**(阶段 2-4 改动无回归)
+2. ✅ `alembic upgrade head` 真 PG 成功 + `alembic check` 无 drift
+3. ✅ `seed_demo.py --reset` 端到端跑通 + 幂等(created=0/exists=34)
+4. ✅ `cd frontend && npm run build` 成功(tsc + vite,登录预填/类型改动通过)
+5. ✅ 演示数据计数正确:3 门店 + 8 档案(4态)+ 7 Agent(含编排)+ 3 文档 + 2 组织
+
+### 待用户操作(唯一未闭环项)
+**真 LLM/Embedding key 灌入**:当前用占位符,文档标 failed、AI 不能现场聊天。用户把真 DeepSeek + OpenAI key 填入 `.env` 的 `DEMO_LLM_API_KEY` / `DEMO_EMBEDDING_API_KEY` 后,重跑 `python scripts/seed_demo.py --reset` 即可实现:① 文档真实 embedding 入库(RAG 可用)② 启动即可现场聊天演示。注:PG 中已有历史真 LLM/Embedding 配置(设置页配过),seed 检测到真 key 会保留不覆盖。
+
+### 不越界核对
+仅改 config.py + .env.example + auth.py + auth schema + login-page + endpoints/types + seed_demo + 4 份新文档;未碰 RBAC 权限模型/认证管线核心;未加新表(orchestrator/agent_specialist 已存在)。
+

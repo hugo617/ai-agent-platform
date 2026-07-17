@@ -1,7 +1,7 @@
 {
   "project": "ai-agent-platform",
   "description": "多租户 AI 智能体 SaaS 平台脚手架(FastAPI + React + pycasbin + LangGraph)",
-  "last_updated": "2026-07-16",
+  "last_updated": "2026-07-17",
   "harness_version": "stage1-clean-state",
   "rules": {
     "single_active_feature": true,
@@ -1467,14 +1467,17 @@
       "status": "passing",
       "plan": "harness/docs/plan-db-revamp-and-scenario-rebuild.md",
       "verification": [
-        "阶段1(本次完成):S1 钱包 is_active 过滤生效 / S3 Agent 软删除保留历史 / M1-M6 死字段死表清理 / L2 关键 FK 补齐 / L3 失败消息 status=failed 落库",
-        "迁移 b4c5d6e7f8a9 聚合所有改动,down_revision=a3b4c5d6e7f8",
-        "ruff check app/ cli/ tests/ scripts/ alembic/ → All checks passed",
-        "pytest → 535 passed(基线 533 + S1/S3 新增 2 用例)",
-        "frontend npm run build → tsc + vite 成功(currency/Role.status 类型清理无报错)"
+        "阶段1(完成):S1/S3/M1-M6/L1-L3 共12项修复 + 迁移 b4c5d6e7f8a9",
+        "阶段1验证:./init.sh 全绿(ruff + 535 passed); frontend build 成功",
+        "阶段1验证:alembic upgrade head 在真 PG 成功 + alembic check 无 drift",
+        "阶段2(完成):config.py 加 demo_llm/embedding_api_key + demo_login 字段;.env.example 加占位",
+        "阶段3(完成):seed_demo.py 重写——读 settings demo key、客户扩到8条含4态、新增 _seed_embedding_config/_seed_documents/_seed_orchestrator、reset 清理同步",
+        "阶段4(完成):/auth/login-hint 公开端点(dev/test 返值,prod 返 null)+ LoginHint schema + 前端 login-page useEffect 预填 + fetchLoginHint",
+        "阶段5(完成):docs/demo-scenario/ 4份对外文档(业务说明/账号清单/使用剧本/复现指南)",
+        "阶段2-4验证:./init.sh 全绿(535 passed); frontend build 成功(tsc+vite); ruff All checks passed"
       ],
-      "evidence": "Session 110: ./init.sh 全绿(ruff All checks passed + 535 passed in 230s); frontend build 成功; 迁移 b4c5d6e7f8a9 已建; S1/S3 新增测试 test_inactive_wallet_is_not_usable + test_delete_agent_is_soft_and_keeps_history 通过",
-      "notes": "阶段1已完成并验证。阶段2(清空重建+真key)/阶段3(seed重写)/阶段4(登录预填)/阶段5(4份文档)待用户决策后执行——阶段2需 docker + 用户提供真 DeepSeek/OpenAI key。挑刺审查发现计划的 7 处问题已修订(见计划 §8)。注意:L3 失败落库改用 status=failed 字段(非 [生成中断] 文本 hack);S2 降为体验增强(后端可选 status 过滤已加,前端筛选器可选)"
+      "evidence": "Session 110-111: 阶段1-5 全部完成。./init.sh 535 passed; alembic upgrade head 真 PG 成功 + check 无 drift; seed_demo --reset 端到端跑通 + 幂等(created=0/exists=34); frontend build 成功。演示数据:3门店+8档案(4态)+7Agent(含编排)+3文档+2组织。唯一待办:用户填真 DEMO_LLM/EMBEDDING_API_KEY 到 .env 后重跑 seed 开启现场聊天+真RAG",
+      "notes": "阶段1-5全部完成(Session 110-111)。阶段1:12项DB修复+迁移b4c5d6e7f8a9(真PG验证+check无drift)。阶段2:config/env.example+真PG数据重建(seed跑通+幂等)。阶段3:seed重写(客户4态/知识库/编排器,修复文档卡网络+orchestrator跨租户2个bug)。阶段4:登录预fill(/auth/login-hint端点+前端,prod返null安全)。阶段5:docs/demo-scenario/ 4份对外文档。待用户:填真key到.env重跑seed开启现场AI演示"
     }
   ]
 }

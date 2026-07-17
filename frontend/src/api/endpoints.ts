@@ -57,6 +57,7 @@ import type {
   TenantConfigUpdate,
   TenantUpdate,
   TokenResponse,
+  LoginHint,
   UnreadCountResponse,
   UsageDetail,
   UserFilters,
@@ -746,6 +747,13 @@ export async function login(payload: LoginRequest): Promise<TokenResponse> {
 
 export async function logout(): Promise<void> {
   await api.post("/auth/logout");
+}
+
+/** Demo login prefill (plan §4). Returns nulls in production — the backend
+ * only returns real values when APP_ENV is development/testing. */
+export async function fetchLoginHint(): Promise<LoginHint> {
+  const { data } = await api.get<LoginHint>("/auth/login-hint");
+  return data;
 }
 
 // ---------- conversations + chat (SSE streaming) ----------

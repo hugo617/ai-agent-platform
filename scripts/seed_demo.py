@@ -40,11 +40,14 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from sqlalchemy import delete, select  # noqa: E402
 
+from app.core.config import settings  # noqa: E402
 from app.core.database import AsyncSessionLocal  # noqa: E402
 from app.core.password import hash_password  # noqa: E402
 from app.models.agent import Agent, Conversation  # noqa: E402
 from app.models.api_token import ApiToken  # noqa: E402
 from app.models.customer import Customer, CustomerProfile  # noqa: E402
+from app.models.document import Document, DocumentChunk  # noqa: E402
+from app.models.embedding_config import EmbeddingConfig  # noqa: E402
 from app.models.group import Group, GroupTenant  # noqa: E402
 from app.models.llm_config import LlmConfig  # noqa: E402
 from app.models.log import SystemLog  # noqa: E402
@@ -56,6 +59,8 @@ from app.repositories.tenant import UserTenantRepository  # noqa: E402
 from app.schemas.agent import AgentCreate  # noqa: E402
 from app.schemas.api_token import ApiTokenCreate  # noqa: E402
 from app.schemas.customer import CustomerProfileCreate  # noqa: E402
+from app.schemas.document import DocumentCreate  # noqa: E402
+from app.schemas.embedding_config import EmbeddingConfigUpdate  # noqa: E402
 from app.schemas.group import GroupCreate  # noqa: E402
 from app.schemas.llm_config import LlmConfigUpdate  # noqa: E402
 from app.schemas.rbac import RoleCreate, RolePermissionGrant  # noqa: E402
@@ -63,7 +68,9 @@ from app.services.agent_service import AgentService  # noqa: E402
 from app.services.api_token_service import api_token_service  # noqa: E402
 from app.services.conversation_service import ConversationService  # noqa: E402
 from app.services.customer_service import CustomerService  # noqa: E402
+from app.services.embedding_config_service import embedding_config_service  # noqa: E402
 from app.services.group_service import GroupService  # noqa: E402
+from app.services.knowledge_service import KnowledgeService  # noqa: E402
 from app.services.llm_config_service import llm_config_service  # noqa: E402
 from app.services.permission_service import permission_service  # noqa: E402
 from app.services.rbac_service import RbacService  # noqa: E402
@@ -107,14 +114,19 @@ GROUPS: list[tuple[str, str, list[str]]] = [
     ("独立养生馆", "duli_wellness", ["王府井理疗馆"]),
 ]
 
-# Customer profiles: (store_name, identity_key=phone, name, gender, remark).
+# Customer profiles: (store_name, identity_key=phone, name, gender, remark, status).
 # Cross-store reuse: 张先生 (138...) in 朝阳+海淀; 刘女士 (139...) in 朝阳+王府井.
-CUSTOMERS: list[tuple[str, str, str, str, str]] = [
-    ("朝阳理疗中心", "13800000001", "张先生", "男", "颈椎理疗老客户,偏好下午时段"),
-    ("朝阳理疗中心", "13900000002", "刘女士", "女", "艾灸调理,对烟味敏感"),
-    ("海淀中医门诊", "13800000001", "张先生", "男", "同朝阳店客户,转诊做针灸"),
-    ("海淀中医门诊", "13700000003", "周先生", "男", "推拿新客,腰部劳损"),
-    ("王府井理疗馆", "13900000002", "刘女士", "女", "同朝阳店客户,周末来调理"),
+# The extra rows exercise the 4-state status enum (active/vip/inactive/blacklist)
+# so the optional status filter (S2) has real data to slice.
+CUSTOMERS: list[tuple[str, str, str, str, str, str]] = [
+    ("朝阳理疗中心", "13800000001", "张先生", "男", "颈椎理疗老客户,偏好下午时段", "active"),
+    ("朝阳理疗中心", "13900000002", "刘女士", "女", "艾灸调理,对烟味敏感", "vip"),
+    ("朝阳理疗中心", "13600000005", "孙阿姨", "女", "长期艾灸养生会员,月卡客户", "vip"),
+    ("海淀中医门诊", "13800000001", "张先生", "男", "同朝阳店客户,转诊做针灸", "active"),
+    ("海淀中医门诊", "13700000003", "周先生", "男", "推拿新客,腰部劳损", "active"),
+    ("海淀中医门诊", "13500000006", "吴老伯", "男", "中药调理中,近期暂停理疗", "inactive"),
+    ("王府井理疗馆", "13900000002", "刘女士", "女", "同朝阳店客户,周末来调理", "active"),
+    ("王府井理疗馆", "13400000007", "赵先生", "男", "多次爽约未到店,已列入黑名单", "blacklist"),
 ]
 
 # Agents with distinct reasoning params:
@@ -171,11 +183,82 @@ CUSTOM_ROLE: tuple[str, str, str, list[tuple[str, str]], str] = (
 )
 
 # LLM configs: platform-level + one tenant-level override (朝阳 → deepseek-reasoner).
-# api_key is a DEMO PLACEHOLDER — real key must be set in the settings page.
-LLM_DEMO_API_KEY = "sk-demo-placeholder"
+# The API key is read from settings (DEMO_LLM_API_KEY in .env). When set to a
+# real key the demo can do live chat out of the box; when empty it falls back
+# to the inert ``sk-demo-placeholder`` sentinel (chat/RAG stay configurable
+# but call providers until a real key is supplied via the settings UI).
+LLM_DEMO_API_KEY = settings.demo_llm_api_key or "sk-demo-placeholder"
+LLM_DEMO_KEY_IS_REAL = bool(settings.demo_llm_api_key)
 LLM_PLATFORM_MODELS = ["deepseek-chat", "deepseek-reasoner"]
 LLM_TENANT_OVERRIDE_STORE = "朝阳理疗中心"
 LLM_TENANT_OVERRIDE_MODEL = "deepseek-reasoner"
+
+# Embedding config (priority 57 — RAG). Real key from DEMO_EMBEDDING_API_KEY
+# enables true vector ingestion; empty falls back to the placeholder so the
+# knowledge documents are seeded but marked ``failed`` (graceful: a bad/no-key
+# embed surfaces as ``failed`` rather than crashing the seed run).
+EMBEDDING_DEMO_API_KEY = settings.demo_embedding_api_key or "sk-demo-placeholder"
+EMBEDDING_DEMO_KEY_IS_REAL = bool(settings.demo_embedding_api_key)
+EMBEDDING_DEMO_MODEL = "text-embedding-3-small"
+
+# Knowledge-base documents: (store_name, doc_name, content).
+# One ops-doc per store demonstrates the RAG capability (cross-store docs are
+# tenant-scoped — each store only retrieves its own). Content is 大健康-themed.
+DOCUMENTS: list[tuple[str, str, str]] = [
+    (
+        "朝阳理疗中心",
+        "颈椎理疗操作规范",
+        "颈椎理疗标准流程:\n"
+        "1. 问诊评估:询问颈椎不适持续时间、是否有手麻、头晕症状,排除颈椎急性损伤。\n"
+        "2. 手法准备:患者俯卧,理疗师先以揉法放松颈肩肌肉 5-10 分钟。\n"
+        "3. 核心手法:采用滚法、按法沿膀胱经操作,力度由轻到重,忌暴力扳法。\n"
+        "4. 艾灸配合:大椎、风池穴悬灸 15 分钟,温通经络。\n"
+        "5. 疗程建议:急性期每日 1 次,缓解期隔日 1 次,10 次为一疗程。\n"
+        "禁忌:颈椎骨折、严重骨质疏松、急性脊髓压迫患者禁用手法治疗。",
+    ),
+    (
+        "海淀中医门诊",
+        "中药与针灸禁忌",
+        "针灸中药联合治疗注意事项:\n"
+        "- 针灸前:避免空腹,以防晕针;过度疲劳者应休息后再针。\n"
+        "- 针灸后:2 小时内不宜洗澡,注意保暖,避免吹风。\n"
+        "- 中药服用:温服,忌生冷油腻;补益药宜饭前服,清热药宜饭后服。\n"
+        "- 妊娠禁忌:合谷、三阴交、昆仑等穴位孕妇禁针;活血化瘀中药孕妇慎用。\n"
+        "- 出血倾向:血小板减少、服用抗凝药患者忌针灸,艾灸时间不宜过长。",
+    ),
+    (
+        "王府井理疗馆",
+        "艾灸养生注意事项",
+        "艾灸养生操作要点:\n"
+        "1. 环境准备:保持通风(对烟味敏感客户使用无烟艾条或艾灸盒),室温 25℃ 以上。\n"
+        "2. 选穴:保健常用足三里、关元、气海;调理脾胃加中脘、脾俞。\n"
+        "3. 时间:每穴 10-15 分钟,总时长不超过 40 分钟,每周 2-3 次为宜。\n"
+        "4. 禁忌:实热证、阴虚火旺者慎灸;孕妇腰腹部禁灸;皮肤破损处禁灸。\n"
+        "5. 灸后调养:饮温水 300ml,2 小时内忌冷水、生冷饮食,注意保暖。",
+    ),
+]
+
+# Multi-agent orchestration demo (priority 58): one orchestrator Agent in the
+# 朝阳 store supervises two specialists (理疗 / 中医) IN THE SAME TENANT.
+# Specialists must share the orchestrator's tenant (attach_specialist enforces
+# same-tenant), so both specialists live in 朝阳. The orchestrator routes user
+# questions to the matching specialist instead of answering directly.
+ORCHESTRATOR_AGENT_NAME = "颐和堂智能分诊调度"
+ORCHESTRATOR_SPECIALISTS: list[tuple[str, str, str, str]] = [
+    # (specialist_agent_name, system_prompt, specialty_description, model)
+    (
+        "朝阳理疗专科顾问",
+        "你是颐和堂朝阳店的理疗专科顾问,擅长颈椎推拿、艾灸理疗方案。",
+        "颈椎理疗、推拿按摩、艾灸理疗方案",
+        "deepseek-chat",
+    ),
+    (
+        "朝阳中医专科顾问",
+        "你是颐和堂朝阳店的中医专科顾问,擅长针灸、中药调理、辨证施治。",
+        "中医针灸、中药调理、辨证施治",
+        "deepseek-chat",
+    ),
+]
 
 # API tokens: [(store_name, token_name), ...]. Owner of the store issues each.
 API_TOKENS: list[tuple[str, str]] = [
@@ -273,7 +356,11 @@ DEMO_STORE_NAMES = [s[0] for s in STORES]
 DEMO_USERNAMES = [u[0] for store in STORES for u in store[1]] + [HQ_STAFF[0]]
 DEMO_GROUP_CODES = [g[1] for g in GROUPS]
 DEMO_CUSTOMER_PHONES = sorted({c[1] for c in CUSTOMERS})
-DEMO_AGENT_NAMES = [a[1] for a in AGENTS]
+DEMO_AGENT_NAMES = (
+    [a[1] for a in AGENTS]
+    + [ORCHESTRATOR_AGENT_NAME]
+    + [s[0] for s in ORCHESTRATOR_SPECIALISTS]
+)
 DEMO_CUSTOM_ROLE_CODES = [CUSTOM_ROLE[2]]
 # Extra login method identifiers (phones).
 DEMO_EXTRA_LOGIN_IDS = [p for _, p in EXTRA_LOGIN_METHODS]
@@ -462,6 +549,22 @@ async def _reset_demo_data(db) -> None:
     )
     print("  deleted llm configs")
 
+    # ---- 3b. Embedding configs (tenant-level overrides for demo tenants +
+    #          platform-level placeholder). Same hint-based cleanup as LLM.
+    if demo_tenant_ids:
+        await db.execute(
+            delete(EmbeddingConfig).where(
+                EmbeddingConfig.tenant_id.in_(demo_tenant_ids)
+            )
+        )
+    await db.execute(
+        delete(EmbeddingConfig).where(
+            EmbeddingConfig.tenant_id.is_(None),
+            EmbeddingConfig.api_key_hint == platform_hint,
+        )
+    )
+    print("  deleted embedding configs")
+
     # ---- 4. Customer profiles + customers (by demo customer ids).
     if demo_customer_ids:
         await db.execute(
@@ -473,6 +576,28 @@ async def _reset_demo_data(db) -> None:
             delete(Customer).where(Customer.id.in_(demo_customer_ids))
         )
         print(f"  deleted customers ({len(demo_customer_ids)}) + profiles")
+
+    # ---- 4b. Documents + chunks (by demo tenant; RAG knowledge base).
+    if demo_tenant_ids:
+        demo_doc_ids = [
+            r for r in (
+                await db.execute(
+                    select(Document.id).where(
+                        Document.tenant_id.in_(demo_tenant_ids)
+                    )
+                )
+            ).scalars()
+        ]
+        if demo_doc_ids:
+            await db.execute(
+                delete(DocumentChunk).where(
+                    DocumentChunk.document_id.in_(demo_doc_ids)
+                )
+            )
+            await db.execute(
+                delete(Document).where(Document.id.in_(demo_doc_ids))
+            )
+            print(f"  deleted documents ({len(demo_doc_ids)}) + chunks")
 
     # ---- 5. Custom-role permission grants (SCD2 rows) + custom roles.
     #       System default roles (is_system=True) are kept (seed_defaults owns them).
@@ -668,6 +793,187 @@ async def _seed_llm_configs(db, tenant_by_name: dict[str, Tenant]) -> None:
         print(
             f"exists  tenant llm override @ {LLM_TENANT_OVERRIDE_STORE} (left untouched)"
         )
+
+
+async def _seed_embedding_config(db) -> None:
+    """Seed a platform-level EmbeddingConfig so RAG can run with a real key.
+
+    Uses DEMO_EMBEDDING_API_KEY when present (real ingestion), else the inert
+    placeholder (documents seed but stay ``failed`` until a real key is set).
+    """
+    existing = (
+        await db.execute(
+            select(EmbeddingConfig).where(
+                EmbeddingConfig.tenant_id.is_(None),
+                EmbeddingConfig.is_active.is_(True),
+            )
+        )
+    ).scalar_one_or_none()
+    # Only seed when absent or still our placeholder — never clobber a real key.
+    need = existing is None or existing.api_key_hint == "sk-***lace"
+    if not need:
+        print("exists  platform embedding config (real key present, left untouched)")
+        return
+    await embedding_config_service.upsert_platform(
+        db,
+        EmbeddingConfigUpdate(
+            api_key=EMBEDDING_DEMO_API_KEY,
+            base_url="https://api.openai.com/v1",
+            model=EMBEDDING_DEMO_MODEL,
+        ),
+    )
+    tag = "real key" if EMBEDDING_DEMO_KEY_IS_REAL else "demo placeholder"
+    print(f"created/refreshed platform embedding config ({tag})")
+
+
+async def _seed_documents(
+    db,
+    tenant_by_name: dict[str, Tenant],
+    owner_by_store: dict[str, User],
+) -> None:
+    """Seed one RAG document per store to demonstrate knowledge-base retrieval.
+
+    With a REAL embedding key (DEMO_EMBEDDING_API_KEY set) we call
+    ``KnowledgeService.create_document`` which ingests inline (split + embed +
+    index) so chunks get true vectors. With the PLACEHOLDER key we insert the
+    Document row directly with status='failed' — we deliberately do NOT call
+    create_document, because its inline ``_ingest`` would issue a real HTTP
+    request to the embeddings provider with a bogus key and stall on network
+    retry/timeout (the seed must stay fast and offline-tolerant). The row still
+    exists so the UI can show it and the user can retry ingest once a real key
+    is configured via the settings page.
+    """
+    svc = KnowledgeService(db)
+    for store_name, doc_name, content in DOCUMENTS:
+        tenant = tenant_by_name[store_name]
+        owner = owner_by_store[store_name]
+        existing = (
+            await db.execute(
+                select(Document).where(
+                    Document.tenant_id == tenant.id,
+                    Document.name == doc_name,
+                    Document.is_deleted.is_(False),
+                )
+            )
+        ).scalar_one_or_none()
+        if existing is not None:
+            print(f"exists  document: {doc_name} @ {store_name}")
+            continue
+        if EMBEDDING_DEMO_KEY_IS_REAL:
+            doc = await svc.create_document(
+                owner.id,
+                tenant.id,
+                DocumentCreate(name=doc_name, content=content, source_type="text"),
+                platform_role=None,
+            )
+            tag = doc.status  # 'indexed' (real key worked) or 'failed' (key bad)
+        else:
+            # Placeholder key: insert the row without triggering a network call.
+            row = Document(
+                tenant_id=tenant.id,
+                name=doc_name,
+                source_type="text",
+                content=content,
+                chunk_count=0,
+                status="failed",
+            )
+            db.add(row)
+            await db.flush()
+            tag = "failed (no embedding key)"
+        print(f"created document: {doc_name} @ {store_name} [{tag}]")
+
+
+async def _seed_orchestrator(
+    db,
+    tenant_by_name: dict[str, Tenant],
+    super_admin: User,
+) -> None:
+    """Seed a platform-level orchestrator Agent + attach two specialists.
+
+    Demonstrates priority 58 multi-agent routing: the orchestrator routes user
+    messages to a matching specialist instead of answering directly. Lives in
+    the first store's tenant (super_admin acts as creator — platform_role
+    bypasses the per-tenant guard).
+    """
+    home_store = STORES[0][0]
+    tenant = tenant_by_name[home_store]
+    actor = super_admin  # platform agent → super_admin bypasses per-tenant guard
+    agent_svc = AgentService(db)
+
+    existing = (
+        await db.execute(
+            select(Agent).where(
+                Agent.name == ORCHESTRATOR_AGENT_NAME,
+                Agent.tenant_id == tenant.id,
+                Agent.is_deleted.is_(False),
+            )
+        )
+    ).scalar_one_or_none()
+    if existing is not None:
+        print(f"exists  orchestrator: {ORCHESTRATOR_AGENT_NAME}")
+        orch_id = existing.id
+    else:
+        orch = await agent_svc.create(
+            actor.id,
+            tenant.id,
+            AgentCreate(
+                name=ORCHESTRATOR_AGENT_NAME,
+                system_prompt=(
+                    "你是颐和堂大健康连锁的智能分诊调度员。根据用户问题的类别,"
+                    "将其路由给最合适的专科顾问(理疗/中医)。不要自己作答,只做分诊。"
+                ),
+                model="deepseek-chat",
+                description="演示多智能体编排:分诊调度员路由到专科顾问",
+                is_orchestrator=True,
+                specialty="智能分诊调度",
+            ),
+            platform_role=actor.platform_role,
+        )
+        orch_id = orch.id
+        print(f"created orchestrator: {ORCHESTRATOR_AGENT_NAME}")
+
+    # Create + attach the two specialists (same tenant as the orchestrator).
+    # Specialists are plain (non-orchestrator) agents the supervisor routes to.
+    for spec_name, spec_prompt, specialty, spec_model in ORCHESTRATOR_SPECIALISTS:
+        spec_existing = (
+            await db.execute(
+                select(Agent).where(
+                    Agent.name == spec_name,
+                    Agent.tenant_id == tenant.id,
+                    Agent.is_deleted.is_(False),
+                )
+            )
+        ).scalar_one_or_none()
+        if spec_existing is not None:
+            spec_id = spec_existing.id
+            spec_tag = "exists"
+        else:
+            spec = await agent_svc.create(
+                actor.id,
+                tenant.id,
+                AgentCreate(
+                    name=spec_name,
+                    system_prompt=spec_prompt,
+                    model=spec_model,
+                    description=f"演示专科顾问:{spec_name}",
+                    specialty=specialty,
+                ),
+                platform_role=actor.platform_role,
+            )
+            spec_id = spec.id
+            spec_tag = "created"
+        # Attach (idempotent — attach_specialist raises BizError on dup).
+        try:
+            await agent_svc.attach_specialist(
+                actor.id,
+                tenant.id,
+                orch_id,
+                spec_id,
+                platform_role=actor.platform_role,
+            )
+            print(f"  {spec_tag}+attached specialist: {spec_name} ({specialty})")
+        except Exception:
+            print(f"  exists  specialist attached: {spec_name}")
 
 
 async def _seed_conversations(
@@ -888,7 +1194,7 @@ async def main(reset: bool = False) -> int:
 
         # ---- 4. Customer profiles (cross-store identity reuse).
         cust_svc = CustomerService(db)
-        for store_name, identity_key, cname, cgender, cremark in CUSTOMERS:
+        for store_name, identity_key, cname, cgender, cremark, cstatus in CUSTOMERS:
             tenant = tenant_by_name[store_name]
             owner = owner_by_store[store_name]
             # Duplicate check: skip if a live profile already exists for this
@@ -919,11 +1225,12 @@ async def main(reset: bool = False) -> int:
                     name=cname,
                     gender=cgender,
                     remark=cremark,
+                    status=cstatus,
                 ),
                 platform_role=None,  # owner acts in-store; casbin has the policy
             )
             cross = " (跨店复用)" if cust is not None else ""
-            print(f"created profile: {cname} @ {store_name}{cross}")
+            print(f"created profile: {cname} @ {store_name}{cross} [{cstatus}]")
 
         # ---- 5. Agents (3 store-level + 1 platform-level) with reasoning params.
         agent_svc = AgentService(db)
@@ -979,6 +1286,15 @@ async def main(reset: bool = False) -> int:
         # ---- 7. LLM configs (platform-level + 朝阳 tenant-level override).
         await _seed_llm_configs(db, tenant_by_name)
 
+        # ---- 7b. Embedding config (platform-level, for RAG).
+        await _seed_embedding_config(db)
+
+        # ---- 7c. Knowledge-base documents (one RAG doc per store).
+        await _seed_documents(db, tenant_by_name, owner_by_store)
+
+        # ---- 7d. Multi-agent orchestrator + specialists (priority 58 demo).
+        await _seed_orchestrator(db, tenant_by_name, super_admin)
+
         # ---- 8. Conversation history (AI core artifacts).
         await _seed_conversations(
             db, tenant_by_name, owner_by_store, agent_id_by_name, user_by_username
@@ -1002,10 +1318,17 @@ async def main(reset: bool = False) -> int:
         for username, display_name, role in staff:
             print(f"     {role:<7}    : {username:<16} ({display_name} @ {store_name})")
     print("   cross-store customers: 张先生(138) 朝阳+海淀, 刘女士(139) 朝阳+王府井")
+    print("   customer status 4 态: 含 active/vip/inactive/blacklist 各档(演示 S2 筛选)")
     print("   agent reasoning params: 朝阳 temp=0.3 / 海淀 0.7 / 王府井 0.9 / 总部 0.2")
     print(
         "   llm fallback: 朝阳→deepseek-reasoner(租户级), 海淀/王府井→deepseek-chat(平台级)"
     )
+    llm_tag = "real key (DEMO_LLM_API_KEY)" if LLM_DEMO_KEY_IS_REAL else "placeholder (set DEMO_LLM_API_KEY for live chat)"
+    emb_tag = "real key (DEMO_EMBEDDING_API_KEY)" if EMBEDDING_DEMO_KEY_IS_REAL else "placeholder (set DEMO_EMBEDDING_API_KEY for real RAG)"
+    print(f"   llm key: {llm_tag}")
+    print(f"   embedding key: {emb_tag}")
+    print(f"   knowledge docs: {len(DOCUMENTS)} 份 RAG 文档(每门店 1 份,操作规范/禁忌/注意事项)")
+    print(f"   orchestrator: {ORCHESTRATOR_AGENT_NAME}(分诊调度,挂 {len(ORCHESTRATOR_SPECIALISTS)} 个专科顾问)")
     print("   custom role: 资深理疗师(朝阳店, customers:read+update) ← 李师傅")
     if issued_tokens:
         print("   api tokens (⚠️ shown ONCE, demo-only):")

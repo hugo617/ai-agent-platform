@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Bot, ShieldCheck, Sparkles, Zap } from "lucide-react";
 import { useAuth } from "@/components/auth/auth-context";
@@ -14,7 +14,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/components/ui/toast";
 import { apiErrorMessage } from "@/api/client";
-import { devLogin, login } from "@/api/endpoints";
+import { devLogin, fetchLoginHint, login } from "@/api/endpoints";
 
 /**
  * Login page.
@@ -37,6 +37,28 @@ export function LoginPage() {
   const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
   const [pwLoading, setPwLoading] = useState(false);
+
+  // Demo login prefill (plan §4): on mount, ask the backend for a login hint.
+  // In development/testing it returns the demo super-admin credentials so a
+  // reviewer can sign in with one click; in production it returns nulls and
+  // the fields stay blank. Non-controlled — the user can still edit before
+  // submitting. A failure (e.g. backend down) is silently ignored so the
+  // login page still renders empty and usable.
+  useEffect(() => {
+    let alive = true;
+    fetchLoginHint()
+      .then((hint) => {
+        if (!alive) return;
+        if (hint.username) setIdentifier(hint.username);
+        if (hint.password) setPassword(hint.password);
+      })
+      .catch(() => {
+        /* hint is best-effort; never block the login page on it */
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   const handleDevLogin = async () => {
     setDevLoading(true);
