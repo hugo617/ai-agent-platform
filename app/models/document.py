@@ -10,14 +10,22 @@ Two tables:
     vector. Indexed for cosine-similarity retrieval.
 
 **pgvector / dual-DB compatibility.** The ``embedding`` column uses
-``Vector(1536).with_variant(JSON, "sqlite")`` so it builds cleanly on SQLite
-(the test suite's in-memory DB) while rendering as the native ``VECTOR(1536)``
-type on Postgres. The cosine-distance operator (``<=>``) only exists on
-Postgres with the vector extension; SQLite tests that exercise retrieval mock
-the embedding layer rather than running real vector SQL.
+``Vector(EMBEDDING_DIMENSION).with_variant(JSON, "sqlite")`` so it builds
+cleanly on SQLite (the test suite's in-memory DB) while rendering as the
+native ``VECTOR(EMBEDDING_DIMENSION)`` type on Postgres. The cosine-distance
+operator (``<=>``) only exists on Postgres with the vector extension; SQLite
+tests that exercise retrieval mock the embedding layer rather than running
+real vector SQL.
 
 The ``CREATE EXTENSION vector`` lives in the migration (Postgres only, gated
 by dialect check), not here.
+
+**Dimension is a module constant.** :data:`EMBEDDING_DIMENSION` is the single
+source of truth for the embedding vector width. Switching embedding model
+(BAAI/bge-m3 = 1024, OpenAI text-embedding-3-small = 1536, etc.) means
+changing this constant AND adding a migration that ``ALTER``\\s the
+``document_chunks.embedding`` column type + clears any existing
+dimension-mismatched chunks. See migration ``change_embedding_dimension_*``.
 """
 
 import uuid
@@ -39,6 +47,14 @@ from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.types import JSON
 
 from app.core.database import Base
+
+# Embedding vector dimension. BAAI/bge-m3 = 1024 (current default, served via
+# local Ollama). To switch models: change this constant AND add a migration
+# that ALTERs document_chunks.embedding to the new VECTOR(N) width, plus clears
+# any existing chunks (old-dimension vectors are incompatible with the new
+# column type and must be re-embedded). Single source of truth — schemas and
+# tests reference this constant rather than hardcoding the magic number.
+EMBEDDING_DIMENSION = 1024
 
 
 def _uuid() -> str:
@@ -95,11 +111,12 @@ class Document(Base):
 class DocumentChunk(Base):
     """A chunk of a :class:`Document` with its embedding vector.
 
-    ``embedding`` is the 1536-dim vector from text-embedding-3-small. On
-    Postgres it's a native ``VECTOR(1536)`` column supporting cosine-distance
-    retrieval (``embedding <=> query``); on SQLite (tests) it degrades to JSON
-    so ``Base.metadata.create_all`` succeeds — vector queries are exercised on
-    Postgres / mocked in unit tests, never run as real vector SQL on SQLite.
+    ``embedding`` is the ``EMBEDDING_DIMENSION``-wide vector (1024 for
+    BAAI/bge-m3). On Postgres it's a native ``VECTOR(EMBEDDING_DIMENSION)``
+    column supporting cosine-distance retrieval (``embedding <=> query``); on
+    SQLite (tests) it degrades to JSON so ``Base.metadata.create_all``
+    succeeds — vector queries are exercised on Postgres / mocked in unit
+    tests, never run as real vector SQL on SQLite.
     """
 
     __tablename__ = "document_chunks"
@@ -122,9 +139,9 @@ class DocumentChunk(Base):
     # Position of this chunk within the source document (0-based).
     chunk_index: Mapped[int] = mapped_column(Integer, nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
-    # Vector(1536) on Postgres; JSON on SQLite (create_all compatibility).
+    # Vector(EMBEDDING_DIMENSION) on Postgres; JSON on SQLite (create_all).
     embedding: Mapped[list[float]] = mapped_column(
-        Vector(1536).with_variant(JSON, "sqlite"), nullable=True
+        Vector(EMBEDDING_DIMENSION).with_variant(JSON, "sqlite"), nullable=True
     )
 
     def __repr__(self) -> str:

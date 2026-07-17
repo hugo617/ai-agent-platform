@@ -721,7 +721,7 @@ function EmbeddingConfigCard({
               <Input
                 value={baseUrl}
                 onChange={(e) => setBaseUrl(e.target.value)}
-                placeholder="https://api.openai.com"
+                placeholder="http://localhost:11434/v1"
               />
             </div>
 
@@ -730,10 +730,10 @@ function EmbeddingConfigCard({
               <Input
                 value={model}
                 onChange={(e) => setModel(e.target.value)}
-                placeholder="text-embedding-3-small"
+                placeholder="bge-m3"
               />
               <p className="text-xs text-muted-foreground">
-                text-embedding-3-small（1536 维,OpenAI）。更换模型需同步调整向量维度。
+                bge-m3（1024 维,本地 Ollama）。更换模型需同步调整向量维度（需配套迁移）。
               </p>
             </div>
 
