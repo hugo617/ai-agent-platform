@@ -54,6 +54,7 @@ import {
   fetchLogs,
   fetchMembers,
   fetchMessages,
+  fetchPermissionCatalogue,
   fetchPermissionMatrix,
   fetchPlatformLlmConfig,
   fetchPricing,
@@ -147,6 +148,8 @@ export const qk = {
   roleLabels: ["roles", "labels"] as const,
   rolePermissions: (id: string) => ["roles", id, "permissions"] as const,
   permissionMatrix: ["permissions", "matrix"] as const,
+  permissionCatalogue: (type?: "api" | "menu") =>
+    ["permissions", "catalogue", type ?? "all"] as const,
   // conversation list query key encodes the search/tag filters so each distinct
   // filter set caches independently (a debounced search produces a stream of
   // unique keys). Empty filters collapse to the bare key for the common case.
@@ -565,6 +568,17 @@ export function usePermissionMatrix() {
   return useQuery({
     queryKey: qk.permissionMatrix,
     queryFn: fetchPermissionMatrix,
+  });
+}
+
+// permission catalogue — the flat list of permission items, optionally
+// filtered by type ("api" / "menu"). The API token issue dialog uses the
+// "api" filter to render the scope picker (the selectable scopes a restricted
+// token can be narrowed to).
+export function usePermissionsCatalogue(type?: "api" | "menu") {
+  return useQuery({
+    queryKey: qk.permissionCatalogue(type),
+    queryFn: () => fetchPermissionCatalogue(type),
   });
 }
 

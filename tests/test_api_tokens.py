@@ -15,8 +15,15 @@ AUTH = {"Authorization": "Bearer fake"}
 
 
 async def _issue(client, name: str = "my-agent", **body) -> dict:
-    """Issue a token via the API and return the one-time plaintext response."""
-    resp = await client.post("/api/v1/api-tokens", json={"name": name, **body}, headers=AUTH)
+    """Issue a token via the API and return the one-time plaintext response.
+
+    Defaults to ``scope_mode="full"`` so the legacy tests in this module keep
+    their pre-scope behaviour (full-power token inherits the issuer's perms).
+    Tests that want to exercise the restricted-scope gate pass
+    ``scope_mode="restricted"`` and ``scopes=[...]`` explicitly.
+    """
+    payload = {"name": name, "scope_mode": "full", **body}
+    resp = await client.post("/api/v1/api-tokens", json=payload, headers=AUTH)
     assert resp.status_code == 201, resp.text
     return resp.json()
 

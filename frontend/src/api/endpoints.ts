@@ -42,6 +42,7 @@ import type {
   NotificationFilters,
   NotificationListResponse,
   PasswordChange,
+  PermissionItem,
   PermissionMatrix,
   ProfileUpdate,
   RechargeRequest,
@@ -602,11 +603,23 @@ export async function revokeRolePermission(
 }
 
 // ---------- permissions ----------
-// Only the matrix endpoint is wired up: it already carries the permission
-// catalogue (its `permissions` array), so a separate catalogue call would be
-// dead code. Add fetchPermissionCatalogue here if a future view needs it.
+// The matrix endpoint carries the catalogue (its `permissions` array), which
+// is what the permissions-page uses. The catalogue endpoint is needed by views
+// that want the permission list WITHOUT a selected role's matrix — the API
+// token issue dialog uses it to render the scope picker (the grantor's role
+// is implicit; we just need the catalogue of selectable scopes).
 export async function fetchPermissionMatrix(): Promise<PermissionMatrix> {
   const { data } = await api.get<PermissionMatrix>("/permissions/matrix");
+  return data;
+}
+
+export async function fetchPermissionCatalogue(
+  type?: "api" | "menu"
+): Promise<PermissionItem[]> {
+  const params = type ? { type } : undefined;
+  const { data } = await api.get<PermissionItem[]>("/permissions/catalogue", {
+    params,
+  });
   return data;
 }
 

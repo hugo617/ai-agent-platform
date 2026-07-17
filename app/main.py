@@ -41,7 +41,7 @@ from app.core.config import settings
 from app.core.database import get_db
 from app.core.metrics import IN_PROGRESS, LATENCY, REQUESTS, render_metrics
 from app.core.validation_errors import localize_message
-from app.services.errors import BizError, NotFoundError
+from app.services.errors import BizError, NotFoundError, ScopeError
 
 # Paths excluded from request metrics. The infra/observability endpoints would
 # otherwise self-reference (every /metrics scrape inflates its own counter) and
@@ -299,6 +299,15 @@ def create_app() -> FastAPI:
     @app.exception_handler(NotFoundError)
     async def _not_found_handler(request: Request, exc: NotFoundError) -> JSONResponse:
         return JSONResponse(status_code=404, content={"detail": str(exc)})
+
+    # Restricted API token whose requested scopes don't survive the live
+    # intersection with the grantor's current permissions → 422 (request-input
+    # problem, not a generic 400). ScopeError subclasses BizError, so this
+    # handler must be registered AFTER the BizError one to take precedence
+    # (FastAPI resolves handlers by exact type match first).
+    @app.exception_handler(ScopeError)
+    async def _scope_error_handler(request: Request, exc: ScopeError) -> JSONResponse:
+        return JSONResponse(status_code=422, content={"detail": str(exc)})
 
     @app.exception_handler(RequestValidationError)
     async def _validation_handler(

@@ -99,6 +99,106 @@ async def test_super_admin_require_bypasses(enforcer):
 
 
 # ---------------------------------------------------------------------------
+# API token scope gate (api-token-fine-grained-scopes).
+#
+# These exercise the contextvar-reading branch of check(): when a request is
+# authenticated by a restricted ahp_ token, check() must enforce the token's
+# scope set BEFORE the super_admin/hq_staff bypass. JWT requests (no contextvar)
+# must be untouched.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_check_skips_scope_gate_when_contextvar_none(enforcer):
+    """JWT path (no ahp_ token) → contextvar is None → gate skipped entirely.
+
+    This is the zero-regression guarantee: every existing non-ahp_ request must
+    behave exactly as before. We assert it by confirming a super_admin check
+    still short-circuits, and that the gate doesn't accidentally deny.
+    """
+    from app.api.token_context import current_token_ctx
+
+    # Sanity: the contextvar really is None outside a request.
+    assert current_token_ctx.get() is None
+
+    svc = PermissionService()
+    # super_admin bypass must work without any token context.
+    allowed = await svc.check(
+        MEMBER, TENANT, "users", "delete", platform_role="super_admin"
+    )
+    assert allowed is True
+
+
+@pytest.mark.asyncio
+async def test_check_full_mode_skips_scope_gate(enforcer):
+    """A full-mode token's contextvar is present but the gate is skipped.
+
+    Full mode = behaviour-equivalent to legacy tokens (inherit grantor's current
+    perms). The gate only runs for restricted mode.
+    """
+    from app.api.token_context import TokenCtx, current_token_ctx
+
+    ctx = TokenCtx(token_id="t", scopes=[], scope_mode="full")
+    token_set = current_token_ctx.set(ctx)
+    try:
+        svc = PermissionService()
+        # Even with empty scopes, full mode lets the super_admin bypass run.
+        allowed = await svc.check(
+            MEMBER, TENANT, "users", "delete", platform_role="super_admin"
+        )
+        assert allowed is True
+    finally:
+        current_token_ctx.reset(token_set)
+
+
+@pytest.mark.asyncio
+async def test_check_restricted_gate_runs_before_super_admin_bypass(enforcer):
+    """Hard constraint #3: restricted gate precedes the super_admin bypass.
+
+    A super_admin check with a restricted token scoped AWAY from the action
+    must return False — the gate denies before the bypass runs.
+    """
+    from app.api.token_context import TokenCtx, current_token_ctx
+
+    ctx = TokenCtx(
+        token_id="t", scopes=["agents:read"], scope_mode="restricted"
+    )
+    token_set = current_token_ctx.set(ctx)
+    try:
+        svc = PermissionService()
+        # super_admin but scoped to agents:read only → users:delete denied.
+        allowed = await svc.check(
+            MEMBER, TENANT, "users", "delete", platform_role="super_admin"
+        )
+        assert allowed is False, "restricted gate must run before super_admin bypass"
+    finally:
+        current_token_ctx.reset(token_set)
+
+
+@pytest.mark.asyncio
+async def test_check_restricted_gate_cleared_after_reset(enforcer):
+    """contextvar.reset() restores the default None — no leakage between calls.
+
+    This is the per-request isolation guarantee: after a request's contextvar
+    is reset, subsequent checks behave as JWT-path (no gate).
+    """
+    from app.api.token_context import TokenCtx, current_token_ctx
+
+    ctx = TokenCtx(
+        token_id="t", scopes=["agents:read"], scope_mode="restricted"
+    )
+    token_set = current_token_ctx.set(ctx)
+    current_token_ctx.reset(token_set)
+
+    svc = PermissionService()
+    # After reset, super_admin bypass must work again (gate skipped).
+    allowed = await svc.check(
+        MEMBER, TENANT, "users", "delete", platform_role="super_admin"
+    )
+    assert allowed is True
+
+
+# ---------------------------------------------------------------------------
 # Unified catalogue integrity (permission-unified-model).
 #
 # The default perm lists are the single source of truth that both the casbin

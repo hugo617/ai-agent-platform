@@ -1055,7 +1055,11 @@ async def _seed_api_tokens(
             db,
             owner.id,
             tenant.id,
-            ApiTokenCreate(name=token_name),
+            # Demo tokens are full-power (scope_mode="full") to preserve the
+            # pre-scope behaviour: they inherit the grantor's current perms at
+            # check time. Restricted-scope tokens are a user-facing feature
+            # configured via the UI, not something the seed should create.
+            ApiTokenCreate(name=token_name, scope_mode="full"),
             platform_role=None,
         )
         issued.append((store_name, resp.token))

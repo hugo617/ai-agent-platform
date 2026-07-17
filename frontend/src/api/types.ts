@@ -440,6 +440,9 @@ export interface ApiToken {
   token_prefix: string; // e.g. "ahp_***wxyz"
   token_type: string; // "pat" (personal access token); reserved for future OAuth
   scopes: string[];
+  // "full" = inherits grantor's current perms (check skips scope gate);
+  // "restricted" = only scopes ∩ grantor perms allowed. Default for new tokens.
+  scope_mode: "full" | "restricted";
   last_used_at: string | null;
   expires_at: string | null;
   is_active: boolean;
@@ -451,9 +454,10 @@ export interface ApiTokenCreate {
   name: string;
   expires_at?: string | null; // ISO datetime; null/omitted = never expires
   scopes?: string[];
+  scope_mode?: "full" | "restricted"; // default "restricted"
 }
 
-/** One-time response to issuing a token — includes the plaintext token. */
+/** One-time response to issuing a token — includes the plaintext. */
 export interface ApiTokenCreated extends ApiToken {
   token_id: string;
   token: string; // plaintext; returned only here, never retrievable again

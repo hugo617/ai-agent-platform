@@ -91,7 +91,7 @@ async def test_api_token_service_require_forwards_platform_role(db_session, tena
         db_session,
         tenant_owner["user_id"],
         tenant_owner["tenant_id"],
-        ApiTokenCreate(name="svc-token"),
+        ApiTokenCreate(name="svc-token", scope_mode="full"),
         platform_role="super_admin",
     )
     assert resp.token.startswith("ahp_")
@@ -131,7 +131,7 @@ async def test_super_admin_can_issue_api_token(super_admin_client):
     """super_admin POST /api-tokens returns 201 (was 403 before the fix)."""
     resp = await super_admin_client.post(
         "/api/v1/api-tokens",
-        json={"name": "e2e-token"},
+        json={"name": "e2e-token", "scope_mode": "full"},
         headers=AUTH,
     )
     assert resp.status_code == 201, resp.text
@@ -144,7 +144,9 @@ async def test_super_admin_can_issue_api_token(super_admin_client):
 async def test_super_admin_can_list_and_revoke_api_token(super_admin_client):
     """The full api-token lifecycle works for super_admin (issue → list → revoke)."""
     issued = await super_admin_client.post(
-        "/api/v1/api-tokens", json={"name": "lifecycle"}, headers=AUTH
+        "/api/v1/api-tokens",
+        json={"name": "lifecycle", "scope_mode": "full"},
+        headers=AUTH,
     )
     assert issued.status_code == 201, issued.text
     token_id = issued.json()["token_id"]
@@ -202,7 +204,9 @@ async def test_super_admin_can_list_conversations(super_admin_client):
 async def test_owner_can_issue_api_token(app_client):
     """owner (no platform_role) has api_tokens:create in casbin → 201."""
     resp = await app_client.post(
-        "/api/v1/api-tokens", json={"name": "owner-token"}, headers=AUTH
+        "/api/v1/api-tokens",
+        json={"name": "owner-token", "scope_mode": "full"},
+        headers=AUTH,
     )
     assert resp.status_code == 201, resp.text
     assert resp.json()["token"].startswith("ahp_")

@@ -79,6 +79,19 @@ async def verify_token(
     """Confirm the presented credential is valid and return the identity.
 
     Used by ``agenthub whoami``. Works for both API tokens (``ahp_`` bypass) and
-    regular JWTs — it simply echoes back the resolved principal.
+    regular JWTs — it simply echoes back the resolved principal. For API tokens
+    the scope context (scopes + scope_mode) is also returned so an external
+    agent can introspect its own capabilities without trial-and-error.
     """
-    return {"valid": True, "user_id": user.user_id, "tenant_id": user.tenant_id}
+    # The scope context is only populated on the ``ahp_`` path; JWT callers
+    # see None (no scope gate applies to them).
+    from app.api.token_context import current_token_ctx
+
+    ctx = current_token_ctx.get()
+    return {
+        "valid": True,
+        "user_id": user.user_id,
+        "tenant_id": user.tenant_id,
+        "scopes": list(ctx.scopes) if ctx is not None else None,
+        "scope_mode": ctx.scope_mode if ctx is not None else None,
+    }
