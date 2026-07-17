@@ -199,7 +199,12 @@ LLM_TENANT_OVERRIDE_MODEL = "deepseek-reasoner"
 # embed surfaces as ``failed`` rather than crashing the seed run).
 EMBEDDING_DEMO_API_KEY = settings.demo_embedding_api_key or "sk-demo-placeholder"
 EMBEDDING_DEMO_KEY_IS_REAL = bool(settings.demo_embedding_api_key)
-EMBEDDING_DEMO_MODEL = "text-embedding-3-small"
+# Model + base_url default to local Ollama (BAAI/bge-m3, 1024-dim). Override
+# via EMBEDDING_MODEL / EMBEDDING_BASE_URL in .env to target another provider.
+# bge-m3 is Chinese-friendly and the dimension matches EMBEDDING_DIMENSION in
+# app/models/document.py — keep them in sync when switching models.
+EMBEDDING_DEMO_MODEL = settings.embedding_model or "bge-m3"
+EMBEDDING_DEMO_BASE_URL = settings.embedding_base_url or "http://localhost:11434/v1"
 
 # Knowledge-base documents: (store_name, doc_name, content).
 # One ops-doc per store demonstrates the RAG capability (cross-store docs are
@@ -818,7 +823,7 @@ async def _seed_embedding_config(db) -> None:
         db,
         EmbeddingConfigUpdate(
             api_key=EMBEDDING_DEMO_API_KEY,
-            base_url="https://api.openai.com/v1",
+            base_url=EMBEDDING_DEMO_BASE_URL,
             model=EMBEDDING_DEMO_MODEL,
         ),
     )

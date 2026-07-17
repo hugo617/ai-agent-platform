@@ -73,13 +73,18 @@ class Settings(BaseSettings):
 
     # Embedding model (priority 57 — knowledge base / RAG). Separate from the
     # chat LLM config above because DeepSeek does NOT expose an embeddings
-    # endpoint, so embeddings must target a provider that does (OpenAI by
-    # default). These are the env last-resort fallback, overridden by platform-
-    # and tenant-level EmbeddingConfig rows (managed via the settings UI), the
-    # same tenant > platform > env resolution order the chat LLM uses.
+    # endpoint, so embeddings must target a provider that does. Default points
+    # at a LOCAL Ollama server running BAAI/bge-m3 (1024-dim, Chinese-friendly)
+    # so RAG works end-to-end without a paid cloud key; switch to OpenAI by
+    # setting EMBEDDING_BASE_URL=https://api.openai.com +
+    # EMBEDDING_MODEL=text-embedding-3-small (and widening the vector column
+    # back to 1536 via a migration). These are the env last-resort fallback,
+    # overridden by platform- and tenant-level EmbeddingConfig rows (managed
+    # via the settings UI), the same tenant > platform > env resolution order
+    # the chat LLM uses.
     embedding_api_key: str = "sk-replace-me"
-    embedding_base_url: str = "https://api.openai.com"
-    embedding_model: str = "text-embedding-3-small"
+    embedding_base_url: str = "http://localhost:11434/v1"
+    embedding_model: str = "bge-m3"
 
     # Demo dataset seeding (db-revamp-and-scenario-rebuild plan §2.2/§3).
     # When set, ``scripts/seed_demo.py`` uses these real keys to populate the

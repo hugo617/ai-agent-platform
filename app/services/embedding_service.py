@@ -22,8 +22,10 @@ class EmbeddingService:
 
     def __init__(self, *, api_key: str, base_url: str, model: str) -> None:
         # Explicitly pass ``model`` — the langchain default is the legacy
-        # text-embedding-ada-002, which differs from text-embedding-3-small
-        # (1536-dim) we standardize on.
+        # text-embedding-ada-002, whose dimension differs from whatever model
+        # the caller resolved (default BAAI/bge-m3, 1024-dim). The chosen
+        # model's dimension must match the ``document_chunks.embedding``
+        # column width (see :data:`app.models.document.EMBEDDING_DIMENSION`).
         self._client = OpenAIEmbeddings(
             model=model, api_key=api_key, base_url=base_url
         )

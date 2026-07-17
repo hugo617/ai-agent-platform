@@ -17,9 +17,10 @@ clashes with the project's dual-DB rule (see AGENTS.md). This mirrors the
 :class:`LlmConfig` decision.
 
 Unlike :class:`LlmConfig` there is no ``available_models`` list — embeddings
-use a single model, and the vector dimension is fixed (1536 for
-text-embedding-3-small) and lives as a constant on the effective config, never
-in the DB.
+use a single model, and the vector dimension is a constant on the effective
+config (never in the DB). The current default is 1024 (BAAI/bge-m3); see
+:data:`app.models.document.EMBEDDING_DIMENSION` — the source of truth that
+moves in lockstep with the ``document_chunks.embedding`` column width.
 """
 
 import uuid

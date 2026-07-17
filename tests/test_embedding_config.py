@@ -13,13 +13,25 @@ AUTH = {"Authorization": "Bearer fake"}
 
 @pytest.mark.asyncio
 async def test_get_effective_falls_back_to_env_when_no_rows(db_session):
-    """No platform or tenant row → env defaults (embedding_* settings)."""
+    """No platform or tenant row → env defaults (embedding_* settings).
+
+    Every field is read from ``settings`` rather than hardcoded, so this test
+    stays correct no matter what embedding provider the local .env points at
+    (mirrors the test_llm_config fix in Session 112). Only ``dimension`` is a
+    hard assertion because it's a code constant (EMBEDDING_DIMENSION), not an
+    env value.
+    """
+    from app.core.config import settings
+    from app.models.document import EMBEDDING_DIMENSION
     from app.services.embedding_config_service import embedding_config_service
 
     cfg = await embedding_config_service.get_effective(db_session, "tnt-x")
-    assert cfg.api_key  # the env placeholder
-    assert cfg.model == "text-embedding-3-small"
-    assert cfg.dimension == 1536
+    assert cfg.api_key == settings.embedding_api_key
+    assert cfg.base_url == settings.embedding_base_url
+    assert cfg.model == settings.embedding_model
+    # dimension mirrors the column-width source of truth so this test does not
+    # need touching when the embedding model/dimension changes again.
+    assert cfg.dimension == EMBEDDING_DIMENSION
 
 
 @pytest.mark.asyncio

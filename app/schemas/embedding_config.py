@@ -49,21 +49,23 @@ class EffectiveEmbeddingConfig(BaseModel):
     tenant > platform > env fallback chain. Passed to ``EmbeddingService`` so
     it can instantiate ``OpenAIEmbeddings`` without touching global settings.
 
-    ``dimension`` is a constant (1536 for text-embedding-3-small) carried here
-    so callers building ``Vector(dimension)`` columns or checking lengths don't
-    hardcode the magic number in multiple places.
+    ``dimension`` is a constant (1024 for BAAI/bge-m3) carried here so callers
+    building ``Vector(dimension)`` columns or checking lengths don't hardcode
+    the magic number in multiple places. It mirrors
+    :data:`app.models.document.EMBEDDING_DIMENSION` — keep them in sync when
+    switching embedding models.
     """
 
     api_key: str
     base_url: str
     model: str
-    dimension: int = 1536
+    dimension: int = 1024
 
     model_config = ConfigDict(from_attributes=True)
 
     @classmethod
     def from_resolved(
-        cls, *, api_key: str, base_url: str, model: str, dimension: int = 1536
+        cls, *, api_key: str, base_url: str, model: str, dimension: int = 1024
     ) -> "EffectiveEmbeddingConfig":
         return cls(
             api_key=api_key, base_url=base_url, model=model, dimension=dimension
