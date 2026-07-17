@@ -137,6 +137,16 @@ def _build_llm_kwargs(
         kwargs["max_tokens"] = max_tokens
     if top_p is not None:
         kwargs["top_p"] = top_p
+    # Thinking-mode toggle (provider protocol, not a per-agent business param).
+    # DeepSeek's OpenAI-compatible API exposes it via extra_body since the SDK
+    # doesn't recognise a top-level ``thinking`` field. Only injected when the
+    # operator opts OUT of thinking (provider default is thinking-on); models
+    # without a thinking mode ignore the param.
+    # Local import avoids a config ↔ graph import cycle.
+    from app.core.config import settings
+
+    if not settings.llm_thinking_enabled:
+        kwargs["extra_body"] = {"thinking": {"type": "disabled"}}
     return kwargs
 
 

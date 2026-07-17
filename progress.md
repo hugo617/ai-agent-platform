@@ -1535,3 +1535,41 @@ Session 110 完成阶段 1(数据库设计修复)后,用户指示「推进阶段
 ### 不越界核对
 仅改 config.py + .env.example + auth.py + auth schema + login-page + endpoints/types + seed_demo + 4 份新文档;未碰 RBAC 权限模型/认证管线核心;未加新表(orchestrator/agent_specialist 已存在)。
 
+---
+
+## Session 112(2026-07-17):非思考模式开关 + test 修复 + RAG 搁置决策
+
+### 任务来源
+用户配置 `OPENAI_MODEL=deepseek-v4-flash` 后触发 `test_llm_config` 失败 → 修测试;进而提出"用 deepseek-v4-flash + 非思考模式"需求 → 新增全局开关。
+
+### 改动 1:修复 test_llm_config(预先存在的脆弱测试)
+- **根因**:`test_effective_falls_back_to_env` 断言 `eff.default_model == "deepseek-chat"`,但被测代码 `llm_config_service.py:63` 读的是 `settings.openai_model`。测试把"代码默认值"硬编码当成了"回退契约"来断言。conftest 用 `setdefault` 只覆盖了 `OPENAI_API_KEY`,没覆盖 `OPENAI_MODEL`,用户 .env 填 `deepseek-v4-flash` 即暴露。
+- **修复**:断言改为 `eff.default_model == settings.openai_model`(+ 补 `available_models` 断言)。这样任何模型名都正确。最后改动追溯:该测试 7-13 PR #42 引入,早于本轮工作,属历史脆弱性。
+- **扫描**:全测试套件其余几十处 `deepseek-chat` 都是 fixture mock 数据(定价行/agent.model 字段等),与 env 无关,不动。
+
+### 改动 2:全局非思考模式开关(用户核心需求)
+- **背景**:DeepSeek 官方 API(`api.deepseek.com`)默认思考模式 enabled。用户要用 `deepseek-v4-flash` 跑非思考模式(更快更省)。
+- **参数依据**:DeepSeek 官方文档(用户提供原文)——`extra_body={"thinking": {"type": "disabled"}}`(放 extra_body 因 OpenAI SDK 不认顶层 `thinking`)。
+- **实现**(全局开关方案,改动最小):
+  - `app/core/config.py`:加 `llm_thinking_enabled: bool = True`(默认开,向后兼容)
+  - `app/agents/graph.py`:`_build_llm_kwargs()` 末尾读 settings,关闭时注入 `extra_body`。**4 个调用点(普通agent/stream/orchestrator的supervisor+specialist)共用此函数,自动全部生效**,调用方零改动。延迟 import settings 避免 config↔graph 循环。
+  - `.env.example`:加 `LLM_THINKING_ENABLED=true` 说明
+  - `tests/test_graph_llm_kwargs.py`:新增 4 单测(纯函数,无 DB/HTTP)——core 字段/可选参数/关思考注入 extra_body/开思考不注入
+- **.env(用户本地,gitignored)**:已补 `LLM_THINKING_ENABLED=false`(用户要的非思考,已激活)
+
+### 验证
+1. ✅ `tests/test_llm_config.py`:12 passed(用户当前 .env 下)
+2. ✅ `tests/test_graph_llm_kwargs.py`:4 passed
+3. ✅ `./init.sh` 全绿:**539 passed**(535 + 新增 4)+ ruff All checks passed
+
+### 决策:向量/RAG 搁置(用户指示)
+用户明确"向量这一块先搁置"。即 `DEMO_EMBEDDING_API_KEY` / `EMBEDDING_API_KEY` 暂不填,3 份知识库文档维持 `status=failed`(占位符 key),RAG 检索功能暂不激活。**根因说明**:DeepSeek 不提供 embedding 端点,embedding 必须用 OpenAI 等厂商(`text-embedding-3-small`,1536 维与 pgvector 列宽匹配)。此为厂商能力边界,非项目可统一项。
+- 影响:聊天功能不受影响(走 DeepSeek chat key);仅知识库检索哑。
+- 复活方式:用户配 embedding key 后重跑 `seed_demo.py --reset` 即可(代码已就绪,`_seed_documents` 真 key 走 create_document 真向量化)。
+
+### 待提交改动(5 文件,本轮新增)
+`tests/test_llm_config.py` / `app/core/config.py` / `app/agents/graph.py` / `.env.example` / `tests/test_graph_llm_kwargs.py`(新)
+
+### 不越界核对
+仅改 LLM 推理参数层(graph.py 的 kwargs 构造)+ config 开关 + 对应测试;未碰 RBAC/认证/数据库 schema/RAG 检索逻辑本身;非思考开关是 provider 协议适配,非业务逻辑改动。
+
