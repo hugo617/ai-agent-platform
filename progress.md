@@ -1573,3 +1573,79 @@ Session 110 完成阶段 1(数据库设计修复)后,用户指示「推进阶段
 ### 不越界核对
 仅改 LLM 推理参数层(graph.py 的 kwargs 构造)+ config 开关 + 对应测试;未碰 RBAC/认证/数据库 schema/RAG 检索逻辑本身;非思考开关是 provider 协议适配,非业务逻辑改动。
 
+---
+
+## Session 113(2026-07-17):RAG 真实环境闭环 —— Ollama + bge-m3 替代 OpenAI embedding
+
+### 任务来源
+承接 Session 112 的「向量搁置」决策。用户提出 P0 任务:把 `knowledge-base-rag`(priority 57)从「mock-only passing」升级为「真实环境 passing」——用户无法提供 OpenAI key,需用本地模型替代。
+
+### 第一阶段:对抗式审查(用户要求)
+用户要求用子智能体从第一性原理 + 对抗式审查计划。子智能体超时后,我亲自做审查,核实计划里每个技术断言。**审查结论:REVISE**,发现:
+- 🔴 **致命错误 1**:漏改 `tests/test_embedding_config.py:22` 的 `assert cfg.dimension == 1536`,照做 ./init.sh 必崩
+- 🔴 **致命错误 2**:误判 seed_demo 配置链路 —— seed 灌文档实际读 DB 的 platform EmbeddingConfig(三级 fallback),不是 .env;`seed_demo.py:821` 的 `base_url="https://api.openai.com/v1"` 硬编码是决定性的(不是可选优化)
+- 🟡 **遗漏 1**:`Vector(settings.x)` 在 model import 期求值有架构异味 → 降级为模块级常量 `EMBEDDING_DIMENSION=1024`
+- 🟡 **遗漏 2**:新迁移需用 raw SQL `op.execute` + 方言守卫(alembic autogenerate 不识别 pgvector 类型)
+- 🟡 **遗漏 3**:DB 既有 openai EmbeddingConfig 会覆盖 .env → seed 灌文档会发到 openai 失败
+
+修订计划 ExitPlanMode 批准后执行。
+
+### 第二阶段:执行 + 运行中新发现的问题
+
+**预见的改动(按修订计划)**:
+- `app/models/document.py`:加 `EMBEDDING_DIMENSION = 1024` 模块常量 + Vector 引用 + docstring
+- `app/schemas/embedding_config.py`:`dimension` 默认 1536→1024(2 处)
+- `tests/test_embedding_config.py`:断言改读 `settings.embedding_*`(不硬编码)+ dimension=1024
+- `scripts/seed_demo.py`:`EMBEDDING_DEMO_MODEL="bge-m3"` + `base_url=settings.embedding_base_url or ollama`
+- 新迁移 `c5d6e7f8a9b0_change_embedding_dimension_to_1024.py`:DELETE chunks + ALTER VECTOR(1024)
+- `.env.example` + `app/core/config.py`:默认值改 ollama/bge-m3
+
+**执行中新发现的问题(计划/审查都漏了)**:
+1. **审查漏 1**:`config.py` 的 `embedding_model` 默认值是 `text-embedding-3-small`(非空),seed_demo 的 `settings.embedding_model or "bge-m3"` 短路失败 → 必须改 config.py 默认值(计划没列)
+2. **审查漏 2**:测试 `cfg.api_key` 断言在用户 .env 把 EMBEDDING_API_KEY 留空时失败 → 测试改读 settings 全字段(非硬编码)
+3. **🔴 执行中真 bug(最大发现)**:`OpenAIEmbeddings` 默认用 **tiktoken 预编码 token ID**(`input: [[82805]]`),ollama 不接受 token ID 只接受字符串 → `400 invalid input type`。审查报告说「后端 service 零改动」是错的。修复:`EmbeddingService` 加 `check_embedding_ctx_length=False`(项目已有 RecursiveCharacterTextSplitter 分块,langchain 二次分块多余,对所有 provider 安全)
+4. **审查遗漏 3 应验**:DB 残留 openai EmbeddingConfig(hint=sk-***ec3a)→ seed 灌文档时 lsof 显示 `SYN_SENT` 连 openai.com 卡死。删掉 DB 行后 seed 走 .env ollama 正常
+
+### 验证(完成定义 4 条全满足)
+1. ✅ 目标行为:RAG 在真实 pgvector + 真实 bge-m3 向量下端到端返回语义相关结果
+2. ✅ 验证真跑过:
+   - `./init.sh` 全绿:ruff All checks passed + **539 passed**(无回归)
+   - `alembic upgrade head` 真 PG 成功(b4c5d6e7f8a9 → c5d6e7f8a9b0)+ `alembic check` 无 drift
+   - ollama bge-m3 模型就绪:`curl /v1/embeddings` 返回 1024 维向量
+   - `EmbeddingService` 直调:embed + embed_query 成功,语义排序正确(颈椎 0.68 > 艾灸 0.47)
+   - `seed_demo --reset`:3 文档 indexed,3 chunks × `vector_dims(embedding)=1024` 验证
+   - **API 端到端检索**(真实 owner token + 真实 cosine SQL):
+     - 朝阳「颈椎不舒服」→ 颈椎理疗操作规范 相似度 **0.7730**
+     - 海淀「针灸禁忌」→ 中药与针灸禁忌 相似度 **0.6900**
+     - 多租户隔离:朝阳只见颈椎文档,海淀只见针灸文档
+3. ✅ 证据记录:feature_list.json knowledge-base-rag evidence 追加第 11 条(真实环境闭环)
+4. ✅ 仓库仍能 `./init.sh` 重新开始
+
+### 关键技术要点
+- **维度单点真相源**:`app/models/document.py` 的 `EMBEDDING_DIMENSION = 1024` 常量,schema/embedding_config 默认值镜像它。换模型改常量 + 跑迁移
+- **tiktoken 兼容性是 ollama 接入的隐藏门槛**:OpenAIEmbeddings 的 `check_embedding_ctx_length=False` 是必须的,不是可选。这个坑网上资料少,值得记录
+- **三级 fallback 的执行顺序陷阱**:DB platform 配置优先于 .env,seed 灌文档读 DB 不读 .env。改 provider 时必须同步清/改 DB 配置,光改 .env 不够
+- **迁移 raw SQL 必须方言守卫**:pgvector 的 VECTOR 类型 alembic autogenerate 不识别,ALTER 只能 `op.execute()` raw SQL + SQLite 跳过
+
+### 改动文件(7 文件)
+1. `app/models/document.py` — 加 EMBEDDING_DIMENSION 常量 + Vector 引用 + docstring
+2. `app/schemas/embedding_config.py` — dimension 默认 1024 + docstring
+3. `app/services/embedding_service.py` — 加 check_embedding_ctx_length=False(关键兼容性修复)+ docstring
+4. `app/core/config.py` — embedding_* 默认值改 ollama/bge-m3 + 注释
+5. `tests/test_embedding_config.py` — 断言改读 settings + dimension=1024
+6. `scripts/seed_demo.py` — EMBEDDING_DEMO_MODEL=bge-m3 + base_url 读 settings
+7. `.env.example` — 默认配置改 ollama + 说明
+8. `alembic/versions/2026_07_17_0100_c5d6e7f8a9b0_change_embedding_dimension_to_1024.py`(新)— 维度迁移
+
+### 不越界核对
+仅改 RAG/embedding 层(model 维度 + service 兼容性 + config 默认 + seed + 迁移);未碰 RBAC/认证/chat LLM/前端 UI/权限模型;retrieve 的 cosine SQL 维度无关零改动;多租户隔离逻辑未碰。
+
+### 待用户操作(可选)
+当前 ollama 是手动 `ollama serve` 启动的(前台进程,关终端会停)。如需长期运行:
+- `brew services start ollama`(开机自启)
+- 或加入 docker-compose(RAG 真正生产化的下一步)
+
+### 下一步
+由用户决定是否 ship-it(commit + PR + 合并入 main)。本任务把 Session 112 的「向量搁置」反转,.priority 57 从 mock-passing 变为真 passing。
+
+
