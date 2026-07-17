@@ -7,9 +7,18 @@ which provider actually serves an embedding is decided by the caller.
 
 Uses langchain's ``OpenAIEmbeddings`` (an OpenAI-compatible client), so any
 provider that speaks the OpenAI embeddings API works (OpenAI, Azure via a
-custom base_url, local servers, etc.). DeepSeek is NOT supported here — it
-does not expose an embeddings endpoint, which is why embeddings config is a
-separate table from the chat LLM config.
+custom base_url, local servers, Ollama, etc.). DeepSeek is NOT supported
+here — it does not expose an embeddings endpoint, which is why embeddings
+config is a separate table from the chat LLM config.
+
+**Tokenization note.** ``OpenAIEmbeddings`` defaults to running the input
+through tiktoken (to chunk-by-token for OpenAI's 8192-token context window).
+That pre-tokenization breaks OpenAI-compatible servers that only accept raw
+strings — e.g. Ollama rejects token IDs with ``invalid input type``. We pass
+``check_embedding_ctx_length=False`` so the text is sent verbatim. This is
+safe because :class:`KnowledgeService` already chunks via
+``RecursiveCharacterTextSplitter`` (CHUNK_SIZE=500) before calling embed,
+making langchain's second token-based chunking redundant.
 """
 
 from __future__ import annotations
@@ -26,8 +35,15 @@ class EmbeddingService:
         # the caller resolved (default BAAI/bge-m3, 1024-dim). The chosen
         # model's dimension must match the ``document_chunks.embedding``
         # column width (see :data:`app.models.document.EMBEDDING_DIMENSION`).
+        #
+        # ``check_embedding_ctx_length=False``: skip langchain's tiktoken-based
+        # pre-tokenization. Required for Ollama compatibility (token IDs get
+        # rejected); harmless for OpenAI because we chunk upstream already.
         self._client = OpenAIEmbeddings(
-            model=model, api_key=api_key, base_url=base_url
+            model=model,
+            api_key=api_key,
+            base_url=base_url,
+            check_embedding_ctx_length=False,
         )
 
     async def embed(self, texts: list[str]) -> list[list[float]]:
