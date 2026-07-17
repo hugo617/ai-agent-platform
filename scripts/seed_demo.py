@@ -202,9 +202,11 @@ EMBEDDING_DEMO_KEY_IS_REAL = bool(settings.demo_embedding_api_key)
 # Model + base_url default to local Ollama (BAAI/bge-m3, 1024-dim). Override
 # via EMBEDDING_MODEL / EMBEDDING_BASE_URL in .env to target another provider.
 # bge-m3 is Chinese-friendly and the dimension matches EMBEDDING_DIMENSION in
-# app/models/document.py — keep them in sync when switching models.
-EMBEDDING_DEMO_MODEL = settings.embedding_model or "bge-m3"
-EMBEDDING_DEMO_BASE_URL = settings.embedding_base_url or "http://localhost:11434/v1"
+# app/models/document.py — keep them in sync when switching models. Both fields
+# have matching defaults in Settings, so reading settings.* directly (no `or`
+# fallback) keeps this the single source of truth.
+EMBEDDING_DEMO_MODEL = settings.embedding_model
+EMBEDDING_DEMO_BASE_URL = settings.embedding_base_url
 
 # Knowledge-base documents: (store_name, doc_name, content).
 # One ops-doc per store demonstrates the RAG capability (cross-store docs are
