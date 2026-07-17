@@ -215,13 +215,18 @@ async def test_effective_falls_back_to_platform(db_session, tenant_owner):
 @pytest.mark.asyncio
 async def test_effective_falls_back_to_env(db_session, tenant_owner):
     """No tenant and no platform row → env defaults."""
+    from app.core.config import settings
     from app.services.llm_config_service import llm_config_service
 
     eff = await llm_config_service.get_effective(db_session, tenant_owner["tenant_id"])
-    # Conftest sets OPENAI_API_KEY=test-key.
-    assert eff.api_key == "test-key"
-    assert eff.base_url == "https://api.deepseek.com"
-    assert eff.default_model == "deepseek-chat"
+    # The env-fallback branch reads settings (OPENAI_API_KEY/BASE_URL/MODEL).
+    # Assert against settings.* — NOT a hardcoded model name — so the test
+    # holds whether the operator configures deepseek-chat, deepseek-v4-flash,
+    # or any other OpenAI-compatible model in their .env.
+    assert eff.api_key == settings.openai_api_key
+    assert eff.base_url == settings.openai_base_url
+    assert eff.default_model == settings.openai_model
+    assert eff.available_models == [settings.openai_model]
 
 
 # --------------------------------------------------- cross-tenant isolation

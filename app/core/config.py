@@ -62,6 +62,14 @@ class Settings(BaseSettings):
     openai_api_key: str = "sk-replace-me"
     openai_base_url: str = "https://api.deepseek.com"
     openai_model: str = "deepseek-chat"
+    # Thinking-mode toggle for reasoning-capable models (e.g. deepseek-v4-flash,
+    # deepseek-v4-pro). DeepSeek's API defaults to thinking *enabled*; setting
+    # this to False injects ``extra_body={"thinking": {"type": "disabled"}}`` on
+    # every ChatOpenAI call (see app/agents/graph.py) for faster, cheaper,
+    # non-reasoning responses. Has no effect on models that don't expose a
+    # thinking mode (the param is simply ignored by the provider). Truthy =
+    # let the provider default apply (thinking on where supported).
+    llm_thinking_enabled: bool = True
 
     # Embedding model (priority 57 — knowledge base / RAG). Separate from the
     # chat LLM config above because DeepSeek does NOT expose an embeddings
