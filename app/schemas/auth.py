@@ -99,3 +99,18 @@ class PasswordChange(BaseModel):
 
     old_password: str = Field(..., min_length=1, max_length=255)
     new_password: str = Field(..., min_length=8, max_length=255)
+
+
+class LoginHint(BaseModel):
+    """Demo login prefill (plan §4) returned by the public ``/auth/login-hint``.
+
+    Both fields are ``None`` in production — the endpoint short-circuits to
+    nulls whenever ``app_env`` is not development/testing, so no credential
+    material ever leaks outside a dev/demo environment. In dev/testing the
+    values come from ``DEMO_LOGIN_USERNAME``/``DEMO_LOGIN_PASSWORD`` so the
+    login page can prefill them as non-controlled defaults (the user can still
+    edit them before submitting).
+    """
+
+    username: str | None = None
+    password: str | None = None

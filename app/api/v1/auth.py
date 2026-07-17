@@ -21,6 +21,7 @@ from app.core.password import hash_password, verify_password
 from app.core.security import TokenError, decode_token
 from app.repositories.tenant import UserRepository
 from app.schemas.auth import (
+    LoginHint,
     LoginRequest,
     MeResponse,
     PasswordChange,
@@ -66,6 +67,26 @@ async def _build_me_response(user: CurrentUser, db: AsyncSession) -> MeResponse:
         phone=db_user.phone if db_user else None,
         avatar=db_user.avatar if db_user else None,
     )
+
+
+@router.get("/login-hint", response_model=LoginHint)
+async def login_hint() -> LoginHint:
+    """Demo login prefill for the login page (plan §4).
+
+    Public (no auth) — the login page calls this on mount to prefill the
+    demo super-admin credentials so a reviewer can sign in with one click.
+
+    Security: returns real values ONLY when ``app_env`` is development/testing.
+    In production (or any other env) both fields are ``None``, so no credential
+    material ever leaks outside a dev/demo environment regardless of what
+    DEMO_LOGIN_* are set to.
+    """
+    if settings.app_env in ("development", "testing"):
+        return LoginHint(
+            username=settings.demo_login_username or None,
+            password=settings.demo_login_password or None,
+        )
+    return LoginHint(username=None, password=None)
 
 
 @router.get("/me", response_model=MeResponse)

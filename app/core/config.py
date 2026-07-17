@@ -73,6 +73,22 @@ class Settings(BaseSettings):
     embedding_base_url: str = "https://api.openai.com"
     embedding_model: str = "text-embedding-3-small"
 
+    # Demo dataset seeding (db-revamp-and-scenario-rebuild plan §2.2/§3).
+    # When set, ``scripts/seed_demo.py`` uses these real keys to populate the
+    # platform-level LlmConfig/EmbeddingConfig so the demo can do live chat +
+    # real RAG embeddings on first boot. Empty string = fall back to the
+    # ``sk-demo-placeholder`` sentinel (chat/RAG stay configurable but inert
+    # until a real key is supplied). NEVER commit a real key — .env only.
+    demo_llm_api_key: str = ""
+    demo_embedding_api_key: str = ""
+
+    # Demo login prefill (plan §4). When set AND ``app_env`` is development/
+    # testing, the public ``GET /auth/login-hint`` endpoint returns these so the
+    # login page prefills them (non-controlled defaults the user may change).
+    # Production always returns nulls regardless of these values (see auth.py).
+    demo_login_username: str = "admin"
+    demo_login_password: str = "Admin@123456"
+
     # Field-level encryption — Fernet key (base64 urlsafe 32 bytes) used to
     # encrypt secrets stored in the DB (e.g. LLM API keys). Generate with:
     #   python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"

@@ -312,6 +312,13 @@ export interface TokenResponse {
   tenant_id: string;
 }
 
+/** Demo login prefill from GET /auth/login-hint. Both fields are null in
+ * production (the backend only returns real values in development/testing). */
+export interface LoginHint {
+  username: string | null;
+  password: string | null;
+}
+
 export interface Agent {
   id: string;
   tenant_id: string;
