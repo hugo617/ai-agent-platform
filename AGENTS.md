@@ -8,11 +8,9 @@
 ## 项目简介
 
 **多租户 AI 智能体 SaaS 平台** —— 可作为新 SaaS 产品的脚手架。
-
-- **后端**:FastAPI + SQLAlchemy 2.0(async)+ pycasbin(RBAC 多租户)+ LangGraph(AI Agent)+ Alembic
-- **前端**:React 19 + Vite + TanStack Query/Table + Tailwind + shadcn 风格组件
-- **数据库**:PostgreSQL 16 + pgvector
-- **认证**:双轨(本地密码 bcrypt + Logto OIDC),统一过一条 `get_current_user` 管线
+技术栈:FastAPI + SQLAlchemy 2.0(async)+ pycasbin + LangGraph + React 19 + PostgreSQL 16 + pgvector,
+双轨认证(本地 bcrypt + Logto OIDC)统一过 `get_current_user` 管线。
+详见 [`项目指南/00-总览/03-技术栈总览.md`](项目指南/00-总览/03-技术栈总览.md)(单点真相源)。
 
 ---
 
@@ -32,40 +30,8 @@
 ## 📚 第一件事:读文档
 
 本项目有完整的**中文文档体系**,在 [`项目指南/`](项目指南/) 目录。
-
-- **人类入口**:[`项目指南/README.md`](项目指南/README.md)
-- **🤖 AI 专用入口**(必读):[`项目指南/README-给AI.md`](项目指南/README-给AI.md)
-  —— 教你如何**按任务渐进式读取文档**,而不是一次塞满上下文。
-
----
-
-## 🚀 最常用的 AI 任务 → 该读哪些文档
-
-| 任务 | 读这几篇 |
-|------|---------|
-| **理解项目架构** | `项目指南/00-总览/01`、`02` |
-| **读懂后端代码** | `项目指南/02-后端架构/01`(分层,先读) |
-| **新增后端模块** | `项目指南/02-后端架构/01,03,04,06` + `项目指南/04-二开脚手架/02` |
-| **新增前端页面** | `项目指南/03-前端架构/01,02,04,05` + `项目指南/04-二开脚手架/03` |
-| **排查认证/权限** | `项目指南/02-后端架构/05`(认证)、`06`(RBAC) |
-| **改数据库字段** | `项目指南/02-后端架构/03` + `项目指南/附录/常见任务速查.md` |
-| **看改动影响范围** | `项目指南/附录/关系图.md`(影响速查表) |
-
----
-
-## ⚡ 强烈建议:启用 CodeGraph
-
-本项目文档讲「是什么/为什么」;CodeGraph 能帮你**精确定位代码、查调用关系**。
-
-`codegraph` CLI 已安装(1.2.0)。索引数据(`.codegraph/codegraph.db`)**不入库**——
-仓库里只提交了 `.codegraph/` 目录壳,clone 后需要重建索引:
-
-```bash
-codegraph init
-```
-
-启用后即可用 `codegraph_explore` 工具查询符号关系(如「谁调用了 `get_current_user`」)。
-详见 [`项目指南/README-给AI.md`](项目指南/README-给AI.md) 的 CodeGraph 章节。
+**AI 必读 [`项目指南/README-给AI.md`](项目指南/README-给AI.md)** ——
+教你按任务渐进式读取文档(不塞满上下文),含「按任务选文档」表(10 个常见任务)+ CodeGraph 配合使用 + 容易踩的坑。
 
 ---
 
@@ -78,65 +44,50 @@ codegraph init
 4. **软删除 + 部分唯一索引**是惯例,查询要带 `is_deleted=False` 语义。
 5. **引用代码用符号名**(如 `TenantScopedRepository`),不用行号(行号会变)。
 6. **数据库表设计原则**:加新表前必读 `项目指南/02-后端架构/03-数据库与ORM.md` 的
-   「新增表的设计原则」(8 条 checklist:租户归属、软删除、命名、双库兼容、历史维度等)。
-   现阶段「权限表 + 基础属性表」已齐全,**按需加表,不预建空架子,不过度设计**。
-   其中「历史维度」:绝大多数表用主表 + `system_logs` 审计即可;SCD2(`valid_from`/`valid_to`)
-   仅授权链等「任意时间点还原」合规刚需才上,**是按需项不是标配**(见 `docs/auth-history-scd2-plan.md`)。
+   「新增表的设计原则」(8 条 checklist)。**按需加表,不预建空架子,不过度设计**;
+   SCD2(`valid_from`/`valid_to`)仅授权链等合规刚需才上(见 `docs/auth-history-scd2-plan.md`)。
 
 更多约定见 [`项目指南/README-给AI.md`](项目指南/README-给AI.md) 的「容易踩的坑」。
 
 ---
 
+## 🤖 自动触发规则(task → skill 路由表)
+
+agent 不再凭自觉用 skill,按任务状态变化硬触发(详见
+[`harness/docs/task-workflow.md`](harness/docs/task-workflow.md) §7,含 mermaid 流程图):
+
+| 任务状态变化 | 必调 skill |
+|---|---|
+| feature_list.json 新增任务 | `/grill-with-docs`(有 codebase)/ `/grill-me`(无) |
+| 需求沟通清楚,要落 PRD | `/to-spec`(模板见 [`harness/docs/prd-template.md`](harness/docs/prd-template.md))|
+| PRD 完成,要拆切片 | `/to-tickets` |
+| 切片开始实施 | `/implement`(内部驱动 `/tdd`)|
+| 实施完成 | `/code-review`(双轴 Standards + Spec)|
+| bug 出现 | `/diagnosing-bugs`(流程见 [`harness/docs/bug-tracking.md`](harness/docs/bug-tracking.md))|
+| 代码健康度巡检(每 10 feature / 重构前)| `/improve-codebase-architecture`(流程见 [`harness/docs/codebase-health-check.md`](harness/docs/codebase-health-check.md))|
+| context 接近 60% | `/handoff` |
+
+不确定用哪个?输入 `/harness-router` 让路由器推荐(阶段 3 后可用)。
+
+---
+
 ## 📋 每次任务完成后:必须提供「文档影响评估」
 
-**这是项目的长期约定,每个任务完成时都要做。** 目的:让文档始终和代码同步,由人决策是否更新。
-
-### 触发时机
-每当**完成一个工作单元**(改完一块代码 / 加完功能 / 调完 bug)后,在回复**末尾**附上
-下面的结构化评估。**中间过程性步骤不打断。**
-
-### 格式(固定 4 行)
-```
-📝 文档影响评估
-• 本次改动：<一句话概括做了什么>
-• 影响文档：是 / 否（说明：哪篇文档描述了这块，是否过时）
-• 建议动作：无需更新 / 建议更新 [篇名]（写明改动点）
-```
-
-### 判断「是否影响文档」的依据
-- 改动触及**已文档化的内容**（架构、机制、约定、流程）→ 是
-- 纯内部实现细节、文档从未描述过的层 → 否
-- 拿不准 → 倾向于「是」并标注，由人决定
-
-### 示例
-```
-📝 文档影响评估
-• 本次改动：把登录 token 从 HS256 换成了 EdDSA
-• 影响文档：是，02-后端架构/05-认证体系.md 描述了三种 token 算法，现已过时
-• 建议动作：更新 [05-认证体系]，把算法部分改为 EdDSA
-```
-
-> 收到「建议更新」时，请用户确认；确认后再动手改文档，不要自行其是。
+**这是项目的长期约定,每个任务完成时都要做。** 详见
+[`harness/docs/doc-impact-assessment.md`](harness/docs/doc-impact-assessment.md)
+(触发时机 / 4 行格式模板 / 判断依据 / 示例)。
 
 ---
 
 ## 🔧 工作规则与完成定义
 
-> Harness Stage 1 + Stage 3:防越界、防半成品、防假完成。
+> Harness Stage 1 + Stage 3:防越界、防半成品、防假完成。详见
+> [`harness/docs/task-workflow.md`](harness/docs/task-workflow.md)(状态机 / 完成定义 / 收尾清单全在这)。
 
-### 工作规则(不可违反)
-- **WIP=1**:一次只做一个功能。当前功能端到端验证通过前,不开新功能。
-- **完成绑定证据**:不要因为「代码写完了」就标完成。状态从 `in_progress` → `passing` 的唯一方式,
-  是验证命令真跑过并把证据写进 [`feature_list.json`](feature_list.json) 的 `evidence` 字段。
-- **不越界**:只做选定功能,不顺手重构/多改(除非为消除当前 blocker 的窄范围修复)。
-- **仓库是唯一事实来源**:脑子里的不算。决策、进度、架构约定都要落到文件。
+**核心 4 条**(不可违反):
+- **WIP=1**:一次只做一个功能,当前端到端验证通过前不开新功能
+- **完成绑定证据**:状态 `in_progress` → `passing` 唯一方式是验证真跑过 + 证据写进 [`feature_list.json`](feature_list.json) `evidence`
+- **不越界**:只做选定功能,不顺手重构/多改(除非窄范围 blocker 修复)
+- **仓库是唯一事实来源**:脑子里的不算,决策/进度/约定都落到文件
 
-### 完成定义(4 条全满足才算完成)
-1. 目标行为已实现;
-2. 要求的验证真的跑过(`./init.sh` 全过,不是「看起来没问题」);
-3. 证据已记录到 [`feature_list.json`](feature_list.json) 的 `evidence` 字段;
-4. 仓库仍能按标准路径(`./init.sh`)重新开始工作。
-
-### 收尾(会话结束前)
-对照 [`harness/clean-state-checklist.md`](harness/clean-state-checklist.md) 逐项打勾,
-全勾才算留下干净状态。同时更新 [`progress.md`](progress.md) 的会话记录。
+**收尾**:对照 [`harness/clean-state-checklist.md`](harness/clean-state-checklist.md) 逐项打勾 + 更新 [`progress.md`](progress.md)。

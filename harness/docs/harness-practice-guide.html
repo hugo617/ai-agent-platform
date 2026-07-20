@@ -1,0 +1,826 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Harness 工程实践指南 · ai-agent-platform</title>
+
+<!-- Tailwind：本地预编译内联（v3.4.17），无运行时网络依赖 -->
+<style id="tailwind-inline">
+*,::backdrop,:after,:before{--tw-border-spacing-x:0;--tw-border-spacing-y:0;--tw-translate-x:0;--tw-translate-y:0;--tw-rotate:0;--tw-skew-x:0;--tw-skew-y:0;--tw-scale-x:1;--tw-scale-y:1;--tw-pan-x: ;--tw-pan-y: ;--tw-pinch-zoom: ;--tw-scroll-snap-strictness:proximity;--tw-gradient-from-position: ;--tw-gradient-via-position: ;--tw-gradient-to-position: ;--tw-ordinal: ;--tw-slashed-zero: ;--tw-numeric-figure: ;--tw-numeric-spacing: ;--tw-numeric-fraction: ;--tw-ring-inset: ;--tw-ring-offset-width:0px;--tw-ring-offset-color:#fff;--tw-ring-color:#3b82f680;--tw-ring-offset-shadow:0 0 #0000;--tw-ring-shadow:0 0 #0000;--tw-shadow:0 0 #0000;--tw-shadow-colored:0 0 #0000;--tw-blur: ;--tw-brightness: ;--tw-contrast: ;--tw-grayscale: ;--tw-hue-rotate: ;--tw-invert: ;--tw-saturate: ;--tw-sepia: ;--tw-drop-shadow: ;--tw-backdrop-blur: ;--tw-backdrop-brightness: ;--tw-backdrop-contrast: ;--tw-backdrop-grayscale: ;--tw-backdrop-hue-rotate: ;--tw-backdrop-invert: ;--tw-backdrop-opacity: ;--tw-backdrop-saturate: ;--tw-backdrop-sepia: ;--tw-contain-size: ;--tw-contain-layout: ;--tw-contain-paint: ;--tw-contain-style: }/*! tailwindcss v3.4.17 | MIT License | https://tailwindcss.com*/*,:after,:before{box-sizing:border-box;border:0 solid #e5e7eb}:after,:before{--tw-content:""}:host,html{line-height:1.5;-webkit-text-size-adjust:100%;-moz-tab-size:4;-o-tab-size:4;tab-size:4;font-family:ui-sans-serif,system-ui,sans-serif,Apple Color Emoji,Segoe UI Emoji,Segoe UI Symbol,Noto Color Emoji;font-feature-settings:normal;font-variation-settings:normal;-webkit-tap-highlight-color:transparent}body{margin:0;line-height:inherit}hr{height:0;color:inherit;border-top-width:1px}abbr:where([title]){-webkit-text-decoration:underline dotted;text-decoration:underline dotted}h1,h2,h3,h4,h5,h6{font-size:inherit;font-weight:inherit}a{color:inherit;text-decoration:inherit}b,strong{font-weight:bolder}code,kbd,pre,samp{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,Liberation Mono,Courier New,monospace;font-feature-settings:normal;font-variation-settings:normal;font-size:1em}small{font-size:80%}sub,sup{font-size:75%;line-height:0;position:relative;vertical-align:initial}sub{bottom:-.25em}sup{top:-.5em}table{text-indent:0;border-color:inherit;border-collapse:collapse}button,input,optgroup,select,textarea{font-family:inherit;font-feature-settings:inherit;font-variation-settings:inherit;font-size:100%;font-weight:inherit;line-height:inherit;letter-spacing:inherit;color:inherit;margin:0;padding:0}button,select{text-transform:none}button,input:where([type=button]),input:where([type=reset]),input:where([type=submit]){-webkit-appearance:button;background-color:initial;background-image:none}:-moz-focusring{outline:auto}:-moz-ui-invalid{box-shadow:none}progress{vertical-align:initial}::-webkit-inner-spin-button::-webkit-outer-spin-button{height:auto}[type=search]{-webkit-appearance:textfield;outline-offset:-2px}::-webkit-search-decoration{-webkit-appearance:none}::-webkit-file-upload-button{-webkit-appearance:button;font:inherit}summary{display:list-item}blockquote,dd,dl,figure,h1,h2,h3,h4,h5,h6,hr,p,pre{margin:0}fieldset{margin:0}fieldset,legend{padding:0}menu,ol,ul{list-style:none;margin:0;padding:0}dialog{padding:0}textarea{resize:vertical}input::-moz-placeholder,textarea::-moz-placeholder{opacity:1;color:#9ca3af}input::placeholder,textarea::placeholder{opacity:1;color:#9ca3af}[role=button],button{cursor:pointer}:disabled{cursor:default}audio,canvas,embed,iframe,img,object,svg,video{display:block;vertical-align:middle}img,video{max-width:100%;height:auto}[hidden]:where(:not([hidden]=until-found])){display:none}.fixed{position:fixed}.sticky{position:sticky}.top-0{top:0}.top-14{top:3.5rem}.z-30{z-index:30}.z-40{z-index:40}.mx-auto{margin-left:auto;margin-right:auto}.my-3{margin-top:.75rem;margin-bottom:.75rem}.mb-1{margin-bottom:.25rem}.mb-2{margin-bottom:.5rem}.mb-3{margin-bottom:.75rem}.mb-4{margin-bottom:1rem}.mb-5{margin-bottom:1.25rem}.mb-6{margin-bottom:1.5rem}.mb-8{margin-bottom:2rem}.ml-4{margin-left:1rem}.ml-auto{margin-left:auto}.mt-1{margin-top:.25rem}.mt-16{margin-top:4rem}.mt-2{margin-top:.5rem}.mt-3{margin-top:.75rem}.mt-4{margin-top:1rem}.block{display:block}.flex{display:flex}.table{display:table}.grid{display:grid}.hidden{display:none}.h-14{height:3.5rem}.w-1\/4{width:25%}.w-20{width:5rem}.w-52{width:13rem}.w-full{width:100%}.min-w-0{min-width:0}.max-w-3xl{max-width:48rem}.max-w-7xl{max-width:80rem}.flex-1{flex:1 1 0%}.flex-shrink-0{flex-shrink:0}.cursor-pointer{cursor:pointer}.select-none{-webkit-user-select:none;-moz-user-select:none;user-select:none}.list-inside{list-style-position:inside}.list-decimal{list-style-type:decimal}.list-disc{list-style-type:disc}.flex-wrap{flex-wrap:wrap}.items-start{align-items:flex-start}.items-center{align-items:center}.justify-end{justify-content:flex-end}.justify-between{justify-content:space-between}.gap-1{gap:.25rem}.gap-2{gap:.5rem}.gap-3{gap:.75rem}.gap-4{gap:1rem}.gap-6{gap:1.5rem}.gap-x-4{-moz-column-gap:1rem;column-gap:1rem}.gap-y-1{row-gap:.25rem}.space-y-1>:not([hidden])~:not([hidden]){--tw-space-y-reverse:0;margin-top:calc(.25rem*(1 - var(--tw-space-y-reverse)));margin-bottom:calc(.25rem*var(--tw-space-y-reverse))}.space-y-1\.5>:not([hidden])~:not([hidden]){--tw-space-y-reverse:0;margin-top:calc(.375rem*(1 - var(--tw-space-y-reverse)));margin-bottom:calc(.375rem*var(--tw-space-y-reverse))}.space-y-12>:not([hidden])~:not([hidden]){--tw-space-y-reverse:0;margin-top:calc(3rem*(1 - var(--tw-space-y-reverse)));margin-bottom:calc(3rem*var(--tw-space-y-reverse))}.space-y-2>:not([hidden])~:not([hidden]){--tw-space-y-reverse:0;margin-top:calc(.5rem*(1 - var(--tw-space-y-reverse)));margin-bottom:calc(.5rem*var(--tw-space-y-reverse))}.space-y-3>:not([hidden])~:not([hidden]){--tw-space-y-reverse:0;margin-top:calc(.75rem*(1 - var(--tw-space-y-reverse)));margin-bottom:calc(.75rem*var(--tw-space-y-reverse))}.space-y-4>:not([hidden])~:not([hidden]){--tw-space-y-reverse:0;margin-top:calc(1rem*(1 - var(--tw-space-y-reverse)));margin-bottom:calc(1rem*var(--tw-space-y-reverse))}.space-y-6>:not([hidden])~:not([hidden]){--tw-space-y-reverse:0;margin-top:calc(1.5rem*(1 - var(--tw-space-y-reverse)));margin-bottom:calc(1.5rem*var(--tw-space-y-reverse))}.divide-y>:not([hidden])~:not([hidden]){--tw-divide-y-reverse:0;border-top-width:calc(1px*(1 - var(--tw-divide-y-reverse)));border-bottom-width:calc(1px*var(--tw-divide-y-reverse))}.divide-slate-800>:not([hidden])~:not([hidden]){--tw-divide-opacity:1;border-color:rgb(30 41 59/var(--tw-divide-opacity,1))}.overflow-hidden{overflow:hidden}.overflow-x-auto{overflow-x:auto}.truncate{overflow:hidden;text-overflow:ellipsis}.truncate,.whitespace-nowrap{white-space:nowrap}.rounded{border-radius:.25rem}.rounded-full{border-radius:9999px}.rounded-lg{border-radius:.5rem}.rounded-xl{border-radius:.75rem}.border{border-width:1px}.border-b{border-bottom-width:1px}.border-t{border-top-width:1px}.border-amber-500{--tw-border-opacity:1;border-color:rgb(245 158 11/var(--tw-border-opacity,1))}.border-amber-500\/40{border-color:#f59e0b66}.border-amber-700{--tw-border-opacity:1;border-color:rgb(180 83 9/var(--tw-border-opacity,1))}.border-amber-700\/50{border-color:#b4530980}.border-amber-800{--tw-border-opacity:1;border-color:rgb(146 64 14/var(--tw-border-opacity,1))}.border-amber-800\/40{border-color:#92400e66}.border-amber-900{--tw-border-opacity:1;border-color:rgb(120 53 15/var(--tw-border-opacity,1))}.border-amber-900\/40{border-color:#78350f66}.border-amber-900\/50{border-color:#78350f80}.border-blue-900{--tw-border-opacity:1;border-color:rgb(30 58 138/var(--tw-border-opacity,1))}.border-blue-900\/50{border-color:#1e3a8a80}.border-green-900{--tw-border-opacity:1;border-color:rgb(20 83 45/var(--tw-border-opacity,1))}.border-green-900\/40{border-color:#14532d66}.border-green-900\/50{border-color:#14532d80}.border-orange-900\/50{border-color:#7c2d1280}.border-purple-900{--tw-border-opacity:1;border-color:rgb(88 28 135/var(--tw-border-opacity,1))}.border-purple-900\/50{border-color:#581c8780}.border-red-900{--tw-border-opacity:1;border-color:rgb(127 29 29/var(--tw-border-opacity,1))}.border-red-900\/50{border-color:#7f1d1d80}.border-slate-600{--tw-border-opacity:1;border-color:rgb(71 85 105/var(--tw-border-opacity,1))}.border-slate-700{--tw-border-opacity:1;border-color:rgb(51 65 85/var(--tw-border-opacity,1))}.border-slate-800{--tw-border-opacity:1;border-color:rgb(30 41 59/var(--tw-border-opacity,1))}.border-slate-900{--tw-border-opacity:1;border-color:rgb(15 23 42/var(--tw-border-opacity,1))}.bg-amber-500\/20{background-color:#f59e0b33}.bg-amber-900{--tw-bg-opacity:1;background-color:rgb(120 53 15/var(--tw-bg-opacity,1))}.bg-amber-950{--tw-bg-opacity:1;background-color:rgb(69 26 3/var(--tw-bg-opacity,1))}.bg-amber-950\/20{background-color:#451a0333}.bg-amber-950\/30{background-color:#451a034d}.bg-blue-950{--tw-bg-opacity:1;background-color:rgb(23 37 84/var(--tw-bg-opacity,1))}.bg-blue-950\/30{background-color:#1725544d}.bg-green-950{--tw-bg-opacity:1;background-color:rgb(5 46 22/var(--tw-bg-opacity,1))}.bg-green-950\/20{background-color:#052e1633}.bg-red-950{--tw-bg-opacity:1;background-color:rgb(69 10 10/var(--tw-bg-opacity,1))}.bg-red-950\/10{background-color:#450a0a1a}.bg-slate-700\/40{background-color:#33415566}.bg-slate-800{--tw-bg-opacity:1;background-color:rgb(30 41 59/var(--tw-bg-opacity,1))}.bg-slate-800\/60{background-color:#1e293b99}.bg-slate-900{--tw-bg-opacity:1;background-color:rgb(15 23 42/var(--tw-bg-opacity,1))}.bg-slate-900\/40{background-color:#0f172a66}.bg-slate-900\/50{background-color:#0f172a80}.bg-slate-900\/60{background-color:#0f172a99}.bg-slate-950{--tw-bg-opacity:1;background-color:rgb(2 6 23/var(--tw-bg-opacity,1))}.bg-gradient-to-br{background-image:linear-gradient(to bottom right,var(--tw-gradient-stops))}.from-amber-900\/20{--tw-gradient-from:#78350f33 var(--tw-gradient-from-position);--tw-gradient-to:#78350f00 var(--tw-gradient-to-position);--tw-gradient-stops:var(--tw-gradient-from),var(--tw-gradient-to)}.to-slate-900\/40{--tw-gradient-to:#0f172a66 var(--tw-gradient-to-position)}.p-2{padding:.5rem}.p-2\.5{padding:.625rem}.p-3{padding:.75rem}.p-4{padding:1rem}.p-5{padding:1.25rem}.px-1{padding-left:.25rem;padding-right:.25rem}.px-2{padding-left:.5rem;padding-right:.5rem}.px-2\.5{padding-left:.625rem;padding-right:.625rem}.px-3{padding-left:.75rem;padding-right:.75rem}.px-4{padding-left:1rem;padding-right:1rem}.px-5{padding-left:1.25rem;padding-right:1.25rem}.py-0\.5{padding-top:.125rem;padding-bottom:.125rem}.py-1{padding-top:.25rem;padding-bottom:.25rem}.py-1\.5{padding-top:.375rem;padding-bottom:.375rem}.py-2{padding-top:.5rem;padding-bottom:.5rem}.py-3{padding-top:.75rem;padding-bottom:.75rem}.py-6{padding-top:1.5rem;padding-bottom:1.5rem}.py-8{padding-top:2rem;padding-bottom:2rem}.pl-4{padding-left:1rem}.pl-5{padding-left:1.25rem}.pt-2{padding-top:.5rem}.pt-3{padding-top:.75rem}.pt-8{padding-top:2rem}.text-left{text-align:left}.font-mono{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,Liberation Mono,Courier New,monospace}.font-sans{font-family:ui-sans-serif,system-ui,sans-serif,Apple Color Emoji,Segoe UI Emoji,Segoe UI Symbol,Noto Color Emoji}.text-2xl{font-size:1.5rem;line-height:2rem}.text-4xl{font-size:2.25rem;line-height:2.5rem}.text-lg{font-size:1.125rem;line-height:1.75rem}.text-sm{font-size:.875rem;line-height:1.25rem}.text-xl{font-size:1.25rem;line-height:1.75rem}.text-xs{font-size:.75rem;line-height:1rem}.font-black{font-weight:900}.font-bold{font-weight:700}.font-semibold{font-weight:600}.uppercase{text-transform:uppercase}.leading-relaxed{line-height:1.625}.tracking-tight{letter-spacing:-.025em}.tracking-wider{letter-spacing:.05em}.text-amber-200{--tw-text-opacity:1;color:rgb(253 230 138/var(--tw-text-opacity,1))}.text-amber-300{--tw-text-opacity:1;color:rgb(252 211 77/var(--tw-text-opacity,1))}.text-amber-400{--tw-text-opacity:1;color:rgb(251 191 36/var(--tw-text-opacity,1))}.text-amber-500{--tw-text-opacity:1;color:rgb(245 158 11/var(--tw-text-opacity,1))}.text-blue-300{--tw-text-opacity:1;color:rgb(147 197 253/var(--tw-text-opacity,1))}.text-blue-400{--tw-text-opacity:1;color:rgb(96 165 250/var(--tw-text-opacity,1))}.text-cyan-300{--tw-text-opacity:1;color:rgb(103 232 249/var(--tw-text-opacity,1))}.text-cyan-400{--tw-text-opacity:1;color:rgb(34 211 238/var(--tw-text-opacity,1))}.text-green-300{--tw-text-opacity:1;color:rgb(134 239 172/var(--tw-text-opacity,1))}.text-green-400{--tw-text-opacity:1;color:rgb(74 222 128/var(--tw-text-opacity,1))}.text-orange-300{--tw-text-opacity:1;color:rgb(253 186 116/var(--tw-text-opacity,1))}.text-purple-300{--tw-text-opacity:1;color:rgb(216 180 254/var(--tw-text-opacity,1))}.text-red-300{--tw-text-opacity:1;color:rgb(252 165 165/var(--tw-text-opacity,1))}.text-red-400{--tw-text-opacity:1;color:rgb(248 113 113/var(--tw-text-opacity,1))}.text-slate-100{--tw-text-opacity:1;color:rgb(241 245 249/var(--tw-text-opacity,1))}.text-slate-200{--tw-text-opacity:1;color:rgb(226 232 240/var(--tw-text-opacity,1))}.text-slate-300{--tw-text-opacity:1;color:rgb(203 213 225/var(--tw-text-opacity,1))}.text-slate-400{--tw-text-opacity:1;color:rgb(148 163 184/var(--tw-text-opacity,1))}.text-slate-500{--tw-text-opacity:1;color:rgb(100 116 139/var(--tw-text-opacity,1))}.text-slate-600{--tw-text-opacity:1;color:rgb(71 85 105/var(--tw-text-opacity,1))}.text-slate-700{--tw-text-opacity:1;color:rgb(51 65 85/var(--tw-text-opacity,1))}.underline{text-decoration-line:underline}.antialiased{-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}.blur{--tw-blur:blur(8px)}.blur,.filter{filter:var(--tw-blur) var(--tw-brightness) var(--tw-contrast) var(--tw-grayscale) var(--tw-hue-rotate) var(--tw-invert) var(--tw-saturate) var(--tw-sepia) var(--tw-drop-shadow)}.backdrop-blur{--tw-backdrop-blur:blur(8px)}.backdrop-blur,.backdrop-filter{-webkit-backdrop-filter:var(--tw-backdrop-blur) var(--tw-backdrop-brightness) var(--tw-backdrop-contrast) var(--tw-backdrop-grayscale) var(--tw-backdrop-hue-rotate) var(--tw-backdrop-invert) var(--tw-backdrop-opacity) var(--tw-backdrop-saturate) var(--tw-backdrop-sepia);backdrop-filter:var(--tw-backdrop-blur) var(--tw-backdrop-brightness) var(--tw-backdrop-contrast) var(--tw-backdrop-grayscale) var(--tw-backdrop-hue-rotate) var(--tw-backdrop-invert) var(--tw-backdrop-opacity) var(--tw-backdrop-saturate) var(--tw-backdrop-sepia)}.transition{transition-property:color,background-color,border-color,text-decoration-color,fill,stroke,opacity,box-shadow,transform,filter,-webkit-backdrop-filter;transition-property:color,background-color,border-color,text-decoration-color,fill,stroke,opacity,box-shadow,transform,filter,backdrop-filter;transition-property:color,background-color,border-color,text-decoration-color,fill,stroke,opacity,box-shadow,transform,filter,backdrop-filter,-webkit-backdrop-filter;transition-timing-function:cubic-bezier(.4,0,.2,1);transition-duration:.15s}.hover\:border-blue-500:hover{--tw-border-opacity:1;border-color:rgb(59 130 246/var(--tw-border-opacity,1))}.hover\:border-cyan-500:hover{--tw-border-opacity:1;border-color:rgb(6 182 212/var(--tw-border-opacity,1))}.hover\:border-green-500:hover{--tw-border-opacity:1;border-color:rgb(34 197 94/var(--tw-border-opacity,1))}.hover\:border-orange-500:hover{--tw-border-opacity:1;border-color:rgb(249 115 22/var(--tw-border-opacity,1))}.hover\:border-purple-500:hover{--tw-border-opacity:1;border-color:rgb(168 85 247/var(--tw-border-opacity,1))}.hover\:border-slate-400:hover{--tw-border-opacity:1;border-color:rgb(148 163 184/var(--tw-border-opacity,1))}.hover\:bg-slate-900\/40:hover{background-color:#0f172a66}.hover\:text-blue-300:hover{--tw-text-opacity:1;color:rgb(147 197 253/var(--tw-text-opacity,1))}.hover\:text-cyan-300:hover{--tw-text-opacity:1;color:rgb(103 232 249/var(--tw-text-opacity,1))}.hover\:text-green-300:hover{--tw-text-opacity:1;color:rgb(134 239 172/var(--tw-text-opacity,1))}.hover\:text-orange-300:hover{--tw-text-opacity:1;color:rgb(253 186 116/var(--tw-text-opacity,1))}.hover\:text-purple-300:hover{--tw-text-opacity:1;color:rgb(216 180 254/var(--tw-text-opacity,1))}.hover\:underline:hover{text-decoration-line:underline}@media (min-width:640px){.sm\:inline{display:inline}.sm\:hidden{display:none}.sm\:grid-cols-2{grid-template-columns:repeat(2,minmax(0,1fr))}.sm\:grid-cols-3{grid-template-columns:repeat(3,minmax(0,1fr))}}@media (min-width:768px){.md\:inline{display:inline}.md\:flex{display:flex}.md\:grid-cols-2{grid-template-columns:repeat(2,minmax(0,1fr))}.md\:p-6{padding:1.5rem}.md\:text-5xl{font-size:3rem;line-height:1}}@media (min-width:1024px){.lg\:block{display:block}.lg\:grid-cols-3{grid-template-columns:repeat(3,minmax(0,1fr))}}
+</style>
+
+<!-- 字体栈（系统字体优先，无需网络） -->
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", "Helvetica Neue", Arial, sans-serif; }
+  code, pre, .font-mono { font-family: "JetBrains Mono", "Fira Code", "SF Mono", Menlo, Consolas, monospace; }
+</style>
+
+<noscript><div style="padding:1rem;background:#fecaca;color:#7f1d1d;text-align:center;">⚠️ 此页需要 JavaScript 渲染交互（模式切换 / Mermaid 图），请启用 JS</div></noscript>
+
+<!-- Mermaid：4 源串行 fallback，国内 CDN 优先，任一成功即停；全失败则降级为代码块 -->
+<script>
+(function () {
+  var sources = [
+    "https://cdn.staticfile.org/mermaid/10.9.1/mermaid.min.js",
+    "https://lib.baomitu.com/mermaid/10.9.1/mermaid.min.js",
+    "https://cdnjs.cloudflare.com/ajax/libs/mermaid/10.9.1/mermaid.min.js",
+    "https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"
+  ];
+  var idx = 0;
+  function tryNext() {
+    if (idx >= sources.length) {
+      window.__mermaidFailed = true;
+      console.warn('[Mermaid] 所有 CDN 都加载失败，降级为代码块显示');
+      // 降级：把所有 pre.mermaid 显示出来（原本 hidden 等待渲染）
+      document.querySelectorAll('pre.mermaid-src').forEach(function (el) { el.style.display = 'block'; });
+      return;
+    }
+    var s = document.createElement('script');
+    s.src = sources[idx++];
+    s.onload = function () {
+      if (typeof mermaid !== 'undefined') {
+        window.__mermaidReady = true;
+        console.log('[Mermaid] 加载成功:', s.src);
+        if (document.readyState === 'loading') {
+          document.addEventListener('DOMContentLoaded', initMermaid);
+        } else {
+          initMermaid();
+        }
+      } else {
+        tryNext();
+      }
+    };
+    s.onerror = function () {
+      console.warn('[Mermaid] 加载失败，尝试下一个:', s.src);
+      tryNext();
+    };
+    document.head.appendChild(s);
+  }
+  function initMermaid() {
+    try {
+      mermaid.initialize({ startOnLoad: false, theme: 'base', securityLevel: 'loose' });
+      // 应用主题色（深/浅）
+      applyMermaidTheme();
+      mermaid.run({ querySelector: '.mermaid' }).catch(function (e) {
+        console.warn('[Mermaid] 渲染失败:', e);
+      });
+    } catch (e) {
+      console.warn('[Mermaid] 初始化异常:', e);
+    }
+  }
+  function applyMermaidTheme() {
+    try {
+      var isDark = !document.documentElement.classList.contains('light');
+      mermaid.initialize({
+        startOnLoad: false,
+        securityLevel: 'loose',
+        theme: 'base',
+        themeVariables: isDark ? {
+          primaryColor: '#1e293b', primaryTextColor: '#e2e8f0', primaryBorderColor: '#475569',
+          lineColor: '#64748b', secondaryColor: '#0f172a', tertiaryColor: '#1e293b',
+          background: '#020617', mainBkg: '#1e293b', altBackground: '#0f172a',
+          textColor: '#e2e8f0', nodeBorder: '#475569', edgeLabelBackground: '#0f172a'
+        } : {
+          primaryColor: '#ffffff', primaryTextColor: '#0f172a', primaryBorderColor: '#cbd5e1',
+          lineColor: '#64748b', secondaryColor: '#f8fafc', tertiaryColor: '#ffffff',
+          background: '#f8fafc', mainBkg: '#ffffff', altBackground: '#f1f5f9',
+          textColor: '#0f172a', nodeBorder: '#cbd5e1', edgeLabelBackground: '#f8fafc'
+        }
+      });
+    } catch (e) { console.warn('[Mermaid] 主题应用失败:', e); }
+  }
+  window.__applyMermaidTheme = applyMermaidTheme;
+  tryNext();
+})();
+</script>
+
+<style>
+  /* ════ CSS 变量：深/浅双主题统一驱动 ════ */
+  :root {
+    --bg: #020617;            /* slate-950 */
+    --bg-soft: #0f172a;       /* slate-900 */
+    --bg-card: rgba(30,41,59,.6);
+    --bg-card-2: rgba(15,23,42,.7);
+    --border: #334155;        /* slate-700 */
+    --border-soft: #1e293b;   /* slate-800 */
+    --text: #e2e8f0;          /* slate-200 */
+    --text-strong: #f1f5f9;   /* slate-100 */
+    --text-muted: #94a3b8;    /* slate-400 */
+    --text-dim: #64748b;      /* slate-500 */
+    --accent: #fbbf24;        /* amber-400 */
+    --accent-2: #f59e0b;      /* amber-500 */
+    --accent-soft: rgba(245,158,11,.1);
+    color-scheme: dark;
+  }
+  html.light {
+    --bg: #f8fafc;            /* slate-50 */
+    --bg-soft: #ffffff;
+    --bg-card: rgba(255,255,255,.95);
+    --bg-card-2: rgba(248,250,252,.95);
+    --border: #cbd5e1;        /* slate-300 */
+    --border-soft: #e2e8f0;   /* slate-200 */
+    --text: #334155;          /* slate-700 */
+    --text-strong: #0f172a;   /* slate-900 */
+    --text-muted: #475569;    /* slate-600 */
+    --text-dim: #64748b;      /* slate-500 */
+    --accent: #d97706;        /* amber-600 - 浅色下加深保证对比度 */
+    --accent-2: #b45309;      /* amber-700 */
+    --accent-soft: rgba(217,119,6,.1);
+    color-scheme: light;
+  }
+
+  html { scroll-behavior: smooth; scroll-padding-top: 5rem; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-feature-settings: "kern" 1;
+    transition: background .2s, color .2s;
+  }
+
+  /* 滚动条 */
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-track { background: var(--bg-soft); }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 5px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--text-dim); }
+
+  /* 主题色工具类（CSS 变量驱动，随深/浅切换） */
+  .bg-app { background: var(--bg); }
+  .bg-soft { background: var(--bg-soft); }
+  .bg-card { background: var(--bg-card); }
+  .bg-card-2 { background: var(--bg-card-2); }
+  .text-app { color: var(--text); }
+  .text-strong { color: var(--text-strong); }
+  .text-muted { color: var(--text-muted); }
+  .text-dim { color: var(--text-dim); }
+  .text-accent { color: var(--accent); }
+  .border-app { border-color: var(--border); }
+  .border-soft { border-color: var(--border-soft); }
+  .bg-accent-soft { background: var(--accent-soft); }
+
+  /* mermaid 源码降级显示（默认隐藏，CDN 全失败时显示） */
+  pre.mermaid-src {
+    display: none;
+    background: var(--bg-soft); color: var(--text-muted);
+    padding: 1rem; border-radius: .5rem; border: 1px solid var(--border-soft);
+    font-family: ui-monospace, Menlo, Consolas, monospace; font-size: .8rem;
+    white-space: pre-wrap; margin-top: .5rem;
+  }
+
+  /* 卡片 hover 微动效 */
+  .card-hover { transition: transform .15s, border-color .15s; }
+  .card-hover:hover { transform: translateY(-2px); }
+
+  /* 顶部导航链接 */
+  .nav-link {
+    padding: .25rem .75rem; border-radius: .375rem; font-size: .8rem;
+    color: var(--text-muted); transition: color .15s, background .15s;
+  }
+  .nav-link:hover { color: var(--accent); background: var(--accent-soft); }
+
+  /* 章节锚点偏移（顶部栏不遮挡） */
+  section { scroll-margin-top: 5rem; }
+
+  /* 表格样式覆盖（用 CSS 变量） */
+  .compare-table th, .compare-table td {
+    border-color: var(--border-soft);
+  }
+  .compare-table thead th {
+    background: var(--bg-card-2); color: var(--text-strong);
+  }
+</style>
+</head>
+
+<body class="bg-app text-app antialiased">
+
+<!-- ════════════════ 顶部栏 ════════════════ -->
+<header class="sticky top-0 z-40 backdrop-blur border-b" style="background:var(--bg-card-2);border-color:var(--border-soft)">
+  <div class="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between gap-4">
+    <div class="flex items-center gap-3 min-w-0">
+      <div class="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0" style="background:var(--accent);color:#000">
+        <span class="font-black text-lg">H</span>
+      </div>
+      <div class="min-w-0">
+        <div class="font-bold text-sm truncate text-strong">Harness 工程实践指南</div>
+        <div class="text-xs text-dim truncate">ai-agent-platform · v1.0 · 2026-07-20</div>
+      </div>
+    </div>
+
+    <nav class="hidden md:flex items-center gap-1">
+      <a href="#intro" class="nav-link">开篇</a>
+      <a href="#flow" class="nav-link">主流程</a>
+      <a href="#workflow" class="nav-link">工作流导览</a>
+      <a href="#compare" class="nav-link">现状 vs 改进</a>
+      <a href="#skills" class="nav-link">Skill 字典</a>
+      <a href="#voting" class="nav-link">多模型投票</a>
+      <a href="#automation" class="nav-link">自动化</a>
+    </nav>
+
+    <button id="theme-toggle" class="px-3 py-1.5 rounded-lg border text-sm cursor-pointer transition"
+            style="border-color:var(--border);background:var(--bg-card);color:var(--text-muted)"
+            title="切换深/浅色">🌙 深色</button>
+  </div>
+</header>
+
+<main class="max-w-7xl mx-auto px-4 py-8 space-y-12">
+
+<!-- ════════════════ §1 开篇 ════════════════ -->
+<section id="intro" class="space-y-4">
+  <div class="text-xs tracking-wider uppercase text-accent font-semibold mb-2">开篇</div>
+  <h1 class="text-4xl font-black tracking-tight text-strong">Harness 工程实践指南</h1>
+  <p class="text-lg leading-relaxed">
+    这是 <code class="font-mono text-accent">ai-agent-platform</code> 项目的 Harness 工程总览。
+    本文档讲「<strong class="text-strong">工程实践是什么、为什么这么做、怎么用</strong>」，
+    配合 <code class="font-mono">AGENTS.md</code>（入口）+ <code class="font-mono">harness/docs/</code>（规则文档）+ skills（自动化）使用。
+  </p>
+
+  <div class="grid md:grid-cols-3 gap-4 mt-6">
+    <div class="rounded-xl p-5 border card-hover" style="background:var(--bg-card);border-color:var(--border-soft)">
+      <div class="text-2xl mb-2">🎯</div>
+      <div class="font-semibold mb-1 text-strong">这套工程解决什么</div>
+      <div class="text-sm text-muted">AI 编码助手天然「顺手多改 / 半成品 / 假完成」。Harness 用 WIP=1 + 完成绑定证据 + 不越界 3 条硬规则约束它。</div>
+    </div>
+    <div class="rounded-xl p-5 border card-hover" style="background:var(--bg-card);border-color:var(--border-soft)">
+      <div class="text-2xl mb-2">🛠️</div>
+      <div class="font-semibold mb-1 text-strong">由什么组成</div>
+      <div class="text-sm text-muted">5 件套：<code class="font-mono text-xs">AGENTS.md</code>（入口）+ <code class="font-mono text-xs">feature_list.json</code>（任务真相源）+ <code class="font-mono text-xs">progress.md</code>（日志）+ <code class="font-mono text-xs">plan-*.md</code>（步骤）+ skills（自动化）。</div>
+    </div>
+    <div class="rounded-xl p-5 border card-hover" style="background:var(--bg-card);border-color:var(--border-soft)">
+      <div class="text-2xl mb-2">🚀</div>
+      <div class="font-semibold mb-1 text-strong">怎么用</div>
+      <div class="text-sm text-muted">按 <code class="font-mono text-xs">./init.sh</code> → 读 <code class="font-mono text-xs">progress.md</code> → 读 <code class="font-mono text-xs">feature_list.json</code> 顺序开工；按路由表自动调 skill。</div>
+    </div>
+  </div>
+
+  <div class="rounded-lg p-4 border-l-4 mt-6" style="background:var(--accent-soft);border-color:var(--accent)">
+    <div class="text-sm">
+      <strong class="text-accent">📌 阅读建议</strong>　
+      首次阅读按顺序（开篇 → 主流程 → 工作流导览 → 现状对比）；
+      日常使用直接跳到 <a href="#workflow" class="text-accent underline">工作流导览</a> 或 <a href="#skills" class="text-accent underline">Skill 字典</a> 查阅。
+    </div>
+  </div>
+</section>
+
+<!-- ════════════════ §2 主流程图 ════════════════ -->
+<section id="flow" class="space-y-4">
+  <div class="text-xs tracking-wider uppercase text-accent font-semibold mb-2">主流程</div>
+  <h2 class="text-2xl font-bold tracking-tight text-strong">任务生命周期：idea → ship</h2>
+  <p class="text-sm text-muted">大多数任务走这条主路。黄色节点是「未来态」—— 多模型投票机制当前为文档化定义，待异构模型环境就绪后试点。</p>
+
+  <div class="rounded-xl p-5 border overflow-x-auto" style="background:var(--bg-card);border-color:var(--border-soft)">
+    <pre class="mermaid">
+flowchart TD
+    START["💡 新任务想法"] --> ROUTER{"不确定用哪个 skill?<br/>/harness-router"}
+    ROUTER --> GWD["/grill-with-docs<br/>有 codebase · 烤清需求"]
+    GWD --> DECISION1{"需求清楚?"}
+    DECISION1 -->|否| GWD
+    DECISION1 -->|是| SPEC["/to-spec<br/>落 PRD · 不访谈 · 综合"]
+    SPEC --> TICK["/to-tickets<br/>拆 tracer-bullet 切片"]
+    TICK --> HANDOFF_CHK{"context > 60%?"}
+    HANDOFF_CHK -->|是| HANDOFF["/handoff<br/>换新 session"]
+    HANDOFF --> IMPL
+    HANDOFF_CHK -->|否| IMPL["/implement<br/>基于 PRD + ticket"]
+    IMPL --> TDD["内部 /tdd<br/>红绿循环"]
+    TDD --> REVIEW["/code-review<br/>双轴并行"]
+    REVIEW --> COMPLEX_NOTE{"复杂任务?"}
+    COMPLEX_NOTE -->|是| VOTE_FUTURE["📋 多模型投票<br/>[未来态 · 待试点]<br/>当前仍用单模型"]
+    COMPLEX_NOTE -->|否| COMMIT
+    VOTE_FUTURE --> COMMIT["✅ commit + evidence<br/>+ status=passing"]
+    classDef skill fill:#1e293b,stroke:#fbbf24,color:#e2e8f0
+    classDef future fill:#451a03,stroke:#f59e0b,color:#fbbf24
+    classDef decision fill:#1e1b29,stroke:#a855f7,color:#e2e8f0
+    class GWD,SPEC,TICK,IMPL,TDD,REVIEW,HANDOFF skill
+    class VOTE_FUTURE future
+    class DECISION1,HANDOFF_CHK,COMPLEX_NOTE,ROUTER decision
+    </pre>
+    <pre class="mermaid-src">flowchart TD
+[Mermaid 图。CDN 全失败时显示此源码]
+新任务想法 → harness-router → grill-with-docs → to-spec → to-tickets →
+(context>60%? → handoff 换 session) → implement → tdd → code-review →
+(复杂? → 多模型投票[未来态] →) commit + evidence + passing</pre>
+  </div>
+
+  <div class="grid md:grid-cols-2 gap-4 mt-4">
+    <div class="rounded-lg p-4 border" style="background:var(--bg-card);border-color:var(--border-soft)">
+      <div class="text-sm font-semibold mb-2 text-strong">📍 三个关键关卡</div>
+      <ol class="text-sm text-muted space-y-1 list-decimal list-inside">
+        <li><strong>身份认证</strong>(<code class="font-mono text-xs">get_current_user</code>):你是谁?</li>
+        <li><strong>权限校验</strong>(<code class="font-mono text-xs">require_permission</code>):能做这事吗?</li>
+        <li><strong>租户隔离</strong>(Repository):只看你租户的数据。</li>
+      </ol>
+      <div class="text-xs text-dim mt-2">这是后端请求的硬关卡,改权限时三处都要想到。</div>
+    </div>
+    <div class="rounded-lg p-4 border" style="background:var(--bg-card);border-color:var(--border-soft)">
+      <div class="text-sm font-semibold mb-2 text-strong">📍 三个反模式(必避)</div>
+      <ul class="text-sm text-muted space-y-1 list-disc list-inside">
+        <li><strong class="text-red-300">顺手多改</strong> —— 不在当前任务范围的代码,哪怕看着再痒也别动。</li>
+        <li><strong class="text-red-300">半成品标完成</strong> —— status=passing 的唯一方式是验证真跑过 + 证据。</li>
+        <li><strong class="text-red-300">脑子里的算数</strong> —— 决策/进度/约定必须落到文件。</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ════════════════ §3 Agent 工作流导览（核心） ════════════════ -->
+<section id="workflow" class="space-y-6">
+  <div class="text-xs tracking-wider uppercase text-accent font-semibold mb-2">工作流导览</div>
+  <h2 class="text-2xl font-bold tracking-tight text-strong">Agent 怎么走完一个任务(8 步)</h2>
+  <p class="text-sm text-muted">这一段带领读者看 agent 实际怎么从开工到收尾。每张卡含 5 个字段：触发条件 / 读什么 / 调什么 skill / 产出什么 / 下一步判定。</p>
+
+  <div class="space-y-4">
+
+    <!-- 步骤 1 -->
+    <div class="rounded-xl p-5 border" style="background:var(--bg-card);border-color:var(--border-soft)">
+      <div class="flex items-center gap-3 mb-3">
+        <div class="w-8 h-8 rounded-lg flex items-center justify-center font-bold flex-shrink-0" style="background:var(--accent);color:#000">1</div>
+        <h3 class="font-bold text-strong">会话开工</h3>
+      </div>
+      <div class="grid md:grid-cols-2 gap-4 text-sm">
+        <div><div class="text-xs text-dim uppercase tracking-wider mb-1">触发条件</div><div class="text-muted">每轮 ZCode 会话开始(用户打开仓库)</div></div>
+        <div><div class="text-xs text-dim uppercase tracking-wider mb-1">读什么</div><div class="text-muted"><code class="font-mono text-xs">AGENTS.md</code> → <code class="font-mono text-xs">progress.md</code> → <code class="font-mono text-xs">feature_list.json</code></div></div>
+        <div><div class="text-xs text-dim uppercase tracking-wider mb-1">调什么 skill</div><div class="text-muted">无(直接跑 <code class="font-mono text-xs">./init.sh</code>)</div></div>
+        <div><div class="text-xs text-dim uppercase tracking-wider mb-1">产出 / 下一步</div><div class="text-muted">确认起点干净(ruff + pytest 全绿) → 进步骤 2</div></div>
+      </div>
+    </div>
+
+    <!-- 步骤 2 -->
+    <div class="rounded-xl p-5 border" style="background:var(--bg-card);border-color:var(--border-soft)">
+      <div class="flex items-center gap-3 mb-3">
+        <div class="w-8 h-8 rounded-lg flex items-center justify-center font-bold flex-shrink-0" style="background:var(--accent);color:#000">2</div>
+        <h3 class="font-bold text-strong">新任务登记</h3>
+      </div>
+      <div class="grid md:grid-cols-2 gap-4 text-sm">
+        <div><div class="text-xs text-dim uppercase tracking-wider mb-1">触发条件</div><div class="text-muted">用户提新需求 / 选 priority 最高的 <code class="font-mono text-xs">not_started</code></div></div>
+        <div><div class="text-xs text-dim uppercase tracking-wider mb-1">读什么</div><div class="text-muted">相关架构文档 + <code class="font-mono text-xs">harness/docs/</code> 已有 plan 范例</div></div>
+        <div><div class="text-xs text-dim uppercase tracking-wider mb-1">调什么 skill</div><div class="text-muted"><code class="font-mono text-xs text-accent">/harness-router</code>(迷茫时)→ <code class="font-mono text-xs text-accent">/grill-with-docs</code>(烤清需求)</div></div>
+        <div><div class="text-xs text-dim uppercase tracking-wider mb-1">产出 / 下一步</div><div class="text-muted">共识 + <code class="font-mono text-xs">CONTEXT.md</code>(纸面轨迹) → 进步骤 3</div></div>
+      </div>
+    </div>
+
+    <!-- 步骤 3 -->
+    <div class="rounded-xl p-5 border" style="background:var(--bg-card);border-color:var(--border-soft)">
+      <div class="flex items-center gap-3 mb-3">
+        <div class="w-8 h-8 rounded-lg flex items-center justify-center font-bold flex-shrink-0" style="background:var(--accent);color:#000">3</div>
+        <h3 class="font-bold text-strong">落 PRD</h3>
+      </div>
+      <div class="grid md:grid-cols-2 gap-4 text-sm">
+        <div><div class="text-xs text-dim uppercase tracking-wider mb-1">触发条件</div><div class="text-muted">grill 共识达成,需求清晰</div></div>
+        <div><div class="text-xs text-dim uppercase tracking-wider mb-1">读什么</div><div class="text-muted"><code class="font-mono text-xs">harness/docs/prd-template.md</code>(PRD 强化模板)</div></div>
+        <div><div class="text-xs text-dim uppercase tracking-wider mb-1">调什么 skill</div><div class="text-muted"><code class="font-mono text-xs text-accent">/to-spec</code>(综合,不访谈)</div></div>
+        <div><div class="text-xs text-dim uppercase tracking-wider mb-1">产出 / 下一步</div><div class="text-muted"><code class="font-mono text-xs">harness/docs/plan-&lt;id&gt;.md</code> → 进步骤 4</div></div>
+      </div>
+    </div>
+
+    <!-- 步骤 4 -->
+    <div class="rounded-xl p-5 border" style="background:var(--bg-card);border-color:var(--border-soft)">
+      <div class="flex items-center gap-3 mb-3">
+        <div class="w-8 h-8 rounded-lg flex items-center justify-center font-bold flex-shrink-0" style="background:var(--accent);color:#000">4</div>
+        <h3 class="font-bold text-strong">拆切片</h3>
+      </div>
+      <div class="grid md:grid-cols-2 gap-4 text-sm">
+        <div><div class="text-xs text-dim uppercase tracking-wider mb-1">触发条件</div><div class="text-muted">PRD 完成,任务复杂(改 &gt;5 文件 / 跨模块)</div></div>
+        <div><div class="text-xs text-dim uppercase tracking-wider mb-1">读什么</div><div class="text-muted">刚完成的 plan 文档</div></div>
+        <div><div class="text-xs text-dim uppercase tracking-wider mb-1">调什么 skill</div><div class="text-muted"><code class="font-mono text-xs text-accent">/to-tickets</code>(tracer-bullet 垂直切片 + blocking edges)</div></div>
+        <div><div class="text-xs text-dim uppercase tracking-wider mb-1">产出 / 下一步</div><div class="text-muted">N 个 ticket(每个独立可验证) → 进步骤 5</div></div>
+      </div>
+    </div>
+
+    <!-- 步骤 5 -->
+    <div class="rounded-xl p-5 border" style="background:var(--bg-card);border-color:var(--border-soft)">
+      <div class="flex items-center gap-3 mb-3">
+        <div class="w-8 h-8 rounded-lg flex items-center justify-center font-bold flex-shrink-0" style="background:var(--accent);color:#000">5</div>
+        <h3 class="font-bold text-strong">实施</h3>
+      </div>
+      <div class="grid md:grid-cols-2 gap-4 text-sm">
+        <div><div class="text-xs text-dim uppercase tracking-wider mb-1">触发条件</div><div class="text-muted">切片就绪,context 未到 60%</div></div>
+        <div><div class="text-xs text-dim uppercase tracking-wider mb-1">读什么</div><div class="text-muted">ticket 文件 + 相关架构文档(改前必读)</div></div>
+        <div><div class="text-xs text-dim uppercase tracking-wider mb-1">调什么 skill</div><div class="text-muted"><code class="font-mono text-xs text-accent">/implement</code>(内部驱动 <code class="font-mono text-xs text-accent">/tdd</code> 红绿循环)</div></div>
+        <div><div class="text-xs text-dim uppercase tracking-wider mb-1">产出 / 下一步</div><div class="text-muted">代码改动 + 测试 → 进步骤 6</div></div>
+      </div>
+    </div>
+
+    <!-- 步骤 6 -->
+    <div class="rounded-xl p-5 border" style="background:var(--bg-card);border-color:var(--border-soft)">
+      <div class="flex items-center gap-3 mb-3">
+        <div class="w-8 h-8 rounded-lg flex items-center justify-center font-bold flex-shrink-0" style="background:var(--accent);color:#000">6</div>
+        <h3 class="font-bold text-strong">Code Review</h3>
+      </div>
+      <div class="grid md:grid-cols-2 gap-4 text-sm">
+        <div><div class="text-xs text-dim uppercase tracking-wider mb-1">触发条件</div><div class="text-muted">实施完成,代码改完 + 自测过</div></div>
+        <div><div class="text-xs text-dim uppercase tracking-wider mb-1">读什么</div><div class="text-muted">代码 diff + 测试结果</div></div>
+        <div><div class="text-xs text-dim uppercase tracking-wider mb-1">调什么 skill</div><div class="text-muted"><code class="font-mono text-xs text-accent">/code-review</code>(Standards + Spec 双轴)。复杂任务可触发多模型投票[<strong class="text-amber-300">未来态</strong>]</div></div>
+        <div><div class="text-xs text-dim uppercase tracking-wider mb-1">产出 / 下一步</div><div class="text-muted">Pass / Revise / Block 结论 → Revise 回步骤 5,Pass 进步骤 7</div></div>
+      </div>
+    </div>
+
+    <!-- 步骤 7 -->
+    <div class="rounded-xl p-5 border" style="background:var(--bg-card);border-color:var(--border-soft)">
+      <div class="flex items-center gap-3 mb-3">
+        <div class="w-8 h-8 rounded-lg flex items-center justify-center font-bold flex-shrink-0" style="background:var(--accent);color:#000">7</div>
+        <h3 class="font-bold text-strong">关闭任务</h3>
+      </div>
+      <div class="grid md:grid-cols-2 gap-4 text-sm">
+        <div><div class="text-xs text-dim uppercase tracking-wider mb-1">触发条件</div><div class="text-muted">code-review Pass + <code class="font-mono text-xs">./init.sh</code> 全绿</div></div>
+        <div><div class="text-xs text-dim uppercase tracking-wider mb-1">读什么</div><div class="text-muted"><code class="font-mono text-xs">feature_list.json</code> 当前任务条目</div></div>
+        <div><div class="text-xs text-dim uppercase tracking-wider mb-1">调什么 skill</div><div class="text-muted">无(手动填 evidence + 改 status=passing)</div></div>
+        <div><div class="text-xs text-dim uppercase tracking-wider mb-1">产出 / 下一步</div><div class="text-muted">任务状态 = <code class="font-mono text-xs text-green-300">passing</code> + evidence 已填 → 进步骤 8</div></div>
+      </div>
+    </div>
+
+    <!-- 步骤 8 -->
+    <div class="rounded-xl p-5 border" style="background:var(--bg-card);border-color:var(--border-soft)">
+      <div class="flex items-center gap-3 mb-3">
+        <div class="w-8 h-8 rounded-lg flex items-center justify-center font-bold flex-shrink-0" style="background:var(--accent);color:#000">8</div>
+        <h3 class="font-bold text-strong">收尾</h3>
+      </div>
+      <div class="grid md:grid-cols-2 gap-4 text-sm">
+        <div><div class="text-xs text-dim uppercase tracking-wider mb-1">触发条件</div><div class="text-muted">会话即将结束(用户要离开 / context 满)</div></div>
+        <div><div class="text-xs text-dim uppercase tracking-wider mb-1">读什么</div><div class="text-muted"><code class="font-mono text-xs">harness/clean-state-checklist.md</code></div></div>
+        <div><div class="text-xs text-dim uppercase tracking-wider mb-1">调什么 skill</div><div class="text-muted">手动对照清单打勾 + 更新 <code class="font-mono text-xs">progress.md</code> Session 记录</div></div>
+        <div><div class="text-xs text-dim uppercase tracking-wider mb-1">产出 / 下一步</div><div class="text-muted">干净状态留给下轮会话 → ✅ ship it / commit / PR</div></div>
+      </div>
+    </div>
+
+  </div>
+</section>
+
+<!-- ════════════════ §4 现状 vs 改进后对比 ════════════════ -->
+<section id="compare" class="space-y-4">
+  <div class="text-xs tracking-wider uppercase text-accent font-semibold mb-2">现状对比</div>
+  <h2 class="text-2xl font-bold tracking-tight text-strong">重整前 vs 重整后</h2>
+  <p class="text-sm text-muted">本次 Harness 工程重整(Session 115-119)针对 6 项缺口逐一补齐。下表是单点对比。</p>
+
+  <div class="overflow-x-auto rounded-xl border" style="border-color:var(--border-soft)">
+    <table class="compare-table w-full text-sm">
+      <thead>
+        <tr>
+          <th class="text-left p-3" style="width:20%">维度</th>
+          <th class="text-left p-3" style="width:40%">重整前(before)</th>
+          <th class="text-left p-3" style="width:40%">重整后(after)</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr class="border-t" style="border-color:var(--border-soft)">
+          <td class="p-3 font-semibold">AGENTS.md 长度</td>
+          <td class="p-3"><span class="text-red-300">142 行</span>(膨胀,3 段冗余)</td>
+          <td class="p-3"><span class="text-green-300">92 行</span>(-35%,0 断链)</td>
+        </tr>
+        <tr class="border-t" style="border-color:var(--border-soft)">
+          <td class="p-3 font-semibold">技术栈文档</td>
+          <td class="p-3"><span class="text-red-300">散落 3 处</span>(AGENTS / README / 前端 01)</td>
+          <td class="p-3"><span class="text-green-300">单点真相源</span> <code class="font-mono text-xs">项目指南/00-总览/03-技术栈总览.md</code></td>
+        </tr>
+        <tr class="border-t" style="border-color:var(--border-soft)">
+          <td class="p-3 font-semibold">bug 管理</td>
+          <td class="p-3"><span class="text-red-300">缺失</span>(混在 feature_list)</td>
+          <td class="p-3"><span class="text-green-300">独立流程</span> <code class="font-mono text-xs">harness/docs/bug-tracking.md</code>(5 状态 + 严重度)</td>
+        </tr>
+        <tr class="border-t" style="border-color:var(--border-soft)">
+          <td class="p-3 font-semibold">PRD 模板</td>
+          <td class="p-3"><span class="text-red-300">task-workflow 简单附录</span></td>
+          <td class="p-3"><span class="text-green-300">独立模板</span> <code class="font-mono text-xs">prd-template.md</code>(影响面 + 对抗式审查)</td>
+        </tr>
+        <tr class="border-t" style="border-color:var(--border-soft)">
+          <td class="p-3 font-semibold">文档影响评估</td>
+          <td class="p-3"><span class="text-red-300">在 AGENTS.md 占 30 行</span></td>
+          <td class="p-3"><span class="text-green-300">独立成文</span> <code class="font-mono text-xs">doc-impact-assessment.md</code>(88 行)</td>
+        </tr>
+        <tr class="border-t" style="border-color:var(--border-soft)">
+          <td class="p-3 font-semibold">skill 触发</td>
+          <td class="p-3"><span class="text-red-300">凭 agent 自觉</span>(漏触发)</td>
+          <td class="p-3"><span class="text-green-300">硬触发</span>(AGENTS.md 路由表 + harness-router skill 双保险)</td>
+        </tr>
+        <tr class="border-t" style="border-color:var(--border-soft)">
+          <td class="p-3 font-semibold">skill 使用统计</td>
+          <td class="p-3"><span class="text-red-300">无</span></td>
+          <td class="p-3"><span class="text-green-300">ZCode Hook 自动 JSON</span>(用户级 + cwd 守卫,仅本项目)</td>
+        </tr>
+        <tr class="border-t" style="border-color:var(--border-soft)">
+          <td class="p-3 font-semibold">多模型投票</td>
+          <td class="p-3"><span class="text-red-300">无</span></td>
+          <td class="p-3"><span class="text-amber-300">文档化机制</span>(<code class="font-mono text-xs">multi-model-voting.md</code>,未来态 · 待试点)</td>
+        </tr>
+        <tr class="border-t" style="border-color:var(--border-soft)">
+          <td class="p-3 font-semibold">Stage 4 评审</td>
+          <td class="p-3"><span class="text-red-300">自评</span></td>
+          <td class="p-3"><span class="text-green-300">单模型双轴</span>(Standards + Spec)+ 多模型投票(未来态)</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ════════════════ §5 Skill 字典（8 张卡） ════════════════ -->
+<section id="skills" class="space-y-6">
+  <div class="text-xs tracking-wider uppercase text-accent font-semibold mb-2">Skill 字典</div>
+  <h2 class="text-2xl font-bold tracking-tight text-strong">8 张 skill 速查卡</h2>
+  <p class="text-sm text-muted">L1 必会 5 张(harness-router / grill-with-docs / to-spec / to-tickets / implement)+ L1 评审 1 张(code-review)+ L2 进阶 2 张(tdd / handoff)。</p>
+
+  <div class="grid md:grid-cols-2 gap-4">
+
+    <!-- harness-router -->
+    <div class="rounded-xl p-5 border card-hover" style="background:var(--bg-card);border-color:var(--border-soft)">
+      <div class="flex items-start justify-between mb-2">
+        <div class="flex items-center gap-2"><span class="text-2xl">🧭</span><h3 class="font-bold text-strong"><code class="font-mono">/harness-router</code></h3></div>
+        <span class="text-xs px-2 py-0.5 rounded-full" style="background:var(--accent-soft);color:var(--accent)">L1 路由</span>
+      </div>
+      <div class="text-sm text-muted mb-3">任务状态路由器 —— 用户迷茫时手动求助。</div>
+      <div class="text-xs space-y-1">
+        <div><strong class="text-dim">触发:</strong> 用户键入 <code class="font-mono">/harness-router</code>(<code class="font-mono">disable-model-invocation: true</code>)</div>
+        <div><strong class="text-dim">输入:</strong> 当前任务状态描述</div>
+        <div><strong class="text-dim">输出:</strong> 推荐的下一步 skill</div>
+        <div><strong class="text-dim">注意:</strong> agent 自动触发靠 AGENTS.md 路由表(硬触发),本 skill 是软辅助</div>
+      </div>
+    </div>
+
+    <!-- grill-with-docs -->
+    <div class="rounded-xl p-5 border card-hover" style="background:var(--bg-card);border-color:var(--border-soft)">
+      <div class="flex items-start justify-between mb-2">
+        <div class="flex items-center gap-2"><span class="text-2xl">🔥</span><h3 class="font-bold text-strong"><code class="font-mono">/grill-with-docs</code></h3></div>
+        <span class="text-xs px-2 py-0.5 rounded-full" style="background:var(--accent-soft);color:var(--accent)">L1 必会</span>
+      </div>
+      <div class="text-sm text-muted mb-3">有 codebase 时烤清需求 —— 有状态访谈,保留成果到 <code class="font-mono">CONTEXT.md</code>。</div>
+      <div class="text-xs space-y-1">
+        <div><strong class="text-dim">触发:</strong> 新任务想法 + 有 codebase</div>
+        <div><strong class="text-dim">输入:</strong> 模糊想法 + 仓库上下文</div>
+        <div><strong class="text-dim">输出:</strong> 共识 + <code class="font-mono">CONTEXT.md</code>(纸面轨迹)</div>
+        <div><strong class="text-dim">误用警告:</strong> 没 codebase 用 <code class="font-mono">/grill-me</code>(无状态版)</div>
+      </div>
+    </div>
+
+    <!-- to-spec -->
+    <div class="rounded-xl p-5 border card-hover" style="background:var(--bg-card);border-color:var(--border-soft)">
+      <div class="flex items-start justify-between mb-2">
+        <div class="flex items-center gap-2"><span class="text-2xl">📝</span><h3 class="font-bold text-strong"><code class="font-mono">/to-spec</code></h3></div>
+        <span class="text-xs px-2 py-0.5 rounded-full" style="background:var(--accent-soft);color:var(--accent)">L1 必会</span>
+      </div>
+      <div class="text-sm text-muted mb-3">把共识落成 PRD —— 不访谈,综合已有线索。模板见 <code class="font-mono">prd-template.md</code>。</div>
+      <div class="text-xs space-y-1">
+        <div><strong class="text-dim">触发:</strong> grill 共识达成</div>
+        <div><strong class="text-dim">输入:</strong> <code class="font-mono">CONTEXT.md</code> + 已有讨论</div>
+        <div><strong class="text-dim">输出:</strong> <code class="font-mono">plan-&lt;id&gt;.md</code>(含 Problem/Solution/User Stories/实施决策/测试决策/Out of Scope)</div>
+        <div><strong class="text-dim">误用警告:</strong> 不要用来重新访谈,需求不清先回 <code class="font-mono">/grill-with-docs</code></div>
+      </div>
+    </div>
+
+    <!-- to-tickets -->
+    <div class="rounded-xl p-5 border card-hover" style="background:var(--bg-card);border-color:var(--border-soft)">
+      <div class="flex items-start justify-between mb-2">
+        <div class="flex items-center gap-2"><span class="text-2xl">🎫</span><h3 class="font-bold text-strong"><code class="font-mono">/to-tickets</code></h3></div>
+        <span class="text-xs px-2 py-0.5 rounded-full" style="background:var(--accent-soft);color:var(--accent)">L1 必会</span>
+      </div>
+      <div class="text-sm text-muted mb-3">拆 tracer-bullet 垂直切片 —— 每片切穿 schema→API→UI→test,声明 blocking edges。</div>
+      <div class="text-xs space-y-1">
+        <div><strong class="text-dim">触发:</strong> PRD 完成 + 任务复杂(改 &gt;5 文件)</div>
+        <div><strong class="text-dim">输入:</strong> <code class="font-mono">plan-&lt;id&gt;.md</code></div>
+        <div><strong class="text-dim">输出:</strong> N 个 ticket 文件(每个独立可验证)</div>
+        <div><strong class="text-dim">例外:</strong> wide refactor 用 expand–contract 序列,不切片</div>
+      </div>
+    </div>
+
+    <!-- implement -->
+    <div class="rounded-xl p-5 border card-hover" style="background:var(--bg-card);border-color:var(--border-soft)">
+      <div class="flex items-start justify-between mb-2">
+        <div class="flex items-center gap-2"><span class="text-2xl">🔨</span><h3 class="font-bold text-strong"><code class="font-mono">/implement</code></h3></div>
+        <span class="text-xs px-2 py-0.5 rounded-full" style="background:var(--accent-soft);color:var(--accent)">L1 必会</span>
+      </div>
+      <div class="text-sm text-muted mb-3">基于 PRD + ticket 实施 —— 内部驱动 <code class="font-mono">/tdd</code> 红绿循环。</div>
+      <div class="text-xs space-y-1">
+        <div><strong class="text-dim">触发:</strong> ticket 就绪</div>
+        <div><strong class="text-dim">输入:</strong> ticket 文件 + 架构文档(改前必读)</div>
+        <div><strong class="text-dim">输出:</strong> 代码改动 + 测试</div>
+        <div><strong class="text-dim">注意:</strong> 严守边界,不顺手改其他代码</div>
+      </div>
+    </div>
+
+    <!-- code-review -->
+    <div class="rounded-xl p-5 border card-hover" style="background:var(--bg-card);border-color:var(--border-soft)">
+      <div class="flex items-start justify-between mb-2">
+        <div class="flex items-center gap-2"><span class="text-2xl">🔍</span><h3 class="font-bold text-strong"><code class="font-mono">/code-review</code></h3></div>
+        <span class="text-xs px-2 py-0.5 rounded-full" style="background:var(--accent-soft);color:var(--accent)">L1 评审</span>
+      </div>
+      <div class="text-sm text-muted mb-3">双轴评审(Standards + Spec)—— 复杂任务可触发多模型投票[<strong class="text-amber-300">未来态</strong>]。</div>
+      <div class="text-xs space-y-1">
+        <div><strong class="text-dim">触发:</strong> 实施完成 + 代码改完</div>
+        <div><strong class="text-dim">输入:</strong> 代码 diff + 测试结果</div>
+        <div><strong class="text-dim">输出:</strong> Pass / Revise / Block 结论</div>
+        <div><strong class="text-dim">未来:</strong> 多模型投票就绪后,复杂任务自动升 3 模型</div>
+      </div>
+    </div>
+
+    <!-- tdd -->
+    <div class="rounded-xl p-5 border card-hover" style="background:var(--bg-card);border-color:var(--border-soft)">
+      <div class="flex items-start justify-between mb-2">
+        <div class="flex items-center gap-2"><span class="text-2xl">🚦</span><h3 class="font-bold text-strong"><code class="font-mono">/tdd</code></h3></div>
+        <span class="text-xs px-2 py-0.5 rounded-full" style="background:var(--accent-soft);color:var(--accent)">L2 进阶</span>
+      </div>
+      <div class="text-sm text-muted mb-3">红绿循环 —— 先写失败的测试,再写代码让它过,再重构。</div>
+      <div class="text-xs space-y-1">
+        <div><strong class="text-dim">触发:</strong> <code class="font-mono">/implement</code> 内部驱动 / 单独使用</div>
+        <div><strong class="text-dim">输入:</strong> 想要的具体行为</div>
+        <div><strong class="text-dim">输出:</strong> 测试 + 实现 + 可选重构</div>
+        <div><strong class="text-dim">独立用:</strong> 想测试驱动写某行为但不走完整 spec 时</div>
+      </div>
+    </div>
+
+    <!-- handoff -->
+    <div class="rounded-xl p-5 border card-hover" style="background:var(--bg-card);border-color:var(--border-soft)">
+      <div class="flex items-start justify-between mb-2">
+        <div class="flex items-center gap-2"><span class="text-2xl">📦</span><h3 class="font-bold text-strong"><code class="font-mono">/handoff</code></h3></div>
+        <span class="text-xs px-2 py-0.5 rounded-full" style="background:var(--accent-soft);color:var(--accent)">L2 进阶</span>
+      </div>
+      <div class="text-sm text-muted mb-3">context 满 60% 时换新 session —— 压缩对话成 markdown 文件,新 session 引用。</div>
+      <div class="text-xs space-y-1">
+        <div><strong class="text-dim">触发:</strong> context 接近 60% / 需要分支(如切去 <code class="font-mono">/prototype</code>)</div>
+        <div><strong class="text-dim">输入:</strong> 当前对话</div>
+        <div><strong class="text-dim">输出:</strong> markdown 文件(在新 session 引用)</div>
+        <div><strong class="text-dim">注意:</strong> 不在原地继续,而是新开 session;区别于 <code class="font-mono">/compact</code>(同对话总结)</div>
+      </div>
+    </div>
+
+  </div>
+</section>
+
+<!-- ════════════════ §6 多模型投票层（未来态） ════════════════ -->
+<section id="voting" class="space-y-4">
+  <div class="text-xs tracking-wider uppercase text-amber-300 font-semibold mb-2">未来态 · 待试点</div>
+  <h2 class="text-2xl font-bold tracking-tight text-strong">📋 多模型投票机制</h2>
+
+  <div class="rounded-lg p-4 border-l-4" style="background:var(--accent-soft);border-color:#f59e0b">
+    <div class="text-sm">
+      <strong class="text-amber-300">⚠️ 当前状态:未来态 · 待单任务试点验证</strong>
+      <div class="mt-1 text-muted">
+        本机制已文档化于 <code class="font-mono text-xs">harness/docs/multi-model-voting.md</code>,<strong class="text-amber-300">不实施实操</strong>。
+        试点通过前,复杂任务评审仍用<strong class="text-strong">单模型 <code class="font-mono">/code-review</code> 双轴</strong>(Standards + Spec)。
+      </div>
+    </div>
+  </div>
+
+  <div class="grid md:grid-cols-2 gap-4">
+    <div class="rounded-xl p-5 border" style="background:var(--bg-card);border-color:var(--border-soft)">
+      <div class="font-bold mb-2 text-strong">模式 A:写方案合并取优</div>
+      <div class="text-xs text-dim mb-3">用于 <code class="font-mono">/to-spec</code> 输出</div>
+      <div class="text-sm text-muted space-y-1">
+        <div>3 个异构模型各写方案</div>
+        <div>↓</div>
+        <div>主模型<strong class="text-strong">融合</strong>(不是投票,标注每段来源)</div>
+        <div>↓</div>
+        <div>最终 PRD</div>
+      </div>
+    </div>
+
+    <div class="rounded-xl p-5 border" style="background:var(--bg-card);border-color:var(--border-soft)">
+      <div class="font-bold mb-2 text-strong">模式 B:评审多数票</div>
+      <div class="text-xs text-dim mb-3">用于 <code class="font-mono">/code-review</code> 完成度</div>
+      <div class="text-sm text-muted space-y-1">
+        <div>3 个异构模型各评 Pass/Revise/Block + rubric 打分</div>
+        <div>↓</div>
+        <div>多数票(≥2 票一致)→ 最终结论</div>
+        <div>3 票各异 → 主模型 + rubric 仲裁(不凭感觉)</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="rounded-xl p-5 border" style="background:var(--bg-card);border-color:var(--border-soft)">
+    <div class="font-bold mb-3 text-strong">🚫 避坑设计(基于本 plan v1 评审实测)</div>
+    <div class="grid md:grid-cols-2 gap-3 text-sm">
+      <div class="text-muted">🔴 <strong class="text-strong">共谋风险</strong> —— 同家族模型相似训练数据导致相同盲区。<strong>必须异构家族</strong>(GLM/Claude/GPT),禁止同家族多尺寸模拟(本 plan v1 评审已验证此路不通)。</div>
+      <div class="text-muted">🔴 <strong class="text-strong">自举悖论</strong> —— 未经验证的机制验证自己。首次应用<strong>必须评非机制本身的产出物</strong>。</div>
+      <div class="text-muted">🟡 <strong class="text-strong">rubric 区分度</strong> —— 0-2 分让 9-10 分都卡 Accept/Revise 边界。未来考虑 0-3 分或加权。</div>
+      <div class="text-muted">🟡 <strong class="text-strong">溯源验证</strong> —— 强制至少一票真读源码 / 官方文档核实,防模型编事实。</div>
+    </div>
+  </div>
+
+  <div class="text-xs text-dim">详见 <code class="font-mono">harness/docs/multi-model-voting.md</code>(190 行,含双模式定义 / 两套 rubric / 触发条件 / 避坑设计 / 试点记录)</div>
+</section>
+
+<!-- ════════════════ §7 自动化机制 ════════════════ -->
+<section id="automation" class="space-y-4">
+  <div class="text-xs tracking-wider uppercase text-accent font-semibold mb-2">自动化</div>
+  <h2 class="text-2xl font-bold tracking-tight text-strong">两个自动化机制</h2>
+
+  <div class="grid md:grid-cols-2 gap-4">
+
+    <div class="rounded-xl p-5 border" style="background:var(--bg-card);border-color:var(--border-soft)">
+      <div class="font-bold mb-2 text-strong">📍 Skill 计数器(ZCode Hook)</div>
+      <div class="text-sm text-muted mb-3">每次 Skill 调用自动 +1 到 <code class="font-mono text-xs">.skill-counters.json</code>。</div>
+      <div class="text-xs space-y-1 text-muted">
+        <div><strong class="text-dim">脚本:</strong> <code class="font-mono">scripts/skill-counter.sh</code>(入库)</div>
+        <div><strong class="text-dim">配置:</strong> 用户级 <code class="font-mono">~/.zcode/cli/config.json</code>(用户私有)</div>
+        <div><strong class="text-dim">机制:</strong> PostToolUse hook,matcher <code class="font-mono">^Skill$</code></div>
+        <div><strong class="text-dim">隔离:</strong> cwd 守卫(仅 ai-agent-platform 记录,其他项目静默退出)</div>
+        <div><strong class="text-dim">原因:</strong> workspace hook 被 ZCode security policy 拦截,降级用户级(详见 <code class="font-mono">hook-setup-guide.md</code>)</div>
+      </div>
+    </div>
+
+    <div class="rounded-xl p-5 border" style="background:var(--bg-card);border-color:var(--border-soft)">
+      <div class="font-bold mb-2 text-strong">🤖 自动触发路由表(AGENTS.md)</div>
+      <div class="text-sm text-muted mb-3">按任务状态变化硬触发 skill,不靠 agent 自觉。</div>
+      <div class="text-xs space-y-1 text-muted">
+        <div><strong class="text-dim">位置:</strong> <code class="font-mono">AGENTS.md</code> §自动触发规则</div>
+        <div><strong class="text-dim">双保险:</strong> 路由表(硬)+ <code class="font-mono">/harness-router</code> skill(软)</div>
+        <div><strong class="text-dim">规则:</strong> 7 行路由(新增任务→grill-with-docs / 需求清楚→to-spec / 实施完成→code-review 等)</div>
+        <div><strong class="text-dim">流程图:</strong> <code class="font-mono">harness/docs/task-workflow.md</code> §7(mermaid)</div>
+      </div>
+    </div>
+
+  </div>
+</section>
+
+<!-- ════════════════ §8 附录 ════════════════ -->
+<section id="appendix" class="space-y-4">
+  <div class="text-xs tracking-wider uppercase text-accent font-semibold mb-2">附录</div>
+  <h2 class="text-2xl font-bold tracking-tight text-strong">文档清单与外部资源</h2>
+
+  <div class="grid md:grid-cols-2 gap-4 text-sm">
+    <div class="rounded-xl p-5 border" style="background:var(--bg-card);border-color:var(--border-soft)">
+      <div class="font-bold mb-2 text-strong">核心文档</div>
+      <ul class="text-muted space-y-1 list-disc list-inside">
+        <li><code class="font-mono text-xs">AGENTS.md</code> —— AI 入口(92 行)</li>
+        <li><code class="font-mono text-xs">项目指南/</code> —— 中文文档体系</li>
+        <li><code class="font-mono text-xs">harness/docs/task-workflow.md</code> —— 任务管理规则</li>
+        <li><code class="font-mono text-xs">harness/docs/prd-template.md</code> —— PRD 模板</li>
+        <li><code class="font-mono text-xs">harness/docs/bug-tracking.md</code> —— bug 管理</li>
+        <li><code class="font-mono text-xs">harness/docs/multi-model-voting.md</code> —— 投票机制</li>
+        <li><code class="font-mono text-xs">harness/docs/doc-impact-assessment.md</code> —— 文档影响评估</li>
+        <li><code class="font-mono text-xs">harness/docs/hook-setup-guide.md</code> —— Hook 安装</li>
+      </ul>
+    </div>
+
+    <div class="rounded-xl p-5 border" style="background:var(--bg-card);border-color:var(--border-soft)">
+      <div class="font-bold mb-2 text-strong">Skills 与脚本</div>
+      <ul class="text-muted space-y-1 list-disc list-inside">
+        <li><code class="font-mono text-xs">.agents/skills/harness-router/</code> —— 路由器(项目级)</li>
+        <li><code class="font-mono text-xs">~/.agents/skills/</code> —— 用户级 skill 集合</li>
+        <li><code class="font-mono text-xs">scripts/skill-counter.sh</code> —— Hook 计数器脚本</li>
+        <li><code class="font-mono text-xs">./init.sh</code> —— 标准启动 + 验证路径</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="rounded-lg p-4 border-l-4 mt-6" style="background:var(--accent-soft);border-color:var(--accent)">
+    <div class="text-sm">
+      <strong class="text-accent">📌 反馈与迭代</strong>　
+      本文档随项目演进。如发现过期/缺漏,按 <code class="font-mono text-xs">harness/docs/doc-impact-assessment.md</code> 的「文档影响评估」流程提交修订建议。
+    </div>
+  </div>
+</section>
+
+</main>
+
+<!-- ════════════════ 页脚 ════════════════ -->
+<footer class="border-t mt-16 py-8" style="border-color:var(--border-soft)">
+  <div class="max-w-7xl mx-auto px-4 text-center text-xs text-dim space-y-1">
+    <div>Harness 工程实践指南 · ai-agent-platform · v1.0 · 2026-07-20</div>
+    <div>由 Session 115-119 共 5 轮迭代产出(阶段 1 Hook + 阶段 2 文档 + 阶段 3 router + 阶段 4 投票文档 + 阶段 5 本 HTML)</div>
+    <div class="text-dim">Tailwind v3.4.17 预编译内联 · Mermaid 4 源 fallback(staticfile→baomitu→cdnjs→jsdelivr)· 离线降级为代码块</div>
+  </div>
+</footer>
+
+<!-- ════════════════ 主题切换 JS ════════════════ -->
+<script>
+(function () {
+  var toggle = document.getElementById('theme-toggle');
+  var root = document.documentElement;
+  // 初始化:从 localStorage 读取偏好,默认 dark
+  try {
+    var saved = localStorage.getItem('harness-guide-theme');
+    if (saved === 'light') {
+      root.classList.remove('dark');
+      root.classList.add('light');
+      toggle.textContent = '☀️ 浅色';
+    }
+  } catch (e) { /* localStorage 不可用则忽略 */ }
+
+  toggle.addEventListener('click', function () {
+    if (root.classList.contains('dark')) {
+      root.classList.remove('dark');
+      root.classList.add('light');
+      toggle.textContent = '☀️ 浅色';
+      try { localStorage.setItem('harness-guide-theme', 'light'); } catch (e) {}
+    } else {
+      root.classList.remove('light');
+      root.classList.add('dark');
+      toggle.textContent = '🌙 深色';
+      try { localStorage.setItem('harness-guide-theme', 'dark'); } catch (e) {}
+    }
+    // 主题切换后重新应用 mermaid 主题(若已加载)
+    if (window.__applyMermaidTheme) {
+      try {
+        window.__applyMermaidTheme();
+        // 重新渲染已存在的 mermaid 图
+        if (typeof mermaid !== 'undefined') {
+          mermaid.run({ querySelector: '.mermaid' }).catch(function (e) {
+            console.warn('[Mermaid] 主题切换重渲染失败:', e);
+          });
+        }
+      } catch (e) {
+        console.warn('[Mermaid] 主题切换异常:', e);
+      }
+    }
+  });
+})();
+</script>
+
+</body>
+</html>
