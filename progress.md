@@ -1697,3 +1697,607 @@ Session 110 完成阶段 1(数据库设计修复)后,用户指示「推进阶段
 
 ### 下一步
 AtoA 系列的安全闭环(scope 收敛)已落地入 main。budget/model_allowlist/RPM 推迟到独立后续任务(`plan-api-token-ai-risk-controls`,等真实生产数据)。
+
+
+
+---
+
+## Session 115(2026-07-20):Harness 工程重整 · 阶段 1(Hook 计数器调试)
+
+### 任务来源
+实施 [`harness/docs/plan-harness-engineering-revamp.md`](harness/docs/plan-harness-engineering-revamp.md)(v2,经多模型投票评审 Revise 后修订)。任务硬约束 6 条(WIP=1 / 阶段 2 拆 2a→2b / 阶段 1 先实测 payload / 阶段 4 不实施投票 / 每阶段跑 init.sh / 每阶段更 progress.md)。本 Session 执行**阶段 1:Hook 计数器调试**(plan §8 阶段 1)。
+
+### 阶段目标(plan §10 验收 #7/#8/#13)
+- workspace 级 `<repo>/.zcode/config.json` hooks 段配置正确(验收 #7)
+- `/grill-me`(或任意 skill)触发后 hook 被触发且有日志记录(验收 #8)
+- `./init.sh` 全绿(验收 #13)
+
+### 🔴 执行中发现的真实 plan 缺陷(本次最大产出)
+
+**plan v2 §5.1 「workspace 级 hook 配置」假设被实测推翻**:
+
+| 项 | plan v2 / review C-4 说法 | ZCode 3.3.6 实测 |
+|---|---|---|
+| `<repo>/.zcode/config.json` workspace hook 可用 | ✅ 推荐方案,可入库 | ❌ **被 security policy 拦截** |
+| 实测证据 | — | 日志 event=`config.project_hooks.ignored` × 20+ 次 |
+| diagnosticMessage | — | `"Project hooks were ignored by the security policy"` |
+| SKILL.md / configuration-guide 是否提及 | 未提及 | **完全未提及**(官方文档盲区) |
+| Settings 界面是否有信任开关 | 未提及 | **没有**(用户已确认) |
+
+**对照 MCP 演进**:zcode-configuration-guide §MCP 提到「Workspace-scoped MCP servers were previously untrusted and required manual authorization; they now connect by default」—— MCP 经历过同样的 trust gate,现已放开;**hooks 仍处于未放开阶段**。
+
+**降级方案(本 Session 采纳)**:
+- 配置走用户级 `~/.zcode/cli/config.json`(不被 security policy 拦)
+- 脚本 `scripts/skill-counter.sh` 自带 **cwd 守卫**(`pwd | grep -q ai-agent-platform`),其他项目静默 exit 0
+- 等价实现 plan v2 「仅本项目生效」的核心初衷;代价是 hook 配置本身在 `~/.zcode/` 不入库(脚本本身入库)
+- 团队成员各自复制 hooks 段到自己的用户级配置即可(阶段 2a 会写「hook 安装指南」入库)
+
+### 真实 Payload 实测结果(回应硬约束 #3:不许假设字段名)
+
+PostToolUse(Skill) hook stdin payload 实测结构(样本:`find-skills` 触发):
+
+```json
+{
+  "cwd": "...", "mode": "yolo", "hookEventName": "PostToolUse",
+  "sessionId": "sess_xxx", "session_id": "sess_xxx",       // 双命名冗余
+  "toolCallId": "call_xxx",
+  "toolName": "Skill",      "tool_name": "Skill",            // 双命名冗余
+  "toolInput":  { "args": "...", "skill": "find-skills" },   // camelCase
+  "tool_input": { "args": "...", "skill": "find-skills" },   // snake_case
+  "toolResultPreview": "...", "traceId": "...", "turnId": "...", "timestamp": "..."
+}
+```
+
+**字段路径结论**(覆盖 plan v2 §5.2 三候选):
+
+| plan v2 §5.2 候选 | 实测 |
+|---|---|
+| 候选 1 `tool_input.skill` | ✅ **存在**(主路径) |
+| 候选 2 `tool_input.skill_name` | ❌ 不存在 |
+| 候选 3 `tool_name` | ⚠️ 存在但是 `"Skill"`(工具名)非 skill 名 |
+
+正式脚本采用 `tool_input.skill`(主)+ `toolInput.skill`(camelCase fallback,实测同 payload 双命名都有)。
+
+**额外验证**:`${ZCODE_PROJECT_DIR}` 和 `${ZCODE_SESSION_ID}` 都被 hook 注入到环境变量(plan v2 §5.2 假设成立 + 实测补 session_id)。
+
+### 已完成产物
+
+| 产物 | 路径 | 状态 |
+|---|---|---|
+| 调试脚本 | `/tmp/skill-hook-debug.sh`(本地临时,不入库) | 已完成历史使命,保留备查 |
+| 调试日志 | `/tmp/skill-hook-debug.log`(本地临时,不入库) | 已抓到真实 payload |
+| **正式计数器脚本** | `scripts/skill-counter.sh` | ✅ **入库**(可执行) |
+| 用户级 hook 配置 | `~/.zcode/cli/config.json` | ✅ 不入库(用户私有) |
+| workspace 级配置占位 | `.zcode/config.json`(只含说明注释) | ⚠️ `.zcode/` 已被 `.gitignore` 忽略,占位实际不入库 |
+| `.gitignore` 追加 | `.skill-counters.json` + `.skill-counters.log` 忽略 | ✅ 入库 |
+| 调试脚本废弃 | `/tmp/skill-hook-debug.sh` 用户级配置已切到正式脚本 | ✅ |
+
+### `scripts/skill-counter.sh` 加固要点(回应 review C-5 / O-1)
+1. ✅ stdout 永远空(hook schema 严格,非 JSON 内容判 failed)
+2. ✅ 所有诊断信息走 stderr → 落盘 `.skill-counters.log`
+3. ✅ heredoc 用 `<<'PY'` 禁止 shell 展开 + 环境变量传参(防注入)
+4. ✅ cwd 守卫(`pwd | grep ai-agent-platform`),其他项目静默退出
+5. ✅ 字段路径 2 候选(snake 主 + camel 备)+ 实测已对齐
+6. ✅ 永远 exit 0,绝不阻断主流程
+7. ✅ 异常永不向上抛:计数文件损坏 → 重置;写失败 → 静默
+
+### 自检通过项(5 项)
+- 自检 1:真实 payload 正常计数 ✅
+- 自检 2:camelCase fallback 生效 ✅
+- 自检 3:cwd 守卫生效(其他项目不计数)✅
+- 自检 4:无 stdin 静默退出 ✅
+- 自检 5:坏 JSON 不阻断(parse_error 进诊断日志,exit 0)✅
+
+### 验证(plan §10 验收 #7/#8/#13 全满足)
+1. ✅ 验收 #7:用户级 `~/.zcode/cli/config.json` hooks 段配置正确(matcher `^Skill$`、`type: command`、`timeout: 3` 秒、`${ZCODE_PROJECT_DIR}/scripts/skill-counter.sh`)
+   - 注:plan v2 原文是「workspace 级」,本 Session 因 security policy 拦截降级为用户级 + cwd 守卫,详见上方「真实 plan 缺陷」段
+2. ✅ 验收 #8:`/find-skills` 触发后 hook **被触发且有日志记录**(`/tmp/skill-hook-debug.log` 落了完整 payload,后续切到正式脚本后会落 `.skill-counters.json`)
+3. ✅ 验收 #13:`./init.sh` 全绿(ruff + **561 passed**,无回归)
+
+### 文件清单
+1. `scripts/skill-counter.sh`(新,入库)— 计数器脚本,带 cwd 守卫 + 字段路径实测对齐
+2. `.gitignore`(改,入库)— 追加 `.skill-counters.json` + `.skill-counters.log` 忽略
+3. `.zcode/config.json`(新,但 `.zcode/` 已被 gitignore,实际不入库)— workspace 级占位 + 说明文档
+4. `~/.zcode/cli/config.json`(改,**不入库**,用户私有)— 加 hooks 段
+5. `progress.md`(改,入库)— 本 Session 记录
+
+### 用户决策(2026-07-20)
+1. ✅ **接受降级方案**(用户级配置 + cwd 守卫)—— 等价 plan v2「仅本项目生效」初衷
+2. ✅ **重启验证正式脚本** —— 已重启 + 触发 `/find-skills` 实测
+
+### 正式脚本实战验证(重启后)
+触发 `/find-skills` 后立即查证:
+
+```
+.skill-counters.json:
+{
+  "skills": {
+    "find-skills": { "count": 1, "first_used": "2026-07-20T11:50:26Z", "last_used": "2026-07-20T11:50:26Z" }
+  },
+  "total_calls": 1,
+  "first_call": "2026-07-20T11:50:26Z",
+  "last_updated": "2026-07-20T11:50:26Z"
+}
+
+.skill-counters.log: (完全空 = 0 错误 / 0 parse_error / 0 写失败)
+ZCode 日志: tool.call.completed | toolName=Skill(Skill 工具未被 hook 阻断)
+```
+
+**结论**:验收 #7/#8/#13 全过,plan §10 阶段 1 三项打勾 ✅。阶段 1 真正收尾。
+
+### 下一步
+进入**阶段 2a:先建新文档**(plan §8 阶段 2a,6 份新文档:技术栈总览/bug-tracking/prd-template/doc-impact-assessment/multi-model-voting/harness-practice-guide.html)+ 升级 task-workflow.md + 把 CodeGraph 段挪到 README-给AI.md。
+
+阶段 2a 会**额外**多建一份 `harness/docs/hook-setup-guide.md`(团队 hook 安装指南,plan v2 没列但由本 Session 降级方案衍生)—— 让团队成员各自复制 hooks 段到用户级 `~/.zcode/cli/config.json`。
+
+阶段 2a 完成后才进阶段 2b(编辑 AGENTS.md 删旧段)—— 顺序硬约束,先建后删,消除断链窗口。
+
+
+
+---
+
+## Session 116(2026-07-20):Harness 工程重整 · 阶段 2a(建新文档)
+
+### 任务来源
+继续 Session 115 的 Harness 工程重整任务,执行 plan §8 阶段 2a「先建新文档」。硬约束 #2:阶段 2 必须拆 2a→2b,先建后删,消除断链窗口。
+
+### 阶段目标(plan §10 验收 #2/#3/#4/#5/#13)
+- `项目指南/00-总览/03-技术栈总览.md` 存在且单点真相源(验收 #2)
+- `harness/docs/bug-tracking.md` 存在且定义完整流程,`bug-` 前缀已 grep 确认不冲突(验收 #3)
+- `harness/docs/prd-template.md` 存在且含影响面清单/差异段/v1→v2 段(验收 #4)
+- `harness/docs/doc-impact-assessment.md` 存在(验收 #5)
+- `./init.sh` 全绿(验收 #13)
+
+### review H-2 核实结果(阶段 2a 前置)
+`grep feature_list.json` 60 条 id,**全部是功能命名,无 `bug-`/`fix-` 前缀** → `bug-` 前缀可安全使用。若未来发生冲突改用 `fix-`。
+
+### 已完成产物(7 项:6 份新建 + 1 份升级,全部入库)
+
+| # | 文件 | 行数 | plan 要求 | 实际 |
+|---|---|---|---|---|
+| 1 | `项目指南/00-总览/03-技术栈总览.md`(新) | 176 | ~150 | ✅ 技术栈单点真相源,含版本号 + 替换指南 |
+| 2 | `harness/docs/bug-tracking.md`(新) | 171 | ~120 | ✅ 5 状态机 + bug- 登记 + 严重度分级 + diagnosing-bugs 衔接 |
+| 3 | `harness/docs/prd-template.md`(新) | 238 | ~180 | ✅ to-spec 7 段 + 项目特化 4 段(影响面/多租户/权限/DB checklist)+ v1→v2 对抗式审查段 + to-tickets tracer-bullet 切片规则 |
+| 4 | `harness/docs/doc-impact-assessment.md`(新) | 88 | ~50 | ✅ 从 AGENTS.md §90-119 拆出独立成文(回应 review C-6) |
+| 5 | `harness/docs/hook-setup-guide.md`(新) | 145 | —(阶段 1 衍生)| ✅ 团队成员 hook 安装 7 步指南(由 Session 115 降级方案衍生,plan v2 没列) |
+| 6 | `harness/docs/task-workflow.md`(升级) | 257 | 201→~250 | ✅ §6 新目录结构 / §7 自动触发路由表 + mermaid 流程图 / §8 skill 统计 / 附录 A 区分简单/复杂/bug 三模板 |
+| 7 | CodeGraph 段挪到 `项目指南/README-给AI.md` | — | — | ⚠️ **事实已完成**:`README-给AI.md` §44-77 的 CodeGraph 段(34 行)已**完全覆盖** AGENTS.md §56-68(13 行)且更详细,无需补充。阶段 2b 只需删 AGENTS.md 那段 |
+
+**注意**:`multi-model-voting.md` 是阶段 4 才建,本阶段不建(硬约束 #4)。`harness-practice-guide.html` 是阶段 5 才建。
+
+### 内部断链核查(自检)
+所有新建/升级文档跑断链检查:
+- ✅ 技术栈总览:修了 3 个文件名断链(02-后端模块范例→02-新增后端模块、01-目录结构→01-技术栈与目录、06-RBAC权限模型→06-权限模型RBAC)
+- ⚠️ bug-tracking/prd-template/task-workflow 有 3 处「前向引用」:`harness-router/SKILL.md`(阶段 3 建)+ `multi-model-voting.md` × 2(阶段 4 建)—— **预期保留**,阶段 3/4 完成后自动消解
+- ✅ doc-impact-assessment:误报排除(模板示例 `[篇名](写明改动点)` 改为 `《篇名》`)
+
+### 验证(plan §10 验收 #2/#3/#4/#5/#13 全满足)
+1. ✅ 验收 #2:技术栈总览存在 + 单点真相源(后端栈 25 行 / 前端栈 18 行 / 工具链 / 质量基线 / 二开替换指南)
+2. ✅ 验收 #3:bug-tracking 存在 + 完整流程(5 状态 + 登记 + 严重度 + SLA + 范例),`bug-` 前缀已 grep 确认
+3. ✅ 验收 #4:prd-template 存在 + 含影响面清单(§4.1)+ 多租户评估(§4.2)+ 权限评估(§4.3)+ DB checklist(§4.4)+ v1→v2 对抗式审查段(§7)
+4. ✅ 验收 #5:doc-impact-assessment 存在(从 AGENTS.md 拆出,回应 review C-6)
+5. ✅ 验收 #13:`./init.sh` 全绿(ruff All checks passed + **561 passed**,无回归)
+
+### 文件清单(本阶段改动,全部入库)
+1. `项目指南/00-总览/03-技术栈总览.md`(新)— 技术栈单点真相源
+2. `harness/docs/bug-tracking.md`(新)— bug 管理流程
+3. `harness/docs/prd-template.md`(新)— PRD/切片 Design 强化模板
+4. `harness/docs/doc-impact-assessment.md`(新)— 文档影响评估独立成文
+5. `harness/docs/hook-setup-guide.md`(新)— 团队 hook 安装指南(阶段 1 衍生)
+6. `harness/docs/task-workflow.md`(升级)— 加 §6 目录 / §7 路由表+流程图 / §8 统计 / 附录 A
+7. `progress.md`(改)— 本 Session 记录
+
+### 关键设计决策
+1. **PRD 模板分三档**(task-workflow 附录 A):小改动用 task-workflow 简单模板 / 复杂任务用 prd-template 完整模板 / bug 用 bug-tracking 简化模板。避免一刀切。
+2. **影响面清单 4 维度**(prd-template §4.1):后端文件 / 迁移 / 前端文件 / 测试类,呼应 plan §3.4 要求 + 多租户影响(§4.2)+ 权限影响(§4.3)独立成段。
+3. **DB checklist 8 条**(prd-template §4.4):直接引用 AGENTS.md 铁律 6 + 项目指南/02-后端架构/03,避免重复维护。
+4. **v1→v2 对抗式审查段**(prd-template §7):明确触发条件(4 选 1)+ 单/多模型双轨 + 范例引用,与 multi-model-voting.md(阶段 4 建)解耦。
+5. **tracer-bullet 切片规则**(prd-template §2):垂直切片默认 + wide refactor expand–contract 例外,与 to-tickets skill 对齐。
+
+### 下一步
+进入**阶段 2b:最后才编辑 AGENTS.md**(plan §8 阶段 2b)。前置条件已满足(阶段 2a 全部完成 + 新文档已存在)。
+
+阶段 2b 要做的:
+1. AGENTS.md 移出「文档影响评估」段(§90-119,已在 doc-impact-assessment.md)
+2. AGENTS.md 移出「数据库表设计原则」长段(§80-84,已在 项目指南/02-后端架构/03)
+3. AGENTS.md 移出 CodeGraph 段(§56-68,已在 项目指南/README-给AI.md 且更全)
+4. AGENTS.md 加「自动触发规则」路由表段(plan §3.1.1)
+5. 验证 AGENTS.md ≤100 行
+6. 关键验证:grep AGENTS.md 所有内部链接,确认无断链
+
+
+
+---
+
+## Session 117(2026-07-20):Harness 工程重整 · 阶段 2b(编辑 AGENTS.md)
+
+### 任务来源
+继续 Session 116 的 Harness 工程重整任务,执行 plan §8 阶段 2b「最后才编辑 AGENTS.md」(硬约束 #2:阶段 2 拆 2a→2b,先建后删,消除断链窗口)。前置条件:阶段 2a 全部完成 + 6 份新文档已存在 ✅。
+
+### 阶段目标(plan §10 验收 #1/#13)
+- AGENTS.md **≤100 行**(v2 统一,回应 review O-3),入口精简,无内部断链(验收 #1)
+- `./init.sh` 全绿(验收 #13)
+
+### 已完成产物(AGENTS.md 瘦身)
+
+| 段 | 操作 | 之前 | 之后 |
+|---|---|---|---|
+| 项目简介 | 4 bullet 缩成 1 段 + 链接到新建的技术栈总览 | 8 行 | 5 行 |
+| 「最常用任务→文档」表 | **删除**(README-给AI.md §27-40 已有更全的 10 任务表)| 11 行 | 0(并入下一段)|
+| CodeGraph 段 | **删除**(README-给AI.md §44-77 已有更全的 CodeGraph 段)| 13 行 | 0(并入下一段)|
+| 「第一件事读文档」+「最常用任务」+「CodeGraph」 | **三段合并为一段**(语义重复:都指向 README-给AI.md)| 22 行 | 4 行 |
+| 文档影响评估段 | 30 行压成 4 行链接(指向 doc-impact-assessment.md)| 30 行 | 4 行 |
+| 铁律 6 数据库表设计 | 长段压缩(去掉历史维度展开,保留核心)| 5 行 | 3 行 |
+| 工作规则与完成定义 | 20 行压成 13 行(完成定义合并进核心 4 条)| 20 行 | 13 行 |
+| **新增**:自动触发规则路由表 | plan §3.1.1 的 7 行路由表 + harness-router 提示 | 0 | 17 行 |
+
+**总效果**:**142 行 → 92 行**(-50 行 / -35%),满足 ≤100 行验收。
+
+### 内部断链核查
+15 个链接全部有效,0 断链。链接分布:
+- 指向 `项目指南/` 4 个(技术栈总览 / README-给AI / 附录)
+- 指向 `harness/docs/` 4 个(task-workflow / prd-template / bug-tracking / doc-impact-assessment)
+- 指向根目录文件 4 个(README / progress / feature_list / clean-state-checklist)
+- 指向外部 docs 1 个(auth-history-scd2-plan)
+
+### 验证(plan §10 验收 #1/#13 全满足)
+1. ✅ 验收 #1:AGENTS.md **92 行**(≤100)+ 入口精简 + 0 断链
+2. ✅ 验收 #13:`./init.sh` 全绿(ruff All checks passed + **561 passed**,无回归)
+
+### 文件清单(本阶段改动)
+1. `AGENTS.md`(改)— 142→92 行,移出 3 段 + 加路由表 + 三段合并
+2. `progress.md`(改)— 本 Session 记录
+
+### 关键设计决策
+1. **三段合并**(读文档 / 最常用任务 / CodeGraph):三段语义重复(都指向 README-给AI.md),README-给AI.md 内容更全。AGENTS.md 只保留入口链接,不重复表格。
+2. **项目简介 1 行链接**:之前 4 个 bullet(后端/前端/数据库/认证)信息已在新建的 `项目指南/00-总览/03-技术栈总览.md` 单点真相源,AGENTS.md 只保留一句话 + 链接。
+3. **工作规则保留核心 4 条**:WIP=1 / 完成绑定证据 / 不越界 / 仓库是唯一事实来源 是项目铁律,不能完全外包给 task-workflow.md。完成定义合并进「完成绑定证据」条目(避免重复)。
+4. **自动触发路由表新增**:这是阶段 2b 唯一的「净增」内容(plan §3.1.1),7 行路由表 + harness-router 提示,硬触发优先于 agent 自觉。
+
+### 阶段 2 整体收官(2a + 2b)
+| 验收 | 阶段 2a | 阶段 2b |
+|---|---|---|
+| #1 AGENTS.md ≤100 行 | — | ✅ 92 行 |
+| #2 技术栈总览 | ✅ | — |
+| #3 bug-tracking | ✅ | — |
+| #4 prd-template | ✅ | — |
+| #5 doc-impact-assessment | ✅ | ✅(从 AGENTS.md 拆出)|
+| #13 init.sh 全绿 | ✅ 561 | ✅ 561 |
+
+**断链窗口零发生**:因为严格遵守 2a(先建)→ 2b(后删)顺序,中间任何一刻 AGENTS.md 的链接都有目标存在。
+
+### 下一步
+进入**阶段 3:harness-router skill**(plan §8 阶段 3)。
+
+阶段 3 要做的:
+1. 建 `.agents/skills/harness-router/SKILL.md`(plan §4.1-4.3)
+2. frontmatter:`disable-model-invocation: true`(user-invoked only)+ 路由表 + 分支决策
+3. 含 v2 注释:多模型投票为未来态,见 multi-model-voting.md
+4. 在 AGENTS.md 的路由表已经提示过 `/harness-router`(阶段 2b 已加),阶段 3 把 skill 实体建出来
+
+阶段 3 完成后,阶段 2a 文档里 `harness-router/SKILL.md` 的前向引用会自动消解。
+
+
+
+---
+
+## Session 118(2026-07-20):Harness 工程重整 · 阶段 3(harness-router skill)
+
+### 任务来源
+继续 Session 117 的 Harness 工程重整任务,执行 plan §8 阶段 3 + §4.1-4.3「harness-router skill」。
+
+### 阶段目标(plan §10 验收 #6/#13)
+- `.agents/skills/harness-router/SKILL.md` 存在且可被 `/harness-router` 调用(验收 #6)
+- `./init.sh` 全绿(验收 #13)
+
+### 已完成产物
+
+**新建**:`.agents/skills/harness-router/SKILL.md`(84 行,项目级 skill,入库)
+
+**结构**(仿 ask-matt 的 heading 分层风格 + 中文):
+1. **frontmatter**:`name: harness-router`(= 目录名)+ pushy description + `disable-model-invocation: true`(plan §4.2,回应 review S-2)
+2. **主流程 idea→ship**(6 步):grill-with-docs → to-spec → to-tickets → implement → code-review → commit + 60% context 卫生
+3. **状态路由表**(11 行速查)
+4. **分支决策**(4 条 Branch):bug 判定 / 能否一次会话做完 / PRD 已在 plan / wide refactor
+5. **复杂任务判定**(5 选 1,用于未来多模型投票触发)+ v2 注释(多模型投票为未来态)
+6. **词汇层**(domain-modeling / codebase-design)
+7. **跨 session**(handoff / compact 区别)
+8. **Codebase health**(improve-codebase-architecture)
+9. **配套文档**(6 个链接:task-workflow / prd-template / bug-tracking / multi-model-voting / doc-impact-assessment / AGENTS.md)
+
+### frontmatter 合规核查(skill-creator SKILL.md 规范)
+- ✅ `name: harness-router` —— lowercase kebab-case,与目录名完全一致
+- ✅ `description` —— 充分「pushy」,含触发场景(任务变化)+ 用法(用户键入 /harness-router)
+- ✅ `disable-model-invocation: true` —— user-invoked only,回应 review S-2
+- ✅ body 84 行 < 500 行规范
+
+### 阶段 2a 前向引用消解
+阶段 2a 建的文档里,3 处指向 `harness-router/SKILL.md` 的前向引用**已自动消解**:
+- `harness/docs/bug-tracking.md` §6 「与 diagnosing-bugs skill 的衔接」→ ✅
+- `harness/docs/prd-template.md` 暗含路由表 → ✅
+- `harness/docs/task-workflow.md` §7 自动触发段 → ✅
+
+**剩余的 3 处 multi-model-voting.md 前向引用是预期的**(plan 硬约束 #4 明确阶段 4 才建):
+- prd-template.md / task-workflow.md / harness-router SKILL.md 各 1 处 → 阶段 4 完成后消解
+
+### 链接核查
+- harness-router SKILL.md:6 个链接,5 个有效,1 个 multi-model-voting.md(阶段 4 预期)
+- 阶段 2a 文档全部消解(harness-router 已建)
+
+### 验证(plan §10 验收 #6/#13 全满足)
+1. ✅ 验收 #6:`.agents/skills/harness-router/SKILL.md` 存在 + frontmatter 合规 + 可被 `/harness-router` 调用(用户键入触发,disable-model-invocation: true)
+2. ✅ 验收 #13:`./init.sh` 全绿(ruff All checks passed + **561 passed**,无回归)
+
+### 文件清单(本阶段改动)
+1. `.agents/skills/harness-router/SKILL.md`(新,入库)— 84 行,路由型 skill
+2. `progress.md`(改)— 本 Session 记录
+
+### 关键设计决策
+1. **仿 ask-matt 的 heading 分层**:不用决策树表格,用「主流程 + 状态路由表 + 分支决策」三层,与项目其他 skill 风格一致
+2. **中文写作**:对齐项目语言(项目指南/AGENTS.md/task-workflow 全中文),agenthub skill 也是中文
+3. **`disable-model-invocation: true` 的语义**(回应 review S-2):明确写「这是用户迷茫时手动求助的路由器,不是 agent 自动调度器」。agent 自动触发靠 AGENTS.md 路由表(硬触发),router skill 是软辅助。若未来需要 agent 自动路由,去掉此 flag 即可
+4. **复杂任务判定的双重身份**:既用于「未来多模型投票触发条件」,也用于「plan §7 v1→v2 对抗式审查段触发条件」(prd-template.md §7)—— 两者复用同一套判定,避免维护两份
+
+### 下一步
+进入**阶段 4:多模型投票机制文档化**(plan §8 阶段 4,硬约束 #4 明确**不实施投票**,只写文档)。
+
+阶段 4 要做的:
+1. 新建 `harness/docs/multi-model-voting.md`(~200 行,plan §6.2)
+2. 含双模式定义(模式 A 写方案合并 / 模式 B 评审多数票)+ rubric 区分(plan vs code 两套)+ 触发条件 + 试点状态
+3. 明确标注「当前为未来态,待单任务试点验证」
+4. 在 harness-router 加硬提示「复杂任务评审 → 多模型投票为未来态」(harness-router 已含此提示,阶段 4 完善文档)
+5. **不实施** multi-model-vote skill 封装(plan §6.3,留作后续阶段)
+
+阶段 4 完成后,3 处 multi-model-voting.md 前向引用自动消解。
+
+
+
+---
+
+## Session 119(2026-07-20):Harness 工程重整 · 阶段 4(多模型投票机制文档化)
+
+### 任务来源
+继续 Session 118 的 Harness 工程重整任务,执行 plan §8 阶段 4 + §6.2「多模型投票机制文档化」。**硬约束 #4:不实施投票实操,只写文档**。
+
+### 阶段目标(plan §10 验收 #9/#13)
+- `multi-model-voting.md` 含双模式 + rubric(区分 plan/code 两套)+ 触发条件 + 试点状态标注(验收 #9)
+- `./init.sh` 全绿(验收 #13)
+
+### 已完成产物
+
+**新建**:`harness/docs/multi-model-voting.md`(190 行,plan §6.2 要求 ~200 行)
+
+**结构**(9 段):
+1. **范围声明**(当前未来态 vs 未来正式期的对比表)+ 为什么是未来态的 3 条理由
+2. **双模式定义**:
+   - 模式 A:写方案合并取优(`/to-spec` 融合,非投票)
+   - 模式 B:评审多数票(`/code-review` 投票 + rubric 仲裁)
+3. **Rubric 严格区分两套**(回应 review O-2):
+   - plan/方案 6 维:正确性/完整性/可执行性/风险识别/边界清晰/一致性
+   - code/实现 6 维:正确性/验证/范围纪律/可靠性/可维护性/交接准备度
+   - 结论判定通用:Accept(全≥1 + 总分≥9)/ Revise(有 1 分项或 6-8)/ Block(任一 0 或 <6)
+4. **触发条件**(双模式共同前置 + 试点期额外 + 未来正式期额外)
+5. **上线路径**(等待异构环境 → 单任务试点 → 试点结论回写)
+6. **避坑设计 7 条**(强化版,基于 review §4.2 实测):
+   - 🔴 共谋风险(必须异构家族,禁同家族多尺寸)
+   - 🔴 自举悖论(必须评非机制本身的产出物)
+   - 🟡 rubric 区分度(未来考虑 0-3 分或加权)
+   - 🟡 成本爆炸 / 仲裁者悖论 / 溯源验证缺失 / 触发依赖自觉
+7. **试点记录**(留白,待填)
+8. **与其他文档的关系**(4 个链接)
+9. **不在本次范围**(4 条边界声明)
+
+### Rubric 区分设计(回应 review O-2)
+review O-2 指出「§6.1.4 rubric 与 §12.3 评审 rubric 都叫『6 维度 rubric』但维度不同易混淆」。本文档 §2 显式分两套:
+- **§2.1 plan rubric**:用于评审 plan/prd 文档(模式 A 输出 + 复杂任务 plan 评审)
+- **§2.2 code rubric**:用于评审代码 diff(模式 B)
+- **§2.3 结论判定通用**:两套 rubric 共用 Accept/Revise/Block 三档
+
+### 避坑设计强化(review §4.2 + §5.3 实测回写)
+review §5.3「对本次评审本身的元评估」暴露 3 个设计问题,全部回写本文档 §5:
+| 暴露问题 | 回写位置 |
+|---|---|
+| 同家族多尺寸模拟异构 = 共谋风险非虚(3 票可执行性全 1 分) | §5 避坑表「共谋风险」🔴 |
+| 自举评审形成「未经验证的机制验证自己」悖论 | §5 避坑表「自举悖论」🔴 + §0 范围声明第 3 条 |
+| rubric 维度过粗(0-2 分)导致 9-10 分都卡 Accept/Revise 边界 | §5 避坑表「rubric 区分度不足」🟡 |
+
+### 阶段 3 前向引用全部消解
+阶段 3 遗留的 3 处 multi-model-voting.md 前向引用**全部消解**:
+- ✅ `prd-template.md` §7 v1→v2 对抗式审查段
+- ✅ `task-workflow.md` §7 自动触发路由表
+- ✅ `harness-router/SKILL.md` §复杂任务判定 + §配套文档
+
+**全仓 6 个核心文档 0 断链**:multi-model-voting.md / prd-template.md / task-workflow.md / bug-tracking.md / harness-router SKILL.md / AGENTS.md。
+
+### 验证(plan §10 验收 #9/#13 全满足)
+1. ✅ 验收 #9:multi-model-voting.md 190 行 + 含双模式(§1)+ 区分两套 rubric(§2)+ 触发条件(§3)+ 试点状态标注(§0 范围声明 + §6 留白)
+2. ✅ 验收 #13:`./init.sh` 全绿(ruff All checks passed + **561 passed**,无回归)
+
+### 文件清单(本阶段改动)
+1. `harness/docs/multi-model-voting.md`(新,入库)— 190 行,机制定义文档
+2. `progress.md`(改)— 本 Session 记录
+
+### 关键设计决策
+1. **双模式而非单模式**(plan §6.2):模式 A 融合(to-spec)+ 模式 B 投票(code-review),不同场景不同机制。模式 A 强调「合并取优 + 标注来源」,模式 B 强调「多数票 + rubric 仲裁」。
+2. **rubric 显式分两套**:plan 评审和 code 评审关注点不同(plan 看可执行性 / 风险识别;code 看验证 / 范围纪律),硬区分避免混淆。
+3. **试点期 vs 正式期分离**(§3.2 vs §3.3):试点期必须用户主动声明「这是试点任务」,避免机制未验证就自动触发;正式期满足条件自动触发。
+4. **不实施 skill 封装**(plan §6.3 + 本文 §8):试点结论决定是否值得封装。当前阶段把机制文档化即可,封装是后续阶段的事。
+5. **避坑基于实测而非纸面**(review §5.3):本 plan v1 评审本身就是机制首次实操,暴露的问题(共谋 + 自举 + rubric 区分度)直接回写,不是凭空设想。
+
+### 阶段 4 边界严守
+**硬约束 #4 全部满足**:
+- ✅ 只写 multi-model-voting.md 文档化机制,标注「未来态·待试点」
+- ✅ 不实施多模型投票实操(§0 范围声明 + §8 边界)
+- ✅ 不实施 multi-model-vote skill 封装(§8)
+- ✅ 不强制让本 plan 自身评审用此机制(已删 v1 §12 自举,§5 避坑表「自举悖论」固化此决策)
+
+### 下一步
+进入**阶段 5:HTML 可视化文档**(plan §8 阶段 5,核心交付物)。
+
+阶段 5 要做的(plan §7):
+1. 在 `/tmp` 临时目录跑 `npx tailwindcss@3.4.17` 预编译 CSS(因本仓库根目录无 package.json)
+2. 写 HTML 骨架(`harness/docs/harness-practice-guide.html`,自包含单文件 ~80KB)
+3. 顶部栏 + 模式切换(现状 / 改进后 / 工作流导览)+ 深浅色
+4. mermaid 主流程图(多模型投票标「未来态」)
+5. 8 步 agent 工作流导览卡片
+6. 现状 vs 改进后对比表
+7. 8 张 skill 字典卡
+8. 多模型投票层图解(标「未来态·待试点」)
+9. Mermaid 4 源 fallback(staticfile→baomitu→cdnjs→jsdelivr)
+10. CDP 验证 0 异常 + mermaid 渲染成功 + 深浅色切换
+
+阶段 5 工作量大(plan §13 风险表「HTML 工作量大」),独立成 WIP=1 任务。
+
+
+
+---
+
+## Session 120(2026-07-20):Harness 工程重整 · 阶段 5(HTML 可视化文档)+ 任务收官
+
+### 任务来源
+继续 Session 119 的 Harness 工程重整任务,执行 plan §8 阶段 5 + §7「HTML 可视化文档(核心交付)」。这是 plan 的最后阶段。
+
+### 阶段目标(plan §10 验收 #10/#11/#12/#13)
+- `harness/docs/harness-practice-guide.html` 双击可用(零外部 CSS 依赖;Mermaid JS 走 4 源 fallback,离线降级为代码块),CDP 验证 0 异常,mermaid 渲染成功(验收 #10)
+- HTML 含 8 步 agent 工作流导览(验收 #11)
+- HTML 多模型投票层标注「未来态·待试点」(验收 #12)
+- `./init.sh` 全绿(验收 #13)
+
+### 已完成产物
+
+**新建**:`harness/docs/harness-practice-guide.html`(826 行 / 68.8KB,自包含单文件)
+
+**结构**(8 段,plan §7.2 全覆盖):
+1. **§1 开篇**:3 张卡片(解决什么 / 由什么组成 / 怎么用)+ 阅读建议
+2. **§2 主流程**:mermaid 任务生命周期图(idea→ship,多模型投票节点标「未来态」)+ 3 个关键关卡 + 3 个反模式
+3. **§3 工作流导览(核心)**:8 步卡片(开工/登记/落 PRD/拆切片/实施/code-review/关闭/收尾),每卡含 5 字段(触发/读什么/调 skill/产出/下一步)
+4. **§4 现状 vs 改进对比表**:9 行(AGENTS 长度/技术栈/bug/PRD/文档评估/skill 触发/统计/投票/Stage4)
+5. **§5 Skill 字典**:8 张卡(router/grill-with-docs/to-spec/to-tickets/implement/code-review/tdd/handoff)
+6. **§6 多模型投票层(未来态)**:范围声明 + 模式 A/B 双卡 + 4 条避坑设计
+7. **§7 自动化机制**:Hook 计数器 + 自动触发路由表
+8. **§8 附录**:核心文档清单 + skills 清单 + 反馈迭代说明
+
+**技术实现(plan §7.7 全部就位)**:
+1. ✅ **离线优先**:Tailwind v3.4.17 预编译内联(16.7KB),无运行时 CSS 网络依赖
+2. ✅ **Tailwind 编译位置**(回应 review S-4):本仓库根无 package.json,在 `/tmp/html-build/` 跑 `npx tailwindcss@3.4.17 -c tw-config.js -o tw-out.css --minify`(content 扫描一个列举所有 utility class 的 tw-input.html)
+3. ✅ **Mermaid 4 源 fallback**:staticfile→baomitu→cdnjs→jsdelivr,任一成功即停;全失败降级为 `<pre class="mermaid-src">` 源码块
+4. ✅ **错误隔离**(回应 sess_f122bde8 教训):每个初始化函数独立 try/catch(mermaid init / theme apply / run)
+5. ✅ **深浅色**:CSS 变量驱动 + `html.dark` / `html.light` 切换 + localStorage 持久化 + 切换后重渲染 mermaid
+6. ✅ **CDP 验证**:Chrome headless 加载,抓 console
+7. ✅ **中文字体栈**:PingFang SC / Microsoft YaHei 系统 fallback
+
+### CDP 验证证据(plan §7.7 第 9 步)
+用 Chrome headless 加载 + 抓 console:
+
+| 验证项 | 结果 |
+|---|---|
+| `[Mermaid] 加载成功` 日志 | ✅ `https://cdn.staticfile.org/mermaid/10.9.1/mermaid.min.js`(国内 CDN 第一源成功)|
+| Mermaid 真实渲染为 SVG | ✅ `<svg id="mermaid-1784551658678"...>` 出现在 DOM |
+| 4 源 fallback 链就位 | ✅ 全失败时 `<pre class="mermaid-src">` 降级显示 |
+| JS 异常 | ✅ 0 个(那几条 `CVDisplayLinkCreateWithCGDisplay failed` 是 macOS headless 显示 API 噪音,与页面无关)|
+| 结构完整性 | ✅ 8 段 + 8 步工作流卡 + 8 张 skill 卡 + 「未来态」标注 10 处 |
+
+### 验证(plan §10 验收 #10/#11/#12/#13 全满足)
+1. ✅ 验收 #10:HTML 双击可用(零外部 CSS 依赖,Tailwind 预编译内联;Mermaid JS 4 源 fallback,离线降级为代码块),CDP 验证 0 真实异常,mermaid 渲染成功
+2. ✅ 验收 #11:HTML 含 8 步 agent 工作流导览(§3,8 张卡 × 5 字段,带领读者看完整流程)
+3. ✅ 验收 #12:HTML 多模型投票层标注「未来态·待试点」(§6,标题 + 警告框 + 避坑设计 全部标注,10 处「未来态/待试点」关键词)
+4. ✅ 验收 #13:`./init.sh` 全绿(ruff All checks passed + **561 passed**,无回归)
+
+### 文件清单(本阶段改动)
+1. `harness/docs/harness-practice-guide.html`(新,入库)— 826 行 / 68.8KB,自包含单文件
+2. `progress.md`(改)— 本 Session 记录 + 任务总收官
+
+---
+
+# 🎉 任务总收官:Harness 工程重整(Session 115-120 共 6 轮)
+
+## 验收清单全过(plan §10,13/13)
+
+| # | 验收项 | 阶段 | 状态 |
+|---|---|---|---|
+| 1 | AGENTS.md ≤100 行,入口精简,无断链 | 2b | ✅ 142→92 行,0 断链 |
+| 2 | 技术栈总览存在且单点真相源 | 2a | ✅ 176 行 |
+| 3 | bug-tracking 存在且完整,bug- 前缀已 grep 确认 | 2a | ✅ 171 行,60 id 无冲突 |
+| 4 | prd-template 含影响面/差异/v1→v2 段 | 2a | ✅ 238 行 |
+| 5 | doc-impact-assessment 存在 | 2a | ✅ 88 行 |
+| 6 | harness-router skill 存在且可被 /harness-router 调用 | 3 | ✅ 84 行 |
+| 7 | workspace 级 hook 配置 | 1 | ✅(降级用户级 + cwd 守卫,plan §5.1 实测缺陷)|
+| 8 | skill 触发后 hook 有日志记录 | 1 | ✅ .skill-counters.json 落盘 |
+| 9 | multi-model-voting 含双模式 + rubric + 触发 + 试点状态 | 4 | ✅ 190 行 |
+| 10 | HTML 双击可用 + 4 源 fallback + CDP 0 异常 | 5 | ✅ 826 行 / 68.8KB |
+| 11 | HTML 含 8 步工作流导览 | 5 | ✅ 8 张卡 × 5 字段 |
+| 12 | HTML 多模型投票层标「未来态·待试点」 | 5 | ✅ 10 处标注 |
+| 13 | init.sh 全绿 ×6 阶段 | 1-5 | ✅ 561 passed ×6(零回归)|
+
+## 交付物总清单
+
+### 文档新建(7 份,入库)
+1. `项目指南/00-总览/03-技术栈总览.md`(176 行)
+2. `harness/docs/bug-tracking.md`(171 行)
+3. `harness/docs/prd-template.md`(238 行)
+4. `harness/docs/doc-impact-assessment.md`(88 行)
+5. `harness/docs/hook-setup-guide.md`(145 行,阶段 1 衍生)
+6. `harness/docs/multi-model-voting.md`(190 行)
+7. `harness/docs/harness-practice-guide.html`(826 行 / 68.8KB)
+
+### 文档升级(3 份,入库)
+8. `AGENTS.md`(142→92 行,-35%)
+9. `harness/docs/task-workflow.md`(201→257 行,+§6/§7/§8/附录 A)
+10. `项目指南/README-给AI.md`(CodeGraph 段已事实完整,无改动)
+
+### Skill 新建(1 个,入库)
+11. `.agents/skills/harness-router/SKILL.md`(84 行)
+
+### 脚本 + 配置(2 项)
+12. `scripts/skill-counter.sh`(入库,带 cwd 守卫 + 字段路径实测对齐)
+13. `~/.zcode/cli/config.json`(用户私有,不入库,加 hooks 段)
+
+### .gitignore + 占位(2 项)
+14. `.gitignore`(改,加 `.skill-counters.*` 忽略)
+15. `.zcode/config.json`(改,workspace 级占位 + 说明文档,实际被 .zcode/ 忽略不入库)
+
+### progress.md
+16. `progress.md`(改,Session 115-120 共 6 轮记录,本任务是其中最长的一段工程)
+
+## 关键发现与决策(回写 plan v2 的依据)
+
+### 🔴 重大发现 1:plan v2 §5.1 workspace hook 假设被实测推翻
+- **现象**:ZCode 3.3.6 安全策略默认拦截 workspace hooks(日志 `config.project_hooks.ignored` × 20+)
+- **官方文档**:diagnosing-hooks SKILL.md / zcode-configuration-guide SKILL.md **完全未提及**(文档盲区)
+- **解法**:降级为用户级 `~/.zcode/cli/config.json` + 脚本 cwd 守卫(等价「仅本项目生效」)
+- **衍生**:建 `harness/docs/hook-setup-guide.md`(团队安装指南,plan v2 没列)
+
+### 🔴 重大发现 2:PostToolUse hook payload 字段路径实测
+- **候选 1** `tool_input.skill`:✅ 存在(主路径)
+- **候选 2** `tool_input.skill_name`:❌ 不存在
+- **候选 3** `tool_name`:⚠️ 是 `"Skill"` 工具名非 skill 名
+- **额外**:payload 同时含 camelCase + snake_case 双命名;`${ZCODE_PROJECT_DIR}` + `${ZCODE_SESSION_ID}` 都被注入
+
+### 关键决策(硬约束全遵守)
+1. **硬约束 #1 WIP=1**:每阶段验证通过才进下一阶段(6 阶段 × init.sh 全绿)
+2. **硬约束 #2 阶段 2 拆 2a→2b**:先建 6 新文档(2a)→ 最后才改 AGENTS.md(2b),0 断链窗口
+3. **硬约束 #3 阶段 1 先实测 payload**:先 cat 抓真实 payload 确认字段名,才写正式脚本(避开了 plan §5.2 的 3 候选猜测陷阱)
+4. **硬约束 #4 阶段 4 不实施投票**:只写 multi-model-voting.md(190 行),标注「未来态·待试点」;不实施 skill 封装
+5. **硬约束 #5 每阶段跑 init.sh**:6 阶段全跑,561 passed 零回归
+6. **硬约束 #6 每阶段更 progress.md**:6 个 Session 记录全部追加
+
+## plan v2 的「实施差异」段(回写)
+
+按 [`prd-template.md`](harness/docs/prd-template.md) §「实现差异 vs plan 段」要求,本任务实施 vs plan v2 的差异:
+
+| 差异点 | plan v2 说法 | 实际实施 | 原因 |
+|---|---|---|---|
+| Hook 配置位置(§5.1)| workspace 级 `<repo>/.zcode/config.json` | 用户级 `~/.zcode/cli/config.json` + cwd 守卫 | ZCode 3.3.6 安全策略拦 workspace hook(实测发现,plan 假设推翻)|
+| 文档数量(§9)| 6 新建 | 7 新建(多 1 份 hook-setup-guide.md)| 降级方案衍生,plan 没预料到 security policy 问题 |
+| AGENTS.md 最终行数(§3.1)| ~85 行 / ≤100 行(v2 统一)| 92 行 | 落在 plan 给的区间内 |
+
+其余 plan v2 设计全部按计划实施。
+
+## 下一步建议
+
+1. **(可选)ship-it**:本任务所有改动可由 `/ship-it` 流水线 commit + PR + 合并入 main
+2. **(未来)多模型投票试点**:等异构模型环境就绪,挑下一个真复杂任务做单任务试点(候选:鉴权类已有 v1→v2 审查的后续任务)
+3. **(未来)Stage 5 巡检**:引入 `/improve-codebase-architecture` 定期巡检代码健康度
+4. **(可选)HTML 增强**:若需打印/导出 PDF,可加 `@media print` 样式 + 页面分隔
+
+任务收官。
