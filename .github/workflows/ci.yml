@@ -5,6 +5,10 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  # Manual trigger — useful for re-running CI without a push, e.g. after
+  # resolving a billing/account issue or upgrading GitHub plan. Without this,
+  # the only ways to trigger are push/PR (both create new commits/runs).
+  workflow_dispatch:
 
 # Cancel superseded runs on the same ref.
 concurrency:
