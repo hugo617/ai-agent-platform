@@ -1,7 +1,7 @@
 {
   "project": "ai-agent-platform",
   "description": "多租户 AI 智能体 SaaS 平台脚手架(FastAPI + React + pycasbin + LangGraph)",
-  "last_updated": "2026-07-21",
+  "last_updated": "2026-07-22",
   "harness_version": "stage1-clean-state",
   "rules": {
     "single_active_feature": true,
@@ -12,21 +12,6 @@
     "standard_start_command": "RUN_START_COMMAND=1 ./init.sh"
   },
   "features": [
-    {
-      "id": "device-models-crud",
-      "priority": 61,
-      "area": "业务实体",
-      "title": "设备型号目录 CRUD(平台级主数据)",
-      "user_visible_behavior": "总部/超管能在后台维护设备型号目录(如「血压舱 X100」「智能戒指 R2」):新增/编辑/软删型号,记录品牌、规格(JSON)、供应商、单位成本。门店端创建设备实例时只能从该目录选型号。型号是平台级共享数据,所有租户共用同一份目录",
-      "status": "not_started",
-      "verification": [
-        "后端:POST/PUT/DELETE /api/v1/device-models(require_super_admin 守卫)+ GET /api/v1/device-models(所有登录用户可读,对齐 groups:门店 staff 创建 devices 时下拉框需要);软删除(is_deleted=False 过滤)+ 部分唯一索引 (name WHERE is_deleted=False)",
-        "前端:后台型号管理页(路由 /device-models,RequireSuperAdmin 守卫);型号下拉选择器(给 devices-crud-ui 复用,所有登录用户可拉)",
-        "pytest:覆盖 CRUD 全路径 + 权限矩阵(super_admin 全权 / hq_staff 读通过 / member 读通过(下拉必需) / 未登录 401)+ 软删除 + 唯一约束(软删后名可复用)+ alembic 迁移 + alembic check 无 drift",
-        "cd frontend && npm run build 通过 + npx oxlint src/ 0 warnings"
-      ],
-      "notes": "设备功能系列 1/4(地基)。平台级表(无 tenant_id,对齐 Group 平台级业务组织范式,不是 Customer 全局身份范式)。**权限模式对齐 groups.py**:写用 app/api/deps.require_super_admin() 依赖守卫;读用 get_current_user + service 层按 platform_role 分流(super_admin/hq_staff 看全量字段含 cost,门店用户只看下拉必需的 id/name/specs.form_factor)。**不走 casbin device_models:act 权限项,不进权限矩阵 UI**(平台级资源都不进)。不照搬 StorePilot admin_devices + webhook 双服务设计——本项目是单体 FastAPI,直接 BaseRepository + FK 关联即可。specs JSONB 替代 StorePilot 的 kind 枚举(避免硬编码 chamber/ring,物理形态由 specs.form_factor 表达,符合 AGENTS.md 不过度设计铁律);**specs 更新策略:整体替换(PUT 语义),不做 jsonb_set 增量**(前端拉最新→改→全量回传,避免并发覆盖单字段)。**unit_cost Numeric(12,2) Decimal**(对齐本项目 usage_event.cost / model_pricing.* 金额惯例,不用 StorePilot 的 cents INTEGER)。**specs 若需按字段查询,加 GIN 索引**(CREATE INDEX ... USING GIN(specs),开工时按实际查询决定是否加)。依赖:无。开工时写详细 plan。"
-    },
     {
       "id": "devices-crud-ui",
       "priority": 62,
@@ -81,6 +66,13 @@
       "depends_on": "device-booking"
     },
     {
+      "id": "device-models-crud",
+      "priority": 61,
+      "area": "业务实体",
+      "title": "设备型号目录 CRUD(平台级主数据)",
+      "status": "passing"
+    },
+    {
       "id": "api-token-fine-grained-scopes",
       "priority": 60,
       "area": "AtoA",
@@ -109,17 +101,10 @@
       "status": "passing"
     },
     {
-      "id": "file-upload-storage",
-      "priority": 56,
-      "area": "基础设施",
-      "title": "文件上传 + 对象存储抽象(头像/照片/文档,本地/S3/OSS 可切)",
-      "status": "passing"
-    },
-    {
       "id": "_milestone_archived",
       "priority": 0,
       "area": "里程碑",
-      "title": "[已归档 55 条 passing,见 archive/features-passing-archive.json]",
+      "title": "[已归档 56 条 passing,见 archive/features-passing-archive.json]",
       "status": "passing"
     }
   ],

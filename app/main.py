@@ -20,6 +20,7 @@ from app.api.v1 import (
     conversations,
     customers,
     dashboard,
+    device_models,
     exports,
     groups,
     knowledge,
@@ -140,6 +141,7 @@ def create_app() -> FastAPI:
     app.include_router(conversations.router, prefix=prefix)
     app.include_router(customers.router, prefix=prefix)
     app.include_router(groups.router, prefix=prefix)
+    app.include_router(device_models.router, prefix=prefix)
     app.include_router(billing.router, prefix=prefix)
     app.include_router(dashboard.router, prefix=prefix)
     app.include_router(logs.router, prefix=prefix)
