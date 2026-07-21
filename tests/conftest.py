@@ -123,6 +123,7 @@ async def test_env() -> AsyncIterator[_TestEnv]:
         agent_specialist,
         api_token,
         customer,
+        device_model,
         document,
         embedding_config,
         group,
