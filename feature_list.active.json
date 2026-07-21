@@ -1,0 +1,59 @@
+{
+  "project": "ai-agent-platform",
+  "description": "多租户 AI 智能体 SaaS 平台脚手架(FastAPI + React + pycasbin + LangGraph)",
+  "last_updated": "2026-07-17",
+  "harness_version": "stage1-clean-state",
+  "rules": {
+    "single_active_feature": true,
+    "passing_requires_evidence": true,
+    "do_not_skip_verification": true,
+    "wip_limit": 1,
+    "standard_verify_command": "./init.sh",
+    "standard_start_command": "RUN_START_COMMAND=1 ./init.sh"
+  },
+  "features": [
+    {
+      "id": "api-token-fine-grained-scopes",
+      "priority": 60,
+      "area": "AtoA",
+      "title": "API Token 细粒度 Scope(scope 收敛闭环)",
+      "status": "passing"
+    },
+    {
+      "id": "db-design-cleanup-and-scenario-rebuild",
+      "priority": 59,
+      "area": "数据库",
+      "title": "数据库设计修复 + 大健康连锁场景清空重建(12 项问题修复)",
+      "status": "passing"
+    },
+    {
+      "id": "multi-agent-orchestration",
+      "priority": 58,
+      "area": "AI 内核",
+      "title": "多 Agent 编排(LangGraph 多节点图,Agent 协作/转交)",
+      "status": "passing"
+    },
+    {
+      "id": "knowledge-base-rag",
+      "priority": 57,
+      "area": "AI 内核",
+      "title": "知识库/RAG(激活 pgvector,文档检索增强 Agent)",
+      "status": "passing"
+    },
+    {
+      "id": "file-upload-storage",
+      "priority": 56,
+      "area": "基础设施",
+      "title": "文件上传 + 对象存储抽象(头像/照片/文档,本地/S3/OSS 可切)",
+      "status": "passing"
+    },
+    {
+      "id": "_milestone_archived",
+      "priority": 0,
+      "area": "里程碑",
+      "title": "[已归档 55 条 passing,见 archive/features-passing-archive.json]",
+      "status": "passing"
+    }
+  ],
+  "_active_view_note": "⚠️ 派生视图(自动生成,禁止手动编辑)。只含活跃任务 + 最近 5 个 passing(精简字段)+ 里程碑摘要。完整数据见 feature_list.json;历史归档见 harness/docs/archive/features-passing-archive.json。feature 状态变化后跑 scripts/sync-active-features.sh 刷新。"
+}

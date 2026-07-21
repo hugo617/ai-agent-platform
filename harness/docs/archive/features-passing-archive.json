@@ -1,0 +1,1363 @@
+{
+  "project": "ai-agent-platform",
+  "description": "已 passing feature 的历史归档(完整字段保留,审计用)",
+  "count": 55,
+  "features": [
+    {
+      "id": "data-export",
+      "priority": 55,
+      "area": "工程化",
+      "title": "数据导出 CSV(客户/对话/用量/审计,门店+总部级)",
+      "user_visible_behavior": "管理员能导出业务数据为 CSV:客户清单/对话记录/用量明细/审计日志;门店导本店数据,总部导全平台。月度经营分析必备",
+      "status": "passing",
+      "plan": "harness/docs/plan-data-export.md",
+      "verification": [
+        "后端 CSV 生成端点:GET /exports/{entity}(customers/conversations/usage/logs),StreamingResponse + csv.writer 异步生成器分批 yield",
+        "权限:门店级导本租户(customers:read/conversations:read/wallet:read|billing:read/logs:read),总部级 super_admin/hq_staff 导全平台;每个实体独立权限守卫(内联,镜像 logs.py)",
+        "前端:customers-page/logs-page/billing-page 加「导出 CSV」按钮 + 时间范围/过滤参数透传;axios responseType:blob + downloadBlob 触发浏览器下载",
+        "pytest 覆盖导出内容正确/权限/租户隔离/日期范围/streaming 响应形态(17 个测试)",
+        "npm run build 通过,tsc 0 错误;oxlint 0 警告"
+      ],
+      "evidence": [
+        "app/api/v1/exports.py:GET /exports/{entity} 流式 CSV,UTF-8 BOM,csv.writer 异步生成器分批 yield(EXPORT_BATCH_SIZE=500),MAX_EXPORT_ROWS=100k 封顶内存;store/HQ 双 scope(is_cross_tenant_viewer 分流),每实体独立权限守卫(_require_entity_read);default 30 天窗口",
+        "app/main.py:注册 exports router",
+        "tests/test_export.py:17 个测试 — 各实体 CSV 表头+行数、租户隔离、super_admin 跨租户、member 无 logs:read → 403、member 有 customers:read 可导出(复用同一权限)、日期范围、未知实体 404、坏日期 400、streaming 响应 content-type/disposition",
+        "frontend/src/api/endpoints.ts:exportEntity(entity, params) responseType:blob 返回 Blob + ExportEntity/ExportParams 类型",
+        "frontend/src/lib/download.ts:downloadBlob(blob, filename) 创建 <a> + click + revokeObjectURL",
+        "frontend/src/hooks/queries.ts:useExportCsv mutation 封装 exportEntity + downloadBlob",
+        "frontend/src/pages/customers-page.tsx:门店视图「导出 CSV」按钮(customers:read)",
+        "frontend/src/pages/logs-page.tsx:「导出 CSV」按钮,透传当前 action/resource/date/tenant 过滤",
+        "frontend/src/pages/billing-page.tsx:「导出用量」按钮(usage)",
+        "验证:./init.sh 全绿 pytest 478 passed(baseline 461 + 17 新增);cd frontend && npm run build 通过(tsc+vite,0 错误);npx oxlint src/ 0 警告 0 错误",
+        "ship-it 收尾(Session 099):清理冗余别名;审查修复跨租户对话导出数据丢失 bug(search_all 的 title ILIKE '%%' 丢弃 NULL title → 改为直接 select(Conversation) 无损导出 + 加回归测试 test_export_conversations_super_admin_null_title);PR #60 base main;GitHub Actions 4/4 一次全绿(Frontend 28s / Migrations 41s / E2E 1m54s / Backend 5m1s,0 次修红);squash 合并入 main commit 10b4ef0,删除远端分支;pytest 479 passed(478+1 回归)",
+        "[深度审查修复 2026-07-15] 补测试覆盖矩阵空白(test_export.py 原 18 → 25,新增 7):① test_export_usage_member_forbidden —— 剥离 member 的 billing:read 覆盖 exports.py 自写 raise PermissionError 拒绝分支(原测试矩阵无法触达)+ 配对 test_export_usage_member_allowed_with_billing_read(billing:read 放行);② hq_staff 导出行为首次覆盖:test_export_customers_hq_staff_cross_tenant / test_export_logs_hq_staff_cross_tenant / test_export_hq_staff_with_tenant_filter(?tenant_id 过滤);③ 补 test_export_conversations_tenant_isolation(原缺失)+ test_export_usage_super_admin_cross_tenant(原缺失)。usage 分支手写 PermissionError 保留(双权限 billing:read OR wallet:read 需求合理,require 只能查单个)。"
+      ],
+      "notes": "第二梯队。现状:无任何导出能力。复用 TanStack Table 数据,加后端 CSV streaming。门店月度经营分析 + 数据可携带性基本要求。详细 plan 执行到时写。用量导出依赖 token计费(43)。"
+    },
+    {
+      "id": "notification-scheduler",
+      "priority": 54,
+      "area": "通知",
+      "title": "通知系统 + 定时任务框架(in-app 通知 + APScheduler)",
+      "user_visible_behavior": "用户在站内消息中心看到通知(余额预警/充值到账/权限变更/用量月报);系统有定时任务框架支持余额扫描、日报、清理等周期任务",
+      "status": "passing",
+      "plan": "harness/docs/plan-notification-scheduler.md",
+      "verification": [
+        "Notification 模型(type/title/content/is_read/tenant_id/user_id)+ GET/PUT /notifications(列表/标记已读)",
+        "前端:顶栏铃铛组件 + 通知下拉 + 未读计数 badge + 通知中心页",
+        "APScheduler 集成:定时任务(余额预警扫描/用量日报/过期清理),worker 启动注册",
+        "通知触发点:余额<阈值(token计费44)/充值到账/角色变更",
+        "pytest 覆盖通知创建/查询/已读/定时任务触发 + npm run build 通过"
+      ],
+      "evidence": [
+        "app/models/notification.py + alembic 迁移 2026_07_14_1330_d4e5f6a7b8c9_add_notifications_table.py(down_revision=c3d4e5f6a7b8);alembic heads 单 head d4e5f6a7b8c9,alembic check 无漂移",
+        "GET /notifications, GET /notifications/unread-count, PUT /notifications/{id}/read, PUT /notifications/read-all(app/api/v1/notifications.py);NotificationService.create/list_for_user/unread_count/mark_read/mark_all_read(begin_nested + try/except,触发点失败不影响业务事务)",
+        "触发点:BillingService.recharge → 余额预警/充值通知;MemberService.update_role → 角色变更通知;APScheduler scan_balance_warnings 余额扫描(24h 去重)",
+        "app/core/scheduler.py:AsyncIOScheduler,init_scheduler 幂等 + SCHEDULER_ENABLED=False 默认(测试安全);lifespan 启动/关闭",
+        "前端:NotificationBell(顶栏铃铛 + 30s 轮询未读数 + 下拉)+ NotificationsPage(分页 + 未读过滤);dashboard-layout 集成 + /notifications 路由",
+        "pytest tests/test_notifications.py → 12 passed(2026-07-14);全量 pytest 461 passed;frontend npm run build 通过;oxlint 0 warnings",
+        "ship-it 交付(Session 097):PR #59 squash merge 入 main → 7fe629d;CI 4/4 首轮全绿(Migrations 53s / Backend pytest+ruff 3m56s / Frontend 31s / E2E 1m56s)零修红;清理删除 NotificationCreate 死代码类(零调用方)"
+      ],
+      "notes": "第二梯队。Token 计费的配套——余额预警/充值到账/月报都需要通知+定时任务。不做的话 token 计费体验不完整(用户得自己刷页面)。成本中(APScheduler集成+通知模型+铃铛)。详细 plan 执行到时写。依赖 token计费(44)用于余额预警触发场景。"
+    },
+    {
+      "id": "health-monitoring",
+      "priority": 53,
+      "area": "工程化",
+      "title": "健康检查/监控(/ready + Prometheus metrics)",
+      "user_visible_behavior": "运维侧:平台提供 /ready(检查 DB 连接的就绪探针)+ /metrics(Prometheus 格式指标:请求量/延迟/错误率),支持生产级监控告警",
+      "status": "passing",
+      "plan": "harness/docs/plan-health-monitoring.md",
+      "verification": [
+        "GET /ready:检查 DB 连通性(SELECT 1),失败返回 503",
+        "GET /metrics:Prometheus 格式(http_requests_total/request_duration_seconds/in_progress)",
+        "增强 /health:加 DB 检查(现状只返回 ok 不碰 DB)",
+        "pytest 覆盖 /ready(DB 正常/断开)、/metrics 格式",
+        "./init.sh 全绿"
+      ],
+      "evidence": [
+        "后端:app/core/metrics.py(REQUESTS Counter method/path/status + LATENCY Histogram method/path + IN_PROGRESS Gauge + render_metrics);app/main.py metrics 中间件(用 route template 非 raw URL 保 label 基数有界;排除 /metrics/health/ready/docs/openapi 自循环;try/finally 保证 IN_PROGRESS inc/dec 配对);/health 增强(加 best-effort db ping,恒 200 liveness 不阻断);/ready(就绪探针,_db_ping 失败 → 503 not_ready);/metrics(Prometheus exposition);_db_ping 用 Depends(get_db) 走依赖注入 → 测试 DB override 自动生效",
+        "依赖:requirements.txt 加 prometheus-client==0.25.0;无迁移(纯运维端点);无前端改动",
+        "测试:tests/test_health.py 7 测试(/health 恒 200 + db 字段;/ready DB ok 200;/ready DB 断 503 override get_db 用 _BrokenSession.execute raise 模拟;/metrics Prometheus text + 含 http_requests_total/http_request_duration_seconds;/metrics 记录业务请求 status=401 标签;/metrics 自身 exempt 不计入;/in_progress gauge 暴露)",
+        "验证:./init.sh ruff All checks passed + 449 passed(基线 442 + 新增 7);纯后端无前端改动",
+        "liveness vs readiness 区分:/health 恒 200(进程活就 ok,db 字段仅展示不阻断,避免 DB 短暂抖动导致 pod 重启);/ready 503 才摘流(让编排器停发流量到恢复)",
+        "_db_ping Depends(get_db) 而非直连 AsyncSessionLocal:走 FastAPI 依赖注入,测试 override_get_db 自动生效(否则 _db_ping 用生产 engine 连 :memory: 是独立库,SELECT 1 仍 ok 但不跟随 test DB override);503 测试靠 override 注入 _BrokenSession",
+        "交付:PR #58 squash merge 入 main(f271f75);CI 4/4 首轮全绿(Migrations 50s / Backend pytest+ruff 4m4s / Frontend 27s / E2E 1m39s)零修红;ship-it 审查发现并修复 metrics 中间件 404 原始路径泄漏(基数爆炸)→ 收敛为 unmatched label"
+      ],
+      "notes": "第一梯队 工程化。现状:只有 /health 返回 ok 不检查 DB,无 /ready 无 metrics。生产部署必需的运维能力。详细 plan 执行到时写。独立无依赖。"
+    },
+    {
+      "id": "tenant-branding-config",
+      "priority": 52,
+      "area": "管理控制台",
+      "title": "租户品牌配置(logo/名称/主题色/登录文案,白标 SaaS)",
+      "user_visible_behavior": "门店 owner 能配置本租户品牌:上传 logo、设置显示名称、主题色、登录页文案;用户登录看到的是该门店品牌而非通用界面",
+      "status": "passing",
+      "plan": "harness/docs/plan-tenant-branding-config.md",
+      "verification": [
+        "新增 TenantConfig 表或 Tenant 加字段:logo_url/display_name/theme_color/login_text",
+        "API:GET/PUT /tenants/config(owner 编辑本租户)",
+        "前端:settings 加品牌配置 Card + 主题色全局应用(CSS 变量)+ logo 注入顶栏/登录页",
+        "pytest 覆盖配置读写/租户隔离/权限(owner 可改) + npm run build 通过"
+      ],
+      "evidence": [
+        "后端:app/models/tenant_config.py(TenantConfig 模型,无软删,匹配 LlmConfig 约定)+ 迁移 alembic/versions/2026_07_14_1200_c3d4e5f6a7b8_add_tenant_configs_table.py(down_revision b2c3d4e5f6a7,UniqueConstraint uq_tenant_config_tenant 在 ORM __table_args__ 与迁移中均声明,无 drift)",
+        "后端:GET /tenant-config(任意租户成员可读,品牌对全员生效)+ PUT /tenant-config(require_permission settings:update,owner/admin/super_admin);服务层 upsert;schema 用 Field pattern 校验 #RRGGBB",
+        "后端:tests/test_tenant_config.py 8 项全过(GET 返回 None/配置、PUT upsert、owner/admin 可改、member 403、member 可读、跨租户隔离、#RRGGBB 校验);pytest 全量 442 通过(基线 434 + 8 新增),ruff 全绿,alembic 单 head c3d4e5f6a7b8",
+        "前端:settings-page 第 4 张「品牌配置」Card(显示名/Logo URL/主题色 color picker+预设色板+hex/登录文案 Textarea);types/endpoints/queries(useTenantConfig + useUpdateTenantConfig + useApplyTenantTheme)",
+        "前端:lib/theme.ts 把 #RRGGBB 转 shadcn HSL token 写入 :root --primary,按 WCAG 亮度选 --primary-foreground;DashboardLayout 调 useApplyTenantTheme 应用主题色并在卸载时恢复默认(切换租户/登出不留残色);顶栏 logo+display_name 注入",
+        "前端登录页 MVP:无 tenant slug 体系,登录页用平台默认品牌,租户品牌在登录后(DashboardLayout)生效 —— 与计划 §风险/注意事项 一致",
+        "npm run build(tsc+vite 0 错误)+ npx oxlint src/ 0 warnings 0 errors",
+        "交付:PR #57 squash-merge 入 main 9073831,CI 4 job 首轮全绿(Migrations 44s / Backend pytest+ruff 4m2s / Frontend 30s / E2E Playwright 1m54s),0 次修红;alembic-check drift 未触发(UniqueConstraint ORM+迁移双声明);E2E 顶栏品牌注入未破坏既有 getByTestId/aria-label 选择器"
+      ],
+      "notes": "第一梯队。现状:settings 只有 LLM+API Token,无品牌配置,多租户白标能力缺失。logo 上传依赖 file-upload(56),可先做名称/主题色/文案。详细 plan 执行到时写。"
+    },
+    {
+      "id": "global-search",
+      "priority": 51,
+      "area": "看板",
+      "title": "全局搜索(跨 Agent/客户/对话/用户)",
+      "user_visible_behavior": "用户在顶部搜索框输入关键词,跨实体(Agent/客户/对话/用户)搜索,结果分类展示,点击直达对应详情",
+      "status": "passing",
+      "plan": "harness/docs/plan-global-search.md",
+      "verification": [
+        "新增 GET /search?q= 全局搜索端点(聚合 agents/customers/conversations/users,各自 ILIKE,按类型分组返回)",
+        "单实体搜索:agents/customers/conversations 各加 search 参数(目前只有 users 有)",
+        "前端顶部全局搜索框 + 结果下拉分类展示 + 点击跳转",
+        "权限:按当前用户可访问范围过滤(super_admin 全局,门店用户本租户)",
+        "pytest 覆盖跨实体搜索/权限过滤/租户隔离 + npm run build 通过"
+      ],
+      "evidence": [
+        "后端各实体加 search:AgentRepository.search/search_for_tenant(name ILIKE)+ CustomerProfileRepository.search_for_tenant(JOIN Customer 按 name/identity_key ILIKE)+ CustomerRepository.search + ConversationRepository.search_all(title 跨租户)+ UserRepository.search + TenantRepository.search;agents GET / 与 customers GET /profiles/ 各加 ?search= 参数透传到 Service(app/repositories/*.py + app/api/v1/agents.py + app/api/v1/customers.py)",
+        "新增 GET /api/v1/search?q=&limit_per_type=5 聚合端点:读聚合器直连多 Repository(同 /dashboard/overview 模式),asyncio.gather 并发查 agents/customers/conversations;q.strip()<2 字符直接返回空;门店用户按本租户 scope、is_cross_tenant_viewer(super_admin/hq_staff)跨租户并额外返回 users+tenants;每条返回轻量 DTO {id,label,type}(app/api/v1/search.py + app/schemas/search.py)",
+        "对话搜索复用 conversation-management(50)的 list_for_user search(title OR message content);门店用户走该路径,super_admin 走新加的 search_all(仅 title 跨租户,保持聚合查询轻量)",
+        "权限隔离下沉到 Repository:每个 search 方法自带 tenant_id 过滤,Controller 不绕过;super_admin/hq_staff 经 is_cross_tenant_viewer 分支走无 tenant_id 的平台级查询(app/services/permission_service.py is_cross_tenant_viewer 复用)",
+        "前端 types.ts 加 GlobalSearchResult/SearchResultItem;endpoints.ts 加 globalSearch(q, limitPerType);queries.ts 加 useGlobalSearch(300ms 防抖 useDebouncedValue + useQuery enabled=q.length>=2 + placeholderData 保持下拉稳定)",
+        "前端新增 components/layout/global-search-box.tsx:放大镜 Input + 防抖 + 下拉分类(智能体/客户/对话/用户/门店,top 5 每类)+ 每项点击 navigate 详情页 + 「查看全部」跳列表页带 ?search=;Escape/外部点击关闭;dashboard-layout.tsx 顶栏内嵌(移动端隐藏,不破坏既有头像下拉布局)",
+        "tests/test_global_search.py 20 个测试全过:agents/customers 单实体 search 参数、global 各实体命中(name/title/identity_key)、跨分类聚合、q<2 字符空结果、门店用户租户隔离(看不到他租户 agent/customer)、super_admin/hq_staff 额外返回 users+tenants 且跨租户可见、limit_per_type 截断(默认 5)、DTO shape {id,label,type}",
+        "验证全过:./init.sh ruff clean + pytest 434 passed(基线 414 + 20 新);cd frontend && npm run build 0 类型错误(tsc -b + vite);cd frontend && npx oxlint src/ 0 warnings 0 errors",
+        "ship-it 审查修复:CustomerService.list_profiles 搜索路径原对 group/self data scope 不一致(group 收窄为单租户、self 放宽为全租户越权);新增 CustomerProfileRepository.search_for_scope 镜像 list_for_scope 的 all/tenant/group/self 语义 + JOIN Customer ILIKE,Service 搜索路径统一委托,隔离逻辑留在 Repository 层(app/repositories/customer.py + app/services/customer_service.py)",
+        "已合并入 main:PR #56 squash → 70e7fba,CI 4 job 全绿(首轮 0 修红:Migrations/Backend pytest+ruff/E2E Playwright/Frontend typecheck+build+lint),远端 feat/global-search 分支已删"
+      ],
+      "notes": "第一梯队。现状:只有 users 有 search 参数,其他实体无搜索,无跨实体全局搜索。详细 plan 执行到时写。依赖 conversation-management(50)的对话搜索。"
+    },
+    {
+      "id": "conversation-management",
+      "priority": 50,
+      "area": "AI 内核",
+      "title": "对话管理增强(搜索/重命名/标签/收藏/批量删除)",
+      "user_visible_behavior": "用户能搜索历史对话(按标题/内容)、重命名对话、打标签/收藏分类、置顶常用、批量清理;不只列表/读/删",
+      "status": "passing",
+      "plan": "harness/docs/plan-conversation-management.md",
+      "verification": [
+        "Conversation 模型加字段:tags(JSON)/is_pinned/is_starred(可空向后兼容)+ 迁移无 drift",
+        "后端:对话搜索端点(标题/content ILIKE)+ 重命名 + 标签 + 置顶 + 批量删除",
+        "前端 chat-page.tsx:搜索框 + 右键菜单(重命名/标签/收藏/置顶/删除)+ 标签筛选",
+        "pytest 覆盖搜索/重命名/标签/置顶/批量删除/租户隔离",
+        "npm run build 通过 + alembic check 无 drift"
+      ],
+      "evidence": [
+        "Conversation 加 tags(JSONB.with_variant(JSON,'sqlite'),default list,server_default '[]')+is_pinned/is_starred(Boolean,default false,server_default text('false'))(app/models/agent.py)",
+        "手写迁移 alembic/versions/2026_07_14_1030_b2c3d4e5f6a7_add_conversation_management_columns.py(down_revision a1b2c3d4e5f6,仅加列无新索引→无 ORM __table_args__ drift);alembic heads 单头 b2c3d4e5f6a7",
+        "后端 API:GET / 加 search(tag filter)+ pinned-first 排序;PATCH title/POST tags/DELETE tags/{tag}/PATCH pin/PATCH star/POST batch-delete,全 conversations:update 或 :delete 守卫 + 复用 _get_owned 用户隔离(app/api/v1/conversations.py + app/services/conversation_service.py)",
+        "tags JSONB 双库:Postgres @> via .contains([]) / SQLite json_each via _tags_contain 方言分发(app/repositories/conversation.py)",
+        "前端 chat-page.tsx:防抖搜索框 + 多选 checkbox + 批量删除 + 每项 DropdownMenu(重命名 Dialog/添加标签 Dialog/置顶/收藏/删除)+ 置顶📌/收藏⭐图标 + 标签 chip(点击删除)",
+        "tests/test_conversation_management.py 21 个测试全过:搜索(标题/内容/标签/组合)、排序(置顶优先)、重命名、标签增删、置顶/收藏、批量删除+所有权、跨租户隔离、member 权限 403、ConversationRead 默认值",
+        "验证全过:./init.sh ruff clean + pytest 414 passed(基线 393 + 21 新);cd frontend && npm run build 0 类型错误;cd frontend && npx oxlint src/ 0 warnings 0 errors;.venv/bin/alembic heads 单头",
+        "PR #55 squash-merge 入 main 为 b6b8f3c,CI 4 job 全绿(Migrations 1m3s / Backend 3m35s / Frontend 29s / E2E 1m38s);E2E 首轮因会话行重构(删除按钮移入 DropdownMenu)导致旧选择器 [title=删除会话] 失效,改用 [aria-label=选择会话] checkbox 作存在性探针后二轮全绿"
+      ],
+      "notes": "第一梯队。现状:对话只有列表/读/删,Conversation 模型只有 6 列无 tags/pinned。补搜索+管理交互让聊天体验完整。详细 plan 执行到时写。被 global-search(51)弱依赖。"
+    },
+    {
+      "id": "user-profile-account",
+      "priority": 49,
+      "area": "用户管理",
+      "title": "用户个人中心(改密码/改资料/我的会话)",
+      "user_visible_behavior": "用户能自助管理个人账号:修改密码、编辑资料(姓名/头像)、查看我的会话和用量;不必找管理员改密码",
+      "status": "passing",
+      "plan": "harness/docs/plan-user-profile-account.md",
+      "verification": [
+        "新增 PUT /auth/me 端点(改自己密码/资料,需验证旧密码)",
+        "前端 profile-page.tsx:改密码表单 + 资料编辑 + 我的会话列表",
+        "侧边栏/头像下拉加「个人中心」入口",
+        "pytest 覆盖改密码(旧密码校验)/改资料/越权防护(不能改别人)",
+        "npm run build 通过"
+      ],
+      "evidence": [
+        "后端:app/schemas/auth.py(ProfileUpdate:display_name/real_name/phone/avatar 全可选,extra=ignore 防注入 platform_role/status + PasswordChange:old_password + new_password min 8)+ app/api/v1/auth.py(PUT /auth/me 仅改可编辑字段、token user_id 锁定目标、改后返回 MeResponse;PUT /auth/me/password 用 app/core/password.py 的 verify_password/hash_password,旧密码错→400,OIDC-only 账户无密码→400,password_updated_at 刷新)",
+        "密码存储位置确认:bcrypt 哈希直接存在 User.password 列(app/models/tenant.py),无单独 UserLoginMethod 密码表;登录校验在 AuthService.login 经 UserRepository.get_by_login_identifier + verify_password",
+        "前端:types.ts(ProfileUpdate/PasswordChange)+ endpoints.ts(updateMe PUT /auth/me + changePassword PUT /auth/me/password)+ queries.ts(useUpdateMe 成功后 invalidate [\"auth\",\"me\"] 刷新 /me + useChangePassword)+ profile-page.tsx(资料编辑卡 display_name/real_name/phone react-hook-form+zod + 修改密码卡 旧/新/确认 前端校验 new===confirm + 我的会话卡 复用 useConversations 列最近 8 条 + 跳转 /chat)+ dashboard-layout.tsx(顶栏用户区改为 DropdownMenu 头像下拉,含「个人中心」「退出登录」)+ App.tsx(/profile 路由,ProtectedRoute 下无额外权限守卫,人人可访问自己的)",
+        "测试:tests/test_profile.py 8 测试(PUT /auth/me 改 display_name/real_name/phone 落库;不能改 platform_role/status(extra ignore);需鉴权 401;token user_id 锁定 member 改自己不影响 owner;PUT /auth/me/password 旧密码错→400 且原密码仍可登录;正确旧密码→204 新密码可登录且旧密码失效;new_password 短于 8→422;需鉴权 401)",
+        "验证:./init.sh ruff All checks passed + pytest 393 passed(基线 385 + 新增 8)+ npm run build 0 类型错误 + npx oxlint src/ 0 warnings 0 errors",
+        "无迁移:User 模型已有 password/password_updated_at/display_name/real_name/phone/avatar,全部复用,零 schema 改动",
+        "不做:头像上传(依赖 file-upload 56,avatar 字段已留接口)、2FA、第三方账号绑定管理(Logto 管)",
+        "交付:PR #54 squash-merge 入 main(48f74b9),CI 4 job 全绿一次过(Backend pytest+ruff / Migrations / Frontend typecheck+build+oxlint / E2E Playwright),零修红",
+        "[深度审查修复 2026-07-15] 兑现 user_visible_behavior 承诺的「编辑资料(姓名/头像)」:① 头像上传回填 —— profile-page.tsx 加 FileUpload 头像区(accept 图片 maxSizeMb 5 + SecureImage 回显当前头像)+ avatar 独立 state + onSubmit 随文字字段一起 PUT。② MeResponse 补全 profile 字段 —— schemas/auth.py MeResponse 加 display_name/real_name/phone/avatar;_build_me_response 无条件查 DB 取 db_user 填充(CurrentUser 来自 token 不带 profile 字段)。③ 修复 #64 登记的「表单无法预填」—— profile-page 表单 defaultValues 从 me 预填(useForm values 选项)。tests/test_profile.py 新增 2 测试(test_me_returns_profile_fields + test_update_avatar_persists_and_echoes),共 10 passed。"
+      ],
+      "notes": "第一梯队 SaaS 体面。现状:无个人中心页,GET /auth/me 只读,用户改不了自己信息。头像上传依赖 file-upload(56),可先做改密码/资料文字字段。详细 plan 执行到时写。"
+    },
+    {
+      "id": "audit-log-ui",
+      "priority": 48,
+      "area": "审计",
+      "title": "审计日志查询 UI(SystemLog 暴露 API + 前端页面)",
+      "user_visible_behavior": "管理员能在审计日志页查看系统操作记录(谁在何时做了什么),按操作人/时间/操作类型/资源过滤;super_admin 看全平台,owner 看本租户",
+      "status": "passing",
+      "plan": "harness/docs/plan-audit-log-ui.md",
+      "verification": [
+        "新增 SystemLog 查询端点 GET /logs(分页 + 过滤:operator/action/resource_type/date_range)",
+        "权限:super_admin 看全平台,owner 看本租户(logging_service.record 已记 tenant_id)",
+        "前端 logs-page.tsx:TanStack Table + 过滤器(操作人/类型/时间范围)",
+        "侧边栏加「审计日志」菜单(owner/admin 可见)",
+        "pytest 覆盖查询/过滤/租户隔离 + npm run build 通过"
+      ],
+      "evidence": [
+        "后端:app/repositories/log.py(SystemLogRepository.list_logs,多租户过滤在 Repository 层,append-only 不加 is_deleted)+ app/schemas/log.py(SystemLogRead/SystemLogListResponse)+ app/api/v1/logs.py(GET /logs 双视角:门店 logs:read 强制本租户;super_admin/hq_staff 跨租户可选 tenant_id 过滤)+ main.py 注册 logs router",
+        "权限:permission_service.DEFAULT_OWNER_PERMS/DEFAULT_ADMIN_PERMS 加 logs:read(member 不给);OBJ_CN 加 logs→审计日志;conftest _make_casbin owner/admin 策略同步;test_permission_service 目录测试 expected set 补 logs:read",
+        "前端:types.ts(SystemLog/LogFilters/SystemLogListResponse)+ endpoints.ts(fetchLogs)+ queries.ts(useLogs + qk.logs + placeholderData 保上一页)+ logs-page.tsx(过滤栏 action/resource/date/tenant + Table 展开行 before/after JSON diff + Pagination)+ dashboard-layout 加「审计日志」(permission: logs:read)+ App.tsx /logs 路由(RequireApiPermission)+ require-permission PATH_API_PERM 加 /logs",
+        "测试:tests/test_logs_api.py 14 测试(门店看本租户/租户隔离/门店传 foreign tenant_id 被忽略/super_admin 跨租户/super_admin 按 tenant 过滤/member 403/action/resource_type/user_id/date_from 过滤/坏日期 400/分页 limit+offset/最新优先/before-after JSON 暴露)",
+        "验证:./init.sh ruff All checks passed + 385 passed(基线 371 + 新增 14)+ npm run build 0 类型错误 + npx oxlint src/ 0 warnings 0 errors(46 文件)",
+        "SystemLog append-only:Repository 无 is_deleted 谓词(与 Customer/User 软删除模型不同),日志永不删",
+        "无迁移:复用现有 SystemLog 表 + 既有索引(idx_system_logs_resource/_tenant_id/_user_id),纯读端点",
+        "已合并入 main:PR #52 squash → commit 6f2f23b(CI 四任务 Migrations/Backend/Frontend/E2E 首轮全绿 0 次修红)"
+      ],
+      "notes": "第一梯队。现状:SystemLog 模型在写(logging_service.record)但无查询 API 无前端页,数据在黑暗里。补查询端点+前端审计页。详细 plan 执行到时写。独立无依赖。"
+    },
+    {
+      "id": "dashboard-analytics",
+      "priority": 47,
+      "area": "看板",
+      "title": "Dashboard 数据看板(真实统计 + 趋势,门店/总部双视角)",
+      "user_visible_behavior": "登录后看到真实业务数据看板:用户/Agent/对话/客户统计卡片 + 近期活跃趋势;(token 计费上线后)消耗趋势 + 余额。替代当前 4 个硬编码占位卡片",
+      "status": "passing",
+      "plan": "harness/docs/plan-dashboard-analytics.md",
+      "verification": [
+        "dashboard-page.tsx 接入真实统计数据(复用已有 /users/statistics + 新增 agent/conversation/customer stats 端点)",
+        "统计卡片:用户数/Agent数/对话数/客户数(门店级);门店汇总(总部级)",
+        "趋势图:近 7/30 天活跃趋势(轻量图表,纯CSS柱状或 recharts)",
+        "总部视角(super_admin):跨租户汇总;门店视角:本租户数据",
+        "cd frontend && npm run build 通过 + oxlint 0 warning"
+      ],
+      "evidence": [
+        "后端新增端点:GET /agents/statistics、/conversations/statistics、/customers/statistics(门店/HQ 双视角,service 按 platform_role 分流)、GET /dashboard/trends?days=N(每日对话/消息计数,零填充连续时间线)、GET /dashboard/overview(super_admin 专属:平台总数 + 门店活跃 Top 10)",
+        "后端文件:app/repositories/{agent,conversation,customer,dashboard}.py(count/aggregate/daily_trend/conversation_count_by_tenant)、app/services/{agent,conversation,customer,dashboard}_service.py、app/schemas/{agent,conversation,customer,dashboard}.py、app/api/v1/{agents,conversations,customers,dashboard}.py、app/main.py(注册 dashboard 路由)",
+        "前端文件:frontend/src/api/types.ts(AgentStatistics/ConversationStatistics/CustomerStatistics/TrendPoint/DashboardTrends/PlatformTotals/DashboardOverview)、endpoints.ts(fetchAgentStatistics/fetchConversationStatistics/fetchCustomerStatistics/fetchDashboardTrends/fetchDashboardOverview)、queries.ts(useAgentStatistics/useConversationStatistics/useCustomerStatistics/useDashboardTrends/useDashboardOverview)、pages/dashboard-page.tsx 重写为 StoreView(4 统计卡 + 纯CSS柱状趋势)+ HqView(5 平台总数 + 门店活跃 Top10 纯CSS柱状),按 me.platform_role === 'super_admin' 分流",
+        "alembic 迁移:2026_07_14_0900_a1b2c3d4e5f6_add_trend_indexes.py(给 conversations/messages 加 (tenant_id, created_at) 复合索引,把门店级趋势 GROUP BY 扫描降为索引范围扫描;down_revision f9a0b1c2d4e5 链式正确,单 head)",
+        "验证命令与输出:./init.sh → ruff check 全绿 + pytest -ra --strict-markers → 371 passed(基线 356 + 本任务新增 15 个 tests/test_dashboard_api.py:门店/HQ stats 隔离、super_admin 跨租户、trends 零填充+clamp、overview super_admin-only 403);cd frontend && npm run build → tsc -b + vite build 0 错误;npx oxlint src/ → Found 0 warnings and 0 errors",
+        "依赖方向遵守:Controller→Service→Repository→Model 单向;多租户隔离全在 Repository 层(TenantScopedRepository / 显式 WHERE tenant_id);soft-delete 语义在 Customer/CustomerProfile 计数中保留 is_deleted=False",
+        "ship-it 收尾(Session 083):Phase 1 废代码清理 —— 实测实现 agent「无未用新符号」声明属实,全部新增 Repository 方法(count_for_tenant/count_all/daily_trend_*/conversation_count_by_tenant/statistics_*)、endpoint、schema、前端 hook/endpoint/type 均有调用方,无 console/TODO/注释死码,0 删除;Phase 2 质量复审 —— 单向依赖/多租户隔离/soft-delete 语义/迁移对称性均符合项目铁律;Phase 3 提交 3fdb49b;Phase 4 PR #51;Phase 5 守 CI 首轮 Migrations 红(alembic check 报「Detected removed index ix_conversations_tenant_created_at / ix_messages_tenant_created_at」—— 迁移在 DB 建了复合索引但 ORM 模型 Conversation/Message 未声明,autogenerate drift 检测认为模型会移除它们),修复:在两个模型的 __table_args__ 加同名 Index 声明(0ad4ed0),复验 pytest 371 passed;第二轮 CI 四任务全绿(Migrations 41s / Backend 2m59s / Frontend 33s / E2E 1m41s,1 次修红);Phase 6 squash 合并入 main 为 0b0d397(#51 后缀,符合项目提交风格),远端 feat/dashboard-analytics 分支已删"
+      ],
+      "notes": "第一梯队 SaaS 体面。现状:dashboard-page.tsx 是占位页(4硬编码卡片),后端已有 /users/statistics 但前端没用。成本最低的首胜。详细 plan 执行到时再写(本条 plan 暂指总纲 plan-mvp-completion-overview.md)。依赖:token计费(43-46)完成后可加消耗维度,可先做基础统计。"
+    },
+    {
+      "id": "token-billing-ui",
+      "priority": 46,
+      "area": "计费",
+      "title": "Token 计费前端看板(门店/总部两级 + 充值 + 用量明细)(Token 费用管理系列 4/4)",
+      "user_visible_behavior": "门店用户看到自己的 token 余额/消耗趋势/流水明细/用量钻取;总部(super_admin)看各门店余额消耗汇总、给门店充值、维护模型定价表;余额不足时对话被拦前端有提示",
+      "status": "passing",
+      "plan": "harness/docs/plan-token-billing-ui.md",
+      "verification": [
+        "billing-page.tsx(门店级):余额卡片 + 消耗趋势(近7/30天)+ 流水表(TanStack Table)+ 用量明细 tab(按客户/Agent 钻取),有 wallet:read 可见",
+        "billing-admin-page.tsx(总部级 super_admin):门店汇总表 + 充值 Dialog(金额+备注)+ ModelPricing 维护 CRUD",
+        "侧边栏加「费用管理」/billing(门店级)、「计费管理」/billing/admin(needsSuperAdmin);路由守卫正确",
+        "充值操作生效(调 wallet:recharge → 余额增加 → 列表 invalidate 刷新)",
+        "余额预警(余额 < low_balance_threshold 卡片变红提示「联系总部充值」)",
+        "用量明细按客户钻取联动任务45归因数据",
+        "对话消耗后门店余额实时减少;余额为0对话被拦前端显示余额不足",
+        "cd frontend && npm run build 通过 + oxlint 0 warning + ./init.sh 不回归"
+      ],
+      "evidence": [
+        "types.ts 加 Wallet/WalletTransaction/ModelPricing/ModelPricingUpsert/RechargeRequest/UsageEventItem/UsageSummary/UsageDetail 接口(逐字段对齐 app/schemas/billing.py;amount 带符号注释、tenant_id 可空=平台默认、cost 来自 Decimal 快照)",
+        "endpoints.ts 加 fetchWallet/fetchWalletByTenant/fetchTransactions/fetchUsage/recharge/fetchPricing/createPricing/updatePricing/deletePricing(覆盖 plan §Step2 wallet 读取 + transactions + usage + recharge + pricing CRUD;null 容错 GET /billing/wallet)",
+        "queries.ts 加 qk.wallet/walletByTenant/transactions/usage/pricing + useWallet/useTransactions/useUsage/useRecharge/useModelPricing/useCreatePricing/useUpdatePricing/useDeletePricing;qk.walletByTenant key factory 保留(recharge.onSuccess invalidate 受影响 tenant wallet + 自有钱包 + transactions);HQ 页直接用 fetchWalletByTenant via useQueries 逐店扇出",
+        "billing-page.tsx(门店级,新建):余额卡片(balance < low_balance_threshold 卡片 + 数字 + banner 变 destructive 红提示「联系总部充值」)+ 累计充值/消耗/状态 3 计数卡 + 近7/30天纯CSS柱状消耗趋势(无图表库依赖,buildDailyTrend 按日桶聚合 UsageEvent.total_tokens)+ Prompt/Completion/Total token 累计汇总 + 最近流水表(类型图标 + 金额红绿 + 余额/模型/备注/相对时间)+ 用量明细钻取表(模型/Prompt/Completion/合计/¥费用/对话/时间);RefreshCw 一键 refetch 三个查询;fmtTokens 千分位 + fmtCost ¥四位小数 + fmtRelative 相对时间",
+        "billing-admin-page.tsx(总部级 super_admin,新建):全平台余额/累计充值/累计消耗 3 汇总卡(useQueries 扇出 GET /billing/wallet/{tenant_id} 逐店聚合,无汇总端点)+ 门店钱包表(余额/充值/消耗/阈值/状态 badge,余额不足标红 destructive)+ 充值 Dialog(react-hook-form + zod,amount 整数 ≥1 + remark,默认 10000 + 换算提示)+ ModelPricing CRUD 表(模型/输入单价/输出单价/币种/范围 badge/状态 + 新建/编辑 Dialog + 停用确认;PUT/POST/DELETE 对应 updatePricing/createPricing/deletePricing)",
+        "dashboard-layout.tsx 加「费用管理」/billing(permission:{obj:wallet,act:read},新 permission 字段走 hasPermission)+「计费管理」/billing/admin(platformOnly super_admin);NAV_ITEMS.filter 增加 permission 分支;图标 Wallet/Coins",
+        "require-permission.tsx 加 RequireApiPermission 守卫(PATH_API_PERM 映射 /billing→wallet:read)+ App.tsx 注册 /billing(RequireApiPermission)+ /billing/admin(RequireSuperAdmin 同 tenants 块)",
+        "偏差说明(对比 plan):① 无 menu:billing 权限种子,故 /billing 守卫与导航改用 api 权限 wallet:read(新增 NavItem.permission 字段 + RequireApiPermission 守卫,super_admin bypass);② 后端无聚合「全部门店钱包」端点,HQ 汇总用 useQueries 逐店扇出(已注释说明);③ zod v4 用 error 替代 invalid_type_error",
+        "验证:cd frontend && npm run build → tsc + vite 0 类型错误(chunk size 提示为既有非阻塞警告);npx oxlint src/ → Found 0 warnings and 0 errors(45 files / 102 rules);./init.sh → ruff All checks passed + 356 passed(后端未改动,纯前端任务)",
+        "ship-it 收尾(Session 081):Phase 1 删除实现 agent 遗留的 2 个无调用方死符号(updateMyWallet endpoint + 专属 WalletUpdate 类型、useWalletByTenant hook 包装);本地复验 init.sh 356 passed + oxlint 0 + build 0 类型错误;PR #49 CI 四任务(Migrations/Backend/Frontend/E2E)首轮全绿 0 修红;squash 合并入 main 为 fb64b98;远端 feat/token-billing-ui 分支已删"
+      ],
+      "notes": "Token 费用管理系列收官任务。前置 token-usage-tracking(43)+ token-wallet-billing(44)+ customer-conversation-link(45)三者全 passing。两级看板:门店级(余额/消耗/流水/用量,owner/admin 持 wallet:read)+ 总部级(门店汇总/充值/定价,super_admin)。消耗趋势用轻量方案(纯CSS柱状或 recharts 若已在依赖,不引重型图表库)。充值金额单位是 token 数(整数),提示换算参考。member 持 billing:read 但非 wallet:read(后端 DEFAULT_MEMBER_PERMS 未 seed wallet:read),故 member 不进 /billing —— 前端守卫与后端授权一致;若后续要让 member 只读看余额需后端先 seed wallet:read。不做:支付集成、导出CSV、实时余额推送、月度限额。完成后整个 Token 费用管理系列收官,更新 plan-token-billing-overview.md 系列状态。"
+    },
+    {
+      "id": "customer-conversation-link",
+      "priority": 45,
+      "area": "客户域",
+      "title": "客户维度 Token 归因(Conversation 绑 customer_id)(Token 费用管理系列 3/4)",
+      "user_visible_behavior": "门店员工发起 AI 对话时可选关联某客户(为张先生咨询),系统把对话消耗的 token 归因到该客户;客户详情页显示「AI 服务」维度(对话次数/token 消耗/最近活跃);总部可看跨店客户汇总",
+      "status": "passing",
+      "plan": "harness/docs/plan-customer-conversation-link.md",
+      "verification": [
+        "Conversation 加 customer_id(可空 FK→customers.id, ondelete=SET NULL, 向后兼容)+ 迁移无 drift",
+        "UsageEvent.customer_id 从 Conversation 透传填充(任务43建的列填值)",
+        "对话创建接受可选 customer_id;列表支持 ?customer_id=xxx 过滤",
+        "GET /customers/{id}/usage 聚合(对话次数/SUM tokens/SUM cost/MAX created_at),门店视角加 tenant_id 过滤、总部视角不加",
+        "聊天页加关联客户下拉(可选)+ 对话标题显示客户名;客户详情加 AI 服务维度 + 「为客户咨询」按钮直达带 customer_id 新对话",
+        "跨店归因:同客户在多门店对话,总部视角全局汇总,门店视角各算各",
+        "向后兼容:旧对话 customer_id=NULL 不报错;无归因客户用量为 0",
+        "pytest 覆盖:带 customer_id 创建/UsageEvent 透传/聚合/跨店/向后兼容/客户软删 SET NULL",
+        "./init.sh 全绿 + npm run build 通过"
+      ],
+      "evidence": [
+        "Conversation 加 customer_id(可空 FK→customers.id,SET NULL,index)+ 迁移 f9a0b1c2d4e5(down_revision e8f9a0b1c2d3,add_column + index + FK)",
+        "透传链路:ChatRequest.customer_id → create_or_get(customer_id 仅新建生效,reuse 不覆盖)→ Conversation → _record_usage(customer_id=conv.customer_id 替换原 None 注释)→ UsageEvent",
+        "ConversationRepository.list_for_customer(tenant_id + customer_id 过滤,customer 360 用)",
+        "UsageEventRepository.sum_tokens_for_customer(门店/总部双视角:tenant_id 可选过滤;返回 prompt/completion/total/cost_sum/conv_count/last_active)+ list_for_customer",
+        "GET /customers/{id}/usage 端点(CustomerUsageRead schema):is_cross_tenant_viewer 分流——门店 customers:read + tenant 过滤;super_admin/hq_staff 全局",
+        "前端 chat-page:agent 选择器旁加客户选择器(非 super_admin,可选)+ URL ?customer_id= 预填(为客户咨询 deep link)+ 会话列表/标题显示客户名 + sendChatStream 仅新建时传 customer_id",
+        "前端 customers-page:StoreView 操作菜单加「AI 用量」项 + CustomerUsageDialog(对话次数/token/费用/最近活跃 + 为客户咨询按钮)+ HqView 表格加 AI 用量列(全局视角)",
+        "types.ts Conversation 加 customer_id + CustomerUsage interface;endpoints.ts ChatStreamPayload 加 customer_id + fetchCustomerUsage;queries.ts useCustomerUsage + qk.customerUsage",
+        "测试 tests/test_customer_conversation.py 11 测试:Conversation.customer_id 可空 + chat 端到端 customer_id 透传(Conversation+UsageEvent)+ 无 customer_id 向后兼容 + sum_tokens_for_customer 门店/全局/无归因 + list_for_customer + API GET /usage(门店/member/super_admin 全局)",
+        "验证:./init.sh → ruff All checks passed + 356 passed(基线 345 + 新增 11);npm run build 0 类型错误;npx oxlint 0 warnings 0 errors",
+        "PR #48 已合并(squash)入 main,commit 05c7106;CI 4 job 全绿(Migrations 43s + Frontend 28s + E2E 1m56s + Backend 2m50s),0 次修红;ship-it 审查修正 1 处:chat-page 注释事实错误(super_admin 并非 403,permission_service.check bypass)+ useCustomerProfiles 加 enabled 开关避免 super_admin 空跑查询"
+      ],
+      "notes": "解决 token 消耗无法归因到客户。现状:Conversation 只绑(tenant,agent,user)不绑 Customer。用户 2026-07-12 决策做客户归因。设计:customer_id 可空(不是所有对话关联客户)+ 对话级关联(非消息级)+ 前端聊天页可选关联/客户详情「为客户咨询」直达。前置 token-usage-tracking(43,UsageEvent 有 customer_id 可空列)。复用 customers-api(已 passing)的 Customer 全局身份做跨店归因。不做:消息级关联、自动客户识别(AI 提取)、前端看板(任务46)。客户软删后对话 customer_id 保留(历史可追溯)或 SET NULL(FK ondelete)——实施时定。"
+    },
+    {
+      "id": "token-wallet-billing",
+      "priority": 44,
+      "area": "计费",
+      "title": "Token 钱包计费(预付钱包 + 扣减 + 充值 + 余额拦截)(Token 费用管理系列 2/4)",
+      "user_visible_behavior": "门店有 token 钱包余额(预付制),对话消耗实时扣减,余额不足拒绝对话;总部(super_admin)能给门店充值划拨额度;按模型真实 token + 单价表计费。实现「门店向总部购买 token,token 用于门店和门店客户」的商业闭环",
+      "status": "passing",
+      "plan": "harness/docs/plan-token-wallet-billing.md",
+      "verification": [
+        "Wallet 表(一门店一钱包,balance 整数 token 数,total_recharged/consumed,low_balance_threshold,部分唯一索引)+ WalletTransaction 流水表(recharge/consume/refund/adjust)+ 迁移无 drift",
+        "ModelPricing 表(平台级 tenant_id NULL + 租户覆盖,input/output_price_per_1k,currency)+ 迁移",
+        "BillingService:charge(SELECT FOR UPDATE 防并发双扣)/recharge(has_balance)/calc_cost(租户覆盖>平台默认,未配置 cost=0)",
+        "event_source 余额预检(不足返回 SSE error 不开始对话)+ 对话成功后同事务扣减(with_for_update)",
+        "create_tenant 末尾同事务初始化零余额 wallet(原子性)",
+        "API:/billing/wallet(查余额)/recharge(充值 super_admin)/transactions(流水)/usage(用量)/pricing(定价 CRUD),权限 wallet:read/billing:read 门店级、recharge/pricing:manage super_admin",
+        "DEFAULT_*_PERMS 加 wallet:read/billing:read(owner/admin 持有)",
+        "pytest tests/test_billing.py 覆盖:扣减原子性/并发双扣防护(PG FOR UPDATE)/余额不足拦截/充值流水/定价计算覆盖优先级/租户隔离/wallet 初始化",
+        "./init.sh 全绿 + alembic check 无 drift"
+      ],
+      "evidence": [
+        "./init.sh 全绿:ruff All checks passed! + 345 passed(基线 321 + 新增 24 test_billing)(2026-07-13)",
+        "迁移 e8f9a0b1c2d3(三新表 wallets/wallet_transactions/model_pricing)+ 真实 Postgres alembic upgrade head 成功 + alembic check 无 drift(env.py + conftest.py 两处 model import 同步)",
+        "BillingService 实现:charge(SELECT FOR UPDATE 防并发双扣 + cost 快照 stamp 到 UsageEvent.cost)/recharge(正整数校验 + 流水)/calc_cost(租户覆盖>平台默认>未配置=0)/create_wallet_for_tenant(幂等)",
+        "event_source 余额预检:wallet 存在且 balance<=0 → SSE error 拦截;无 wallet 放行(优雅降级);super_admin bypass;对话成功后 _charge_usage 扣减(try/except 不阻断)",
+        "create_tenant 末尾同事务初始化零余额 wallet(TenantService 步骤 6),测试 POST /tenants/ 后新租户有零余额钱包",
+        "API 端点:/billing/wallet(wallet:read)/wallet/{id}(super_admin)/wallet PUT(wallet:update)/transactions(wallet:read)/usage(billing:read)/recharge(super_admin)/pricing GET(billing:read)+POST/PUT/DELETE(super_admin)",
+        "权限 seed:DEFAULT_OWNER/ADMIN_PERMS 加 wallet:read/wallet:update/billing:read;DEFAULT_MEMBER_PERMS 加 billing:read(只读);OBJ_CN 加 wallet=钱包/billing=计费;conftest _make_casbin 三角色同步",
+        "test_billing.py 24 测试:calc_cost 三档(租户覆盖/平台默认/未配置=0)/charge 原子性(balance+total_consumed+流水+cost 快照)/charge 无 wallet 安全返回 None/recharge 正数校验+无 wallet 报错/钱包初始化幂等/create_tenant 零余额钱包/余额=0 拦截/有余额扣减/无 wallet 放行/API 权限边界(owner 读/member 403/super_admin 充值/pricing CRUD super_admin)/租户隔离",
+        "前端零改动(纯后端任务);cd frontend && npm run build 通过(0 类型错误);npx oxlint 无需跑(无前端改动)"
+      ],
+      "notes": "Token 费用管理核心任务。用户 2026-07-12 拍板:预付钱包制(实时扣减余额为0拦截)+ 模型真实 token 单价表(总部可加价)+ 纯额度划拨(不接支付)。关键设计:① 余额用整数 token 数非金额(定价变化余额不变,扣减时算 cost 快照);② 扣减用 with_for_update(PG 行锁防并发双扣,SQLite no-op 测试够用);③ 扣减在 append_message 同事务(原子性);④ 定价快照(算完写死进 UsageEvent.cost 和 WalletTransaction)。前置 token-usage-tracking(43)。不做:前端看板(任务46)、客户归因(customer_id 留空,任务45)、接支付网关、退款、预警通知。扣减失败 try/except 不阻断已完成的对话(差异靠对账补)。"
+    },
+    {
+      "id": "token-usage-tracking",
+      "priority": 43,
+      "area": "计费",
+      "title": "Token 用量采集(用量事件层)(Token 费用管理系列 1/4)",
+      "user_visible_behavior": "每次 AI 对话后系统记录真实的 token 用量(输入/输出/合计)+ 实际服务的模型名,为后续计费提供数据基础;目前对话消耗的 token 完全没被采集(stream_agent 丢弃 usage_metadata)",
+      "status": "passing",
+      "plan": "harness/docs/plan-token-usage-tracking.md",
+      "verification": [
+        "_build_llm_kwargs 开启 stream_usage: True(DeepSeek 流式末尾返回 usage)",
+        "stream_agent 事件循环加 on_chat_model_end 分支,累加 usage_metadata(ReAct 多轮累加非覆盖),流末尾 yield usage 汇总",
+        "Message 加 4 列(prompt_tokens/completion_tokens/total_tokens/model,均可空向后兼容)+ alembic 迁移无 drift",
+        "append_message 扩展关键字参数接收 token 数据(向后兼容)",
+        "event_source 消费 usage 传给 append_message,记录实际服务的 model(chat.py L102-106 解析后的 model,非 agent.model)",
+        "新建 UsageEvent 表 + Repository(追加式账本,customer_id/cost 暂可空留任务2/3填)+ alembic 注册迁移",
+        "对话成功后写一条 UsageEvent",
+        "pytest tests/test_usage_tracking.py 覆盖:采集正确性/多轮累加/落库/向后兼容/中断路径/跨租户隔离",
+        "./init.sh 全绿 + alembic upgrade head && alembic check 无 drift"
+      ],
+      "evidence": [
+        "_build_llm_kwargs 开启 stream_usage: True(graph.py,DeepSeek 流式末尾 chunk 返回 usage)",
+        "stream_agent 事件循环加 on_chat_model_end 分支,累加 usage_metadata(ReAct 多轮累加非覆盖),流末尾 yield {usage, model} 汇总;返回类型 AsyncIterator[str | dict]",
+        "Message 加 4 列(prompt_tokens/completion_tokens/total_tokens/model,均可空向后兼容)+ 迁移 b739b2ae902b(down_revision 4708b3fbf2e7)",
+        "append_message 扩展关键字参数接收 token 数据(prompt_tokens/completion_tokens/total_tokens/model,向后兼容旧调用)",
+        "event_source 消费 usage:isinstance 分发 str→delta / dict→usage_data;成功+中断两路径都带 usage 落库;记录实际服务 model(chat.py L102-106 解析后的 model)",
+        "新建 UsageEvent 表(usage_events,追加式账本:tenant/conversation/message/agent/customer_id 暂空/cost 暂空)+ Repository(sum_tokens_for_tenant/list_for_tenant/list_for_conversation)+ 迁移注册 + alembic/env.py import",
+        "对话成功后写一条 UsageEvent(_record_usage 辅助函数,try/except 包裹不阻断对话,失败 rollback 仅丢 ledger 行不丢已 commit 的 message)",
+        "pytest tests/test_usage_tracking.py 6 测试全过:stream_agent 多轮累加(2 次 on_chat_model_end sum 非 last)/ 成功路径 Message+UsageEvent 落库 / 向后兼容(纯 str stream → NULL 列 + 无 ledger)/ 中断路径 partial usage 落库 / 跨租户隔离(list_for_tenant + sum_zeros) / append_message 无 kwargs 兼容",
+        "./init.sh 全绿:ruff All checks passed! + 321 passed(基线 315 + 新增 6);npm run build 成功 0 类型错误;oxlint 0 warnings 0 errors"
+      ],
+      "notes": "Token 费用管理系列地基任务。现状(2026-07-12 精确取证):stream_agent(L125-178)事件循环只处理 on_chat_model_stream 只 yield 文本,从不读 chunk.usage_metadata(LangChain 流末尾暴露的真实用量);Message 只有 5 列无 token/model;全项目搜 quota/credit/balance/wallet 零命中。关键技术点:① DeepSeek 流式需 stream_usage=True 才返回 usage;② ReAct agent 多轮 on_chat_model_end 需累加;③ yield 契约从 AsyncIterator[str] 改为 str|dict。系列总纲 plan-token-billing-overview.md。不做:钱包扣费(任务44)、客户归因(customer_id 留空,任务45)、定价(cost 留空,任务44)、改 ReAct 工具链。UsageEvent 写入失败用 try/except 包裹不阻断对话(用量丢失<对话失败)。"
+    },
+    {
+      "id": "permission-matrix-redesign",
+      "priority": 42,
+      "area": "权限",
+      "title": "权限矩阵 UI 重写(超管锁定行 + 菜单/操作分区 + data_scope 选择器)(权限重构系列 4/4)",
+      "user_visible_behavior": "权限矩阵页统一管理三类权限:顶部超管锁定行(全选不可配)+ 菜单权限区 + 操作权限区并列 + 每角色 data_scope 选择器,管理员一处配全角色×菜单×操作×数据范围",
+      "status": "passing",
+      "plan": "harness/docs/plan-permission-matrix-redesign.md",
+      "verification": [
+        "矩阵页顶部显示超管锁定行(全选 + 🔒 图标,不可编辑,语义「平台级全权」);非超管登录不显示",
+        "菜单权限区 + 操作权限区并列(或 tab 切换),列按 obj 分组,均可编辑",
+        "每个角色行有 data_scope 下拉(全部/本租户/本组织/仅自己),改值调 role update 生效",
+        "系统角色(owner/admin/member)标「系统」徽章;member 矩阵只读(无 roles:update)",
+        "改角色菜单权限 → 该角色用户登录菜单变化(联动任务 40);改 data_scope=self → 该角色用户查客户只看自己(联动任务 41)",
+        "图例(✅/❌/🔒)+ 快捷操作(全选本组/授权查看联动)+ 编辑 loading/toast 反馈",
+        "cd frontend && npm run build 通过 + oxlint 0 warning + ./init.sh 不回归"
+      ],
+      "evidence": [
+        "cd frontend && npm run build 通过:tsc -b + vite build 成功,0 类型错误(2026-07-13);后端零改动(纯前端任务,基线 315 passed 不回归)",
+        "npx oxlint src/(全仓库 43 文件)→ 0 warnings 0 errors(2026-07-13)",
+        "超管锁定行:me.platform_role==='super_admin' 时顶部独立琥珀色卡片(Shield + Lock 图标 + 「拥有全部权限(平台级,后端 bypass)」文案,不可配置);非超管不显示",
+        "data_scope 选择器:操作权限区表头下独立一行「数据范围」,每角色一个 Select(全部/本租户/本组织/仅自己 + 每档中文 hint);改值调 useUpdateRole({data_scope})→ PUT /roles/{id}→ onSuccess invalidate permissionMatrix + roles;loading 态 SelectTrigger 内 spinner;member 只读(无 roles:update)",
+        "前端类型补齐:Role/RoleCreate/RoleUpdate 加 data_scope 字段(DataScope 联合类型 all/tenant/group/self)+ 对齐后端 RoleRead(RoleRead.data_scope Session 070 已加但前端类型未同步,本任务补齐)",
+        "useUpdateRole 增强:onSuccess 除 invalidate ['roles'] 外加 invalidate permissionMatrix(data_scope 改动刷新矩阵 roles 元数据)",
+        "图例增强:✅允许 / ❌拒绝 / 🔒锁定(超管平台级) / 点击格子可切换(仅 canManage)",
+        "实现差异 vs plan:(1) 布局沿用「角色=列、权限=行」(任务 39 已验证方向)而非 plan mockup 的「角色=行、权限=列」—— 权限项 ~47 个纵向可滚、角色仅 3-5 列横向紧凑,且不破坏已验证编辑交互;(2) 快捷操作「全选本组/授权查看联动」未实现 —— 在「角色=列」布局下批量 grant 语义复杂且误操作风险高,plan 标注是增强项(nice-to-have),降级保留图例 + 单格 toggling,符合「不越界」;(3) data_scope 行仅 api 区显示(menu 区与数据范围无关,避免重复)"
+      ],
+      "notes": "权限重构系列收官任务。用户明确诉求(2026-07-12):① 超管全选且锁定(后端 bypass 语义不变,只让超管权限 UI 可见可理解);② 菜单+操作两类权限并列;③ data_scope 可配。前置 permission-unified-model(39)+ permission-menu-view(40)+ permission-data-scope(41)三者全 passing,后端数据层完全就绪(RoleRead 含 data_scope、PermissionItem 含 type),本任务纯前端:types.ts 补 data_scope + permissions-page.tsx 重写(超管锁定行 + data_scope Select + 增强图例)+ useUpdateRole 加 invalidate matrix。布局沿用「角色=列」(权限项多纵向滚),plan mockup 的「角色=行」为示意。快捷操作降级(误操作风险)。完成后整个权限重构系列收官。手动浏览器验证未跑(需前后端启动),build(tsc)+ oxlint 已覆盖类型/规范。"
+    },
+    {
+      "id": "permission-data-scope",
+      "priority": 41,
+      "area": "权限",
+      "title": "数据权限(data_scope 角色级数据范围四档)(权限重构系列 3/4)",
+      "user_visible_behavior": "角色可配置数据范围(all全部/tenant本租户/group本组织/self仅自己),该角色用户查询业务数据时按范围自动过滤(业务员只看自己客户、店长看全店、区域经理看本组织多门店)",
+      "status": "passing",
+      "plan": "harness/docs/plan-permission-data-scope.md",
+      "verification": [
+        "Role 表加 data_scope 字段(四档 all/tenant/group/self),默认 tenant,alembic 迁移无 drift",
+        "DataScopeResolver 实现四档过滤(all 不过滤/tenant 本租户/group 本组织门店 IN/self created_by=)+ 多角色聚合取最宽",
+        "CustomerRepository/ConversationRepository 接入数据范围过滤(Service 层从当前 user 解析传给 Repository)",
+        "group 范围:复用 Group+GroupTenant 解析门店列表;tenant 不属于任何 Group 时降级 tenant",
+        "角色 CRUD(RoleCreate/RoleUpdate/RoleRead)暴露 data_scope 字段",
+        "pytest tests/test_data_scope.py 覆盖:self 只看自己/tenant 看全店/group 看跨店/多角色聚合取最宽/group 降级 tenant/跨租户隔离不变",
+        "./init.sh 全绿 + npm run build 通过"
+      ],
+      "evidence": [
+        "Step1-2: Role 模型加 data_scope(String(20) default='tenant',app 层校验四档,无 Enum/DB CHECK) + alembic 迁移 4708b3fbf2e7(down_revision 84605f063730,server_default='tenant' 回填,双库兼容);migration 文件 py_compile 通过",
+        "Step3: RoleRead 加 data_scope='tenant';RoleCreate/RoleUpdate 加 data_scope + pattern '^(all|tenant|group|self)$'(RoleLabel 不加,保持下拉最小化)",
+        "Step4: 新建 app/services/data_scope.py DataScopeService + ResolvedScope(dataclass);resolve 入口 is_cross_tenant_viewer→all;_widest_role_scope 多角色取最宽(all>group>tenant>self,无角色行降级 tenant 安全默认);group→_resolve_group_tenants(GroupRepository.list_for_tenant + GroupTenantRepository.list_for_group 取并集,空则降级 tenant);self→owner_user_id",
+        "Step5-6: rbac_service create 写 data_scope=payload.data_scope;update 字段循环加 'data_scope';seed_defaults 三角色显式 data_scope='tenant'(defaults tuple 加第 4 元素)",
+        "Step7-8: CustomerProfileRepository 加 list_for_scope(scope/tenant_id/group_tenant_ids/owner_user_id 原始参数,保持 Repository 不反向依赖 service);CustomerService.list_profiles 接入 DataScopeService.resolve 替换旧 is_cross_tenant 二分",
+        "Step9: tests/test_data_scope.py 新建 9 测试全过(self 只看自己/tenant 看全店/group 看跨店/group 降级 tenant/多角色取最宽/跨租户隔离/super_admin bypass=all/角色 CRUD 暴露 data_scope + 更新/无效 data_scope 422)",
+        "验证命令全过:./init.sh → ruff 'All checks passed!' + 315 passed(基线 306 + 新增 9);cd frontend && npm run build → tsc+vite 成功 0 错误;npx oxlint src/ → 0 warnings 0 errors(43 文件)",
+        "既有测试不破:CustomerProfile tenant 分支与旧 list_for_tenant 等价;test_customers_api/test_chat 全绿;Conversation 不接入(用户决策)"
+      ],
+      "notes": "数据权限 B 层:角色级 data_scope 四档(用户 2026-07-12 拍板,非 ABAC 行级表达式)。data_scope 挂角色上(非权限项上),一个角色一种数据范围;super_admin/hq_staff 走 bypass 不进 data_scope;group 依赖现有 Group 模型(任务 groups-api 已有);self 需业务表有 created_by 列(核实 customers/conversations,缺失要补)。前置 permission-unified-model(39)+ groups-api(已 passing)。首批只接 Customer/Conversation 两域,Agent 暂不接(租户共享语义)。不做:列级数据权限、权限项粒度 data_scope、data_scope 的 SCD2 历史。| [Session 实施决策 2026-07-13] Conversation 不接入 data_scope(用户确认):会话本质个人数据,owner/admin 不应默认看全租户成员聊天,维持 ConversationService.list_for_user 的 user_id 过滤不变。故本任务 data_scope 仅对 CustomerProfile 生效,偏离 plan verification 的 ConversationRepository 项(经用户确认)。DataScopeResolver 实现为 app/services/data_scope.py DataScopeService(用户确认放 service 层,避免 Repository 反向依赖)。backfill 老角色 data_scope:迁移 server_default='tenant' 已回填,与旧行为等价,无需额外脚本。"
+    },
+    {
+      "id": "permission-menu-view",
+      "priority": 40,
+      "area": "权限",
+      "title": "菜单/视图权限(type=menu)(权限重构系列 2/4)",
+      "user_visible_behavior": "管理员能在权限矩阵里配置每个角色可见哪些菜单/页面,角色用户登录后侧边栏菜单随之变化;前端菜单可见性不再硬编码 needsSuperAdmin/needsUserManagement,改由 menu 权限驱动",
+      "status": "passing",
+      "plan": "harness/docs/plan-permission-menu-view.md",
+      "verification": [
+        "Permission.type='menu' 启用,seed 生成全部菜单权限项(menu:dashboard/menu:agents/menu:chat/menu:customers/menu:groups/menu:members/menu:users/menu:roles/menu:permissions/menu:settings)",
+        "GET /permissions/catalogue?type=menu 返回菜单项;矩阵端点 permissions[].type 字段就绪",
+        "MeResponse 暴露当前用户 menu 权限清单(permissions 字段,含 menu+api)",
+        "前端 dashboard-layout.tsx NAV_ITEMS 删除 needsSuperAdmin/needsUserManagement,改用 canViewMenu(me, menuCode);member 登录只看业务菜单,owner 看全部(除 tenants),super_admin 看全部",
+        "menu:tenants 按 platform_role='super_admin' 显示(平台级,不进租户 seed)",
+        "menu 权限只驱动前端 UX,后端 require_permission 保持 api 校验不变(menu 是 UX 影子,真正拦的是 api 权限)",
+        "权限矩阵页可配置 menu 权限(完整 UI 美化留给任务 42)",
+        "./init.sh 全绿 + npm run build 通过"
+      ],
+      "evidence": [
+        "./init.sh 全绿:ruff + 306 passed(基线 299 + 新增 6)",
+        "cd frontend && npm run build 通过 + oxlint 0 warning",
+        "偏差:MeResponse 用 permissions(含 menu+api 统一字段)而非 plan 的 menus(用户决策统一一个字段)",
+        "Bug 修复:test_matrix_updates_after_grant 函数定义被新测试顶替丢失(孤儿代码),恢复后 305→306 passed"
+      ],
+      "notes": "解决用户核心痛点「只有增删改查没有视图权限」。关键设计:menu 权限是 UX 层非安全边界,后端真正拦截靠 api 权限(require_permission);menu + 对应 api read 通常一起 grant 但允许独立配。前置 permission-unified-model(39)。不做:data_scope(任务 41)、矩阵 UI 完整重写(任务 42)、后端 menu 校验(menu 不进 require_permission)、按钮级权限(只页面/菜单级)。老用户 menu 权限缺失由 backfill 补(可并入任务 39 的 backfill 脚本)。"
+    },
+    {
+      "id": "permission-unified-model",
+      "priority": 39,
+      "area": "权限",
+      "title": "权限目录统一 + 操作权限细化(权限重构系列 1/4)",
+      "user_visible_behavior": "权限矩阵展示完整、细化的操作权限目录(settings/api_tokens 的 manage 拆细,补全缺失项),前端中文标签从后端 catalogue 读取不再硬编码,权限目录三处漂移消除,后端 Permission 表成为唯一真相源",
+      "status": "passing",
+      "plan": "harness/docs/plan-permission-unified-model.md",
+      "verification": [
+        "DEFAULT_*_PERMS 重写:settings 拆 read/update、api_tokens 拆 read/create/delete、补 conversations:delete + agents/customers:export 预留",
+        "前端 permissions-page.tsx 删除 OBJ_LABELS/ACT_ORDER 硬编码,改从 usePermissionCatalogue 读真实目录",
+        "catalogue 端点 PermissionItem.name 返回中文友好名(如「智能体-查看」)",
+        "现有租户通过 backfill 脚本补齐新拆的权限项(casbin 策略 + SCD2 当前态同步)",
+        "权限目录三处(常量/路由守卫/前端显示)一致,无 drift",
+        "./init.sh 全绿 + cd frontend && npm run build 通过"
+      ],
+      "evidence": [
+        "./init.sh 全绿:ruff check → All checks passed!;pytest → 299 passed(基线 294 + 新增 5:1 catalogue 中文 label 集成 + 4 DEFAULT 目录完整性单元测试)(2026-07-13)",
+        "cd frontend && npm run build 通过:tsc -b + vite build 成功,0 类型错误;npx oxlint src/ 全仓库(43 文件)→ 0 warnings 0 errors(2026-07-13)",
+        "Step 4 conftest 同步:_make_casbin owner/admin 策略对齐新 DEFAULT(拆 manage + 补 update/delete/export);修复既有 drift —— conftest member 原缺 roles:read(与 DEFAULT_MEMBER_PERMS 不一致),现对齐;test_permissions_api 的 test_member_without_roles_read_is_forbidden 改为 test_member_with_roles_read_can_view_matrix(反映 drift 消除后正确行为);3 测试文件 docstring 字面量更新(:manage→细化项)",
+        "三处漂移消除确认:① 路由守卫无 settings:manage/api_tokens:manage 残留(grep 确认全 read/update/create/delete)② Service 层无 ACT_MANAGE(grep 确认)③ 前端无 OBJ_LABELS/ACT_ORDER(grep 确认);DEFAULT_*_PERMS 无 manage(只剩 ACT_CN 映射表 legacy 条目供 backfill 老行)",
+        "实现差异 vs plan:① plan §Step2「Permission 表拆 obj/act 实列」按边界判断降级,保持 code 编码,catalogue 解析返回(降低风险,无 migration)② 发现 plan 未提及的 Service 层 ACT_MANAGE(api_token_service 3 处 require 用统一 manage),窄范围修复对齐路由守卫拆分 ③ 用户决策:中文 name 写进 DB + backfill 老数据;PermissionItem 加 obj_label/act_label;backfill 用 scripts/ 运维脚本(走 enforcer 不直接写 casbin 表)"
+      ],
+      "notes": "权限重构系列地基任务。用户痛点(2026-07-12 Session 045):权限目录散在三处(DEFAULT_*_PERMS 常量/路由 require_permission/前端 OBJ_LABELS)且已 drift(conversations:delete 有校验无 seed;customers/settings/api_tokens 前端无中文标签);settings/api_tokens 的 manage 粒度过粗(一勾全勾)。本任务统一目录为后端 Permission 表 + catalogue 端点单一真相源,细化操作粒度。系列总纲见 plan-permission-redesign-overview.md。不做:menu 权限(任务 40)、data_scope(任务 41)、矩阵 UI 重写(任务 42)。Permission 表是否拆 obj/act 实列:第一版建议降级保持 code 编码,降低风险,实施时评估。"
+    },
+    {
+      "id": "demo-seed-full",
+      "priority": 38,
+      "area": "演示案例",
+      "title": "演示数据全量补全(清理重建 --reset + 覆盖所有业务实体)",
+      "user_visible_behavior": "跑 `python scripts/seed_demo.py --reset` 一键清空旧演示数据并重建全量业务数据(对话/消息/LLM配置/API Token/自定义角色权限/审计日志/多登录方式/Agent推理参数差异化),让演示覆盖项目全部业务表而不只是组织客户门店三域",
+      "status": "passing",
+      "plan": "harness/docs/plan-demo-seed-full.md",
+      "verification": [
+        "python scripts/seed_demo.py --reset 一键清空全部演示数据(按 FK 反向顺序)+ 全量重建,无报错",
+        "python scripts/seed_demo.py(无参数)幂等可重跑,新加实体(对话/LLM配置/Token/自定义角色/登录方式)打印 exists 跳过",
+        "重建后覆盖全部业务表(除 UserSession/VerificationCode 运行时态外):3门店+7用户+2组织+5+客户身份+7+门店档案+4 Agent(推理参数各不同)+4-6段对话+20-30条消息+1平台级+1租户级 LLM配置+2 API Token+1自定义角色+差异化权限+SystemLog非空+1+额外登录方式",
+        "登录验证三级 fallback:朝阳店 Agent 下拉显示 deepseek-reasoner(租户级覆盖);海淀/王府井显示 deepseek-chat(回退平台级)",
+        "登录验证自定义角色:朝阳店李师傅(senior_therapist)能改客户档案(customers:update)但不能删(无 customers:delete)",
+        "./init.sh 全绿(纯脚本任务,无 app/ 代码改动,基线不回归)"
+      ],
+      "evidence": [
+        "./init.sh 全绿:ruff + 294 passed(纯脚本+文档,app/ 零改动)",
+        "python scripts/seed_demo.py --reset 真实 Postgres 一键清空+全量重建无报错;无参数幂等重跑全部跳过",
+        "Bug 修复:_reset_demo_data 删 SystemLog 顺序错误(SET NULL 导致审计日志泄漏),上移到删租户之前",
+        "运行时 bug:_ensure_membership 原只写 SCD2 不写 casbin grouping,补 add_role_for_user_in_domain 同步"
+      ],
+      "notes": "demo-seed(37)只覆盖了组织/客户/门店三域 8 张表,用户要求覆盖全面。本任务在 seed_demo.py 基础上扩:① 加 --reset 清理重建(按 FK 反向删除 + 演示白名单边界,不误伤 super_admin/非演示数据);② 补全缺口表(Conversation/Message/LlmConfig/ApiToken/SystemLog/自定义Role+Permission+RolePermission/UserLoginMethod)+ Agent 推理参数差异化。关键设计:清理用演示白名单(门店名/用户名/code/identity_key)反查行ID级联删,绝不用裸 DELETE FROM;Conversation 用 create_or_get + append_message、LlmConfig 用 upsert_platform/upsert_tenant、ApiToken 用 issue(明文只展示一次)、自定义角色用 RbacService.create+grant_permission——全调真实 Service 让 casbin/SCD2/审计副作用正确触发。不种 UserSession/VerificationCode(运行时态);不调真实 LLM(assistant 消息写死文本);LlmConfig api_key 用占位符(真实 key 由用户在 settings 页填)。前置 demo-seed(37)已 passing。纯脚本+文档任务,不改 app/ 功能代码。"
+    },
+    {
+      "id": "demo-seed",
+      "priority": 37,
+      "area": "演示案例",
+      "title": "大健康连锁演示案例 + 项目地图(种子脚本 + 文档补全)",
+      "user_visible_behavior": "跑一个脚本即可导入完整的演示数据(3门店+6员工+1总部+2组织+5客户档案含2跨店+4智能体),配合项目地图一眼看懂数据模型全貌",
+      "status": "passing",
+      "plan": "harness/docs/plan-demo-seed.md",
+      "verification": [
+        "python scripts/seed_demo.py 幂等可重跑(第二次跑打印 exists 不报错)",
+        "脚本跑完后:3 门店 + 6 员工 + 1 hq_staff + 2 组织 + 5 客户档案(含 2 跨店身份复用)+ 4 Agent 全部入库",
+        "登录验证:朝阳店 owner 只看本店 2 个档案;super_admin 看到张先生跨 2 店/刘女士跨 2 店(profile_count=2)",
+        "docs/db-schema.mmd 从 16 表补全到 22 表(删废弃 organizations/user_organizations,加 groups/group_tenants/customers/customer_profiles/llm_configs/api_tokens),mermaid 语法合法",
+        "项目指南/附录/关系图.md 第三章断言修正(三类实体)+ 新增第十章(业务实体全景图)+ 第十一章(演示案例说明)",
+        "./init.sh 全绿(纯脚本+文档,无 app/ 代码改动,基线不回归)"
+      ],
+      "evidence": [
+        "scripts/seed_demo.py(260+ 行):照搬 init_admin.py 范式,5 步建数据 + 汇总打印;幂等设计覆盖门店/用户/角色绑定/组织/客户档案/Agent 全部",
+        "真实 Postgres 验证(docker aap-postgres):脚本首跑成功创建全部数据;二跑打印 exists 全部跳过(幂等确认)",
+        "跨店聚合验证:super_admin 查客户 → 张先生 profile_count=2(朝阳+海淀)、刘女士 profile_count=2(朝阳+王府井)",
+        "门店隔离验证:朝阳店 owner 查客户档案 → 只见 2 个本店档案,不见海淀/王府井",
+        "docs/db-schema.mmd:从 16 表补全到 22 表,更新于 2026-07-12",
+        "项目指南/附录/关系图.md:第三章断言修正 + 新增第十章(业务实体全景图 mermaid + 三核心概念 + 权限模型)+ 第十一章(演示案例说明)",
+        "./init.sh 全绿:纯文档+脚本任务,app/ 零改动,基线不回归"
+      ],
+      "notes": "用户补充大健康/中医/理疗连锁业务背景后的演示案例任务。种子脚本照搬 init_admin.py 范式(幂等 select-then-add + 调真实 Service/Repository 让 casbin/SCD2 副作用正确触发)。权限约束处理:CustomerService.create_profile/AgentService.create 内部 require 查 casbin,脚本传门店 owner 作 actor + 先 seed_tenant_defaults 再调 create。跨店身份复用通过 Customer.identity_key 全局唯一实现(张先生/刘女士跨店复用同 Customer,各店独立 CustomerProfile)。密码安全:演示账号统一弱密码 Demo@123456,脚本注释标明仅演示用。纯文档+脚本任务,不改任何 app/ 功能代码、不加批量导入端点、不做前端改动。实现完全对齐 plan 6 步。"
+    },
+    {
+      "id": "hq-platform-role",
+      "priority": 36,
+      "area": "权限",
+      "title": "平台角色 hq_staff —— 总部业务员(各司其职)+ 跨租户只读",
+      "user_visible_behavior": "总部业务员(hq_staff)能跨店只读所有门店 + 客户档案聚合视图,但不能创建/编辑/删除;总部超管(super_admin)行为不变",
+      "status": "passing",
+      "plan": "harness/docs/plan-hq-platform-role.md",
+      "verification": [
+        "permission_service.check() 加 hq_staff + act=='read' 短路(任意 obj 的 read 放行)",
+        "抽象 helper is_cross_tenant_viewer(platform_role)(super_admin + hq_staff 都算跨租户查看者)",
+        "Customer/Group Service 的跨租户查询分支:从 == 'super_admin' 扩展为 in ('super_admin','hq_staff');写操作 hq_staff 走 casbin 无策略则 403(天然只读)",
+        "pytest tests/test_hq_platform_role.py 覆盖:hq_staff 跨店读客户/组织 200、写客户 403、改组织 403、读门店内其它资源 200、super_admin 不回归",
+        "./init.sh 全绿(现有 super_admin 测试无回归)"
+      ],
+      "evidence": [
+        "./init.sh 全绿:ruff + 281 passed(基线 265 + 新增 16 test_hq_platform_role)",
+        "无迁移(platform_role 是自由字符串字段)",
+        "偏差:hq_staff_client fixture 绑定 member 角色(非 owner),避免 owner 写权限泄漏导致写操作误返 200",
+        "偏差:HQ 读端点守卫从 require_super_admin 改为 require_cross_tenant_viewer(plan 隐含但需显式)"
+      ],
+      "depends_on": "customers-api",
+      "notes": "用户「总部各司其职」需求的具体落地。platform_role 是自由字符串无 Enum 约束(tenant.py:92-96),加 hq_staff 无需迁移/JWT 改动。设计=check() 方案 A(加分支),不改 casbin 架构。hq_staff 定位=总部看板/巡检员,能看全貌不能改。MVP 两个平台角色(super_admin 全权 + hq_staff 只读),可扩展(后续加财务/客服等岗位再升级到平台级 casbin domain)。前置 customers-api(用 Customer 域作跨租户只读验证载体)。前端 customers-ui/groups-ui 的 isSuperAdmin 判定可顺带改为 isCrossTenantViewer(若已合并)。"
+    },
+    {
+      "id": "customers-ui",
+      "priority": 35,
+      "area": "客户域",
+      "title": "Customer(客户)前端 —— 门店档案 + 跨店聚合视图",
+      "user_visible_behavior": "门店员工能管理本店客户档案(列表/创建/编辑);总部管理员能看到跨店聚合视图(客户去过哪几家店 + 每店档案)",
+      "status": "passing",
+      "plan": "harness/docs/plan-customers-ui.md",
+      "verification": [
+        "新建 customers-page.tsx:按 me.platform_role 切双视角(门店视角=本店档案 CRUD / 总部视角=跨店聚合只读)",
+        "门店视角:列表(姓名/手机/状态/最近到店)+ 创建/编辑 Dialog(identity_key+name+本店档案字段)+ 删除确认",
+        "总部视角:全局客户列表(姓名/手机/去过 N 家店)+ 点击展开跨店档案详情(每条 [门店名+备注+状态+最近到店])",
+        "权限守卫:member 只读 / admin 无 delete / owner 全权 / super_admin 总部只读",
+        "路由 /customers 注册 + NAV_ITEMS 加「客户」项(图标避用 Users,改 Contact/UserCircle)",
+        "cd frontend && npm run build 通过 + oxlint 0 warning"
+      ],
+      "evidence": [
+        "cd frontend && npm run build 通过:tsc -b + vite build 成功,0 类型错误(2026-07-12)",
+        "npx oxlint src/pages/customers-page.tsx src/hooks/queries.ts src/api/endpoints.ts src/api/types.ts src/App.tsx src/components/layout/dashboard-layout.tsx → 0 warnings 0 errors(2026-07-12)",
+        "后端零改动(纯前端任务,基线 265 passed 不变,无回归);pytest tests/test_customers_api.py → 17 passed 确认前置端点就绪",
+        "权限守卫三层:canCreate=canManageUsers(me)(owner/admin 可创建编辑,member 只读);canDelete=me.roles.includes('owner')(仅 owner 可删除,admin 不能);super_admin 总部视图只读(写操作在门店视角);路由 /customers 在 ProtectedRoute 内 member 可见(门店视角 member 只读)",
+        "实现差异 vs plan:(1) CustomerProfileBrief.tenant 用嵌套 TenantBrief(对齐真实后端 schema,plan 文档写扁平 tenant_id/tenant_name 是过时的);(2) HQ 聚合返回类型用 CustomerRead(非 plan 的 CustomerAggregate,后端 schema 就叫 CustomerRead);(3) 跨店档案详情用行内展开(列表已含 profiles)而非 plan 的 useCustomerAggregate 按需加载——MVP 量小列表全返回更简单;(4) tags 用原生 textarea 填 JSON(项目无 Textarea UI 组件,用 Tailwind 样式匹配 Input);(5) 客户图标用 Contact(避免与用户管理页的 Users 冲突)"
+      ],
+      "depends_on": "customers-api",
+      "notes": "纯前端任务。核心是双视角切换(isSuperAdmin = me.platform_role==='super_admin' 条件渲染两套表格)。参照 users-page.tsx 的 super_admin 跨租户视图模式。创建时跨店复用 identity_key 由后端自动处理,前端正常显示 201。前置 customers-api(5 个端点就绪)。hq_staff 视角在 hq-platform-role 任务适配(本任务只 super_admin + 门店视角)。不做搜索/筛选/导入导出/去重合并(MVP)。"
+    },
+    {
+      "id": "chat-overflow-title-fix",
+      "priority": 35,
+      "area": "AI 内核",
+      "title": "聊天页溢出修复 + 会话标题生成",
+      "user_visible_behavior": "会话列表显示每条会话的标题(首条消息摘要)而非全是「新对话」;会话多了能纵向滚动不撑破边框;长链接/长串消息不横向溢出气泡",
+      "status": "passing",
+      "plan": "harness/docs/plan-chat-overflow-title-fix.md",
+      "verification": [
+        "后端 create_or_get 加 first_message 参数:新建会话时用首条 user 消息前 20 字作 title(≥20 字加 …)",
+        "chat_stream 端点调 create_or_get 传 first_message=payload.message",
+        "前端会话列表 Card 改 flex flex-col + CardContent 加 min-h-0 flex-1 overflow-y-auto(可纵向滚动)",
+        "前端 user 气泡加 [overflow-wrap:anywhere]、assistant 气泡加 overflow-hidden(防横向溢出)",
+        "移动端 Card 高度改 h-[70vh] lg:h-[calc(100vh-12rem)](单列堆叠不双倍超高)",
+        "会话列表项加 created_at 次要信息 + 删除按钮 min-h/min-w 点击区",
+        "pytest tests/test_chat.py 全绿(含新增 2 个 title 测试)+ npm run build/lint 全绿"
+      ],
+      "evidence": [
+        "后端 ruff check(conversation_service.py + chat.py)→ All checks passed!(2026-07-12)",
+        "pytest tests/test_chat.py -q → 16 passed(原 14 + 新增 2: test_conversation_title_derived_from_first_message 长消息截前 20 字+… + test_conversation_title_short_message_no_ellipsis 短消息原样无…)(2026-07-12)",
+        "cd frontend && npm run build 通过:tsc -b + vite build 成功,0 类型错误(2026-07-12)",
+        "cd frontend && npm run lint(oxlint)→ Found 0 warnings and 0 errors(2026-07-12)",
+        "根因:① 后端 create_or_get 创建会话 title 恒为 None,chat 端点从不传 title → 所有会话 title 字段 null;② 前端 conversationLabel(conv, firstMessage?) 设计了首条消息截断兜底但调用处只传 conv → 兜底失效 → 全部 fallback「新对话」;③ 会话列表 CardContent 只有 overflow-y-auto 无 flex-1/min-h-0 → 不滚动撑破 Card;④ user 消息 whitespace-pre-wrap 缺 break-words → 长串横向溢出"
+      ],
+      "depends_on": "chat-markdown-rendering",
+      "notes": "用户反馈 bug 修复。决策:标题在后端 create_or_get 内用首条 user 消息截前 20 字生成(用户确认首条消息截断方案,否决 LLM 总结/列表返回 first_message 两案);前端信任后端 title 字段,conversationLabel 的 firstMessage 参数保留供未来按需展开。溢出修复纯 CSS:列表 Card 加 flex flex-col + CardContent min-h-0 flex-1(min-h-0 是 flex 子项能收缩的关键);user 气泡 [overflow-wrap:anywhere];assistant 气泡 overflow-hidden 兜底。顺带修移动端双倍超高(70vh)和删除按钮点击区(min-h/min-w)。无 schema/迁移改动。"
+    },
+    {
+      "id": "customers-api",
+      "priority": 34,
+      "area": "客户域",
+      "title": "Customer(客户)后端 —— 全局身份 + 门店档案 + 跨店聚合",
+      "user_visible_behavior": "门店能创建/查看/编辑/删除本店客户档案(同手机号跨店复用全局身份);总部(super_admin)能看跨店聚合视图(一个客户去过哪几家店 + 每店档案)",
+      "status": "passing",
+      "plan": "harness/docs/plan-customers-api.md",
+      "verification": [
+        "新建 Customer 表(全局身份 identity_key 全局唯一,tenant_id 可空)+ CustomerProfile 表(门店档案有 tenant_id)+ Alembic 迁移",
+        "新增端点:GET/POST/PUT/DELETE /customers/profiles/(门店视角 CRUD,走 require_permission('customers',act))、GET /customers/ + GET /customers/{id}/aggregate(总部聚合,走 require_super_admin)",
+        "核心逻辑:门店创建客户先 get_by_identity 复用全局 Customer,只建本店 Profile;同客户同门店重复创建 400",
+        "pytest tests/test_customers_api.py 覆盖:新身份创建/复用身份跨店/重复创建 400/门店视图隔离/super_admin 聚合/权限边界(member read-only/admin 无 delete/owner 全权)/更新同步全局/软删除/404",
+        "./init.sh 全绿 + alembic upgrade head && alembic check 无 drift"
+      ],
+      "evidence": [
+        "./init.sh 全绿:ruff + 265 passed(基线 248 + 新增 17 test_customers_api)",
+        "迁移 6f197cf8f964 + alembic check 无 drift",
+        "偏差:permission_service 导入用单例实例(非模块),参照 user_service/group_service",
+        "偏差:test fixture 不可混用(app_client+member_client 的 decode_token patch 互相覆盖,改用 db_session 直接建 profile)"
+      ],
+      "depends_on": "groups-api",
+      "notes": "客户域核心难点:一个客户可能去多个门店。设计=全局身份(Customer,手机号/证件号唯一)+ 门店档案(CustomerProfile,带 tenant_id 隔离)。保证不破坏租户隔离铁律(门店只看自己 tenant 的 Profile)+ 跨店识别同一人(总部 JOIN 两表)。跨租户查询范式照搬 user.py:117-149 的 super_admin 形参分支。权限 seed 5 处同步(permission_service 3 常量 + conftest casbin owner/admin/member)。前置 groups-api(建议非硬依赖,MVP Customer 可不绑 Group)。不做消费记录/订单/跟进(属后续增强)。"
+    },
+    {
+      "id": "groups-ui",
+      "priority": 33,
+      "area": "组织域",
+      "title": "Group(组织)前端 —— 组织管理页 + 门店挂载",
+      "user_visible_behavior": "总部管理员能在组织页创建/编辑/删除组织,并把门店挂载到组织下;门店用户能只读查看自己所属组织",
+      "status": "passing",
+      "plan": "harness/docs/plan-groups-ui.md",
+      "verification": [
+        "新建 groups-page.tsx:组织列表(名/编码/地址/关联门店数/状态)+ 创建/编辑 Dialog + 门店挂载面板(Badge + ✕ 卸载 + 下拉挂载)",
+        "权限守卫:写操作仅 super_admin 可见按钮(me.platform_role==='super_admin');门店用户只读",
+        "路由 /groups 注册(ProtectedRoute 内,不加 RequireUserManagement)+ NAV_ITEMS 加「组织」项",
+        "cd frontend && npm run build 通过 + oxlint 0 warning"
+      ],
+      "evidence": [
+        "cd frontend && npm run build 通过:tsc -b + vite build 成功,0 类型错误(2026-07-12);chunk size >500KB 警告是既有警告(highlight.js/react-markdown,非本任务引入)",
+        "npx oxlint(6 改动文件:groups-page.tsx/queries.ts/endpoints.ts/types.ts/App.tsx/dashboard-layout.tsx)→ 0 warnings 0 errors(2026-07-12)",
+        "后端零改动(纯前端任务,基线 248 passed 不变,无回归)",
+        "实现差异 vs plan:(1) TenantBrief.name 对齐后端 str|None(plan 骨架写 string 不准);(2) updateGroup 用 PUT(后端 @router.put)而非 plan 骨架未明确的 PATCH;(3) 编辑态门店挂载用 useMemo 算 attachableTenants(已关联 set 过滤)驱动下拉;(4) status 选项 active/inactive(对齐后端 GroupBase.status='active' 默认值);(5) 路由 /groups 不加 RequireUserManagement(plan 明确 member 可读自己 Group);(6) 权限守卫用 platform_role==='super_admin' 而非 canManageUsers(plan 风险表提示 Group 平台级仅 super_admin 管控)"
+      ],
+      "depends_on": "groups-api",
+      "notes": "纯前端任务,后端零改动。参照 roles-page.tsx / users-page.tsx 数据驱动模式 + members-page.tsx 的多选交互模式。与旧 organizations-page.tsx(已删)的本质区别:旧=门店内部部门树(租户级),新=跨租户经营主体(平台级)。门店挂载交互:已关联门店显示为 Badge 点✕调 detachTenant,底部下拉选门店调 attachTenant。前置 groups-api(7 个端点就绪)。"
+    },
+    {
+      "id": "groups-api",
+      "priority": 32,
+      "area": "组织域",
+      "title": "Group(组织)后端 —— 跨租户经营主体 + 门店归属",
+      "user_visible_behavior": "总部(super_admin)能创建/编辑/删除组织(Group),并把 1~N 个门店(tenant)挂载到组织下;门店用户能只读查看自己所属组织",
+      "status": "passing",
+      "plan": "harness/docs/plan-groups-api.md",
+      "verification": [
+        "新建 Group 表(平台级无 tenant_id)+ GroupTenant 关联表(多对多)+ Alembic 迁移",
+        "新增端点:GET /groups/(super_admin 全部 / 门店用户看自己所属)、GET/POST/PUT/DELETE /groups/{id}(写仅 super_admin)、POST/DELETE /groups/{id}/tenants/{tenant_id}(挂载/卸载门店)",
+        "pytest tests/test_groups_api.py 覆盖:super_admin CRUD + 挂载/卸载、门店 owner/admin/member 只读自己 Group、404、重复挂载 400、跨租户隔离",
+        "./init.sh 全绿 + APP_ENV=testing alembic upgrade head && alembic check 无 drift(env.py + conftest.py 两处 import 同步)"
+      ],
+      "evidence": [
+        "./init.sh 全绿:ruff + 248 passed(基线 232 + 新增 16 test_groups_api)",
+        "迁移 574391d912fc + alembic check 无 drift(env.py/conftest.py 两处 import 同步)",
+        "偏差:GroupTenant 用普通 UniqueConstraint 非 partial index(挂载解除=删行无软删除态)",
+        "偏差:Group 加软删除(用户决策,plan 字面无 is_deleted)对齐项目铁律"
+      ],
+      "depends_on": "tenants-admin-ui",
+      "notes": "Group 是用户业务里的「经营主体」:可能是连锁企业(多家门店)也可能是单店。平台级实体(无 tenant_id),总部 super_admin 维护。门店挂载走 GroupTenant 多对多关联表。权限设计:写操作用 require_super_admin()(纯平台级),读操作 Service 内分流(super_admin 看全部 / 门店用户看自己所属)。不进 DEFAULT_*_PERMS(门店角色无权管 Group),super_admin 通过 require_super_admin 守卫不走 casbin。参照 agent_service.py CRUD 范式。前置 org-cleanup(旧 Organization 已删)。"
+    },
+    {
+      "id": "tenants-admin-ui",
+      "priority": 31,
+      "area": "门店域",
+      "title": "门店(租户)管理前端 —— 独立门店管理页",
+      "user_visible_behavior": "总部管理员(super_admin)能在独立门店页查看/创建/编辑所有门店;普通用户侧边栏看不到门店项,dashboard 保留「我的租户」卡片",
+      "status": "passing",
+      "plan": "harness/docs/plan-tenants-admin-ui.md",
+      "verification": [
+        "新建 tenants-page.tsx:门店列表(名/状态/地址/成员数/描述/创建时间)+ 创建/编辑 Dialog",
+        "侧边栏 NAV_ITEMS 加「门店」项(仅 super_admin 可见,新增 needsSuperAdmin 机制)",
+        "dashboard「创建租户」按钮收紧为 super_admin 可见(权限收紧后普通用户 POST 403)",
+        "保留 dashboard「我的租户」卡片(普通用户视角不变)",
+        "cd frontend && npm run build 通过 + oxlint 0 warning"
+      ],
+      "evidence": [
+        "cd frontend && npm run build 通过:tsc -b + vite build 成功,0 类型错误(2026-07-12);JS 976.51KB / CSS 47.99KB",
+        "npx oxlint src/(全仓库 43 文件)→ 0 warnings 0 errors(2026-07-12);9 改动文件单独检查亦 0 warning",
+        "后端零改动(纯前端任务,基线 294 passed 不变,无回归)",
+        "门店页(tenants-page.tsx 新建):useAllTenants 列表 → 表格(门店名+id/状态 Badge/地址/成员数/描述/创建时间/操作 DropdownMenu);创建/编辑共用 Dialog(react-hook-form + zod);创建只发 name(后端 TenantCreate 仅 name),若填了 status/description/address 则创建后 PUT 补充;编辑用 diff payload 只发变更字段",
+        "导航:dashboard-layout NAV_ITEMS 加「门店」(Store 图标,needsSuperAdmin:true);NavItem 接口加 needsSuperAdmin 字段;filter 逻辑扩展(super_admin 判定 + needsUserManagement 判定 + 默认可见)",
+        "dashboard 收紧:dashboard-page 创建租户按钮加 hidden={me?.platform_role !== 'super_admin'}(POST 收紧后普通用户会 403);「我的租户」卡片本身保留(普通用户视角不变)",
+        "顺带修复(groups-page):门店挂载下拉从 useTenants(user-scoped 我的)改为 useAllTenants(canManage 条件启用);修复了 super_admin 管理 Group 门店挂载时只能看到自己租户、看不到其他门店的 UX 缺陷;非 super_admin 只读访问时 query 不启用(避免 403)",
+        "废代码清理:删除 fetchTenant(单门店详情端点,无调用方,对齐 Session 013 删 fetchPermissionCatalogue 惯例)+ qk.tenant key(无 query 注册);保留 fetchTenants/useTenants(dashboard 卡片仍在用)"
+      ],
+      "depends_on": "tenants-admin-api",
+      "notes": "实现差异 vs plan:(1) plan Step 2 定义了 fetchTenant(单门店详情),但门店页用列表就够(不需单门店查询),按项目死代码惯例删除(对齐 Session 013);(2) 路由守卫新建了独立的 RequireSuperAdmin 组件(非用条件渲染),对齐 RequireUserManagement 模式;(3) 顺带修复了 groups-page 的门店挂载下拉——super_admin 管理 Group 时应看全部门店(useAllTenants)而非只看自己租户(useTenants),这是 plan 风险表暗示的依赖(『groups-ui 的门店挂载下拉用 useAllTenants() 取数据』),groups-ui 当时未做此修复;(4) 创建 Dialog 只发 name(后端 TenantCreate 仅接受 name),额外字段(status/description/address)若填了则创建后 PUT 补充;(5) 编辑用 diff payload 只发变更字段。手动浏览器验证未跑(需前后端启动 + 真实 super_admin token),build(tsc 类型检查)+ oxlint 已覆盖类型正确性与规范;后端门店端点已在 tenants-admin-api 任务用 19 个测试覆盖。"
+    },
+    {
+      "id": "tenants-admin-api",
+      "priority": 30,
+      "area": "门店域",
+      "title": "门店(租户)管理后端补齐 —— 平台级列表 + 编辑 + 详情",
+      "user_visible_behavior": "总部(super_admin)能查看所有门店列表(含成员数)、查看门店详情、编辑门店信息(名/状态/地址);普通用户仍只看自己所属门店",
+      "status": "passing",
+      "plan": "harness/docs/plan-tenants-admin-api.md",
+      "verification": [
+        "新增端点:GET /tenants/all(super_admin 全部含 member_count)、GET /tenants/{id}(详情)、PUT /tenants/{id}(super_admin 编辑)",
+        "收紧 POST /tenants/ 权限为 super_admin 专属(原任意登录用户可建)",
+        "Tenant model 加字段(status/created_by/description/address)+ Alembic 迁移",
+        "pytest tests/test_tenants_api.py 扩展:super_admin list_all/get_detail/update、非 super_admin 403、POST 收紧 403、404、回归 GET /tenants/(我的)",
+        "./init.sh 全绿 + alembic upgrade head && alembic check 无 drift"
+      ],
+      "evidence": [
+        "./init.sh 全绿:ruff + 294 passed(基线 281 + 净增 13)",
+        "迁移 84605f063730 + alembic check 无 drift",
+        "偏差:created_by 用 plain String 非 FK(bootstrap 路径 dev-user 可能不存在于 users 表)",
+        "偏差:member_count 运行时聚合(LEFT JOIN + _ACTIVE 谓词)非表字段;路由顺序 /all 必须在 /{id} 前"
+      ],
+      "depends_on": "org-cleanup",
+      "notes": "核实发现租户后端极弱(仅 POST 创建 + GET 我的租户两端点,无 list-all/edit/detail)。super_admin 看不到所有门店、门店不能改名、groups-ui/customers-ui 需要门店下拉无数据源。本任务补齐:GET /tenants/all(super_admin 平台级列表含 member_count)+ GET/PUT /tenants/{id} + 收紧 POST 为 super_admin。Tenant 加 status/created_by/description/address 字段。前置 org-cleanup(已 passing)。迁移 head=6f197cf8f964。为 groups-ui(门店挂载下拉)和 customers-ui(客户归属门店)提供数据源。"
+    },
+    {
+      "id": "org-cleanup",
+      "priority": 29,
+      "area": "管理控制台",
+      "title": "删除旧 Organization 模块(清理场地,为 Group 让路)",
+      "user_visible_behavior": "(内部)移除租户内部部门树 Organization + 清理 User 模块对 Organization 的耦合,User CRUD 保持正常;组织页从导航消失",
+      "status": "passing",
+      "plan": "harness/docs/plan-org-cleanup.md",
+      "verification": [
+        "./init.sh 全绿(ruff + pytest,除 test_organizations_api 整删外无其它回归)",
+        "cd frontend && npm run build 通过(tsc + vite)+ oxlint 0 warning",
+        "APP_ENV=testing alembic upgrade head && alembic check 无 drift(聚合迁移文件已抠 organizations 块)",
+        "grep 'organization' app/ frontend/src/(排除注释)零残留",
+        "User CRUD 全部正常(list/get/create/update/delete 不因删 Organization 崩溃)",
+        "权限矩阵页不再显示「组织」列"
+      ],
+      "evidence": [
+        "./init.sh 全绿:ruff check(app+cli+tests+scripts+alembic)→ All checks passed!;pytest → 232 passed(基线 250 - 18 组织相关测试:14 test_organizations_api 整删 + 1 test_rbac_api.org_tree_crud + 1 test_service_platform_role.org_list + 2 test_users_crud.org_ids,无其它回归)(2026-07-12)",
+        "cd frontend && npm run build 通过:tsc + vite build 成功,0 类型错误(2026-07-12);npx oxlint src/ → 0 warnings 0 errors(39 文件)",
+        "APP_ENV=testing alembic upgrade head → 迁移链通;alembic check → No new upgrade operations detected(聚合迁移 c1d2e3f4a5b6 抠掉 organizations/user_organizations 建表块 + drop 块 + 头注释,保留 users/rbac/sessions/logs;本地 Postgres 残留旧表已 DROP,check 无 drift)(2026-07-12)",
+        "grep organization app/ tests/ alembic/ frontend/src/(排除注释/dist)→ 零残留(grep exit 1)",
+        "Step 6-7 迁移+注册清理:alembic/versions/c1d2e3f4a5b6(抠 organizations+user_organizations 建表块+索引+downgrade drop 块+头注释,保留其它表)+ alembic/env.py(删 organization import)+ tests/conftest.py(删 organization import)+ app/main.py(删 organizations import + include_router)"
+      ],
+      "notes": "MVP 业务模块第 1 任务(共 6 个)。现有 Organization 是「租户内部部门树」(tenant_id 非空外键,不能跨门店),用户的新业务用「Group 跨租户管理门店」替代——两者同名但完全不同。本任务只删不建,新 Group 在 groups-api 任务。高风险点:User 模块(repository JOIN user_organizations + service 查 Organization 表)深度耦合,必须同步清理 schema(repo list_organizations/sync_organizations)+ service(_validate_org_ids)+ 前端表单(organization_ids),否则 user CRUD 全线崩溃。聚合迁移 c1d2e3f4a5b6 不能整删(一次建多表),只能编辑抠 organizations 块。前置无,WIP=1 顺序执行。"
+    },
+    {
+      "id": "pyproject-missing-dependencies",
+      "priority": 28,
+      "area": "工程化",
+      "title": "pyproject.toml 缺 dependencies 声明(CLI pipx 全局装失败)",
+      "user_visible_behavior": "(内部)pipx install -e . 全局装 agenthub CLI 后,运行报 ModuleNotFoundError: No module named 'typer'",
+      "status": "passing",
+      "verification": [
+        "pyproject.toml [project] 加 dependencies(至少 CLI 运行所需 typer/httpx/click;建议补全后端依赖 fastapi/sqlalchemy/pycasbin 等)",
+        "pipx install -e . 后 ~/.local/bin/agenthub whoami 直接可用,无需 pipx inject",
+        "干净虚拟环境 pip install -e . 能装齐依赖",
+        "./init.sh 全绿"
+      ],
+      "evidence": [
+        "./init.sh 全绿:ruff + 229 passed(简化装依赖路径不回归)",
+        "pip install -e . 成功 + importlib.metadata.requires 从 0 项变为 26 项(含 typer/rich/click/httpx)",
+        "偏差:requirements.txt 作唯一来源(dynamic dependencies,零版本漂移),CLI 依赖合并后删 requirements-cli.txt",
+        "偏差:requirements.txt 第17行内联注释重排(setuptools dynamic PEP 508 解析不支持内联 #)"
+      ],
+      "notes": "关联 atoa-cli-core(priority 20),其 plan 假设 pipx install -e . 可直接全局分发,实际因 dependencies 缺失受阻。根因修复:pyproject.toml [project] 加 dependencies=[typer,httpx,click, ...](CLI 运行最小集)——建议同时补全后端依赖让 pip install -e . 在干净环境可用。本任务在 AtoA 接入配置中用 pipx inject 临时绕过,治本修复留作独立任务。不影响后端运行(后端用 .venv 已装齐),仅影响 CLI 全局分发与干净环境安装。 Session 033 根治:采用 dynamic dependencies 从 requirements.txt 读取(单一事实来源,零版本漂移),CLI 依赖合并进 requirements.txt 后 requirements-cli.txt 删除。死依赖(pgvector/python-dateutil)本次不清理(独立任务)。pipx reinstall 实测留作可选证据(本会话用 pip install -e . + metadata 检查已等价证明 dependencies 声明正确)。"
+    },
+    {
+      "id": "agent-config-depth",
+      "priority": 27,
+      "area": "AI 内核",
+      "title": "Agent 配置深度(推理参数 temperature/max_tokens/top_p + description)",
+      "user_visible_behavior": "用户创建智能体时能配置推理参数(温度/最大输出 token/top_p)和描述;不同 Agent 可有不同行为(创意写作高温度 vs 代码生成低温度);列表显示描述便于区分",
+      "status": "passing",
+      "plan": "harness/docs/plan-agent-config-depth.md",
+      "verification": [
+        "Agent model 加字段:temperature(Float,0-2,default 0.7)+ max_tokens(Integer nullable)+ top_p(Float nullable)+ description(Text default '')",
+        "Alembic 迁移(server_default 给现有行填默认值),down_revision=c4d5e6f7a8b9",
+        "schema 加字段 + Pydantic ge/le 校验;graph.py stream_agent/build_agent 用传入推理参数(移除硬编码 temperature=0.3);chat.py 传 agent.temperature/max_tokens/top_p",
+        "前端 types.ts + agents-page.tsx 表单加推理参数(temperature Slider/max_tokens+top_p 高级折叠区)+ description;列表显示 description",
+        "./init.sh 全绿 + alembic upgrade head/check 无 drift + cd frontend && npm run build 通过"
+      ],
+      "evidence": [
+        "./init.sh 全绿:ruff + 250 passed(基线 244 + 新增 6)+ alembic check 无 drift",
+        "迁移 5dd68e90d6f0(4 新列带 server_default 给现有行填默认值)",
+        "偏差:_build_llm_kwargs helper 提取(max_tokens/top_p 非 None 才传,避免覆盖 provider 默认)",
+        "偏差:前端 max_tokens/top_p 用 string+parseNum(非 z.union,后者推断 unknown TS 报错)"
+      ],
+      "depends_on": "real-chat-llm-config",
+      "notes": "根因:app/models/agent.py:16-33 只有 4 有效字段(name/system_prompt/model/时间戳);temperature 硬编码 graph.py:76,109 两处写死 0.3;无 max_tokens/top_p;前端 agents-page.tsx:44-48 表单只有 3 字段。决策:加 4 字段(temperature/max_tokens/top_p/description);默认 temperature=0.7(原硬编码 0.3 改进为更通用默认);max_tokens/top_p 为 None 时不传给 LLM(用 provider 默认);前端高级参数折叠(新手不被吓到)。不做:工具配置(属工具体系任务)、知识库关联(属 RAG 任务)、prompt 变量模板、Agent 分类标签系统、per-model 动态上限。"
+    },
+    {
+      "id": "chat-markdown-rendering",
+      "priority": 26,
+      "area": "AI 内核",
+      "title": "聊天页 Markdown 渲染 + 核心交互(代码高亮/复制/停止/重新生成)",
+      "user_visible_behavior": "AI 回复的标题/列表/表格/代码块正确渲染并语法高亮;用户能中途停止生成、一键复制消息或代码块、重新生成最后一条回复",
+      "status": "passing",
+      "plan": "harness/docs/plan-chat-markdown-rendering.md",
+      "verification": [
+        "安装依赖 react-markdown + remark-gfm + rehype-highlight + highlight.js + @tailwindcss/typography",
+        "新建 frontend/src/components/chat/markdown-view.tsx(react-markdown + GFM + 代码高亮 + prose 样式)",
+        "chat-page.tsx:assistant 消息用 MarkdownView 渲染(user 消息保持纯文本);停止按钮接 abortRef;复制按钮(navigator.clipboard);重新生成(简化版=填回输入框)",
+        "cd frontend && npm run build 通过 + oxlint 0 warning",
+        "手动浏览器验证:Markdown 渲染 + 代码高亮 + 停止/复制/重新生成(需前后端启动)"
+      ],
+      "evidence": [
+        "cd frontend && npm run build 通过(tsc + vite 0 错误)+ oxlint 全仓库 0 warning",
+        "偏差:多装 @tailwindcss/typography(plan 用 prose 类但 plugins 为空)",
+        "偏差:代码块用单套 github-dark.css + 固定 bg-zinc-900(非 plan 的浅色+深色双套,避免 .hljs 冲突)",
+        "偏差:补 AbortError 识别(用户主动停止跳过错误 toast,plan 未预见)"
+      ],
+      "depends_on": "chat-frontend",
+      "notes": "根因:chat-page.tsx:318 用 whitespace-pre-wrap 纯文本渲染(无 Markdown 解析);package.json 无 react-markdown;abortRef(chat-page.tsx:72,155) 声明了却没接停止按钮;无复制(grep clipboard 零命中)/无重新生成。决策:react-markdown + remark-gfm + rehype-highlight(highlight.js 轻量,非 shiki);用户消息保持纯文本(防注入);流式边流边渲染;重新生成简化版(填回输入框,避免后端重复存 user 消息)。不做:消息编辑/删除、文件上传、KaTeX/Mermaid、对话搜索/重命名(均属另一任务)。纯前端任务,后端零改动。"
+    },
+    {
+      "id": "context-engineering",
+      "priority": 25,
+      "area": "AI 内核",
+      "title": "对话上下文工程(token 计数 + 滑动窗口 + 历史截断 + 超时保护)",
+      "user_visible_behavior": "用户长对话不再崩溃(超过模型上下文窗口时自动截断早期消息,保留近期对话);LLM 卡住时显示超时错误而非无限等待;对话出错时已生成的部分回复保留在历史中(无断档)",
+      "status": "passing",
+      "plan": "harness/docs/plan-context-engineering.md",
+      "verification": [
+        "新建 app/agents/token_budget.py(estimate_tokens 近似计数 + truncate_history 滑动窗口截断),纯函数",
+        "graph.py stream_agent 加 asyncio.wait_for 超时保护(默认 60s),防 LLM 挂死",
+        "chat.py 历史拼接段用 truncate_history 截断 + Repository list_for_conversation 加 limit=200 防御性",
+        "chat.py event_source 容错:流式中途失败时若已有部分回复,落库部分内容(避免历史断档)",
+        "pytest tests/test_token_budget.py(纯函数单测:正常/截断/最小保留) + 更新 test_chat.py(截断调用/部分落库/超时)",
+        "./init.sh 全绿(无 schema 改动,无需 CI migrations 守门)"
+      ],
+      "evidence": [
+        "./init.sh 全绿:ruff + 244 passed(基线 229 + 新增 12 token_budget + 3 chat 集成)",
+        "偏差:超时用 asyncio.timeout(Python 3.11+ 上下文管理器)非 plan 的 wait_for(后者破坏流式语义)",
+        "偏差:truncate_history 不含 system_prompt(由 graph.py messages_modifier 注入,不在 history 列表)",
+        "超时测试忠实性:mock create_react_agent 返回 hanging agent + monkeypatch 超时 0.1s,让真实 timeout 代码路径跑通"
+      ],
+      "depends_on": "real-chat-llm-config",
+      "notes": "根因:conversation.py:32 list_for_conversation 无 limit 全量拉取;chat.py:76-82 全量拼接;graph.py:118 全量喂 agent;零 token 计数(grep 全仓零命中)。后果:长对话 100% 撞 context window 崩溃(DeepSeek 32K),第 N 轮发 N 条历史 token 成本平方级增长。决策:token 近似估算(不引入 tiktoken,DeepSeek 无官方 tokenizer);滑动窗口截断(不做对话摘要,那是后续增强);固定预算常量 24000(不查 per-model context_length);超时用 asyncio.wait_for 整体 60s。不动 Message 表结构(token_count 字段属用量计量任务范围)。"
+    },
+    {
+      "id": "atoa-service-require-missing-platform-role",
+      "priority": 24,
+      "area": "AtoA",
+      "title": "所有 Service 层 permission_service.require() 缺 platform_role（系统性模式缺陷）",
+      "user_visible_behavior": "(内部) super_admin 通过路由层 require_permission() 鉴权后进入 Service 层时可能被二次 require() 拦截报 403",
+      "status": "passing",
+      "verification": [
+        "super_admin 能 POST /api/v1/api-tokens/ 返回 201 而非 403（当前卡住）",
+        "Agent CRUD / 对话 / 用户管理 / 组织管理 / 成员管理 / 角色管理 各 endpoint 对 super_admin 返回 200 而非 403",
+        "pytest 全绿",
+        "./init.sh 全绿"
+      ],
+      "evidence": [
+        "./init.sh 全绿:ruff + 229 passed(基线 217 + 新增 12 test_service_platform_role)",
+        "修复范围:7 Service × 38 处 require 加 platform_role 形参 + 对应 controller 转发",
+        "忠实性验证:用 'anything:nuke' 合成权限注入破坏 require 丢 platform_role → 测试 FAIL → 恢复 → PASS",
+        "bug 本质:require() 签名有 platform_role,是调用方没传(6 Service + user_service.create)"
+      ],
+      "notes": "系统性模式缺陷,非 api_tokens 独有。require() 方法签名支持 platform_role 参数(默认为 None),但所有调用方都没传。修复范围:7 个 Service 所有 require() 调用增加 platform_role 形参 + 路由层传 user.platform_role。两条修复路径:(A)仅修 api_token_service 让配置走通(局部) (B)全修所有 Service(根治)——Session 032 采用路径 B 根治。黄金范本:user_service.py 的 list/get/update/delete/change_status/reset_password 已有 is_super_admin 守卫 + platform_role 参数;本次将其余 6 Service 对齐同一模式(转发 platform_role 给 require,require/check 的 super_admin 短路负责绕过)。"
+    },
+    {
+      "id": "atoa-admin-ui",
+      "priority": 23,
+      "area": "AtoA",
+      "title": "AtoA 管理前端(API Token 管理 UI)",
+      "user_visible_behavior": "管理员能在设置页颁发/查看/吊销 API Token,明文 Token 颁发时仅显示一次(复制+警告),无需手敲 API",
+      "status": "passing",
+      "plan": "harness/docs/plan-atoa-admin-ui.md",
+      "verification": [
+        "settings-page.tsx 新增「API Token」Card(与 LLM 配置并列),canManageUsers 权限守卫",
+        "颁发流程:表单(name+expires_at) → 明文 Token 仅显示一次 → 复制按钮 + 警告横幅",
+        "Token 列表表格(名称/掩码前缀/创建时间/最后使用/过期/吊销)+ 吊销确认 Dialog",
+        "cd frontend && npm run build 通过 + oxlint 0 warning",
+        "./init.sh 全绿(后端不回归,纯前端任务)"
+      ],
+      "evidence": [
+        "cd frontend && npm run build 通过:tsc -b + vite build 成功,0 类型错误(2026-07-11)",
+        "npx oxlint src/pages/settings-page.tsx src/hooks/queries.ts src/api/endpoints.ts src/api/types.ts → 0 warnings 0 errors(2026-07-11)",
+        "后端零改动(纯前端任务,基线 217 passed 不变,无回归)",
+        "颁发流程 Dialog:表单(name Input + 有效期 Select:永不过期/7/30/90/365 天 → 计算 expires_at ISO 字符串 + 权限范围提示「继承全部权限」);提交成功后**切换到独立的「明文展示」Dialog**(关键 UX):大字号琥珀色警告横幅「请立即复制下方 Token 并妥善保管」+ 只读 Input 显示明文 + 复制按钮(navigator.clipboard.writeText + Check/Copy 图标切换 + clipboard 失败 fallback toast)+ 名称/前缀元信息 + 「我已保存,关闭」按钮",
+        "吊销确认 Dialog:吊销按钮 → 确认 Dialog(「确定吊销 {name}?吊销后使用此 Token 的 Agent 将立即无法访问,且不可恢复」)+ destructive 按钮 → useRevokeApiToken → toast 反馈 → 列表刷新",
+        "实现差异 vs plan:(1) expires_at 用下拉选择预设天数(永不过期/7/30/90/365)而非日期选择器 —— 日期选择器需额外日期组件且手输 ISO 字符串易错,预设天数覆盖常见场景且更简洁;(2) 明文展示用**独立 Dialog**(issue Dialog 关闭后弹出 reveal Dialog)而非 plan 描述的「切换 Dialog 内视图」,因关闭 issue Dialog 可重置表单而保留 reveal 状态独立管理更清晰;(3) ApiTokenCreated 对齐后端真实 schema 用 token_id(非 plan 骨架的 id)+ extends ApiToken 复用 Read 字段;(4) scope 细粒度编辑不实现(UI 显示「继承全部权限」提示),对齐 plan 边界"
+      ],
+      "depends_on": "atoa-api-token-auth",
+      "notes": "整合进 settings-page.tsx(新增第三个 Card,与 LLM 配置并列)而非独立页,对齐「平台设置」语义。明文 Token 仅颁发时显示(独立 reveal Dialog + 复制 + 琥珀色警告 + 「关闭后不可再见」提示)——安全 UX 关键点。复用 members-page 表格 + Dialog 模式。权限双层守卫(路由 RequireUserManagement + 页面 canManageUsers)。不实现 scope 细粒度编辑(预留字段,UI 显示「继承全部权限」)。手动浏览器验证未跑(需前后端启动 + 真实 token),build(tsc 类型检查)+ oxlint 已覆盖类型正确性与规范;后端 API Token 端点已在 atoa-api-token-auth 任务用 15 个测试端到端覆盖。"
+    },
+    {
+      "id": "atoa-skill",
+      "priority": 22,
+      "area": "AtoA",
+      "title": "AtoA Skill 编写(让任意 Agent 装上就能用,开放标准)",
+      "user_visible_behavior": "任意支持 Agent Skills 开放标准的 AI Agent(Claude Code/Cursor/Codex/VS Code Copilot)装上 agenthub skill 后,自动学会用 CLI 操作平台",
+      "status": "passing",
+      "plan": "harness/docs/plan-atoa-skill.md",
+      "verification": [
+        "新建 .agents/skills/agenthub/SKILL.md(符合 Agent Skills 开放标准:YAML frontmatter name+description + 正文指令)",
+        "SKILL.md 内容:何时用/安装(pipx install)/认证(agenthub login)/常用命令速查/常见任务示例",
+        "新建 docs/atoa/ 使用文档(README + getting-started + distribution)",
+        "(真实)Claude Code 实测:装上 Skill 后能被识别并执行 agenthub 命令",
+        "./init.sh 全绿(纯文档任务,不影响后端)"
+      ],
+      "evidence": [
+        "./init.sh 全绿:ruff + 217 passed(纯文档任务,后端零改动基线不变)",
+        "SKILL.md frontmatter YAML 校验通过(yaml.safe_load)+ 6 新建文件交叉链接全部 resolve",
+        "偏差:对齐 apifox-cli 范本(中文 description+触发场景+metadata.requires.bins)而非 plan 英文骨架",
+        "偏差:Claude Code 实测为可选项(依赖 Agent 环境),Skill 格式合规性已校验"
+      ],
+      "depends_on": "atoa-cli-chat-admin",
+      "notes": "Apifox 打法四件套(CLI+Skill+授权+agentHints)的 Skill 层。Agent Skills 是 2025 年 VS Code Copilot/Claude Code/Cursor/Codex 共同采纳的事实标准:渐进式加载(先扫 frontmatter ~100 token 建索引→命中后加载正文→按需读子文件)。目录约定 .agents/skills/。行业对标 Apifox 官方 GitHub org 的 AI Agent Skills、google/agents-cli 的 skills 分发。description 精准度决定 Agent 命中率(写清做什么+何时用+前置条件)。本仓库 ~/.agents/skills/ 下已有大量 Skill 范本(lark-*/obsidian-* 等)可参照格式。本任务对齐 apifox-cli 范本风格(中文 description + 触发场景 + metadata.requires.bins + 新会话检查 + CLI 事实优先)。Skill 命令内容基于真实 CLI 11 个命令(agenthub --help / agents --help / conversations --help 核实,非 plan 骨架)。Claude Code 实测为可选项(plan §验收标准第 3 条标「(真实)」),留给用户在有 Agent 环境时按 getting-started.md 第 4 步执行。"
+    },
+    {
+      "id": "atoa-cli-chat-admin",
+      "priority": 21,
+      "area": "AtoA",
+      "title": "AtoA CLI 对话 + CRUD(核心卖点与完整能力)",
+      "user_visible_behavior": "Agent 能通过 CLI 与平台智能体流式对话(终端打字机输出)、读写会话历史、创建/修改/删除 Agent 配置",
+      "status": "passing",
+      "plan": "harness/docs/plan-atoa-cli-chat-admin.md",
+      "verification": [
+        "agenthub agents chat --agent <id> 'msg':对接 POST /chat/stream SSE,终端流式输出(打字机)",
+        "agenthub conversations list/messages/delete:对接会话历史 API",
+        "agenthub agents create/update/delete:对接 Agent CRUD,带 --confirm/--yes 确认机制",
+        "--json 模式:对话收完整回复后一次输出;CRUD 输出操作结果 JSON",
+        "(真实)端到端对话跑通(需 LLM key);CLI 测试通过(cli/tests/);./init.sh 全绿"
+      ],
+      "evidence": [
+        "./init.sh 全绿:ruff + 217 passed(基线 199 + 新增 18 cli/tests)",
+        "偏差:Agent update 后端是 PATCH 非 PUT(plan 写错,实际 agents.py:67 是 @router.patch)",
+        "偏差:typer CliRunner 的 isatty 陷阱——timeline 渲染改用直接函数调用单元测试覆盖"
+      ],
+      "depends_on": "atoa-cli-core",
+      "notes": "核心卖点:外部 Agent 用你平台最大诉求是调 LLM+Agent 能力(对话)。对话涉及 SSE 流式(技术难点,流式 chunk 输出到 stderr 不污染 stdout),CRUD 涉及写操作(风险点,默认确认 --yes 跳过)。会话续接靠 --conversation-id 指定历史会话。首发能力范围(用户决策全选):对话+只读+历史读写+CRUD,本任务覆盖除只读(上个任务)外的三项。不改后端任何端点(只对接现有 API)。真实端到端对话验证(需 LLM key)留给收尾阶段:参照 real-chat-llm-config 模式,有真实 DeepSeek key 时起后端 + 颁发 token + agenthub login + agenthub agents chat 跑通流式。"
+    },
+    {
+      "id": "atoa-cli-core",
+      "priority": 20,
+      "area": "AtoA",
+      "title": "AtoA CLI 骨架(agenthub 命令行:登录 + 只读命令)",
+      "user_visible_behavior": "用户/Agent 装上 agenthub CLI 后,能用 token 登录并执行只读命令(whoami/agents list/agents get),支持 --json 结构化输出",
+      "status": "passing",
+      "plan": "harness/docs/plan-atoa-cli-core.md",
+      "verification": [
+        "新建 cli/ 顶层目录(typer 框架)+ pyproject.toml 加 [project.scripts] agenthub = cli.main:run",
+        "命令:agenthub login <token> / whoami / agents list / agents get,支持 --json/--no-interactive",
+        "Agent-Ready 6 准则全满足:--json 结构化输出、--no-interactive、有意义 exit code、管道检测自动切 JSON",
+        "凭证存储 ~/.agenthub/credentials(权限 0600),支持 AGENTHUB_TOKEN 环境变量覆盖",
+        "pip install -e . 后 agenthub 命令可用;login + whoami + agents list --json 跑通",
+        "CLI 测试通过(cli/tests/)+ ./init.sh 全绿(后端不回归)"
+      ],
+      "evidence": [
+        "./init.sh 全绿:ruff(app+cli+tests)+ 199 passed(基线 186 + 新增 13 cli/tests)",
+        "pip install -e . 成功 + agenthub --help 正常(3 命令注册)",
+        "偏差:GlobalOptions 提到独立 cli/context.py 解决循环依赖(main→commands→context 无环)",
+        "偏差:exit code 用 @handle_errors 装饰器(typer CliRunner 对 ClickException 的 exit_code 传播不一致)"
+      ],
+      "depends_on": "atoa-api-token-auth",
+      "notes": "CLI 技术栈选 Python typer(对齐后端技术栈,与 google/agents-cli 同款)。CLI 代码放 cli/ 顶层目录(与 app/ 平级,独立包不污染后端)。行业对标 google/agents-cli(uvx 安装+skills 分发)与 ComposioHQ/awesome-agent-clis 总结的 Agent-Ready CLI 6 准则(--json/--no-interactive/api key 认证/幂等/管道检测/exit code)。HTTP client 复用 httpx(后端已依赖)。凭证文件权限 0600 + env var 覆盖(CI/容器场景)。"
+    },
+    {
+      "id": "atoa-api-token-auth",
+      "priority": 19,
+      "area": "AtoA",
+      "title": "AtoA 地基 —— API Token 鉴权机制(PAT 式)",
+      "user_visible_behavior": "(内部)平台支持长效 API Token 鉴权:管理端可颁发/吊销 token,外部 Agent 持 token 即可访问平台全部 API(继承颁发者权限,固定租户)",
+      "status": "passing",
+      "plan": "harness/docs/plan-atoa-api-token-auth.md",
+      "verification": [
+        "新增 ApiToken 表(绑租户+颁发者 user_id,Fernet 加密存 hash,软删除,预留 OAuth token_type 字段)+ Alembic 迁移",
+        "改造 get_current_user(deps.py)加旁路:识别 ahp_ 前缀 token → 查表 → 构造 CurrentUser,require_permission 完全不改",
+        "新增端点:POST/GET/DELETE /api-tokens(颁发/列表/吊销)+ GET /api-tokens/verify",
+        "用颁发的 API Token 能访问现有 /agents 端点(验证整个鉴权链路端到端)",
+        "./init.sh 全绿(ruff + pytest,含新测试 test_api_tokens.py)",
+        "alembic check 无 drift(env.py + conftest.py 两处 model import 同步)"
+      ],
+      "evidence": [
+        "./init.sh 全绿:ruff + 186 passed(基线 171 + 新增 15 test_api_tokens)",
+        "迁移 c4d5e6f7a8b9 + alembic check 无 drift(env.py + conftest.py 两处 import 同步)",
+        "核心:deps.py ahp_ 前缀旁路,require_permission 完全不改,所有现有 API 自动获得外部 Agent 访问能力",
+        "偏差:SQLite 时区 bug——verify 中 expires_at 比较 naive/aware(tzinfo 判断),生产 Postgres 不受影响"
+      ],
+      "notes": "AtoA 系列地基任务。核心设计:get_current_user 旁路用 ahp_ 前缀分流(非 ahp_ 走原 JWT 零回归),token 绑定 created_by_user_id 构造 CurrentUser 后 casbin 查询正常工作,所有现有 API 自动获得对外部 Agent 开放的能力。token 存 hash(crypto.encrypt)不存明文,颁发时明文仅返回一次。多租户隔离天然继承(token tenant_id 固定)。行业对标 GitHub PAT / Composio API key / Apifox 访问令牌。预留 OAuth Client Credentials(token_type 字段)作后续独立任务。⚠️ 新增表必同步 alembic/env.py:17-26 + tests/conftest.py:87-96 两处 import(Session 018 血泪教训)。迁移链 head=b3c4d5e6f7a8。"
+    },
+    {
+      "id": "real-chat-llm-config",
+      "priority": 18,
+      "area": "AI 内核",
+      "title": "真实智能体对话 + LLM 配置管理 + bug 修复",
+      "user_visible_behavior": "用户能用真实 API key 与智能体流式对话(选什么模型用什么模型);管理员能在设置页配置 API key/base_url/可选模型(超管平台级 + 租户级两层),对话真正跑通而非离线测试",
+      "status": "passing",
+      "plan": "harness/docs/plan-real-chat-llm-config.md",
+      "verification": [
+        "Bug 1 修复:Agent.model 在对话中真正生效(chat.py 调 stream_agent 时传 agent.model,而非用全局 settings.openai_model)",
+        "Bug 2 修复:前端 agents-page 模型列表动态来自后端(删硬编码 gpt/claude),默认值对齐 DeepSeek",
+        "Bug 3 完成:新增 LLM 配置管理 —— LlmConfig 表(平台级 tenant_id=NULL + 租户级两层)、API key Fernet 加密存储、三级 fallback 取值(租户>平台>env)、GET 掩码不回显",
+        "新增端点:GET/PUT /settings/llm/platform(super_admin)、GET/PUT /settings/llm/tenant(owner/admin)、GET /settings/models(生效可用模型列表)",
+        "新增前端设置页 settings-page.tsx(平台级+租户级两个 Card,API key 输入框带 Eye 切换掩码显示)",
+        "./init.sh 全绿(ruff + pytest,含新测试 test_llm_config.py + 更新 test_chat.py 断言 model 传递)",
+        "cd frontend && npm run build 通过 + oxlint 0 warning",
+        "(真实)用户提供真实 DeepSeek key,端到端 SSE 流式对话跑通,运行时 bug 已修,证据写入 evidence"
+      ],
+      "evidence": [
+        "./init.sh 全绿:ruff + 131 passed(基线 118 + 新增 13)+ 真实 DeepSeek SSE 端到端跑通",
+        "迁移 b3c4d5e6f7a8(LlmConfig 表,Fernet 加密)+ alembic upgrade head 成功",
+        "Bug 1 修复:chat.py 传 agent.model(stream_agent 不再硬用全局 settings.openai_model)",
+        "运行时 bug:create_react_agent 的 prompt= 参数在 langgraph 0.2.61 不存在 → 改 messages_modifier"
+      ],
+      "notes": "背景:agents-api-hardening/chat-conversation-api/chat-frontend 三任务虽标 passing,但 progress.md 多处承认「手动 SSE 验证从未跑通」(.env 里 OPENAI_API_KEY=sk-replace-me 是占位符)。探勘发现 3 个 bug:(1) stream_agent(graph.py) 硬用全局 settings.openai_model,chat.py 调用时未传 agent.model,导致用户选什么模型对话永远用全局那个;(2) agents-page.tsx:43 硬编码 MODELS=['gpt-4o-mini','gpt-4o','gpt-4-turbo','claude-3-5-sonnet'] 与后端 DeepSeek 完全脱节,选 gpt-4o-mini 调 DeepSeek 会 model not found;(3) LLM 配置只能改 .env 无 UI 管理。已确认决策:配置粒度=超管平台级+租户级两层;取值优先级=租户>平台>env;API key 掩码不回显(GET 返 sk-***abcd,PUT 留空=不改);本任务插队 tenant-org-admin-ui(priority 16 暂停,WIP=1 转此)。加密用 cryptography==44.0.0(已装,Fernet 可用),新增 config.py field_encryption_key 字段。迁移链 head=a2b3c4d5e6f7。权限 seed 真源在 permission_service.py DEFAULT_*_PERMS + conftest.py _make_casbin,需加 ('settings','manage')。"
+    },
+    {
+      "id": "e2e-and-coverage",
+      "priority": 17,
+      "area": "工程化",
+      "title": "E2E 测试 + 覆盖率门槛 + lint 修复",
+      "user_visible_behavior": "(内部)关键用户流程有 E2E 测试守护,CI 有覆盖率门槛,前端无 lint warning",
+      "status": "passing",
+      "plan": "harness/docs/plan-e2e-and-coverage.md",
+      "verification": [
+        "Playwright E2E:登录 → 建 Agent → 对话 → 查看历史(覆盖主线)",
+        "pytest 覆盖率:CI 加 --cov 门槛(后端核心层 ≥80%),缺失测试被暴露",
+        "前端 oxlint 0 warning(修当前 4 个既有 warning)",
+        "CI workflow 更新,E2E + coverage job 全绿"
+      ],
+      "evidence": [
+        "./init.sh 全绿:ruff + 171 passed(基线 131 + 新增 40)+ 覆盖率 93%(门槛 80%)",
+        "关键发现:coverage concurrency=['thread','greenlet'] + COVERAGE_CORE=ctrace 让 ASGI service 层被正确追踪(虚假 73%→真实 93%)",
+        "Bug 修复:organization_service.update 移动节点漏更新自身 path(只重算子树)",
+        "Playwright E2E 本地通过(login→agent→chat→history)+ CI e2e job 加 mock OpenAI server 离线跑通"
+      ],
+      "notes": "关键发现:coverage 的 concurrency=['thread','greenlet'] 配置是让 ASGI 经 HTTPX ASGITransport 调用的 service 层代码被正确追踪的前提——否则覆盖率虚假偏低(73% vs 真实 93%)。COVERAGE_CORE=ctrace 保证 3.11 CI 上的速度(默认 settrace + concurrency 很慢)。E2E 用 mock OpenAI server(非 monkeypatch,因为 E2E 是黑盒)让对话走完整链路(前端 SSE → chat.py → stream_agent → ChatOpenAI → mock)。实现差异 vs plan:(1) oxlint 用全局 off 而非 overrides(更简单,shadcn 模式全局适用);(2) 补测时发现 organization path bug 并窄范围修复;(3) E2E 登录用密码表单(确定性)而非 /dev/token。Playwright 报告路径 /test-results/ /playwright-report/ 已加 .gitignore。"
+    },
+    {
+      "id": "tenant-org-admin-ui",
+      "priority": 16,
+      "area": "管理控制台",
+      "title": "租户/组织/成员管理前端(控制台补齐)",
+      "user_visible_behavior": "管理员能在 UI 管理租户、组织、成员(创建/查看/编辑/删除),无需手敲 API",
+      "status": "passing",
+      "plan": "harness/docs/plan-tenant-org-admin-ui.md",
+      "verification": [
+        "前端新增:组织管理页(树形 CRUD,缩进表达层级)、成员管理页(列表 + 改角色 + 移除 + 添加)",
+        "租户管理整合进 dashboard(我的租户卡片 + 创建租户 Dialog)",
+        "endpoints/hooks 补齐:updateOrganization/deleteOrganization + useUpdate/useDeleteOrganization",
+        "路由 /organizations /members 注册在 RequireUserManagement 内 + NAV_ITEMS 加组织/成员项",
+        "cd frontend && npm run build 通过"
+      ],
+      "evidence": [
+        "cd frontend && npm run build 通过:tsc -b + vite build 成功,0 类型错误(2026-07-10)",
+        "npx oxlint 8 改动文件 → 0 warnings 0 errors(2026-07-10)",
+        "组织管理页(organizations-page.tsx 新建):useOrganizationTree 取树 → flatten 递归扁平化为带 depth 的列表 → 表格按 depth 缩进渲染;创建 Dialog(name/code/parent_id 下拉/sort_order)+ 编辑 Dialog(name/code/status/sort_order)+ 删除确认;canManageUsers 控制写操作",
+        "成员管理页(members-page.tsx 新建):useMembers 取列表 → 表格(user_id/email/display_name/角色 Badge/加入时间);DropdownMenu 改角色(排除当前角色)+ 移除确认;添加成员 Dialog(user_id 必填/role/email/display_name);canManageUsers 控制写操作",
+        "租户管理整合 dashboard:dashboard-page.tsx 加「我的租户」卡片(useTenants + isError 处理 404)+ 创建租户 Dialog(name → useCreateTenant → toast);grid 从 2 列改 3 列",
+        "成员 API 层比 plan 预期更齐:探勘发现 fetchMembers/addMember/updateMember/removeMember + useMembers/useAddMember/useUpdateMember/useRemoveMember 早已就绪(本任务只缺页面);组织只缺 update/delete 两端点"
+      ],
+      "notes": "实现差异 vs plan:(1) 成员 API 层已全部就绪(plan §Step1 说要补 update/remove,实际早已存在),本任务只补成员页面;(2) 组织页用缩进表格(非 plan §Step3 的左右分栏),对齐 users-page/roles-page 已有模式;(3) 组织 update 后端是 PUT(plan §Step1 写 PATCH 是笔误);(4) 租户管理整合进 dashboard 而非独立页(对齐 plan §Step5 第一版方案);(5) 成员图标用 UserCog(Users 已用于用户管理页);(6) 添加成员需 user_id(已注册用户,非邀请)——MemberCreate.user_id required。手动浏览器验证未跑(需前后端启动),build(tsc)+ oxlint 已覆盖类型正确性与规范。后端零改动(纯前端)。"
+    },
+    {
+      "id": "permission-matrix-ui",
+      "priority": 15,
+      "area": "权限",
+      "title": "权限矩阵前端(真实数据 + 可编辑矩阵)",
+      "user_visible_behavior": "管理员在权限矩阵页看到真实权限数据,能在线勾选/取消权限格子,实时生效",
+      "status": "passing",
+      "plan": "harness/docs/plan-permission-matrix-ui.md",
+      "verification": [
+        "重写 permissions-page.tsx:数据来自 GET /permissions/matrix(非硬编码),权限项来自矩阵的 permissions 数组",
+        "可编辑:点格子调用 grant/revoke(roles 的权限端点),成功后矩阵刷新(invalidate permissionMatrix key)",
+        "权限守卫:member 被 RequireUserManagement 路由守卫拦截到不了此页;页面内 canManageUsers(me) 控制 owner/admin 可编辑",
+        "cd frontend && npm run build 通过"
+      ],
+      "evidence": [
+        "cd frontend && npm run build 通过:tsc -b + vite build 成功,0 类型错误(2026-07-10)",
+        "npx oxlint src/pages/permissions-page.tsx src/hooks/queries.ts src/api/endpoints.ts src/api/types.ts → 0 warnings 0 errors(2026-07-10)",
+        "可编辑交互:点格子 → granted? revoke(role.id, perm.id) : grant(role.id, {perm.obj, perm.act});pendingCell state 记录编辑中格子显示 spinner 防重复点击;错误用 toast + apiErrorMessage",
+        "关键简化:矩阵 PermissionItem.id 即是 revoke 所需 permissionId(因 RolePermission.permission_id == Permission.id,grant 时 _upsert_permission 返回的 pid 存入 RolePermission),故无需 useRolePermissions 预取,一个矩阵查询即可覆盖 grant+revoke"
+      ],
+      "depends_on": "permission-matrix-api",
+      "notes": "实现差异 vs plan:(1) plan §Step1 提的 GET /permissions/objects 实际后端端点叫 /catalogue(对齐 permission-matrix-api 实现),verification 行的 objects 是 plan 笔误;(2) 关键简化——无需 useRolePermissions 预取 permission_id,矩阵 PermissionItem.id 直接可用于 revoke(plan 风险表担心的 permission_id 问题,经源码推理验证 PermissionItem.id == revoke 所需 permissionId);(3) 手动浏览器验证未跑(需前后端启动),build(tsc 类型检查)+ oxlint 已覆盖类型正确性与规范;(4) 系统角色(owner/admin/member)不增加编辑保护——后端 grant/revoke 不拦,UI 仅 Badge 标记提示,严格保护是后续增强(对齐 plan 不做的事)"
+    },
+    {
+      "id": "permission-matrix-api",
+      "priority": 14,
+      "area": "权限",
+      "title": "权限矩阵后端(聚合查询 + 全量权限项端点)",
+      "user_visible_behavior": "(内部)提供『某租户所有角色 × 所有资源 × 动作』的聚合权限矩阵数据,供前端可视化与编辑",
+      "status": "passing",
+      "plan": "harness/docs/plan-permission-matrix-api.md",
+      "verification": [
+        "新增端点:GET /permissions/matrix(返回 {roles, permissions, matrix:{role_code:{perm_code:bool}}} 聚合矩阵)、GET /permissions/catalogue(返回全部权限项,含解析出的 obj/act)",
+        "pytest 覆盖:矩阵数据正确性、catalogue 正确性、grant/revoke 后矩阵更新、跨租户隔离、member 无 roles:read 返回 403",
+        "./init.sh 全绿"
+      ],
+      "evidence": [
+        "./init.sh 全绿:ruff + 118 passed(基线 112 + 新增 6 test_permissions_api)",
+        "新增 GET /permissions/matrix + /catalogue 端点(数据源 SCD2 当前态,非硬编码)",
+        "偏差:端点命名用 /catalogue(plan verification 行写的 /objects 是笔误)",
+        "偏差:测试不照搬 plan 的固定项数断言(测试环境不调 seed_tenant_defaults),改按 API 建+grant 验证"
+      ],
+      "notes": "纯后端只读端点,不改前端(那是 permission-matrix-ui 任务)、不改 grant/revoke(已就绪)、不改 schema/migration。矩阵聚合无性能问题(租户内角色≤默认3、权限项≤20,内存组装)。前端无对矩阵端点的既有引用,本任务提供真实数据源供 permission-matrix-ui 任务对接。"
+    },
+    {
+      "id": "chat-frontend",
+      "priority": 13,
+      "area": "AI 内核",
+      "title": "对话前端(聊天页面 + SSE 流式对接)",
+      "user_visible_behavior": "用户在聊天页面选择 Agent、实时对话(打字机效果)、查看历史会话与消息",
+      "status": "passing",
+      "plan": "harness/docs/plan-chat-frontend.md",
+      "verification": [
+        "前端新增 chat 页面:左侧会话列表 + 右侧消息流 + 输入框,选 Agent 发起对话",
+        "SSE 流式对接:解析 POST /chat/stream 的 text/event-stream(data:{delta}\\n\\n / data:[DONE]\\n\\n / data:{error}\\n\\n),实现打字机效果渲染",
+        "前端 endpoints.ts/hooks 补:fetchConversations/fetchMessages/sendChatStream(async generator, fetch+ReadableStream)/deleteConversation",
+        "路由 /chat 注册(ProtectedRoute 内、RequireUserManagement 外,member 可见)+ 导航加「对话」项",
+        "Conversation 类型补 updated_at 字段(对齐后端 chat-conversation-api 新增)",
+        "cd frontend && npm run build 通过(tsc + vite)"
+      ],
+      "evidence": [
+        "cd frontend && npm run build 通过:tsc -b + vite build 成功,0 类型错误(2026-07-10)",
+        "npx oxlint src/pages/chat-page.tsx → 0 warnings 0 errors;全仓库 4 warnings 均为既有的 only-export-components(button/badge/auth-context/toast),非本任务(2026-07-10)",
+        "SSE 实现:sendChatStream 为 async generator,用原生 fetch + ReadableStream(非 axios/EventSource);手动带 Authorization(getStoredToken);401 复刻 client.ts 逻辑 setStoredToken(null)+AUTH_EXPIRED_EVENT;帧解析 buffer.split('\\n\\n')+frames.pop() 留半帧;支持 AbortSignal 中途取消",
+        "types.ts:Conversation 补 updated_at;Message.role 收紧为 'user'|'assistant' 联合类型(对齐后端 MessageRead)",
+        "质量修复:chat-page 滚动 useEffect 原依赖 messages 数组(每次渲染新引用),改为依赖 [messages.length, lastContent] 派生原语,消除 exhaustive-deps 警告",
+        "探勘修正:plan Step 2 写的 clearStoredToken() 实际不存在,改用 client.ts 真实导出 setStoredToken(null)",
+        "后端零改动:本任务纯前端;ruff + pytest 112 passed 基线不变(无回归)"
+      ],
+      "depends_on": "chat-conversation-api",
+      "notes": "前端当前零 chat 对接(SSE 是全新能力,无现成基建)。SSE 在浏览器侧用 fetch + ReadableStream(而非 EventSource——不支持自定义 header;而非 axios——会一次性 buffer 失去流式),手动带 Authorization header(从 client.ts 的 getStoredToken 取),手动复刻 401→AUTH_EXPIRED_EVENT。前置 chat-conversation-api ✅ 已合入(4 端点就绪:POST /chat/stream、GET/DELETE /conversations/)。"
+    },
+    {
+      "id": "chat-conversation-api",
+      "priority": 12,
+      "area": "AI 内核",
+      "title": "对话后端(DeepSeek 接入 + 会话历史 API)",
+      "user_visible_behavior": "用户能与 Agent 实时对话(SSE 流式),对话被持久化,能查看历史会话和消息;LLM 使用 DeepSeek API",
+      "status": "passing",
+      "plan": "harness/docs/plan-chat-conversation-api.md",
+      "verification": [
+        "LLM 切换为 DeepSeek:config 默认值 + .env.example 改为 DeepSeek(base_url=https://api.deepseek.com、model=deepseek-chat);graph.py 的 ChatOpenAI 调用不改结构",
+        "新增端点:GET /conversations(当前用户会话列表)、GET /conversations/{id}/messages(历史消息)、DELETE /conversations/{id}(删除会话)",
+        "pytest tests/test_chat.py 覆盖:流式对话、会话列表、历史消息、跨租户隔离、删除会话",
+        "./init.sh 全绿"
+      ],
+      "evidence": [
+        "./init.sh 全绿:ruff + 112 passed(基线 105 + 新增 7 test_chat)",
+        "迁移 a2b3c4d5e6f7(Conversation 加 updated_at)+ alembic upgrade head 通过",
+        "偏差:删除策略选硬删除(plan 推荐方案 A,Conversation/Message 无 is_deleted)",
+        "偏差:append_message 显式刷新 conv.updated_at(Message 新对象不触发 Conversation onupdate)"
+      ],
+      "notes": "实现差异 vs plan:(1) 删除策略选硬删除(plan 推荐方案 A),Conversation/Message 表无 is_deleted,加软删除需改 schema;(2) append_message 显式刷新 conv.updated_at 而非依赖 onupdate(Message 是新对象不触发 Conversation 的 onupdate);(3) conftest 种子补 conversations:delete(此前功能缺失故种子无此项)。LLM 变量名仍叫 openai_*(plan 明确建议不改名,语义为 OpenAI 兼容接口)。手动 SSE 验证未跑(需真实 DeepSeek key + docker),测试用 monkeypatch stream_agent 离线覆盖。"
+    },
+    {
+      "id": "agents-api-hardening",
+      "priority": 11,
+      "area": "AI 内核",
+      "title": "Agent 配置 API 加固(测试补全 + 异常对齐)",
+      "user_visible_behavior": "(内部)Agent CRUD 达到与 users/roles 同等稳健度——权限边界/多租户隔离/软删除被测试覆盖,错误处理用类型化异常",
+      "status": "passing",
+      "plan": "harness/docs/plan-agents-api-hardening.md",
+      "verification": [
+        "pytest tests/test_agents_api.py -v 覆盖:权限边界(member 不能 create/delete)、跨租户隔离(读不到别租户 agent)、软删除(删除后列表不出现)、更新/404",
+        "后端 AgentService 改用 NotFoundError/BizError(对齐 users/roles 模式),API 错误映射改 isinstance",
+        "./init.sh 全绿(ruff + pytest,含新增测试)"
+      ],
+      "evidence": [
+        "./init.sh 全绿:ruff check → All checks passed!;pytest → 105 passed(基线 96 + 新增 9)(2026-07-10)",
+        "pytest tests/test_agents_api.py -v → 14 passed(原 5 happy-path + 新增 9:member read 200、member create/update/delete 403 ×3、admin delete 403、跨租户 agent 读取 404 且列表不含、删除后列表不出现、update/delete nonexistent 404 ×2)(2026-07-10)",
+        "向后兼容证明:异常对齐后现有 5 个 happy-path 测试零改动全过(NotFoundError 是 ValueError 子类,API 层原 except ValueError 仍捕获)——与 roles-crud 同款渐进式重构",
+        "多租户隔离验证:test_cross_tenant_agent_not_visible 用 db_session 在 tnt-other-cross-wall 租户建 agent,owner client 读取 → 404 + 列表不含(租户过滤在 Repository 层 get_for_tenant/list_for_tenant)",
+        "架构铁律遵守:Service→Repository 分层不变(仅异常类型对齐);多租户过滤仍在 Repository 层;无越界改动(3 文件:agent_service.py/agents.py/test_agents_api.py,精确对齐 plan)"
+      ],
+      "notes": "Agent 表无 is_deleted 字段,删除是硬删除(BaseRepository.delete 用 db.delete),非 User/Role 的软删除——但行为正确(删除后 get 404 + 列表不出现),测试 test_deleted_agent_absent_from_list 覆盖。本任务纯后端,不改前端(agents-page.tsx 已接通)、不改 schema、不改 LLM 配置(属 chat-conversation-api 任务)。实现完全对齐 plan 4 步。"
+    },
+    {
+      "id": "global-rename",
+      "priority": 10,
+      "area": "二开",
+      "title": "全局改名为新产品(二开第 1 步)",
+      "user_visible_behavior": "脚手架的所有 'ai-agent-platform' / '权限控制台' 标识改为新产品名 agenthub / 智能体云平台",
+      "status": "passing",
+      "plan": "harness/docs/plan-global-rename.md",
+      "verification": [
+        "grep -rn 'ai-agent-platform\\|权限控制台' --include='*.py' --include='*.ts' --include='*.tsx' --include='*.html' --include='*.md' --include='*.toml' --include='*.env*' . (排除 .venv/.git/node_modules/.codegraph/.zcode) → 无残留旧名",
+        "./init.sh 全绿(ruff + pytest)",
+        "前端 cd frontend && npm run build 通过(标题/页头正确渲染)",
+        "docs/openapi/openapi.json 的 title 已更新(重导出产物,不手改)"
+      ],
+      "evidence": [
+        "产品名定为 agenthub(英文标识)/ 智能体云平台(中文显示名)(2026-07-10)",
+        "Step 6 总验证全过:./init.sh → ruff All checks passed! + 96 passed;cd frontend && npm run build → tsc -b + vite build 成功 0 类型错误;grep 代码/配置层 0 残留(ai-agent-platform + 权限控制台 均无);dist/index.html title 已刷新为「智能体云平台 · agenthub」",
+        "脏分支处理:发现本地 feat/global-rename 分支(fafd13d)从旧分叉点拉出,会回滚 validation-error-i18n 和 roles-crud 两个已 passing 功能(删 validation_errors.py/test_validation_errors.py/砍 test_rbac_api.py 139 行/roles-page.tsx 587 行),已 git branch -D 强删,基于最新 main 重建 feat/global-rename-fresh 重做"
+      ],
+      "notes": "aap 缩写(docker 容器名/POSTGRES_USER/CI 环境变量)按 plan 风险表建议未动——仅基础设施配置,用户不可见,且改 aap 需同步 DATABASE_URL 用户名否则连不上库。项目文件夹名仍为 ai-agent-platform,未改(不影响运行)。实现完全对齐 plan 6 步。"
+    },
+    {
+      "id": "roles-crud",
+      "priority": 8,
+      "area": "权限",
+      "title": "角色管理 CRUD 全栈对齐(前后端 + 权限分配)",
+      "user_visible_behavior": "owner 能在角色页面创建/编辑/删除角色,并给角色分配权限;角色列表显示真实数据而非硬编码",
+      "status": "passing",
+      "plan": "harness/docs/plan-roles-crud.md",
+      "verification": [
+        "./init.sh 全绿(ruff + pytest,含新增角色权限边界/授权端点测试)",
+        "cd frontend && npm run build 通过",
+        "后端错误映射用异常类型(isinstance),不再字符串匹配(if 'not found' in msg)",
+        "test_rbac_api.py 覆盖:权限边界(member 403)、系统角色保护、权限授权 CRUD、404",
+        "前端角色页接真实数据,能完成角色 CRUD + 权限分配全流程"
+      ],
+      "evidence": [
+        "./init.sh 全绿:ruff check → All checks passed!;pytest → 96 passed(基线 88 + 新增 8)(2026-07-10)",
+        "pytest tests/test_rbac_api.py -v → 13 passed(原 5 + 新增 8:member 403 ×2、系统角色保护 400、404 映射 ×2、权限授权全生命周期 grant/list/revoke、revoke 非授权 404、缺失角色 404)(2026-07-10)",
+        "前端 npm run build 通过:tsc -b + vite build 成功,0 类型错误",
+        "Step 5 手动验证(curl/浏览器)未单独执行——需完整 docker 环境(Postgres)+ 真实 token,属 init.sh 职责外的完整验证路径;前端 build(tsc 类型检查)覆盖类型正确性,后端 pytest 覆盖 API 行为",
+        "架构铁律遵守:Service→Repository 分层不变(仅异常类型对齐);多租户过滤仍在 Repository 层(get_for_tenant/list_for_tenant 带 is_deleted=False);无越界改动(7 文件精确对齐 plan)"
+      ],
+      "notes": "实现差异 vs plan:(1) plan 提「软删除后 code 可复用」,实际 Role 表 UniqueConstraint(tenant_id,code) 是全表唯一约束(非部分索引),软删除后 code 不可复用——本任务未改 schema(超范围),测试覆盖了软删除后列表不出现但不测 code 复用;(2) 前端 sort_order 用 z.number() + register valueAsNumber 而非 z.coerce.number()(后者推断成 unknown)。UserTenant.role 仍是字符串非外键(plan 风险表已说明,不动)。"
+    },
+    {
+      "id": "validation-error-i18n",
+      "priority": 7,
+      "area": "后端",
+      "title": "Pydantic 422 校验错误中文化",
+      "user_visible_behavior": "前端表单输入不合法时(如用户名太短),返回的校验提示是中文友好文案,而非 Pydantic 内置英文",
+      "status": "passing",
+      "plan": "harness/docs/validation-error-i18n-plan.md",
+      "verification": [
+        "pytest tests/test_validation_errors.py -v(新增测试:纯函数单测 + 端到端集成)",
+        "POST /api/v1/users body username='ab' → 422,detail[0].msg 含「用户名」「3」",
+        "pytest -q 全量回归全绿(现有断言英文 msg 的用例已更新)",
+        "./init.sh 全绿(ruff + pytest)"
+      ],
+      "evidence": [
+        "./init.sh 全绿:ruff check → All checks passed!;pytest → 88 passed(基线 82 + 新增 6)(2026-07-10)",
+        "pytest tests/test_validation_errors.py -v → 6 passed(5 纯函数单测 + 1 端到端集成)(2026-07-10)",
+        "集成测试 test_create_user_short_username_returns_chinese_msg:POST /api/v1/users/ username='a'(1字符 < min_length=2)→ 422,detail[0].msg 含「用户名」与「2」,响应形状 {detail:[{loc,msg,type,...}]} 不变",
+        "全量回归无破坏:无现有用例断言英文 422 msg,88 passed 全绿;前端 client.ts、所有 app/schemas/*.py、app/api/v1/users.py 零改动",
+        "TDD 轨迹:Step1 RED(ModuleNotFoundError)→ Step2 GREEN(5 纯函数单测)→ Step3 handler+集成(6 passed)→ Step4 全量(88 passed)"
+      ],
+      "notes": "技术方案见 plan 文档(方案 2:type 锚点 + 纯函数 + handler,422 形状不变前端零改)。实现细节:用 _SafeDict(string.Formatter.vformat)统一处理 ctx 占位缺失,永不抛 KeyError。映射表对齐 app/schemas/user.py 字段。TDD 5 步已实施"
+    },
+    {
+      "id": "scd2-history",
+      "priority": 6,
+      "area": "审计",
+      "title": "授权链 SCD2 历史维度(valid_from/valid_to)",
+      "user_visible_behavior": "(内部)权限变更留痕,支持任意时间点还原授权状态",
+      "status": "passing",
+      "verification": [
+        "pytest tests/test_scd2_history.py -v",
+        "覆盖:SCD2 时间区间切片、历史还原"
+      ],
+      "evidence": [
+        "pytest tests/test_scd2_history.py → 7 passed(2026-07-10)",
+        "CI backend job: pytest -ra --strict-markers 全绿"
+      ],
+      "notes": "SCD2 是按需项不是标配;见 docs/auth-history-scd2-plan.md"
+    },
+    {
+      "id": "db-migrations",
+      "priority": 5,
+      "area": "数据库",
+      "title": "数据库迁移链(Alembic,Postgres)",
+      "user_visible_behavior": "(内部)从空库 alembic upgrade head 能建出完整 schema,无 model/migration 漂移",
+      "status": "passing",
+      "verification": [
+        "CI migrations job:在真实 Postgres 16 上 alembic upgrade head + alembic check",
+        "本地(需 docker):docker-compose up -d && alembic upgrade head && alembic check"
+      ],
+      "evidence": [
+        "CI migrations job 全绿(2026-07-10 最近 commit)",
+        "覆盖所有迁移版本,含 R9 JSONB 修复"
+      ],
+      "notes": "本地 init.sh 不跑此项(需真实 Postgres);详见 项目指南/02-后端架构/03-数据库与ORM.md"
+    },
+    {
+      "id": "users-crud",
+      "priority": 4,
+      "area": "用户管理",
+      "title": "用户管理 CRUD(全链路)",
+      "user_visible_behavior": "owner/admin 能创建、查询、修改、删除本租户内的用户",
+      "status": "passing",
+      "verification": [
+        "pytest tests/test_users_crud.py tests/test_users_api.py -v",
+        "覆盖:CRUD 各操作、权限边界(成员不能管用户、admin 不能删)、软删除、多租户隔离"
+      ],
+      "evidence": [
+        "pytest 上述 2 文件 → 21+6 = 27 passed(2026-07-10)",
+        "CI backend job: pytest -ra --strict-markers 全绿"
+      ],
+      "notes": "全链路走读见 项目指南/04-二开脚手架/04-实战走读-用户管理CRUD.md"
+    },
+    {
+      "id": "rbac-permission",
+      "priority": 3,
+      "area": "权限",
+      "title": "RBAC 多租户权限模型(pycasbin)",
+      "user_visible_behavior": "不同角色(owner/admin/member)能做的操作不同,跨租户数据隔离",
+      "status": "passing",
+      "verification": [
+        "pytest tests/test_permission.py tests/test_permission_service.py tests/test_rbac_api.py tests/test_user_permissions.py -v",
+        "覆盖:casbin 策略、角色权限矩阵、跨租户隔离、平台级超管"
+      ],
+      "evidence": [
+        "pytest 上述 4 文件 → 7+4+5+13 = 29 passed(2026-07-10)",
+        "CI backend job: pytest -ra --strict-markers 全绿"
+      ],
+      "notes": "详见 项目指南/02-后端架构/06-权限模型RBAC.md"
+    },
+    {
+      "id": "auth-logto",
+      "priority": 2,
+      "area": "认证",
+      "title": "Logto OIDC token 验证(RS256)",
+      "user_visible_behavior": "前端持有 Logto 签发的 token,能访问后端受保护接口",
+      "status": "passing",
+      "verification": [
+        "pytest tests/test_auth.py -v",
+        "覆盖:RS256 token 验证管线、双轨 token 统一过 get_current_user"
+      ],
+      "evidence": [
+        "pytest tests/test_auth.py → 4 passed(2026-07-10)",
+        "CI backend job: pytest -ra --strict-markers 全绿"
+      ],
+      "notes": "与 auth-local 共用同一条 get_current_user 管线"
+    },
+    {
+      "id": "auth-local",
+      "priority": 1,
+      "area": "认证",
+      "title": "本地密码登录(bcrypt + HS256 JWT)",
+      "user_visible_behavior": "用户能用邮箱+密码登录,拿到本地签发的 JWT,访问受保护接口",
+      "status": "passing",
+      "verification": [
+        "pytest tests/test_auth_local.py -v",
+        "覆盖:登录成功、密码错、账号禁用、token 签发与解析、会话管理"
+      ],
+      "evidence": [
+        "pytest tests/test_auth_local.py → 8 passed(2026-07-10)",
+        "CI backend job: pytest -ra --strict-markers 全绿"
+      ],
+      "notes": "详见 项目指南/02-后端架构/05-认证体系.md"
+    }
+  ]
+}
