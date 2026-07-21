@@ -54,6 +54,11 @@ def _make_casbin(owner_user: str, tenant_id: str):
         ("logs", "read"),
         ("knowledge", "read"), ("knowledge", "create"),
         ("knowledge", "delete"),
+        # devices (devices-crud-ui slice 01): owner full CRUD. NOTE: production
+        # DEFAULT_OWNER_PERMS gets these in slice 02 (backfill) — the fixture
+        # simulates a tenant that has already been backfilled so slice-01 tests
+        # can exercise the CRUD path today.
+        ("devices", "read"), ("devices", "create"), ("devices", "update"), ("devices", "delete"),
     ]:
         e.add_policy("owner", tenant_id, obj, act)
     # Menu visibility perms for owner (all business menus; menu:tenants is
@@ -61,6 +66,7 @@ def _make_casbin(owner_user: str, tenant_id: str):
     for code in [
         "dashboard", "agents", "chat", "groups", "customers",
         "members", "users", "roles", "permissions", "settings", "knowledge",
+        "devices",
     ]:
         e.add_policy("owner", tenant_id, "menu", code)
     # admin: manage users + read-mostly elsewhere (no agent/customer delete).
@@ -79,11 +85,15 @@ def _make_casbin(owner_user: str, tenant_id: str):
         ("billing", "read"),
         ("logs", "read"),
         ("knowledge", "read"), ("knowledge", "create"),
+        # devices (devices-crud-ui slice 01): admin reads + writes, no delete
+        # (mirrors the customer convention). Backfilled in slice 02.
+        ("devices", "read"), ("devices", "create"), ("devices", "update"),
     ]:
         e.add_policy("admin", tenant_id, obj, act)
     for code in [
         "dashboard", "agents", "chat", "groups", "customers",
         "members", "users", "roles", "permissions", "settings", "knowledge",
+        "devices",
     ]:
         e.add_policy("admin", tenant_id, "menu", code)
     for obj, act in [
@@ -93,10 +103,12 @@ def _make_casbin(owner_user: str, tenant_id: str):
         ("customers", "read"),
         ("billing", "read"),
         ("knowledge", "read"),
+        # devices (devices-crud-ui slice 01): member read-only.
+        ("devices", "read"),
     ]:
         e.add_policy("member", tenant_id, obj, act)
     # member: only the business menus (no user-management / settings menus).
-    for code in ["dashboard", "agents", "chat", "groups", "customers", "knowledge"]:
+    for code in ["dashboard", "agents", "chat", "groups", "customers", "knowledge", "devices"]:
         e.add_policy("member", tenant_id, "menu", code)
     return e
 
@@ -123,6 +135,7 @@ async def test_env() -> AsyncIterator[_TestEnv]:
         agent_specialist,
         api_token,
         customer,
+        device,
         device_model,
         document,
         embedding_config,
