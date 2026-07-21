@@ -1,7 +1,7 @@
 {
   "project": "ai-agent-platform",
   "description": "多租户 AI 智能体 SaaS 平台脚手架(FastAPI + React + pycasbin + LangGraph)",
-  "last_updated": "2026-07-17",
+  "last_updated": "2026-07-21",
   "harness_version": "stage1-clean-state",
   "rules": {
     "single_active_feature": true,
@@ -12,6 +12,74 @@
     "standard_start_command": "RUN_START_COMMAND=1 ./init.sh"
   },
   "features": [
+    {
+      "id": "device-models-crud",
+      "priority": 61,
+      "area": "业务实体",
+      "title": "设备型号目录 CRUD(平台级主数据)",
+      "user_visible_behavior": "总部/超管能在后台维护设备型号目录(如「血压舱 X100」「智能戒指 R2」):新增/编辑/软删型号,记录品牌、规格(JSON)、供应商、单位成本。门店端创建设备实例时只能从该目录选型号。型号是平台级共享数据,所有租户共用同一份目录",
+      "status": "not_started",
+      "verification": [
+        "后端:POST/PUT/DELETE /api/v1/device-models(require_super_admin 守卫)+ GET /api/v1/device-models(所有登录用户可读,对齐 groups:门店 staff 创建 devices 时下拉框需要);软删除(is_deleted=False 过滤)+ 部分唯一索引 (name WHERE is_deleted=False)",
+        "前端:后台型号管理页(路由 /device-models,RequireSuperAdmin 守卫);型号下拉选择器(给 devices-crud-ui 复用,所有登录用户可拉)",
+        "pytest:覆盖 CRUD 全路径 + 权限矩阵(super_admin 全权 / hq_staff 读通过 / member 读通过(下拉必需) / 未登录 401)+ 软删除 + 唯一约束(软删后名可复用)+ alembic 迁移 + alembic check 无 drift",
+        "cd frontend && npm run build 通过 + npx oxlint src/ 0 warnings"
+      ],
+      "notes": "设备功能系列 1/4(地基)。平台级表(无 tenant_id,对齐 Group 平台级业务组织范式,不是 Customer 全局身份范式)。**权限模式对齐 groups.py**:写用 app/api/deps.require_super_admin() 依赖守卫;读用 get_current_user + service 层按 platform_role 分流(super_admin/hq_staff 看全量字段含 cost,门店用户只看下拉必需的 id/name/specs.form_factor)。**不走 casbin device_models:act 权限项,不进权限矩阵 UI**(平台级资源都不进)。不照搬 StorePilot admin_devices + webhook 双服务设计——本项目是单体 FastAPI,直接 BaseRepository + FK 关联即可。specs JSONB 替代 StorePilot 的 kind 枚举(避免硬编码 chamber/ring,物理形态由 specs.form_factor 表达,符合 AGENTS.md 不过度设计铁律);**specs 更新策略:整体替换(PUT 语义),不做 jsonb_set 增量**(前端拉最新→改→全量回传,避免并发覆盖单字段)。**unit_cost Numeric(12,2) Decimal**(对齐本项目 usage_event.cost / model_pricing.* 金额惯例,不用 StorePilot 的 cents INTEGER)。**specs 若需按字段查询,加 GIN 索引**(CREATE INDEX ... USING GIN(specs),开工时按实际查询决定是否加)。依赖:无。开工时写详细 plan。"
+    },
+    {
+      "id": "devices-crud-ui",
+      "priority": 62,
+      "area": "业务实体",
+      "title": "门店设备实例 CRUD + 绑定客户(租户隔离)",
+      "user_visible_behavior": "门店管理员能在门店端管理本店设备实例:入库(选型号 + 填序列号)、编辑状态(active/maintenance/retired)、绑定/解绑客户、软删。设备归属本租户,跨租户不可见。序列号在同租户内唯一",
+      "status": "not_started",
+      "verification": [
+        "后端:POST/GET/PUT/DELETE /api/v1/devices + POST /devices/{id}/bind(绑定/解绑客户);TenantScopedRepository 强制 tenant_id 过滤;部分唯一索引 (tenant_id, serial_number WHERE is_deleted=False)",
+        "权限:门店 owner/admin 写,member 只读,super_admin 跨租户只读;device.customer_id FK→customers SET NULL(设备软删或客户删时保留历史)",
+        "前端:门店端设备管理页(路由 /devices,member 可读),列表 + 入库 Dialog(型号下拉从 /device-models 拉) + 状态切换 + 绑定客户 Dialog",
+        "pytest:覆盖 CRUD + 租户隔离(跨租户 404)+ 权限矩阵 + (tenant_id, serial_number) 唯一约束 + 软删 + 绑定/解绑 + alembic check 无 drift",
+        "cd frontend && npm run build 通过 + oxlint 0 warnings"
+      ],
+      "notes": "设备功能系列 2/4。租户级表(devices.tenant_id FK→tenants CASCADE)。status 用简化业务态 active/maintenance/retired(不用 StorePilot 混合 online/offline/low_battery/maintenance —— 在没有 IoT 上报链路的当下,在线状态会变成永远 stale 的脏数据,硬件细节归 device_metrics 后续 backlog 采集)。**重要语义:devices.status 是设备管理态(active/maintenance/retired),「设备是否正被占用」由 bookings 派生(WHERE device_id=? AND status='in_service'),不是 devices.status 的职责**——未来 GET /devices/available 排期查询要 join bookings 排除正在 in_service 的设备,不能只看 devices.status=active,否则会撞车。无 kind 字段(物理形态由 model.specs 表达)。model_id FK→device_models RESTRICT(型号被引用时禁硬删)。依赖:[device-models-crud]。",
+      "depends_on": "device-models-crud"
+    },
+    {
+      "id": "device-booking",
+      "priority": 63,
+      "area": "业务实体",
+      "title": "设备预约订单 CRUD + 排期(不含 start/end)",
+      "user_visible_behavior": "门店员工能为本店设备创建预约订单(选设备 + 可选客户 + 预约时段),改约/取消,查看今日/明日/本周预约列表和设备排期网格。客户可在 customer 端看自己的预约。预约订单走 6 态状态机但本 feature 只做 CRUD,不做 start/end/no-show 动作",
+      "status": "not_started",
+      "verification": [
+        "后端:POST/GET/PUT/DELETE /api/v1/bookings + GET /devices/{id}/schedule(排期网格);bookings.tenant_id FK CASCADE,device_id FK→devices SET NULL(设备软删时保留历史),customer_id 可空 FK→customers SET NULL(walk-in/代预约可不填)",
+        "bookings 时间字段:scheduled_start_at/scheduled_end_at(预定时段,本 feature 写,NOT NULL)、started_at/ended_at(实际时段,本 feature 建列 nullable 留给 device-poweron 写)、feedback JSONB(本 feature 建列 nullable 留给 device-poweron 写)。排期网格从 scheduled_* 聚合,今日/明日/本周 filter 也基于 scheduled_start_at",
+        "status CHECK 6 态:pending/confirmed/in_service/done/cancelled/no_show(default pending);本 feature 只允许 pending↔cancelled 流转(创建=pending,改约=pending,取消=cancelled),其余状态转换由 device-poweron feature 实现;POST/PUT 的 status 字段 schema 层忽略客户端传入(只由动作端点改,防绕过状态机)",
+        "权限:门店 staff+ 写,member 读;customer 端只能看/操作自己的 booking(customer_id = current_user.customer_id 校验);排期 GET /devices/{id}/schedule 要求本租户设备",
+        "前端:门店端预约管理页(列表 + filter chips 今日/明日/本周/待确认/爽约 + 排期网格 slot-box booked/active/done 三态)+ customer 端预约视图(只看自己的预约)",
+        "pytest:覆盖 CRUD + 状态流转(pending↔cancelled)+ 状态机绕过防护(POST 传 status=done 仍为 pending)+ 时段冲突(同设备同 scheduled_start_at 重叠拒绝 409)+ 租户隔离 + 权限矩阵 + customer own 校验 + 排期聚合 SQL + alembic check 无 drift",
+        "cd frontend && npm run build 通过 + oxlint 0 warnings"
+      ],
+      "notes": "设备功能系列 3/4。**booking 表时间字段(开工时务必建齐):scheduled_start_at/scheduled_end_at NOT NULL(预定时段,本 feature CRUD 写,排期聚合源)、started_at/ended_at nullable(实际服务时段,留给 device-poweron feature 写)、feedback JSONB nullable(留给 device-poweron 的 end 动作写)**——原方案漏了时间字段定义,排期网格/今日 filter 无字段可依。6 态状态机含 confirmed/no_show 但本 feature 不实现 /confirm 端点(confirmed 作前向兼容 CHECK 值保留,booking 直接从 pending 跳 in_service,backlog 待业务需要时补 confirm 端点——对齐 StorePilot v1 处理);confirmed 是 CHECK 占位态,在补 /confirm 端点前永远走不到。拆分原则:本 feature 只做预约订单生命周期 CRUD + 时段管理,状态机的 start/end/no-show 动作归 device-poweron。时段冲突检测:同设备同 scheduled_start_at 区间重叠拒绝 409(参考既有 Group 名冲突 → 409 模式)。依赖:[devices-crud-ui]。",
+      "depends_on": "devices-crud-ui"
+    },
+    {
+      "id": "device-poweron",
+      "priority": 64,
+      "area": "业务实体",
+      "title": "设备开机/结束/爽约状态机动作(不含硬件下发)",
+      "user_visible_behavior": "客户/店员点击「开机」按钮 → 设备订单从 pending 流转到 in_service,记录开始时间;点击「结束」→ 流转到 done,记录结束时间 + 可填反馈;爽约按钮 → 流转到 no_show。⚠️ 当前只到状态机层,「点击开机 → 设备真开启」的硬件下发链路(MQTT/WS/寻址)留空,归于未来 backlog",
+      "status": "not_started",
+      "verification": [
+        "后端:POST /bookings/{id}/start(pending/confirmed→in_service,填 started_at)、POST /bookings/{id}/end(in_service→done,填 ended_at + 写 feedback JSONB)、POST /bookings/{id}/no-show(→no_show);状态机纯函数(参考 StorePilot booking_state.py,6 条合法跳转)+ ConflictError → HTTP 409",
+        "权限:start 可由 customer(自己的 booking 且 customer_id 非空)或 store_staff+ 触发;walk-in booking(customer_id 为空)必须由 store_staff+ start,customer 端无权;end/no-show 仅 store_staff+;所有端点强制 tenant_id + customer_id(如适用)校验防越权",
+        "前端:customer 端 BookView「确认开机」按钮真调 API(StorePilot 仅 Toast 是已知占位,本项目必须补真调用);门店端预约列表的「结束」「爽约」操作按钮",
+        "pytest:覆盖 6 条合法跳转 + 非法跳转 409 + 权限矩阵 + customer own 校验 + **walk-in booking(customer_id 为空)customer start 应 403,store_staff start 应 200** + started_at/ended_at 自动填充 + feedback 落库 + alembic check 无 drift",
+        "cd frontend && npm run build 通过 + oxlint 0 warnings"
+      ],
+      "notes": "设备功能系列 4/4 收官。**重要边界:硬件下发链路不在范围** —— 与 StorePilot slice-30-d3-iot-static.md 阶段 1 妥协一致(MQTT broker/WebSocket 实时流/设备寻址下发均推迟)。devices 表本次不加 mqtt_topic/hw_address 字段(YAGNI,等真上 IoT 时一次迁移补)。devices.serial_number 已有,未来硬件寻址可复用。开机动作不加 StorePilot 的 risk_ack/血压采集前置(那是医疗设备特定业务,本项目作为通用 SaaS 脚手架不该假设客户业务有此合规要求)。**walk-in booking 边界:customer_id 为空的预约只能由 store_staff+ start,customer 端无权触发(避免匿名预约被冒认)**。本 feature 写入的 started_at/ended_at/feedback 字段由 device-booking feature 先建好 schema(见其 notes),本 feature 不需要再加迁移列。未来要落地真实硬件下发时,新开 feature(预计 priority 65+,area=基础设施或 IoT)。依赖:[device-booking]。",
+      "depends_on": "device-booking"
+    },
     {
       "id": "api-token-fine-grained-scopes",
       "priority": 60,
