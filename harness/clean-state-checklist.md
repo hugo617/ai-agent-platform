@@ -14,12 +14,15 @@
 
 ---
 
-## 清单(7 项)
+## 清单(8 项)
 
 - [ ] **基础验证可用**:`./init.sh` 跑过(`ruff check` + `pytest` 全绿)
 - [ ] **进度已记录**:`progress.md` 已追加本轮 Session 记录(目标/已完成/验证/下一步)
 - [ ] **功能状态真实**:`feature_list.json` 的状态真实反映 passing 和「未验证」的边界
   —— 没跑完整验证的绝不能标 passing(没有假 passing)
+- [ ] **active 视图已同步**:若本期有 feature 状态变化(新增/状态流转/归档),跑过
+  `./scripts/sync-active-features.sh` 刷新 `feature_list.active.json`
+  —— 漏跑代价:active.json 过时,token 节省失效;**无数据丢失**,agent 兜底可读完整 `feature_list.json`
 - [ ] **无半成品**:没有任何已开始但未记录的功能步骤(WIP=1,当前只一个 in_progress)
 - [ ] **无调试残留**:没有遗留的 `print()` / `breakpoint()` / `debugger` / 临时文件
 - [ ] **遵守架构铁律**:改动符合分层约束(Controller → Service → Repository → Model 单向)、
@@ -35,6 +38,7 @@
 | 基础验证失败 | **先修基础**,不要在坏起点上提交。修不了就在 progress.md 标 blocker。 |
 | 进度没记录 | 现在就补 Session 记录,别指望下轮还记得。 |
 | 状态不真实 | 把没跑完验证的功能从 passing 改回 in_progress 或 not_started。 |
+| active 视图未同步 | 跑 `./scripts/sync-active-features.sh`。不跑也不会丢数据(agent 兜底读完整版),但下轮开工 token 节省失效。 |
 | 有半成品 | 要么推到 passing,要么明确记录「做到哪、差什么」。 |
 | 有调试残留 | 现在删掉。`git diff` 检查一遍。 |
 | 违反铁律 | 回退改动,重走分层。铁律见 `AGENTS.md`。 |
@@ -45,6 +49,7 @@
 ## 与其他 harness 工件的关系
 
 - **`./init.sh`**:本清单第 1 项的执行入口
-- **`progress.md`**:本清单第 2、7 项的落点
-- **`feature_list.json`**:本清单第 3、4 项的真相源
-- **`AGENTS.md` 的铁律**:本清单第 6 项的判定依据
+- **`progress.md`**:本清单第 2、8 项的落点
+- **`feature_list.json`**:本清单第 3、4 项的真相源(完整版,CI/审计用)
+- **`feature_list.active.json`**:本清单第 4 项的刷新对象(派生视图,agent 开工读)
+- **`AGENTS.md` 的铁律**:本清单第 7 项的判定依据
