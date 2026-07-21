@@ -20,7 +20,11 @@
 
 1. `pwd` —— 确认在仓库根目录。
 2. 读 [`progress.md`](progress.md) —— 恢复「现在做到哪了、下一步做什么」。
-3. 读 [`feature_list.json`](feature_list.json) —— 选优先级最高的 `not_started` 功能(WIP=1,同时只能一个)。
+3. 读 [`feature_list.active.json`](feature_list.active.json) —— 选优先级最高的 `not_started` 功能(WIP=1,同时只能一个)。
+   - **派生视图**(自动生成,~58 行):只含活跃任务 + 最近 5 个 passing(精简字段)+ 里程碑摘要。
+   - 完整数据见 [`feature_list.json`](feature_list.json)(完整真相源,CI/审计用);历史归档见 [`harness/docs/archive/`](harness/docs/archive/)。
+   - **若无 `not_started`**:读归档复盘历史,或等用户排新需求(不要误以为 active.json 损坏)。
+   - **若 active.json 过时或缺失**:回退读完整 [`feature_list.json`](feature_list.json),然后跑 `./scripts/sync-active-features.sh` 刷新。
 4. `git log --oneline -5` —— 看最近发生了什么。
 5. 运行 `./init.sh` —— 装依赖 + 跑基础验证(ruff + pytest,SQLite 内存库,秒级)。
 6. **如果基础验证失败,先修基础,不要在坏起点上叠新功能。**
@@ -86,7 +90,7 @@ agent 不再凭自觉用 skill,按任务状态变化硬触发(详见
 
 **核心 4 条**(不可违反):
 - **WIP=1**:一次只做一个功能,当前端到端验证通过前不开新功能
-- **完成绑定证据**:状态 `in_progress` → `passing` 唯一方式是验证真跑过 + 证据写进 [`feature_list.json`](feature_list.json) `evidence`
+- **完成绑定证据**:状态 `in_progress` → `passing` 唯一方式是验证真跑过 + 证据写进 [`feature_list.json`](feature_list.json) `evidence`,然后跑 `./scripts/sync-active-features.sh` 刷新 active 视图
 - **不越界**:只做选定功能,不顺手重构/多改(除非窄范围 blocker 修复)
 - **仓库是唯一事实来源**:脑子里的不算,决策/进度/约定都落到文件
 
