@@ -29,6 +29,21 @@ export function isSuperAdmin(me: MeResponse | null | undefined): boolean {
 }
 
 /**
+ * Is the current user HQ staff (cross-tenant read-only viewer)?
+ *
+ * Mirrors ``isSuperAdmin``: hq_staff is the dedicated HQ-panorama role — it
+ * has no tenant role, so ``require_permission("devices","read")`` would 403 it
+ * before the panorama branch in the service runs. The bypass lives in
+ * ``permission_service.check`` (hq_staff + read short-circuit). Call sites that
+ * branch the UI between store view and HQ panorama should test
+ * ``isSuperAdmin(me) || isHQStaff(me)`` — super_admin falls in the same
+ * cross-tenant-viewer bucket (see ``is_cross_tenant_viewer`` on the backend).
+ */
+export function isHQStaff(me: MeResponse | null | undefined): boolean {
+  return me?.platform_role === "hq_staff";
+}
+
+/**
  * Does the current user hold the `<obj>:<act>` permission?
  *
  * super_admin short-circuits to true (bypasses all checks; the backend returns

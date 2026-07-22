@@ -595,6 +595,87 @@ export interface CustomerUsage {
   last_active_at: string | null;
 }
 
+// ============= devices (设备实例 CRUD, devices-crud-ui 系列 2/4) =============
+//
+// Aligns with app/schemas/device.py. ``status`` is a 3-state Literal mirroring
+// the backend DeviceStatus (active/maintenance/retired). The read shape has two
+// variants: ``Device`` for within-store CRUD and ``DeviceHqRead`` for the HQ
+// panorama (super_admin / hq_staff cross-tenant view) — the latter extends the
+// base with three display fields (tenant/model/customer name) so the HQ table
+// renders without N client-side lookups. ``DeviceModelPublic`` is the minimal
+// {id, name, specs} shape returned by GET /device-models/ for tenant users —
+// shared with the future device-models admin page.
+
+export type DeviceStatus = "active" | "maintenance" | "retired";
+
+/** Within-store device instance (GET /devices/ for tenant roles). */
+export interface Device {
+  id: string;
+  tenant_id: string;
+  model_id: string;
+  serial_number: string;
+  status: DeviceStatus;
+  customer_id: string | null;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/** POST /devices/ body. customer_id is an optional create-time hint. */
+export interface DeviceCreate {
+  model_id: string;
+  serial_number: string;
+  status?: DeviceStatus;
+  customer_id?: string | null;
+}
+
+/**
+ * PUT /devices/{id} body. customer_id is intentionally absent — bind/unbind
+ * have their own dedicated endpoints (/devices/{id}/bind) so the audit trail
+ * stays clean.
+ */
+export interface DeviceUpdate {
+  model_id?: string;
+  serial_number?: string;
+  status?: DeviceStatus;
+}
+
+/** HQ panorama device (GET /devices/ for super_admin / hq_staff). */
+export interface DeviceHqRead extends Device {
+  /** Display names for tenant/model/customer; nullable when the related row
+   * is soft-deleted or the device has no customer binding. */
+  tenant_name: string | null;
+  model_name: string | null;
+  customer_name: string | null;
+}
+
+/** Body of POST /devices/{id}/bind. */
+export interface DeviceBindRequest {
+  customer_id: string;
+}
+
+/** 200 response of POST /devices/{id}/bind. ``already_bound`` is the
+ * idempotency flag: true means the device was already bound to this exact
+ * customer (no-op), false means a new binding was written. */
+export interface DeviceBindResponse {
+  device_id: string;
+  customer_id: string;
+  already_bound: boolean;
+}
+
+/**
+ * Minimal device-model shape returned by GET /device-models/ for tenant users
+ * (the device-picker dropdown only needs id/name/specs). Mirrors backend
+ * DeviceModelPublicRead; super_admin / hq_staff get the fuller DeviceModelRead
+ * shape — slice 05 only needs the dropdown view (the admin page is a future
+ * feature).
+ */
+export interface DeviceModelPublic {
+  id: string;
+  name: string;
+  specs: Record<string, unknown>;
+}
+
 // ============= billing (Token 费用管理系列 4/4) =============
 //
 // Aligns with app/schemas/billing.py. The wallet carries the live balance +

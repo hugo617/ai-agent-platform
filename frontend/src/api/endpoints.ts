@@ -16,6 +16,13 @@ import type {
   CustomerRead,
   CustomerStatistics,
   CustomerUsage,
+  Device,
+  DeviceBindRequest,
+  DeviceBindResponse,
+  DeviceCreate,
+  DeviceHqRead,
+  DeviceModelPublic,
+  DeviceUpdate,
   DashboardOverview,
   DashboardTrends,
   GlobalSearchResult,
@@ -309,6 +316,72 @@ export async function fetchCustomerUsage(
 // list_profiles dual-view split.
 export async function fetchCustomerStatistics(): Promise<CustomerStatistics> {
   const { data } = await api.get<CustomerStatistics>("/customers/statistics");
+  return data;
+}
+
+// ---------- devices (设备实例 CRUD, devices-crud-ui 系列 2/4) ----------
+//
+// Reads branch on the caller's platform role on the backend:
+// - tenant roles (owner/admin/member) → Device[] scoped to this tenant
+// - super_admin / hq_staff            → DeviceHqRead[] cross-tenant panorama
+// The endpoint returns one shape or the other; the union return type reflects
+// that. Writes (create/update/delete/bind) are tenant-scoped and return Device.
+//
+// bind/unbind are POST/DELETE on a sub-resource (/devices/{id}/bind) mirroring
+// the attach/detach pattern used for groups and agents. bind returns 200 (not
+// 201 — the device already exists, bind is an assignment); DeviceBindResponse.
+// already_bound distinguishes a true new binding from an idempotent repeat.
+// unbind returns 204 even when no binding exists (DELETE idempotency).
+export async function fetchDevices(): Promise<Device[] | DeviceHqRead[]> {
+  const { data } = await api.get<Device[] | DeviceHqRead[]>("/devices/");
+  return data;
+}
+
+export async function fetchDevice(id: string): Promise<Device | DeviceHqRead> {
+  const { data } = await api.get<Device | DeviceHqRead>(`/devices/${id}`);
+  return data;
+}
+
+export async function createDevice(payload: DeviceCreate): Promise<Device> {
+  const { data } = await api.post<Device>("/devices/", payload);
+  return data;
+}
+
+export async function updateDevice(
+  id: string,
+  payload: DeviceUpdate,
+): Promise<Device> {
+  const { data } = await api.put<Device>(`/devices/${id}`, payload);
+  return data;
+}
+
+export async function deleteDevice(id: string): Promise<void> {
+  await api.delete(`/devices/${id}`);
+}
+
+export async function bindDeviceCustomer(
+  id: string,
+  customerId: string,
+): Promise<DeviceBindResponse> {
+  const { data } = await api.post<DeviceBindResponse>(
+    `/devices/${id}/bind`,
+    { customer_id: customerId } satisfies DeviceBindRequest,
+  );
+  return data;
+}
+
+export async function unbindDeviceCustomer(id: string): Promise<void> {
+  await api.delete(`/devices/${id}/bind`);
+}
+
+// ---------- device-models (平台级设备型号目录, device-models-crud) ----------
+//
+// GET /device-models/ returns DeviceModelPublicRead {id, name, specs} for
+// tenant users (the device-picker dropdown) and the fuller DeviceModelRead for
+// super_admin / hq_staff. Slice 05 only consumes the dropdown view — callers
+// that only render the dropdown can treat the result as DeviceModelPublic[].
+export async function fetchDeviceModels(): Promise<DeviceModelPublic[]> {
+  const { data } = await api.get<DeviceModelPublic[]>("/device-models/");
   return data;
 }
 

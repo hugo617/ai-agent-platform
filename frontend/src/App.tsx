@@ -33,6 +33,9 @@ const GroupsPage = lazy(() =>
 const CustomersPage = lazy(() =>
   import("@/pages/customers-page").then((m) => ({ default: m.CustomersPage })),
 );
+const DevicesPage = lazy(() =>
+  import("@/pages/devices-page").then((m) => ({ default: m.DevicesPage })),
+);
 const RolesPage = lazy(() =>
   import("@/pages/roles-page").then((m) => ({ default: m.RolesPage })),
 );
@@ -116,6 +119,11 @@ export default function App() {
                 <Route path="/chat" element={<ChatPage />} />
                 <Route path="/groups" element={<GroupsPage />} />
                 <Route path="/customers" element={<CustomersPage />} />
+                {/* 设备实例管理(devices-crud-ui 系列 2/4)— 门店 CRUD +
+                    HQ 全景。member 可读(后端 devices:read 默认授予),
+                    所以裸 ProtectedRoute,无额外守卫;写按钮在页内按
+                    hasPermission 隐藏(切片 06)。 */}
+                <Route path="/devices" element={<DevicesPage />} />
                 <Route path="/knowledge" element={<KnowledgePage />} />
 
                 {/* 个人中心 — self-service account management. Every
