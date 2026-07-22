@@ -8,7 +8,7 @@
 - **标准启动路径**: `./init.sh`(装依赖 + ruff + pytest)
 - **标准验证路径**: `./init.sh`(同上,后端快速验证,SQLite 内存库)
 - **完整验证路径**(需 docker): `alembic upgrade head && alembic check` + `cd frontend && npm run build`
-- **当前最高优先级未完成功能**: **`devices-crud-ui`(priority 62,门店设备实例 CRUD + 绑定客户,Session 126 切片 03 HQ 全景后端已完成)**。设备功能系列进度:61(device-models-crud)✅ → **62(devices-crud-ui,切片 01 ✅ 已合并 main PR #90,切片 02 ✅ 已合并 main PR #92,切片 03 ✅ HQ 全景后端完成待 commit,切片 04/05/06/07 待做)** → 63(device-booking)→ 64(device-poweron)。最新合并到 main:`devices-crud-ui 切片 02`(priority 62)✅ 设备权限 seed + 老租户 backfill(PR #92)。切片 03(HQ 全景):`DeviceHqRead` + Device relationship + selectinload + service platform_role 分叉 + GET 端点内分流 + E 章节 5 测试,605 passed。
+- **当前最高优先级未完成功能**: **`devices-crud-ui`(priority 62,门店设备实例 CRUD + 绑定客户,status=`in_progress`,7 切片中切片 01-04 已合并 main)**。设备功能系列进度:61(device-models-crud)✅ → **62(devices-crud-ui `in_progress`,切片 01 ✅ PR #90,切片 02 ✅ PR #92,切片 03 ✅ PR #93,切片 04 ✅ PR #94,切片 05/06/07 待做)** → 63(device-booking)→ 64(device-poweron)。切片级状态真相源 = `harness/docs/plan-devices-crud-ui.md` 的 acceptance criteria checklist(切片 01-04 已勾 `[x]` + 标题带 ✅ PR 证据)。最新合并到 main:`devices-crud-ui 切片 04`(priority 62)✅ 客户绑定端点 bind/unbind 幂等语义(PR #94 commit 125ad2b)。**下一步**:切片 05(前端地基 types/endpoints/queries + isHQStaff + 路由),走 `/implement`(EP3,从 frontier 切片接)。
 - **当前 blocker**: 无
 
 ## 后续任务规划

@@ -279,71 +279,71 @@ Device:
 >
 > 实施节奏:一次一个切片,用 `/implement` 推进,切片间清 context。WIP=1 仍然适用 —— 同一时刻只在一个切片上 in_progress,该切片全绿(测试 + verification 清单对应项)才进下一个。
 
-### 切片 01 — 后端地基:Device 表 + 软删租户隔离 CRUD + model_id 完整性
+### 切片 01 — 后端地基:Device 表 + 软删租户隔离 CRUD + model_id 完整性 ✅ PR #90 commit fbbee29
 
 **Blocked by:** 无 —— 可立即开工
 
 **What it delivers:** 一个 tenant 内的 owner 能创建/读/改/删本店设备实例(选活型号 + 填序列号 + 填初始状态),member 只读,跨租户 GET/PUT/DELETE 返 404 防 enumeration。本切片**不含**客户绑定、不含 HQ 全景、不含前端、不含权限 backfill。
 
 **Acceptance criteria:**
-- [ ] `app/models/device.py`:`Device` ORM model(audit 列 / 软删 / FK 写法对齐 `CustomerProfile`)
-- [ ] alembic 迁移:down_revision=`e649e80a4169`,`create_table` + `CheckConstraint(status IN (...))` + 2 个 `create_index`(普通索引 + 部分唯一索引 `uq_devices_tenant_serial_active`,**upgrade 和 downgrade 都带 `postgresql_where=is_deleted=false` + `sqlite_where=is_deleted=0`**,防 drift)
-- [ ] `app/schemas/device.py`:`DeviceStatus = Literal[...]`、`DeviceBase`/`DeviceCreate`/`DeviceUpdate`/`DeviceRead`
-- [ ] `app/repositories/device.py`:`DeviceRepository(TenantScopedRepository[Device])`,重写 `get_for_tenant`/`list_for_tenant` 加 `is_deleted.is_(False)`,新增 `get_by_tenant_serial(tenant_id, serial, exclude_id=None)`
-- [ ] `app/services/device_service.py`:`_get_live_device`(跨租户/不存在/软删 → NotFoundError)、`_assert_serial_unique`(→ BizError)、`_assert_model_live`(软删/不存在型号 → BizError,**真实守卫**,FK RESTRICT 因软删永不触发)、`create`/`update`/`delete`
-- [ ] `app/api/v1/devices.py`:`GET/POST/PUT/DELETE /api/v1/devices`(本切片用 router-level `require_permission("devices","read/create/update/delete")`,HQ 分流留给切片 03 替换)+ `app/main.py` 注册 router
-- [ ] `tests/conftest.py` 的 `from app.models import (...)` 块加 `Device`(按 module 路径,参照 `device_model` 写法)
-- [ ] `tests/test_devices_api.py` 章节:A(CRUD 全字段断言)+ B(跨租户 404 防 enumeration)+ C(同租户同 serial 重复 → 400,软删后可复用 → 201)+ D(member 写 → 403,unauth → 401)+ G(状态切换 active↔maintenance↔retired 全合法,非法值 → 422)+ H(model_id 完整性 H1-H5:软删/不存在型号 → 400、软删型号已引用 device GET 不崩)
-- [ ] 本地 `alembic upgrade head` 通过(SQLite 内存库)
+- [x] `app/models/device.py`:`Device` ORM model(audit 列 / 软删 / FK 写法对齐 `CustomerProfile`)
+- [x] alembic 迁移:down_revision=`e649e80a4169`,`create_table` + `CheckConstraint(status IN (...))` + 2 个 `create_index`(普通索引 + 部分唯一索引 `uq_devices_tenant_serial_active`,**upgrade 和 downgrade 都带 `postgresql_where=is_deleted=false` + `sqlite_where=is_deleted=0`**,防 drift)
+- [x] `app/schemas/device.py`:`DeviceStatus = Literal[...]`、`DeviceBase`/`DeviceCreate`/`DeviceUpdate`/`DeviceRead`
+- [x] `app/repositories/device.py`:`DeviceRepository(TenantScopedRepository[Device])`,重写 `get_for_tenant`/`list_for_tenant` 加 `is_deleted.is_(False)`,新增 `get_by_tenant_serial(tenant_id, serial, exclude_id=None)`
+- [x] `app/services/device_service.py`:`_get_live_device`(跨租户/不存在/软删 → NotFoundError)、`_assert_serial_unique`(→ BizError)、`_assert_model_live`(软删/不存在型号 → BizError,**真实守卫**,FK RESTRICT 因软删永不触发)、`create`/`update`/`delete`
+- [x] `app/api/v1/devices.py`:`GET/POST/PUT/DELETE /api/v1/devices`(本切片用 router-level `require_permission("devices","read/create/update/delete")`,HQ 分流留给切片 03 替换)+ `app/main.py` 注册 router
+- [x] `tests/conftest.py` 的 `from app.models import (...)` 块加 `Device`(按 module 路径,参照 `device_model` 写法)
+- [x] `tests/test_devices_api.py` 章节:A(CRUD 全字段断言)+ B(跨租户 404 防 enumeration)+ C(同租户同 serial 重复 → 400,软删后可复用 → 201)+ D(member 写 → 403,unauth → 401)+ G(状态切换 active↔maintenance↔retired 全合法,非法值 → 422)+ H(model_id 完整性 H1-H5:软删/不存在型号 → 400、软删型号已引用 device GET 不崩)
+- [x] 本地 `alembic upgrade head` 通过(SQLite 内存库)
 
 ---
 
-### 切片 02 — 权限 seed + 老租户 backfill(不破坏现存租户)
+### 切片 02 — 权限 seed + 老租户 backfill(不破坏现存租户)✅ PR #92 commit 2043dec
 
 **Blocked by:** 01(devices obj/act 已在 Service 里被 require,backfill 才有目标)
 
 **What it delivers:** 新建租户的 owner/admin/member 自动拿到 devices 权限和 `menu:devices`;**现存所有租户**也能拿到(backfill 幂等),功能上线即用,不破坏其他 perm。
 
 **Acceptance criteria:**
-- [ ] `app/services/permission_service.py`:`DEFAULT_OWNER_PERMS`/`DEFAULT_ADMIN_PERMS` 加 `devices:create/read/update/delete`;`DEFAULT_MEMBER_PERMS` 加 `devices:read`
-- [ ] `DEFAULT_MENU_PERMS["owner"|"admin"|"member"]` 各加 `"devices"` code(对应 `menu:devices`)
-- [ ] 新增 `backfill_devices_perms_for_existing_tenants(db)` 函数:扫 `tenants` 表未软删租户,对每个租户的 owner/admin/member role 幂等补 devices 相关 perm(调 `_upsert_permission` + `RolePermissionRepository.grant` + `sync_role_permissions_to_casbin`),**只动 devices/menu:devices 相关,不碰其他 perm**
-- [ ] `scripts/backfill_devices_perms.py` 独立一次性脚本(async main + DB session 初始化 + 调上述函数 + 打印每租户补了几条),CI 不跑,手动执行一次
-- [ ] `tests/test_devices_api.py` K 章节:K1 造无 devices 策略租户 fixture → K2 跑 backfill → K3 owner 拿全 + `menu:devices` → K4 member 只 `devices:read` + `menu:devices`(防过度授权)→ K5 幂等(再跑 no-op 不报错)→ K6 其他 perm(如 `customers:read`)不受影响
+- [x] `app/services/permission_service.py`:`DEFAULT_OWNER_PERMS`/`DEFAULT_ADMIN_PERMS` 加 `devices:create/read/update/delete`;`DEFAULT_MEMBER_PERMS` 加 `devices:read`
+- [x] `DEFAULT_MENU_PERMS["owner"|"admin"|"member"]` 各加 `"devices"` code(对应 `menu:devices`)
+- [x] 新增 `backfill_devices_perms_for_existing_tenants(db)` 函数:扫 `tenants` 表未软删租户,对每个租户的 owner/admin/member role 幂等补 devices 相关 perm(调 `_upsert_permission` + `RolePermissionRepository.grant` + `sync_role_permissions_to_casbin`),**只动 devices/menu:devices 相关,不碰其他 perm**
+- [x] `scripts/backfill_devices_perms.py` 独立一次性脚本(async main + DB session 初始化 + 调上述函数 + 打印每租户补了几条),CI 不跑,手动执行一次
+- [x] `tests/test_devices_api.py` K 章节:K1 造无 devices 策略租户 fixture → K2 跑 backfill → K3 owner 拿全 + `menu:devices` → K4 member 只 `devices:read` + `menu:devices`(防过度授权)→ K5 幂等(再跑 no-op 不报错)→ K6 其他 perm(如 `customers:read`)不受影响
 
 ---
 
-### 切片 03 — HQ 全景视图(后端,跨租户只读)
+### 切片 03 — HQ 全景视图(后端,跨租户只读)✅ PR #93 commit 9ac9ac4
 
 **Blocked by:** 01(共用 DeviceService 骨架)
 
 **What it delivers:** super_admin 和 hq_staff 能看到跨所有租户的设备全景(带 tenant_name / model_name / customer_name),hq_staff 写端点返 403。
 
 **Acceptance criteria:**
-- [ ] `app/schemas/device.py` 加 `DeviceHqRead`(全景字段:tenant_id/tenant_name/model_name/customer_name)
-- [ ] `app/repositories/device.py` 加 `list_all_with_meta()` / `get_all_with_meta(device_id)`:用 `selectinload(Device.tenant)` / `selectinload(Device.model)` / `selectinload(Device.customer)`(防 N+1,防 async session `MissingGreenlet`),**不复用** `customer.batch_tenant_info`(那是 customer 域耦合)
-- [ ] `app/services/device_service.py`:`list(actor_id, tenant_id, platform_role)` / `get(...)` 接 `platform_role` 参数,用 `is_cross_tenant_viewer(platform_role)` 分叉返 `DeviceHqRead` vs `DeviceRead` + 本租户
-- [ ] `app/api/v1/devices.py`:`GET /` 和 `GET /{id}` **改为端点函数体内分流**(`if is_cross_tenant_viewer(user.platform_role): → 全景`;否则 `await permission_service.require(user.user_id, user.tenant_id, "devices", "read", platform_role=user.platform_role)`),**移除切片 01 临时用的 router-level `require_permission("devices","read")` 依赖**(否则 hq_staff 被直接 403,放行路径在 `permission_service.check:103` 特判)
-- [ ] `tests/test_devices_api.py` HQ 章节:super_admin 拿全景字段且能读跨租户 device、hq_staff 拿全景字段 + 写端点(create/update/delete/bind)返 403
-- [ ] 决策记录:本切片暴露 customers-page 当前 HqView 对 hq_staff 不可见的**既存 bug**,不在本切片修(WIP=1),写入文档影响评估
+- [x] `app/schemas/device.py` 加 `DeviceHqRead`(全景字段:tenant_id/tenant_name/model_name/customer_name)
+- [x] `app/repositories/device.py` 加 `list_all_with_meta()` / `get_all_with_meta(device_id)`:用 `selectinload(Device.tenant)` / `selectinload(Device.model)` / `selectinload(Device.customer)`(防 N+1,防 async session `MissingGreenlet`),**不复用** `customer.batch_tenant_info`(那是 customer 域耦合)
+- [x] `app/services/device_service.py`:`list(actor_id, tenant_id, platform_role)` / `get(...)` 接 `platform_role` 参数,用 `is_cross_tenant_viewer(platform_role)` 分叉返 `DeviceHqRead` vs `DeviceRead` + 本租户
+- [x] `app/api/v1/devices.py`:`GET /` 和 `GET /{id}` **改为端点函数体内分流**(`if is_cross_tenant_viewer(user.platform_role): → 全景`;否则 `await permission_service.require(user.user_id, user.tenant_id, "devices", "read", platform_role=user.platform_role)`),**移除切片 01 临时用的 router-level `require_permission("devices","read")` 依赖**(否则 hq_staff 被直接 403,放行路径在 `permission_service.check:103` 特判)
+- [x] `tests/test_devices_api.py` HQ 章节:super_admin 拿全景字段且能读跨租户 device、hq_staff 拿全景字段 + 写端点(create/update/delete/bind)返 403
+- [x] 决策记录:本切片暴露 customers-page 当前 HqView 对 hq_staff 不可见的**既存 bug**,不在本切片修(WIP=1),写入文档影响评估
 
 ---
 
-### 切片 04 — 客户绑定端点(bind/unbind,幂等语义)
+### 切片 04 — 客户绑定端点(bind/unbind,幂等语义)✅ PR #94 commit 125ad2b
 
 **Blocked by:** 01(共用 `_get_live_device` + DeviceService 骨架)
 
 **What it delivers:** owner/admin 能给设备绑定/解绑客户。bind 同 customer 幂等返 `already_bound:true`,bind 跨租户/不存在 customer → 400,unbind 无绑定时幂等返 204。
 
 **Acceptance criteria:**
-- [ ] `app/schemas/device.py` 加 `DeviceBindRequest(customer_id: str | None)` + `DeviceBindResponse(device_id, customer_id, already_bound: bool)`
-- [ ] `app/services/device_service.py`:
+- [x] `app/schemas/device.py` 加 `DeviceBindRequest(customer_id: str | None)` + `DeviceBindResponse(device_id, customer_id, already_bound: bool)`
+- [x] `app/services/device_service.py`:
   - `bind(device_id, tenant_id, customer_id, actor_id, platform_role)` → 返 `(device, already_bound: bool)`:`_assert_customer_in_tenant`(走 `CustomerProfileRepository.get_for_tenant`,失败 BizError 400);`device.customer_id == customer_id` 则 `already_bound=True` 不写库,否则覆盖 `already_bound=False`;`require("devices","update")`
   - `unbind(device_id, tenant_id, actor_id, platform_role)`:set `customer_id=None`,**无绑定时 no-op 不抛错**,`require("devices","update")`
-- [ ] `app/api/v1/devices.py`:
+- [x] `app/api/v1/devices.py`:
   - `POST /{id}/bind` → **200**(body: `DeviceBindResponse`,**不是 201**,device 资源已存在,bind 是赋值动作),`Depends(require_permission("devices","update"))`
   - `DELETE /{id}/bind` → **204**(无绑定也 204,DELETE 幂等),同上守卫
-- [ ] `tests/test_devices_api.py` F 项全 8 条:bind 成功 200 + `already_bound:false`、重复 bind 同 customer → 200 + `already_bound:true`、bind 不同 customer 覆盖 → 200、unbind 成功 204、unbind 未绑定 device → 204(非 404)、跨租户 customer bind → 400、不存在 customer bind → 400、member bind → 403
+- [x] `tests/test_devices_api.py` F 项全 8 条:bind 成功 200 + `already_bound:false`、重复 bind 同 customer → 200 + `already_bound:true`、bind 不同 customer 覆盖 → 200、unbind 成功 204、unbind 未绑定 device → 204(非 404)、跨租户 customer bind → 400、不存在 customer bind → 400、member bind → 403
 
 ---
 

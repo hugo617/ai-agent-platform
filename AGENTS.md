@@ -25,6 +25,7 @@
    - 完整数据见 [`feature_list.json`](feature_list.json)(完整真相源,CI/审计用);历史归档见 [`harness/docs/archive/`](harness/docs/archive/)。
    - **若无 `not_started`**:读归档复盘历史,或等用户排新需求(不要误以为 active.json 损坏)。
    - **若 active.json 过时或缺失**:回退读完整 [`feature_list.json`](feature_list.json),然后跑 `./scripts/sync-active-features.sh` 刷新。
+   - **判断在哪一层(EP1/EP2/EP3)**:选定 feature 后,读其 `plan-<feature>.md` 看有无「实施切片」章节 —— 有未勾 checklist → 在 **EP3**(从 frontier 切片接 `/implement`);无切片章 → 在 **EP2**(跑 `/grill→/to-spec→/to-tickets` 拆切片);plan 文档不存在 → EP1 或 EP2 起点。若 progress.md 顶部有「当前 EP2 回环」断点记录,从断点接。详见 [`harness/docs/three-tier-workflow.md`](harness/docs/three-tier-workflow.md)。
 4. `git log --oneline -5` —— 看最近发生了什么。
 5. 运行 `./init.sh` —— 装依赖 + 跑基础验证(ruff + pytest,SQLite 内存库,秒级)。
 6. **如果基础验证失败,先修基础,不要在坏起点上叠新功能。**
@@ -56,6 +57,8 @@
 ---
 
 ## 🤖 自动触发规则(task → skill 路由表)
+
+**三层入口**:任务流程分 EP1(大方向→多任务)/ EP2(大任务→全切片,**必须一个回环内完成**)/ EP3(切片→实施→提交,可跨多会话)三层,先定层再定步。详见 [`harness/docs/three-tier-workflow.md`](harness/docs/three-tier-workflow.md)。
 
 agent 不再凭自觉用 skill,按任务状态变化硬触发(详见
 [`harness/docs/task-workflow.md`](harness/docs/task-workflow.md) §7,含 mermaid 流程图):

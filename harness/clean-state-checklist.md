@@ -14,12 +14,12 @@
 
 ---
 
-## 清单(8 项)
+## 清单(9 项)
 
 - [ ] **基础验证可用**:`./init.sh` 跑过(`ruff check` + `pytest` 全绿)
 - [ ] **进度已记录**:`progress.md` 已追加本轮 Session 记录(目标/已完成/验证/下一步)
 - [ ] **功能状态真实**:`feature_list.json` 的状态真实反映 passing 和「未验证」的边界
-  —— 没跑完整验证的绝不能标 passing(没有假 passing)
+  —— 没跑完整验证的绝不能标 passing(没有假 passing)。多切片 feature 第一个切片开做即 `in_progress`(非 not_started)
 - [ ] **active 视图已同步**:若本期有 feature 状态变化(新增/状态流转/归档),跑过
   `./scripts/sync-active-features.sh` 刷新 `feature_list.active.json`
   —— 漏跑代价:active.json 过时,token 节省失效;**无数据丢失**,agent 兜底可读完整 `feature_list.json`
@@ -28,6 +28,10 @@
 - [ ] **遵守架构铁律**:改动符合分层约束(Controller → Service → Repository → Model 单向)、
   多租户过滤在 Repository 层(`TenantScopedRepository`)、软删除带 `is_deleted=False`
 - [ ] **可无缝接手**:下一轮会话无需人工修复即可 `./init.sh` 继续工作
+- [ ] **切片 checklist 已勾选**:若本次完成(或推进)了某 `plan-<feature>.md` 的切片,
+  `/code-review` 通过后、commit 前已把该切片的 acceptance criteria 从 `- [ ]` 改 `- [x]`,
+  并在切片标题行追加 `✅ PR #NN commit <hash>`(切片级真相源,见
+  [`docs/three-tier-workflow.md`](docs/three-tier-workflow.md) §4/§5)。**末切片完成时,另跑 feature 收尾仪式**(evidence + status=passing + sync)
 
 ---
 
@@ -43,6 +47,7 @@
 | 有调试残留 | 现在删掉。`git diff` 检查一遍。 |
 | 违反铁律 | 回退改动,重走分层。铁律见 `AGENTS.md`。 |
 | 不可接手 | 把「下轮需要手动做什么」写进 progress.md 的风险段。 |
+| 切片 checklist 未勾 | 现在就勾(`/code-review` 通过的切片 acceptance criteria 改 `- [x]` + 标题追加 `✅ PR #NN commit`)。不勾 = 切片状态真相源失真,下轮 agent 会误判进度。 |
 
 ---
 

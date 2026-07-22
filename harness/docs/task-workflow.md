@@ -79,6 +79,16 @@
 agent 天然"顺便多改",每个改动稀释注意力。所以钉死:**同时只允许一个 `in_progress`**。
 当前任务端到端验证通过前,不开新任务。
 
+### 多切片 feature 的状态语义
+
+一个 feature 拆成 N 个切片(见 [`three-tier-workflow.md`](./three-tier-workflow.md))时,`status` 字段按 feature 级流转,**不按切片级**:
+
+- **第一个切片开做** → status 立即 `in_progress`(**不是 `not_started`**)。理由:保持 `not_started` 会让新会话 agent 读 active.json 时误判"没开始"而重跑 EP2 grill
+- **切片推进中** → status 保持 `in_progress`,切片级进度看 `plan-<feature>.md` 的 checklist(切片级真相源,见 three-tier §5)
+- **最后一个切片完成 + 跑完 feature 收尾仪式** → status 才 `passing`
+
+> 切片级状态(切片 01 ✅ / 04 ⏳)不在 feature_list.json 里,而在 plan 文档的 acceptance criteria checklist(`- [ ]` / `- [x]`)。
+
 ### 完成定义(4 条全满足才算完成)
 1. 目标行为已实现;
 2. 要求的验证真的跑过(`./init.sh` 全过,不是"看起来没问题");
@@ -170,6 +180,8 @@ harness/
 ---
 
 ## 7. 自动触发规则(task → skill 路由表)
+
+> **先判断三层入口**:EP1(大方向→多任务)/ EP2(大任务→全切片)/ EP3(切片→实施)—— 详见 [`three-tier-workflow.md`](./three-tier-workflow.md)。下表的「下一步 skill」是单步推荐,先定层再定步。
 
 agent 不再凭自觉用 skill,按任务状态变化硬触发(双保险:本表 + `harness-router` skill):
 
