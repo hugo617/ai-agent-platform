@@ -347,7 +347,7 @@ Device:
 
 ---
 
-### 切片 05 — 前端地基:types/endpoints/queries + isHQStaff + 路由 ✅ 分支 feat/devices-frontend-foundation-slice-05(PR 待开)
+### 切片 05 — 前端地基:types/endpoints/queries + isHQStaff + 路由 ✅ PR #96 commit 1fa192b
 
 **Blocked by:** 03(`DeviceHqRead` schema 定型),04(`DeviceBindResponse` schema 定型)
 

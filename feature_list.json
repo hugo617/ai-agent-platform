@@ -1555,7 +1555,7 @@
         "切片 02 权限 seed + 老租户 backfill(三档默认 perms + 菜单项 + 一次性 backfill)✅ PR #92 commit 2043dec(Session 125,已合并 main)",
         "切片 03 HQ 全景视图后端(DeviceHqRead + selectinload + platform_role 分叉 + 端点内分流)✅ PR #93 commit 9ac9ac4(Session 126,已合并 main)",
         "切片 04 客户绑定端点 bind/unbind(幂等语义 + already_bound 标记 + 跨租户/不存在 customer 400)✅ PR #94 commit 125ad2b(Session 127,已合并 main)",
-        "切片 05 前端地基(7 类型 + 8 endpoints + 7 hooks/qk + isHQStaff + /devices 路由 + nav 项 + stub 页;build 3.28s 通过 + oxlint 0 warnings)✅ Session 128(分支 feat/devices-frontend-foundation-slice-05,PR 待开,合并后回填 hash)",
+        "切片 05 前端地基(7 类型 + 8 endpoints + 7 hooks/qk + isHQStaff + /devices 路由 + nav 项 + stub 页;build 3.28s 通过 + oxlint 0 warnings)✅ PR #96 commit 1fa192b(Session 128,已合并 main)",
         "进行中:切片 06-07(前端 StoreView/HqView + 整体验证收尾)待做。本 feature 7 个切片中 5 个已完成,切片级状态真相源见 plan-devices-crud-ui.md 的 acceptance criteria checklist"
       ]
     },
