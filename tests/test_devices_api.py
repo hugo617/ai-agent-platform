@@ -1,7 +1,8 @@
 """Device API tests — slice 01 (within-store CRUD + integrity guards) + slice 02
-permission backfill (K chapter) + slice 03 HQ panorama (E chapter).
+permission backfill (K chapter) + slice 03 HQ panorama (E chapter) + slice 04
+bind/unbind (F chapter).
 
-Chapter layout (matches plan-devices-crud-ui.md §8 + §10 + slice 03):
+Chapter layout (matches plan-devices-crud-ui.md §8 + §10 + slice 03/04):
 - A. owner/admin CRUD — create + list + get + update + delete, full-field assertions
 - B. cross-tenant isolation — devices in tnt-iso-2 invisible; GET/PUT/DELETE → 404
 - C. (tenant_id, serial_number) uniqueness — duplicate 400, reusable after soft delete
@@ -9,6 +10,15 @@ Chapter layout (matches plan-devices-crud-ui.md §8 + §10 + slice 03):
 - E. HQ panorama (slice 03) — super_admin + hq_staff cross-tenant read with the
   ``DeviceHqRead`` panorama fields (tenant_name / model_name / customer_name);
   hq_staff writes (create/update/delete) → 403.
+- F. bind/unbind (slice 04):
+  - F1 bind success → 200 + already_bound:false
+  - F2 bind same customer again → 200 + already_bound:true (idempotent, no write)
+  - F3 bind a different customer (overwrite) → 200 + already_bound:false
+  - F4 unbind success → 204
+  - F5 unbind a device with no binding → 204 (idempotent no-op, NOT 404)
+  - F6 bind a customer that exists only in another tenant → 400 BizError
+  - F7 bind a nonexistent customer → 400 BizError
+  - F8 member bind → 403 (no devices:update)
 - G. status transitions — active↔maintenance↔retired all legal; bad value → 422
 - H. model_id integrity (service-layer guard, NOT FK RESTRICT which is a dead-bolt):
   - H1 create with soft-deleted model_id → 400 BizError
@@ -23,8 +33,6 @@ Chapter layout (matches plan-devices-crud-ui.md §8 + §10 + slice 03):
   - K4 member gets devices:read + menu:devices but NOT devices:create
   - K5 idempotent: re-run backfill, no error, no duplicate grants
   - K6 other existing perms (customers:read) untouched
-
-Slice 04 (bind/unbind) lands in its own slice.
 
 Test-organization note (matches test_device_models_api.py): each test uses ONE
 client fixture. Mixing super_admin_client with app_client/member_client in the
@@ -95,6 +103,39 @@ async def _seed_customer(db_session, *, name, identity_key, **overrides):
     db_session.add(customer)
     await db_session.commit()
     return customer
+
+
+async def _seed_customer_with_profile(
+    db_session, *, tenant_id, name, identity_key=None, **overrides
+):
+    """Insert a global Customer + a live ``CustomerProfile`` in ``tenant_id``.
+
+    This is what the bind endpoint actually validates against — bind checks
+    "does this ``customer_id`` have a live ``CustomerProfile`` in *my*
+    tenant" (via ``CustomerProfileRepository.get_by_customer_tenant``), so a
+    bare global Customer with no profile in this tenant is unbinddable.
+    Returns ``(customer, profile)``.
+    """
+    import uuid
+
+    from app.models.customer import CustomerProfile
+
+    if identity_key is None:
+        # identity_key is globally unique among live rows; keep it unique so
+        # multiple F-chapter customers don't collide on the partial index.
+        identity_key = f"phone-{uuid.uuid4().hex}"
+    customer = await _seed_customer(
+        db_session, name=name, identity_key=identity_key
+    )
+    profile = CustomerProfile(
+        customer_id=customer.id,
+        tenant_id=tenant_id,
+        status=overrides.pop("status", "active"),
+        **overrides,
+    )
+    db_session.add(profile)
+    await db_session.commit()
+    return customer, profile
 
 
 # ----------------------------------------------------- A. owner/admin CRUD
@@ -546,6 +587,223 @@ async def test_hq_get_soft_deleted_device_returns_404(
         f"/api/v1/devices/{device.id}", headers=AUTH
     )
     assert resp.status_code == 404
+
+
+# ------------------------------------------------ F. bind/unbind (slice 04)
+#
+# Bind is a POST-to-sub-resource action: ``POST /devices/{id}/bind`` returns
+# **200, not 201** (the device already exists; bind is an assignment). The
+# body carries ``already_bound`` so a client can tell "newly bound" from
+# "idempotent repeat of the same customer". unbind (``DELETE``) returns 204
+# even on an unbound device — DELETE is idempotent by REST convention, which
+# saves the client a GET-then-DELETE round-trip.
+#
+# Bind guard is ``require_permission("devices", "update")`` (owner/admin),
+# NOT ``require_super_admin``: devices is a tenant-level resource, binding a
+# customer is a within-store business action (group attach uses super_admin
+# only because group is platform-level — don't conflate).
+#
+# Bind requires the ``customer_id`` to have a *live* ``CustomerProfile`` in
+# the caller's tenant (Customer is a platform-level identity; the per-tenant
+# profile is what makes them "this store's customer"). A nonexistent customer
+# and a customer that exists only in another tenant both collapse to the same
+# 400 — no enumeration leak (mirrors the device cross-tenant → 404 defence).
+
+
+async def _seed_device_in_test_tenant(db_session, test_env, *, serial):
+    """F-chapter helper: one model + one unbound device in test_env's tenant.
+
+    F tests mostly start from an unbound device and a customer-with-profile,
+    so this keeps the boilerplate in one place. The device has ``customer_id
+    = None`` — bind tests assert the before/after.
+    """
+    model = await _seed_model(db_session, name=f"F-Model-{serial}")
+    device = await _seed_device(
+        db_session,
+        tenant_id=test_env.tenant_id,
+        model_id=model.id,
+        serial=serial,
+    )
+    return device
+
+
+@pytest.mark.asyncio
+async def test_f1_bind_success_200_already_bound_false(
+    app_client, db_session, test_env
+):
+    """F1: bind an unbound device → 200 + ``already_bound: false``. A new
+    binding was written."""
+    device = await _seed_device_in_test_tenant(db_session, test_env, serial="F1")
+    customer, _profile = await _seed_customer_with_profile(
+        db_session, tenant_id=test_env.tenant_id, name="F1-客户"
+    )
+    resp = await app_client.post(
+        f"/api/v1/devices/{device.id}/bind",
+        json={"customer_id": customer.id},
+        headers=AUTH,
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["device_id"] == device.id
+    assert body["customer_id"] == customer.id
+    assert body["already_bound"] is False
+    # The binding actually persisted.
+    get = await app_client.get(f"/api/v1/devices/{device.id}", headers=AUTH)
+    assert get.json()["customer_id"] == customer.id
+
+
+@pytest.mark.asyncio
+async def test_f2_bind_same_customer_idempotent_200_already_bound_true(
+    app_client, db_session, test_env
+):
+    """F2: bind the SAME customer twice → second call is 200 +
+    ``already_bound: true`` and writes nothing (idempotent)."""
+    device = await _seed_device_in_test_tenant(db_session, test_env, serial="F2")
+    customer, _profile = await _seed_customer_with_profile(
+        db_session, tenant_id=test_env.tenant_id, name="F2-客户"
+    )
+    first = await app_client.post(
+        f"/api/v1/devices/{device.id}/bind",
+        json={"customer_id": customer.id},
+        headers=AUTH,
+    )
+    assert first.json()["already_bound"] is False
+    # Second bind, same customer → idempotent no-op.
+    second = await app_client.post(
+        f"/api/v1/devices/{device.id}/bind",
+        json={"customer_id": customer.id},
+        headers=AUTH,
+    )
+    assert second.status_code == 200, second.text
+    assert second.json()["already_bound"] is True
+    assert second.json()["customer_id"] == customer.id
+
+
+@pytest.mark.asyncio
+async def test_f3_bind_different_customer_overwrites_200(
+    app_client, db_session, test_env
+):
+    """F3: bind customer A, then bind customer B → second call is 200 +
+    ``already_bound: false`` (overwrite, not idempotent). Binding now points
+    at B."""
+    device = await _seed_device_in_test_tenant(db_session, test_env, serial="F3")
+    cust_a, _pa = await _seed_customer_with_profile(
+        db_session, tenant_id=test_env.tenant_id, name="F3-A"
+    )
+    cust_b, _pb = await _seed_customer_with_profile(
+        db_session, tenant_id=test_env.tenant_id, name="F3-B"
+    )
+    await app_client.post(
+        f"/api/v1/devices/{device.id}/bind",
+        json={"customer_id": cust_a.id},
+        headers=AUTH,
+    )
+    resp = await app_client.post(
+        f"/api/v1/devices/{device.id}/bind",
+        json={"customer_id": cust_b.id},
+        headers=AUTH,
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["already_bound"] is False
+    assert body["customer_id"] == cust_b.id
+    get = await app_client.get(f"/api/v1/devices/{device.id}", headers=AUTH)
+    assert get.json()["customer_id"] == cust_b.id
+
+
+@pytest.mark.asyncio
+async def test_f4_unbind_success_204(app_client, db_session, test_env):
+    """F4: unbind a bound device → 204, and the device now has no customer."""
+    device = await _seed_device_in_test_tenant(db_session, test_env, serial="F4")
+    customer, _profile = await _seed_customer_with_profile(
+        db_session, tenant_id=test_env.tenant_id, name="F4-客户"
+    )
+    await app_client.post(
+        f"/api/v1/devices/{device.id}/bind",
+        json={"customer_id": customer.id},
+        headers=AUTH,
+    )
+    resp = await app_client.delete(
+        f"/api/v1/devices/{device.id}/bind", headers=AUTH
+    )
+    assert resp.status_code == 204
+    get = await app_client.get(f"/api/v1/devices/{device.id}", headers=AUTH)
+    assert get.json()["customer_id"] is None
+
+
+@pytest.mark.asyncio
+async def test_f5_unbind_unbound_device_204_idempotent(
+    app_client, db_session, test_env
+):
+    """F5: unbind a device that was NEVER bound → 204 (DELETE idempotent
+    no-op, NOT 404). Avoids forcing the client to GET-then-DELETE."""
+    device = await _seed_device_in_test_tenant(db_session, test_env, serial="F5")
+    resp = await app_client.delete(
+        f"/api/v1/devices/{device.id}/bind", headers=AUTH
+    )
+    assert resp.status_code == 204
+
+
+@pytest.mark.asyncio
+async def test_f6_bind_customer_from_other_tenant_400(
+    app_client, db_session, test_env
+):
+    """F6: bind a customer whose only ``CustomerProfile`` is in ANOTHER
+    tenant → 400. The customer identity exists globally, but it's not "this
+    store's customer" → bind refused (and indistinguishable from a
+    nonexistent customer — no enumeration)."""
+    import uuid
+
+    from app.models.tenant import Tenant
+
+    device = await _seed_device_in_test_tenant(db_session, test_env, serial="F6")
+    # A customer with a profile in a DIFFERENT tenant.
+    other_tenant_id = f"tnt-f6-{uuid.uuid4().hex}"
+    db_session.add(Tenant(id=other_tenant_id, name="F6 Other Tenant"))
+    await db_session.commit()
+    customer, _profile = await _seed_customer_with_profile(
+        db_session, tenant_id=other_tenant_id, name="F6-外店客户"
+    )
+    resp = await app_client.post(
+        f"/api/v1/devices/{device.id}/bind",
+        json={"customer_id": customer.id},
+        headers=AUTH,
+    )
+    assert resp.status_code == 400, resp.text
+
+
+@pytest.mark.asyncio
+async def test_f7_bind_nonexistent_customer_400(app_client, db_session, test_env):
+    """F7: bind a customer id that doesn't exist at all → 400. Collapses to
+    the same BizError as F6 (no way to tell "exists elsewhere" from "never
+    existed" — enumeration defence)."""
+    device = await _seed_device_in_test_tenant(db_session, test_env, serial="F7")
+    resp = await app_client.post(
+        f"/api/v1/devices/{device.id}/bind",
+        json={"customer_id": "cust-does-not-exist"},
+        headers=AUTH,
+    )
+    assert resp.status_code == 400, resp.text
+
+
+@pytest.mark.asyncio
+async def test_f8_member_bind_403(member_client, db_session, test_env):
+    """F8: member has no ``devices:update`` → bind is 403 (and unbind too).
+    member is read-only across the whole devices surface, bind included."""
+    device = await _seed_device_in_test_tenant(db_session, test_env, serial="F8")
+    customer, _profile = await _seed_customer_with_profile(
+        db_session, tenant_id=test_env.tenant_id, name="F8-客户"
+    )
+    resp = await member_client.post(
+        f"/api/v1/devices/{device.id}/bind",
+        json={"customer_id": customer.id},
+        headers=AUTH,
+    )
+    assert resp.status_code == 403
+    resp = await member_client.delete(
+        f"/api/v1/devices/{device.id}/bind", headers=AUTH
+    )
+    assert resp.status_code == 403
 
 
 # ----------------------------------------- G. status transitions + bad value
