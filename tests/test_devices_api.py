@@ -1,11 +1,14 @@
 """Device API tests — slice 01 (within-store CRUD + integrity guards) + slice 02
-permission backfill (K chapter).
+permission backfill (K chapter) + slice 03 HQ panorama (E chapter).
 
-Chapter layout (matches plan-devices-crud-ui.md §8 + §10):
+Chapter layout (matches plan-devices-crud-ui.md §8 + §10 + slice 03):
 - A. owner/admin CRUD — create + list + get + update + delete, full-field assertions
 - B. cross-tenant isolation — devices in tnt-iso-2 invisible; GET/PUT/DELETE → 404
 - C. (tenant_id, serial_number) uniqueness — duplicate 400, reusable after soft delete
 - D. permission matrix — member read-only (write → 403); unauth → 401
+- E. HQ panorama (slice 03) — super_admin + hq_staff cross-tenant read with the
+  ``DeviceHqRead`` panorama fields (tenant_name / model_name / customer_name);
+  hq_staff writes (create/update/delete) → 403.
 - G. status transitions — active↔maintenance↔retired all legal; bad value → 422
 - H. model_id integrity (service-layer guard, NOT FK RESTRICT which is a dead-bolt):
   - H1 create with soft-deleted model_id → 400 BizError
@@ -21,7 +24,7 @@ Chapter layout (matches plan-devices-crud-ui.md §8 + §10):
   - K5 idempotent: re-run backfill, no error, no duplicate grants
   - K6 other existing perms (customers:read) untouched
 
-Slice 03 (HQ panorama) / slice 04 (bind/unbind) land in their own slices.
+Slice 04 (bind/unbind) lands in its own slice.
 
 Test-organization note (matches test_device_models_api.py): each test uses ONE
 client fixture. Mixing super_admin_client with app_client/member_client in the
@@ -73,6 +76,25 @@ async def _seed_device(db_session, *, tenant_id, model_id, serial, **overrides):
     db_session.add(device)
     await db_session.commit()
     return device
+
+
+async def _seed_customer(db_session, *, name, identity_key, **overrides):
+    """Insert a global Customer row directly (for the HQ ``customer_name`` field).
+
+    Devices reference the *global* Customer (not CustomerProfile), so the HQ
+    panorama's ``customer_name`` comes from ``Customer.name``. Seeded directly
+    because creating one through the customers API would pull in the full
+    profile machinery and tenant-scope the write — we just need an identity
+    row to bind a device to.
+    """
+    from app.models.customer import Customer
+
+    defaults = {"name": name, "identity_key": identity_key}
+    defaults.update(overrides)
+    customer = Customer(**defaults)
+    db_session.add(customer)
+    await db_session.commit()
+    return customer
 
 
 # ----------------------------------------------------- A. owner/admin CRUD
@@ -343,6 +365,187 @@ async def test_unauthenticated_401(test_env):
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         resp = await client.get("/api/v1/devices/")
         assert resp.status_code == 401
+
+
+# ----------------------------------------- E. HQ panorama (slice 03)
+#
+# super_admin and hq_staff are cross-tenant viewers: ``GET /`` and
+# ``GET /{id}`` return the ``DeviceHqRead`` panorama across EVERY tenant,
+# carrying ``tenant_name`` / ``model_name`` / ``customer_name``. hq_staff is
+# read-only — writes (create/update/delete) fall through to casbin where the
+# member tenant role (no devices:create/update/delete) → 403.
+#
+# Each test uses ONE client fixture (see the file header note): super_admin
+# tests use ``super_admin_client``, hq_staff tests use ``hq_staff_client``.
+# Cross-tenant device data is seeded directly via db_session (the client's
+# tenant is test_env.tenant_id; we add a second tenant + device to prove the
+# panorama sees across the boundary).
+
+
+async def _seed_two_tenant_devices(db_session, test_env):
+    """Seed a model + a customer + one device in EACH of two tenants.
+
+    Returns ``(own_device, other_device, other_tenant_id, customer, model)``
+    so E-chapter tests can assert cross-tenant visibility + panorama fields
+    without each test re-doing the setup. ``own_device`` is bound to the
+    global Customer so ``customer_name`` is non-null on it; ``other_device``
+    has no binding (``customer_name`` is None — also worth asserting).
+    """
+    import uuid
+
+    from app.models.tenant import Tenant
+
+    model = await _seed_model(db_session, name="HQ-Pano-Model")
+    customer = await _seed_customer(
+        db_session, name="张三", identity_key="phone-13800000000"
+    )
+    # Device in the caller's own tenant (test_env.tenant_id), customer-bound.
+    own_device = await _seed_device(
+        db_session,
+        tenant_id=test_env.tenant_id,
+        model_id=model.id,
+        serial="HQ-OWN",
+        customer_id=customer.id,
+    )
+    # Device in a SECOND tenant (no customer binding).
+    other_tenant_id = f"tnt-hq-{uuid.uuid4().hex}"
+    db_session.add(Tenant(id=other_tenant_id, name="HQ Other Tenant"))
+    await db_session.commit()
+    other_device = await _seed_device(
+        db_session,
+        tenant_id=other_tenant_id,
+        model_id=model.id,
+        serial="HQ-OTHER",
+    )
+    return own_device, other_device, other_tenant_id, customer, model
+
+
+@pytest.mark.asyncio
+async def test_super_admin_list_returns_hq_panorama(
+    super_admin_client, db_session, test_env
+):
+    """super_admin ``GET /`` returns ``DeviceHqRead`` across every tenant —
+    including the panorama fields tenant_name / model_name / customer_name,
+    and devices from tenants other than the caller's own."""
+    own, other, other_tenant_id, customer, model = await _seed_two_tenant_devices(
+        db_session, test_env
+    )
+    resp = await super_admin_client.get("/api/v1/devices/", headers=AUTH)
+    assert resp.status_code == 200, resp.text
+    items = {d["id"]: d for d in resp.json()}
+    # Both tenants' devices are visible (cross-tenant panorama).
+    assert own.id in items
+    assert other.id in items
+    # Panorama fields populated on the own-tenant device.
+    own_row = items[own.id]
+    assert own_row["tenant_id"] == test_env.tenant_id
+    assert own_row["tenant_name"] == "Test Tenant"
+    assert own_row["model_name"] == model.name
+    assert own_row["customer_name"] == customer.name
+    # The other-tenant device carries the other tenant's name; no customer
+    # binding → customer_name is None (not omitted, not error).
+    other_row = items[other.id]
+    assert other_row["tenant_id"] == other_tenant_id
+    assert other_row["tenant_name"] == "HQ Other Tenant"
+    assert other_row["model_name"] == model.name
+    assert other_row["customer_name"] is None
+
+
+@pytest.mark.asyncio
+async def test_super_admin_get_one_returns_hq_panorama(
+    super_admin_client, db_session, test_env
+):
+    """super_admin ``GET /{id}`` on ANOTHER tenant's device returns 200 +
+    ``DeviceHqRead`` (the HQ viewer can read any tenant's device; no 404)."""
+    _own, other, _other_tenant_id, _customer, model = (
+        await _seed_two_tenant_devices(db_session, test_env)
+    )
+    resp = await super_admin_client.get(
+        f"/api/v1/devices/{other.id}", headers=AUTH
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["id"] == other.id
+    assert body["model_name"] == model.name
+    assert body["tenant_name"] == "HQ Other Tenant"
+    # ``customer_name`` is present even on an unbound device (None, not absent).
+    assert body["customer_name"] is None
+
+
+@pytest.mark.asyncio
+async def test_hq_staff_list_returns_hq_panorama(
+    hq_staff_client, db_session, test_env
+):
+    """hq_staff sees the same panorama as super_admin on reads — the bypass
+    is ``permission_service.check``'s ``hq_staff`` + ``read`` short-circuit.
+    This is the core regression guard for slice 03: before slice 03, the
+    router-level ``require_permission("devices","read")`` 403'd hq_staff."""
+    own, other, _other_tenant_id, customer, model = (
+        await _seed_two_tenant_devices(db_session, test_env)
+    )
+    resp = await hq_staff_client.get("/api/v1/devices/", headers=AUTH)
+    assert resp.status_code == 200, resp.text
+    items = {d["id"]: d for d in resp.json()}
+    assert own.id in items and other.id in items
+    own_row = items[own.id]
+    assert own_row["tenant_name"] == "Test Tenant"
+    assert own_row["model_name"] == model.name
+    assert own_row["customer_name"] == customer.name
+
+
+@pytest.mark.asyncio
+async def test_hq_staff_writes_are_403(hq_staff_client, db_session, test_env):
+    """hq_staff is read-only: create/update/delete all 403.
+
+    The hq_staff fixture binds the user to the ``member`` tenant role (no
+    devices:create/update/delete in casbin), and ``permission_service.check``
+    only short-circuits hq_staff for ``act == "read"`` — writes fall through
+    to casbin and are denied. This is the WIP=1 boundary: the HQ viewer can
+    SEE everything but touch nothing."""
+    model = await _seed_model(db_session, name="HQ-Write-Model")
+    device = await _seed_device(
+        db_session,
+        tenant_id=test_env.tenant_id,
+        model_id=model.id,
+        serial="HQ-WRITE",
+    )
+    resp = await hq_staff_client.post(
+        "/api/v1/devices/",
+        json={"model_id": model.id, "serial_number": "HQ-NEW"},
+        headers=AUTH,
+    )
+    assert resp.status_code == 403
+    resp = await hq_staff_client.put(
+        f"/api/v1/devices/{device.id}",
+        json={"status": "retired"},
+        headers=AUTH,
+    )
+    assert resp.status_code == 403
+    resp = await hq_staff_client.delete(
+        f"/api/v1/devices/{device.id}", headers=AUTH
+    )
+    assert resp.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_hq_get_soft_deleted_device_returns_404(
+    super_admin_client, db_session, test_env
+):
+    """HQ ``GET /{id}`` on a soft-deleted device → 404 (the panorama excludes
+    soft-deleted rows, same as the within-store path). Guards against the HQ
+    branch accidentally surfacing tombstones."""
+    model = await _seed_model(db_session, name="HQ-SoftDel-Model")
+    device = await _seed_device(
+        db_session,
+        tenant_id=test_env.tenant_id,
+        model_id=model.id,
+        serial="HQ-SOFTDEL",
+        is_deleted=True,
+    )
+    resp = await super_admin_client.get(
+        f"/api/v1/devices/{device.id}", headers=AUTH
+    )
+    assert resp.status_code == 404
 
 
 # ----------------------------------------- G. status transitions + bad value

@@ -35,6 +35,7 @@ an IoT online/offline signal — see the feature notes in ``feature_list.json``.
 
 import uuid
 from datetime import datetime
+from typing import TYPE_CHECKING
 
 from sqlalchemy import (
     Boolean,
@@ -46,7 +47,17 @@ from sqlalchemy import (
     func,
     text,
 )
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+if TYPE_CHECKING:
+    # Forward declarations for the relationship type hints below. These are
+    # never imported at runtime — SQLAlchemy resolves the string class names
+    # through its declarative registry at mapper-configure time. Kept under
+    # TYPE_CHECKING so static checkers (ruff F821) see the names without
+    # creating an import cycle (customer/tenant/device_model ↔ device).
+    from app.models.customer import Customer
+    from app.models.device_model import DeviceModel
+    from app.models.tenant import Tenant
 
 from app.core.database import Base
 
@@ -121,6 +132,22 @@ class Device(Base):
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    # ---- relationships (read-only navigation; writes go through FK columns) ----
+    # Declared so the HQ panorama repository can ``selectinload`` them and dodge
+    # the async-session ``MissingGreenlet`` that a lazy attribute access would
+    # raise. These are intentionally NOT ``back_populates`` — the target models
+    # don't need a reverse collection, and adding one would couple the customer
+    # / tenant / device_model domains to devices for no reader's benefit.
+    tenant: Mapped["Tenant"] = relationship(
+        primaryjoin="Device.tenant_id == Tenant.id", foreign_keys=[tenant_id]
+    )
+    model: Mapped["DeviceModel"] = relationship(
+        primaryjoin="Device.model_id == DeviceModel.id", foreign_keys=[model_id]
+    )
+    customer: Mapped["Customer | None"] = relationship(
+        primaryjoin="Device.customer_id == Customer.id", foreign_keys=[customer_id]
     )
 
     def __repr__(self) -> str:

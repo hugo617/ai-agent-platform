@@ -1,9 +1,19 @@
 """Device service — tenant-scoped CRUD over device instances.
 
-Slice 01 scope: within-store CRUD only. owner/admin can create/read/update/
-delete devices in their own tenant; member is read-only; cross-tenant access
-(HQ panorama for super_admin / hq_staff) and customer binding (bind/unbind)
-land in slices 03 / 04.
+Reads branch on the caller's platform role:
+- **Within-store** (owner / admin / member): ``require_permission("devices",
+  "read")`` then ``DeviceRead`` scoped to the caller's tenant (member is
+  read-only — the casbin grant only includes ``devices:read``).
+- **HQ panorama** (super_admin / hq_staff): no per-tenant permission check
+  (hq_staff has no tenant role at all) — instead the bypass lives in
+  ``permission_service.check`` (``platform_role == "hq_staff" and act ==
+  "read"`` short-circuits to True, ``super_admin`` bypasses everything).
+  Returns ``DeviceHqRead`` across every tenant with tenant/model/customer
+  names pre-loaded (selectinload, see ``DeviceRepository.list_all_with_meta``).
+
+Writes (create / update / delete) are unchanged from slice 01: they always
+require ``devices:<act>`` in the caller's tenant, so hq_staff (no tenant
+role) is 403 — the HQ viewer is read-only by construction.
 
 Three integrity guards worth calling out (see plan-devices-crud-ui.md §3
 关键边界 #1):
@@ -31,11 +41,12 @@ from app.repositories.device import DeviceRepository
 from app.repositories.device_model import DeviceModelRepository
 from app.schemas.device import (
     DeviceCreate,
+    DeviceHqRead,
     DeviceRead,
     DeviceUpdate,
 )
 from app.services.errors import BizError, NotFoundError
-from app.services.permission_service import permission_service
+from app.services.permission_service import is_cross_tenant_viewer, permission_service
 
 
 class DeviceService:
@@ -51,6 +62,26 @@ class DeviceService:
     async def _to_read(self, device: Device) -> DeviceRead:
         data = {c.name: getattr(device, c.name) for c in device.__table__.columns}
         return DeviceRead.model_validate(data)
+
+    async def _to_hq_read(self, device: Device) -> DeviceHqRead:
+        """Build the HQ panorama DTO from a device whose tenant/model/customer
+        relationships are already loaded (by ``list_all_with_meta`` /
+        ``get_all_with_meta``). Reading ``device.tenant.name`` here is safe
+        because the repository ``selectinload``-ed them — no lazy load, no
+        ``MissingGreenlet``.
+
+        ``*_name`` fall back to None if the relationship is unloaded or the
+        related row is gone (soft-deleted tenant/model, or no customer
+        binding) — the HQ view still shows the device.
+        """
+        data = {c.name: getattr(device, c.name) for c in device.__table__.columns}
+        tenant = getattr(device, "tenant", None)
+        model = getattr(device, "model", None)
+        customer = getattr(device, "customer", None)
+        data["tenant_name"] = getattr(tenant, "name", None)
+        data["model_name"] = getattr(model, "name", None)
+        data["customer_name"] = getattr(customer, "name", None)
+        return DeviceHqRead.model_validate(data)
 
     async def _get_live_device(self, device_id: str, tenant_id: str) -> Device:
         """Fetch a device, enforcing tenancy + soft-delete.
@@ -97,14 +128,22 @@ class DeviceService:
         actor_id: str,
         tenant_id: str,
         platform_role: str | None = None,
-    ) -> list[DeviceRead]:
-        """All live devices in the caller's tenant.
+    ) -> list[DeviceRead] | list[DeviceHqRead]:
+        """Live devices for the caller.
 
-        Cross-tenant viewers (super_admin / hq_staff) currently also land
-        here — slice 01 keeps the router-level ``require_permission`` guard,
-        so hq_staff is 403'd before reaching this method. Slice 03 will
-        swap in the HQ panorama branch.
+        Cross-tenant viewers (super_admin / hq_staff) get the HQ panorama
+        — every tenant's devices as ``DeviceHqRead`` with tenant/model/
+        customer names. No per-tenant ``require`` runs for them: hq_staff
+        has no tenant role, and the read bypass lives in
+        ``permission_service.check`` (``hq_staff`` + ``read`` → True).
+
+        Tenant roles (owner / admin / member) get their own tenant's
+        devices as ``DeviceRead`` after ``require("devices", "read")``
+        (member passes because the default perms grant ``devices:read``).
         """
+        if is_cross_tenant_viewer(platform_role):
+            devices = await self.repo.list_all_with_meta()
+            return [await self._to_hq_read(d) for d in devices]
         await permission_service.require(
             actor_id,
             tenant_id,
@@ -121,7 +160,22 @@ class DeviceService:
         tenant_id: str,
         device_id: str,
         platform_role: str | None = None,
-    ) -> DeviceRead:
+    ) -> DeviceRead | DeviceHqRead:
+        """One device for the caller.
+
+        Cross-tenant viewers (super_admin / hq_staff) read any tenant's
+        device via ``get_all_with_meta`` → ``DeviceHqRead``; a missing or
+        soft-deleted device collapses to NotFoundError (404), same surface
+        as the within-store path (no enumeration leak).
+
+        Tenant roles go through ``require("devices", "read")`` +
+        ``_get_live_device`` (tenant-scoped, so a foreign device is 404).
+        """
+        if is_cross_tenant_viewer(platform_role):
+            device = await self.repo.get_all_with_meta(device_id)
+            if device is None:
+                raise NotFoundError(f"设备不存在: {device_id}")
+            return await self._to_hq_read(device)
         await permission_service.require(
             actor_id,
             tenant_id,
