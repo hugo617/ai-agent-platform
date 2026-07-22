@@ -10,35 +10,54 @@ disable-model-invocation: true
 >
 > `disable-model-invocation: true` 意味着**只能由用户键入 `/harness-router` 调用**,agent 不会自动触发。若未来需要 agent 自动路由,去掉此 flag 即可。
 
+## 先确认你在哪一层(EP1 / EP2 / EP3)
+
+本项目的任务流程分**三层入口**,先判断你在哪一层,再决定 skill 串。详见 [`harness/docs/three-tier-workflow.md`](../../../harness/docs/three-tier-workflow.md)。
+
+| 层 | 做什么 | skill 串 | 跨会话 |
+|---|---|---|---|
+| **EP1** 大方向→多任务 | 一个大方向拆 N 个 feature | `/grill-with-docs` → `/to-spec`(落 overview) | 可独立结束 |
+| **EP2** 大任务→全切片 | 一个 feature 拆齐 N 个切片 | `/grill-with-docs` → `/to-spec` → `/to-tickets` | ⚠️ 必须一个回环内 |
+| **EP3** 切片→实施→提交 | 挨个切片实施审查提交 | `/implement` → `/code-review` → 勾 checklist | 可跨多会话 |
+
+**例外**(不走完整三层):wide refactor(expand-contract,走 EP3 单入口)/ bug(`/diagnosing-bugs` 旁路)/ 小改动(直接 EP3)。
+
+---
+
 ## 主流程:idea → ship
 
-任务从想法到上线,大多数走这条主路:
+任务从想法到上线,大多数走这条主路(= EP1 → EP2 → EP3 串起来):
 
 1. **`/grill-with-docs`** —— 烤清需求。**有 codebase 时从这里开始**:它会保留访谈成果到 `CONTEXT.md`,留下纸面轨迹。没 codebase?用 **`/grill-me`**(无状态版)。
 2. **`/to-spec`** —— 把共识落成 PRD(模板见 `harness/docs/prd-template.md`)。不做访谈,综合已有线索。
 3. **`/to-tickets`** —— 把 PRD 拆成 tracer-bullet 垂直切片,每片声明 blocking edges。
 4. **`/implement`** —— 实施单个 ticket,内部驱动 **`/tdd`** 红绿循环。
 5. **`/code-review`** —— 实施完成后双轴评审(Standards + Spec)。
-6. commit + 填 evidence + 改 status=passing + 更新 `progress.md`。
+6. **勾 plan checklist** + commit + 填 evidence + 改 status=passing + 更新 `progress.md`(详见 three-tier-workflow.md §4)。
 
-**Context 卫生**:1-3 步尽量在一个连续 context window 里完成,别中途 compact/clear —— 烤清 / spec / tickets 都基于同一套思考。一旦接近 60% context,立刻 **`/handoff`** 换新 session,不要硬撑。
+**Context 卫生**:1-3 步(EP2 回环)尽量在一个连续 context window 里完成,别中途 compact/clear —— 烤清 / spec / tickets 都基于同一套思考。一旦接近 60% context,立刻 **`/handoff`** 换新 session 继续同一回环(并在 progress.md 顶部记断点),不要硬撑。
 
 ## 状态路由表(速查)
 
-| 当前状态 | 推荐下一步 |
-|---|---|
-| 新建任务(feature_list.json 加条目) | `/grill-with-docs` |
-| 想法模糊,但有 codebase | `/grill-with-docs` |
-| 想法模糊,无 codebase | `/grill-me` |
-| 需求清楚,要落 PRD | `/to-spec` |
-| PRD 完成,要拆切片 | `/to-tickets` |
-| 切片实施中 | `/implement` |
-| context 接近 60% | `/handoff` |
-| 实施完成 | `/code-review` |
-| 复杂任务评审 | `/code-review`(多模型投票见下文「复杂任务判定」)|
-| bug 出现 | `/diagnosing-bugs`(流程见 `harness/docs/bug-tracking.md`)|
-| 堆积的 issue 要分流 | `/triage` |
-| 项目过大、迷雾 | `/wayfinder` |
+> **怎么用**:先看「是否已拆切片」列判断 EP 层级(查该 feature 的 `plan-<feature>.md` 有无「实施切片」章节 + checklist 有无未勾项),再看「当前状态」列定单步动作。
+
+| 当前状态 | 是否已拆切片 | 推荐下一步 |
+|---|---|---|
+| 新建任务 / 想法模糊 + 有 codebase | plan 文档不存在 | `/grill-with-docs`(EP1 若是系列,否则 EP2) |
+| 想法模糊 + 无 codebase | plan 文档不存在 | `/grill-me` |
+| 需求清楚,要落 PRD | plan 主体无「实施切片」段 | `/to-spec` |
+| PRD 完成,要拆切片 | plan 主体无「实施切片」段 | `/to-tickets`(**EP2 回环**,一个 context 内) |
+| 要继续未完切片 | plan 有「实施切片」段 + 有未勾 `- [ ]` | `/implement`(**EP3**,从 frontier 切片开始) |
+| 切片实施中 | — | `/implement`(继续当前) |
+| context 接近 60% | — | `/handoff`(EP2 中断要在 progress 顶部记断点) |
+| 实施完成 | — | `/code-review` → **勾 plan checklist** → commit |
+| 末切片完成 | plan checklist 全勾 | **feature 收尾仪式**(见 three-tier §4)+ status=passing |
+| 复杂任务评审 | — | `/code-review`(多模型投票见下文「复杂任务判定」)|
+| bug 出现 | —(不走三层) | `/diagnosing-bugs`(流程见 `harness/docs/bug-tracking.md`)|
+| wide refactor | expand-contract 序列 | `/to-tickets`(产批次)→ EP3 单入口 `/implement` |
+| 小改动(1-2 文件) | 无切片 | 直接 `/implement`(EP3,简单 plan 模板) |
+| 堆积的 issue 要分流 | — | `/triage` |
+| 项目过大、迷雾 | — | `/wayfinder` |
 
 ## 分支决策(常见判断)
 
@@ -76,6 +95,7 @@ disable-model-invocation: true
 
 ## 配套文档
 
+- [`harness/docs/three-tier-workflow.md`](../../../harness/docs/three-tier-workflow.md) —— **三层入口工作流(EP1/EP2/EP3)**:整层流程定义、EP2 单回环约束、切片状态四层真相源、例外旁路
 - [`harness/docs/task-workflow.md`](../../../harness/docs/task-workflow.md) —— 任务管理规则(状态机 / WIP=1 / 完成定义 / 收尾清单),含自动触发流程图
 - [`harness/docs/prd-template.md`](../../../harness/docs/prd-template.md) —— PRD/切片 Design 模板
 - [`harness/docs/bug-tracking.md`](../../../harness/docs/bug-tracking.md) —— Bug 管理流程
