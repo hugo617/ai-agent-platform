@@ -229,6 +229,11 @@ def test_default_owner_perms_cover_full_catalogue():
         ("logs", "read"),
         ("knowledge", "read"), ("knowledge", "create"),
         ("knowledge", "delete"),
+        # devices (devices-crud-ui slice 02): owner has full CRUD — mirrors
+        # customers. The catalogue integrity test pins this so a future edit
+        # cannot silently drop the devices perm set.
+        ("devices", "read"), ("devices", "create"), ("devices", "update"),
+        ("devices", "delete"),
     }
     assert set(DEFAULT_OWNER_PERMS) == expected
 
@@ -285,15 +290,17 @@ def test_cn_label_maps_cover_catalogue():
 # hide a business menu from members or leak a management menu to them.
 # ---------------------------------------------------------------------------
 
-# The 11 business menus every full-trust role (owner/admin) sees.
+# The business menus every full-trust role (owner/admin) sees. ``devices`` is
+# added in devices-crud-ui slice 02 alongside the rest of the business surface.
 _ALL_BUSINESS_MENUS = {
     "dashboard", "agents", "chat", "groups", "customers",
     "members", "users", "roles", "permissions", "settings", "knowledge",
+    "devices",
 }
 
 
 def test_default_menu_perms_owner_and_admin_see_all_business_menus():
-    """owner + admin see all 11 business menus; menu:tenants is NOT among them."""
+    """owner + admin see all business menus; menu:tenants is NOT among them."""
     from app.services.permission_service import DEFAULT_MENU_PERMS
 
     assert set(DEFAULT_MENU_PERMS["owner"]) == _ALL_BUSINESS_MENUS
@@ -305,12 +312,15 @@ def test_default_menu_perms_owner_and_admin_see_all_business_menus():
 
 
 def test_default_menu_perms_member_only_sees_business_menus():
-    """member sees only the 6 business menus (no management/settings menus)."""
+    """member sees only the business menus (no management/settings menus)."""
     from app.services.permission_service import DEFAULT_MENU_PERMS
 
     member_menus = set(DEFAULT_MENU_PERMS["member"])
     assert member_menus == {
-        "dashboard", "agents", "chat", "groups", "customers", "knowledge"
+        "dashboard", "agents", "chat", "groups", "customers", "knowledge",
+        # devices (devices-crud-ui slice 02): member sees the nav entry — the
+        # page itself is read-only via api perms; the menu just unlocks entry.
+        "devices",
     }
     # management menus hidden from member
     assert member_menus.isdisjoint(

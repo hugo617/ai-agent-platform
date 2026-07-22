@@ -500,6 +500,8 @@ DEFAULT_OWNER_PERMS: list[tuple[str, str]] = [
     # knowledge: no "update" act — documents have no edit path (delete +
     # recreate), so only read/create/delete are seeded. See knowledge_service.
     ("knowledge", "read"), ("knowledge", "create"), ("knowledge", "delete"),
+    # devices (devices-crud-ui slice 02): owner full CRUD — mirrors customers.
+    ("devices", "read"), ("devices", "create"), ("devices", "update"), ("devices", "delete"),
 ]
 DEFAULT_ADMIN_PERMS: list[tuple[str, str]] = [
     ("agents", "read"), ("agents", "create"), ("agents", "update"), ("agents", "export"),
@@ -513,6 +515,9 @@ DEFAULT_ADMIN_PERMS: list[tuple[str, str]] = [
     ("billing", "read"),
     ("logs", "read"),
     ("knowledge", "read"), ("knowledge", "create"),
+    # devices (devices-crud-ui slice 02): admin writes, NO delete — mirrors
+    # the customer convention (admin cannot delete business records).
+    ("devices", "read"), ("devices", "create"), ("devices", "update"),
 ]
 DEFAULT_MEMBER_PERMS: list[tuple[str, str]] = [
     ("agents", "read"),
@@ -521,6 +526,8 @@ DEFAULT_MEMBER_PERMS: list[tuple[str, str]] = [
     ("customers", "read"),
     ("billing", "read"),
     ("knowledge", "read"),
+    # devices (devices-crud-ui slice 02): member read-only — mirrors customers.
+    ("devices", "read"),
 ]
 
 # ---------------------------------------------------------------------------
@@ -542,13 +549,20 @@ DEFAULT_MENU_PERMS: dict[str, list[str]] = {
     "owner": [
         "dashboard", "agents", "chat", "groups", "customers",
         "members", "users", "roles", "permissions", "settings", "knowledge",
+        # devices (devices-crud-ui slice 02): owner sees the devices nav entry.
+        "devices",
     ],
     "admin": [
         "dashboard", "agents", "chat", "groups", "customers",
         "members", "users", "roles", "permissions", "settings", "knowledge",
+        # devices (devices-crud-ui slice 02): admin sees the devices nav entry.
+        "devices",
     ],
     "member": [
         "dashboard", "agents", "chat", "groups", "customers", "knowledge",
+        # devices (devices-crud-ui slice 02): member sees the devices nav entry
+        # (page itself is read-only via api perms; the menu just unlocks entry).
+        "devices",
     ],
 }
 
@@ -570,6 +584,8 @@ OBJ_CN: dict[str, str] = {
     "billing": "计费",
     "logs": "审计日志",
     "knowledge": "知识库",
+    # devices (devices-crud-ui slice 02): catalogue label for the new perm set.
+    "devices": "设备",
     "menu": "菜单",
 }
 ACT_CN: dict[str, str] = {
@@ -599,6 +615,8 @@ MENU_CN: dict[str, str] = {
     "settings": "设置",
     "tenants": "门店",
     "knowledge": "知识库",
+    # devices (devices-crud-ui slice 02): menu-code label for the new entry.
+    "devices": "设备",
 }
 
 
@@ -615,3 +633,109 @@ CROSS_TENANT_VIEWER_ROLES: tuple[str, ...] = ("super_admin", "hq_staff")
 def is_cross_tenant_viewer(platform_role: str | None) -> bool:
     """True if the role grants cross-tenant read access (super_admin or hq_staff)."""
     return platform_role in CROSS_TENANT_VIEWER_ROLES
+
+
+# ---------------------------------------------------------------------------
+# One-shot backfill for the devices permission set (devices-crud-ui slice 02).
+#
+# Why this lives here instead of in scripts/: the same path runs as a one-shot
+# data migration (scripts/backfill_devices_perms.py) AND from the slice-02 test
+# suite (tests/test_devices_api.py K chapter). Keeping the per-tenant logic in
+# the service module means the test exercises the real production code path —
+# the script is a thin async main() wrapper.
+#
+# Scope guardrail: this function ONLY touches ``(obj="devices", *)`` and
+# ``(obj="menu", act="devices")`` rows. It never grants/revokes anything else,
+# so re-running it after other permission work is always safe (idempotent and
+# side-effect-bounded).
+# ---------------------------------------------------------------------------
+async def backfill_devices_perms_for_existing_tenants(db: AsyncSession) -> dict[str, int]:
+    """Grant ``devices``/``menu:devices`` perms to every tenant's system roles.
+
+    Walks the ``tenants`` table and, for each tenant, ensures owner/admin/member
+    hold the devices-related entries from ``DEFAULT_*_PERMS`` plus the
+    ``menu:devices`` entry from ``DEFAULT_MENU_PERMS``. Existing tenants created
+    before devices-crud-ui shipped are missing these; new tenants get them via
+    ``seed_tenant_defaults`` automatically.
+
+    Idempotent at three layers:
+      * ``PermissionService._upsert_permission`` returns the existing row id
+        when the catalogue already has ``devices:<act>`` / ``menu:devices``;
+      * ``RolePermissionRepository.grant`` no-ops on an already-active grant;
+      * ``sync_role_permissions_to_casbin`` is a full rebuild from SCD2 current
+        state, so re-syncing converges.
+
+    Returns a stats dict (tenant_id → count of newly-granted role×permission
+    pairs) for the one-shot script's report. The count is "rows newly added by
+    this run" — re-running on an already-backfilled tenant yields 0 per pair.
+
+    Only ``devices``/``menu:devices`` are touched. Other permissions
+    (``customers:read``, ``wallet:read``, etc.) are left untouched, which is
+    the K6 contract in the plan.
+    """
+    from app.models.tenant import Tenant  # local import to avoid module cycles
+    from app.repositories.rbac import RolePermissionRepository
+
+    service = PermissionService()
+    rp_repo = RolePermissionRepository(db)
+
+    # Snapshot existing (role_id, permission_id) active grants once per tenant
+    # so we can count *new* grants without a second round-trip per pair. The
+    # SCD2 "active" predicate (valid_to IS NULL) lives in the repository.
+    tenants = (await db.execute(select(Tenant))).scalars().all()
+    stats: dict[str, int] = {}
+
+    for tenant in tenants:
+        role_ids = await service._role_ids_by_code(db, tenant.id)
+        # Pre-collect existing active grants per role (permission_id set) so
+        # we can tell "new" from "already granted" without N round-trips.
+        existing_per_role: dict[str, set[str]] = {}
+        for role_code, rid in role_ids.items():
+            active = await rp_repo.current_permissions(rid, tenant.id)
+            existing_per_role[role_code] = {row.permission_id for row in active}
+
+        new_count = 0
+
+        # --- api perms: only (obj="devices", *) rows ------------------------
+        for role_code, perms in (
+            ("owner", DEFAULT_OWNER_PERMS),
+            ("admin", DEFAULT_ADMIN_PERMS),
+            ("member", DEFAULT_MEMBER_PERMS),
+        ):
+            rid = role_ids.get(role_code)
+            if rid is None:
+                # Tenant doesn't have this system role (rare: member never
+                # created). Nothing to grant — skip cleanly.
+                continue
+            for obj, act in perms:
+                if obj != "devices":
+                    continue  # scope guardrail — never touch non-devices perms
+                pid = await service._upsert_permission(db, tenant.id, obj, act)
+                if pid not in existing_per_role[role_code]:
+                    await rp_repo.grant(rid, pid, tenant.id)
+                    new_count += 1
+            # Casbin sync is per-role (sync_role_permissions_to_casbin is a
+            # full rebuild from SCD2 current state — cheap and convergent).
+            await service.sync_role_permissions_to_casbin(db, rid, tenant.id)
+
+        # --- menu perms: only ("menu", "devices") --------------------------
+        for role_code, menu_codes in DEFAULT_MENU_PERMS.items():
+            rid = role_ids.get(role_code)
+            if rid is None:
+                continue
+            for code in menu_codes:
+                if code != "devices":
+                    continue  # scope guardrail — only the devices menu entry
+                await service.add_policy(role_code, tenant.id, "menu", code)
+                pid = await service._upsert_permission(
+                    db, tenant.id, "menu", code, perm_type="menu"
+                )
+                if pid not in existing_per_role[role_code]:
+                    await rp_repo.grant(rid, pid, tenant.id)
+                    new_count += 1
+            await service.sync_role_permissions_to_casbin(db, rid, tenant.id)
+
+        await db.flush()
+        stats[tenant.id] = new_count
+
+    return stats
