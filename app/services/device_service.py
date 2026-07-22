@@ -13,7 +13,12 @@ Reads branch on the caller's platform role:
 
 Writes (create / update / delete) are unchanged from slice 01: they always
 require ``devices:<act>`` in the caller's tenant, so hq_staff (no tenant
-role) is 403 — the HQ viewer is read-only by construction.
+role) is 403 — the HQ viewer is read-only by construction. Bind / unbind
+(slice 04) follow the same guard (``devices:update``): assigning a device's
+customer is a within-store business action, not a platform-level one, so it
+uses ``require("devices", "update")`` — NOT the ``require_super_admin`` that
+group attach/detach uses (group is a platform-level resource with no
+``tenant_id``).
 
 Three integrity guards worth calling out (see plan-devices-crud-ui.md §3
 关键边界 #1):
@@ -27,6 +32,11 @@ Three integrity guards worth calling out (see plan-devices-crud-ui.md §3
   invariant among *live* rows. Mirrors the partial unique index in the DB;
   raising BizError here gives a clean 400 instead of letting the
   IntegrityError bubble up as a 500.
+- ``_assert_customer_in_tenant`` — the bind guard (slice 04). Customer is
+  platform-level, so the check is "live ``CustomerProfile`` in this tenant"
+  via ``get_by_customer_tenant``; nonexistent + cross-tenant both collapse
+  to one BizError 400 (no customer enumeration, same logic as the device
+  cross-tenant → 404 defence).
 - ``_get_live_device`` — uses ``get_for_tenant`` so a cross-tenant lookup
   returns NotFoundError (404) instead of leaking "exists but not yours"
   (prevents enumeration).
@@ -37,6 +47,7 @@ from datetime import UTC, datetime
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.device import Device
+from app.repositories.customer import CustomerProfileRepository
 from app.repositories.device import DeviceRepository
 from app.repositories.device_model import DeviceModelRepository
 from app.schemas.device import (
@@ -56,6 +67,7 @@ class DeviceService:
         self.db = db
         self.repo = DeviceRepository(db)
         self.models = DeviceModelRepository(db)
+        self.customers = CustomerProfileRepository(db)
 
     # ------------------------------------------------------------- helpers
 
@@ -120,6 +132,25 @@ class DeviceService:
         model = await self.models.get(model_id)
         if model is None:
             raise BizError(f"设备型号不存在或已删除: {model_id}")
+
+    async def _assert_customer_in_tenant(
+        self, tenant_id: str, customer_id: str
+    ) -> None:
+        """Raise BizError if ``customer_id`` has no *live* profile in this tenant.
+
+        Customer is a platform-level table (no ``tenant_id``); the same person
+        may have profiles in many stores. So the bind check is "does this
+        customer have a live ``CustomerProfile`` in *my* tenant", via
+        ``CustomerProfileRepository.get_by_customer_tenant``. A nonexistent
+        customer and a customer that exists only in another tenant both return
+        None here and collapse to the same BizError 400 — no enumeration leak
+        (mirrors the device cross-tenant → 404 defence).
+        """
+        profile = await self.customers.get_by_customer_tenant(
+            customer_id, tenant_id
+        )
+        if profile is None:
+            raise BizError(f"客户在本门店不存在: {customer_id}")
 
     # ----------------------------------------------------------------- read
 
@@ -274,5 +305,70 @@ class DeviceService:
         device = await self._get_live_device(device_id, tenant_id)
         device.is_deleted = True
         device.deleted_at = datetime.now(UTC)
+        await self.db.flush()
+        await self.db.commit()
+
+    # ---------------------------------------------------------- bind (slice 04)
+
+    async def bind(
+        self,
+        device_id: str,
+        tenant_id: str,
+        customer_id: str,
+        actor_id: str,
+        platform_role: str | None = None,
+    ) -> tuple[Device, bool]:
+        """Assign ``customer_id`` to a device. Returns ``(device, already_bound)``.
+
+        - ``already_bound=True``: the device was already bound to this exact
+          customer → **idempotent no-op, no DB write** (POST-to-sub-resource
+          is an assignment; re-assigning the same value is a 200, not a 201).
+        - ``already_bound=False``: a new binding was written (first bind, or
+          an overwrite of a previously different customer — overwrite is legal
+          because the assignment semantics are "set", like PUT).
+
+        Guard: ``require("devices", "update")`` (NOT ``require_super_admin``).
+        devices is a tenant-level resource (``tenant_id`` FK); binding a
+        customer is a within-store business action. group attach/detach uses
+        ``require_super_admin`` only because group is platform-level (no
+        ``tenant_id``) — do not conflate the two.
+        """
+        await permission_service.require(
+            actor_id,
+            tenant_id,
+            self.OBJECT,
+            "update",
+            platform_role=platform_role,
+        )
+        await self._assert_customer_in_tenant(tenant_id, customer_id)
+        device = await self._get_live_device(device_id, tenant_id)
+        if device.customer_id == customer_id:
+            return device, True
+        device.customer_id = customer_id
+        await self.db.flush()
+        await self.db.commit()
+        return device, False
+
+    async def unbind(
+        self,
+        device_id: str,
+        tenant_id: str,
+        actor_id: str,
+        platform_role: str | None = None,
+    ) -> None:
+        """Clear a device's ``customer_id``. Idempotent: a device with no
+        binding is a no-op, NOT an error (DELETE is idempotent by REST
+        convention — saves the client a GET-then-DELETE round-trip)."""
+        await permission_service.require(
+            actor_id,
+            tenant_id,
+            self.OBJECT,
+            "update",
+            platform_role=platform_role,
+        )
+        device = await self._get_live_device(device_id, tenant_id)
+        if device.customer_id is None:
+            return
+        device.customer_id = None
         await self.db.flush()
         await self.db.commit()

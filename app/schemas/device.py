@@ -5,7 +5,8 @@ Two read shapes: ``DeviceRead`` (within-store CRUD, slice 01) and
 ``DeviceRead`` with four cross-tenant display fields (``tenant_name``,
 ``model_name``, ``customer_name``, and ``tenant_id`` already on the base) so a
 super_admin / hq_staff viewer can see *which store* a device belongs to without
-a second lookup. Bind/unbind DTOs land in slice 04.
+a second lookup. ``DeviceBindRequest`` / ``DeviceBindResponse`` (slice 04)
+model the bind action endpoint.
 
 ``DeviceStatus`` is a Literal (not an Enum) so the 422-on-bad-value behaviour
 falls out of Pydantic for free and the CHECK constraint in the DB is a
@@ -77,3 +78,40 @@ class DeviceHqRead(DeviceRead):
     tenant_name: str | None = None
     model_name: str | None = None
     customer_name: str | None = None
+
+
+# --------------------------------------------------------------- bind (slice 04)
+#
+# Bind is modelled as a POST-to-a-sub-resource action (``POST /devices/{id}/bind``)
+# rather than a resource create, so it returns **200, not 201** — the device
+# already exists; bind just assigns its ``customer_id``. ``already_bound`` lets
+# the caller distinguish "newly bound" (``False``) from "idempotent repeat of
+# the same customer" (``True``, no write happened) without a second GET.
+
+
+class DeviceBindRequest(BaseModel):
+    """Body of ``POST /devices/{id}/bind``.
+
+    ``customer_id`` is the *global* Customer id (``customers.id``). The bind
+    succeeds only if that customer has a *live* ``CustomerProfile`` in the
+    caller's tenant — enforced in the service via ``CustomerProfileRepository.
+    get_by_customer_tenant``. A nonexistent customer and a customer that
+    exists only in another tenant both collapse to the same 400 (no
+    enumeration leak, mirroring the device cross-tenant → 404 defence).
+    """
+
+    customer_id: str = Field(..., min_length=1, max_length=32)
+
+
+class DeviceBindResponse(BaseModel):
+    """Body of the 200 returned by ``POST /devices/{id}/bind``.
+
+    ``already_bound`` is the idempotency flag: ``True`` means the device was
+    already bound to this exact customer, so the request was a no-op (no DB
+    write); ``False`` means a new binding was written (either a first-time
+    bind or an overwrite of a previous customer).
+    """
+
+    device_id: str
+    customer_id: str
+    already_bound: bool
