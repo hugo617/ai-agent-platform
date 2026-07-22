@@ -6,6 +6,7 @@ import {
   Coins,
   LayoutDashboard,
   MessageSquare,
+  Monitor,
   ScrollText,
   Settings,
   Shield,
@@ -94,6 +95,16 @@ const ITEMS: NavItem[] = [
     icon: Contact,
     menuCode: "menu:customers",
   },
+  // devices (devices-crud-ui slice 02): menu:devices seeded to owner/admin/
+  // member, so the whole store-side roles see the nav entry. hq_staff /
+  // super_admin bypass menu checks (platform role), so they see it too even
+  // though they have no tenant role — the HQ panorama view branches in-page.
+  {
+    to: "/devices",
+    label: "设备",
+    icon: Monitor,
+    menuCode: "menu:devices",
+  },
   {
     to: "/billing",
     label: "费用管理",
@@ -144,7 +155,7 @@ const GROUPS: NavGroup[] = [
     subgroups: [
       {
         label: "业务管理",
-        items: ["/groups", "/customers", "/billing"].map(pick),
+        items: ["/groups", "/customers", "/devices", "/billing"].map(pick),
       },
       {
         label: "人员与权限",

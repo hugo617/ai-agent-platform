@@ -13,11 +13,13 @@ import {
   attachSpecialist,
   attachTenant,
   batchDeleteConversations,
+  bindDeviceCustomer,
   changePassword,
   changeUserStatus,
   createAgent,
   createApiToken,
   createCustomerProfile,
+  createDevice,
   createGroup,
   createPricing,
   createRole,
@@ -26,6 +28,7 @@ import {
   deleteAgent,
   deleteConversation,
   deleteCustomerProfile,
+  deleteDevice,
   deleteGroup,
   deletePricing,
   deleteRole,
@@ -42,6 +45,8 @@ import {
   fetchCustomers,
   fetchCustomerStatistics,
   fetchCustomerUsage,
+  fetchDeviceModels,
+  fetchDevices,
   fetchDashboardOverview,
   fetchDashboardTrends,
   fetchEffectiveModels,
@@ -79,8 +84,10 @@ import {
   revokeRolePermission,
   setConversationPinned,
   setConversationStarred,
+  unbindDeviceCustomer,
   updateAgent,
   updateCustomerProfile,
+  updateDevice,
   updateGroup,
   updateMe,
   updateMember,
@@ -109,6 +116,8 @@ import type {
   ConversationFilters,
   CustomerProfileCreate,
   CustomerProfileUpdate,
+  DeviceCreate,
+  DeviceUpdate,
   EmbeddingConfigUpdate,
   GroupCreate,
   GroupUpdate,
@@ -177,6 +186,13 @@ export const qk = {
   customerProfiles: ["customers", "profiles"] as const,
   customers: ["customers"] as const,
   customerUsage: (id: string) => ["customers", id, "usage"] as const,
+  // devices: tenant-scoped device instances (devices-crud-ui). Single read key
+  // covers both store (Device) and HQ (DeviceHqRead) views — the endpoint
+  // branches on platform_role, but cache invalidation is the same either way.
+  devices: ["devices"] as const,
+  // device-models: platform-level catalogue dropdown source. Read is open to
+  // any authenticated user; the picker only needs {id, name, specs}.
+  deviceModels: ["device-models"] as const,
   // Token 费用管理系列 4/4 — wallet / ledger / usage / pricing.
   wallet: ["billing", "wallet"] as const,
   walletByTenant: (tenantId: string) =>
@@ -369,6 +385,63 @@ export function useCustomerStatistics() {
   return useQuery({
     queryKey: qk.customerStats,
     queryFn: fetchCustomerStatistics,
+  });
+}
+
+// ---------- devices (设备实例 CRUD, devices-crud-ui 系列 2/4) ----------
+//
+// useDevices drives the /devices page list for both store view (Device[]) and
+// HQ panorama (DeviceHqRead[]) — the endpoint branches on platform_role, but
+// the cache key is the same. Writes invalidate qk.devices so the list refreshes;
+// bind/unbind also invalidate (they mutate customer_id, which the list shows).
+//
+// useDeviceModels feeds the create/edit dialog's model dropdown. The picker is
+// only rendered on writable contexts (store owner/admin), so `enabled` defaults
+// to true — callers that want to suppress the fetch (e.g. HQ read-only view)
+// pass `enabled=false`, mirroring useAllTenants.
+export function useDevices() {
+  return useQuery({ queryKey: qk.devices, queryFn: fetchDevices });
+}
+
+export function useCreateDevice() {
+  return useApiMutation(
+    (payload: DeviceCreate) => createDevice(payload),
+    [qk.devices],
+  );
+}
+
+export function useUpdateDevice() {
+  return useApiMutation(
+    ({ id, payload }: { id: string; payload: DeviceUpdate }) =>
+      updateDevice(id, payload),
+    [qk.devices],
+  );
+}
+
+export function useDeleteDevice() {
+  return useApiMutation((id: string) => deleteDevice(id), [qk.devices]);
+}
+
+export function useBindDeviceCustomer() {
+  return useApiMutation(
+    ({ deviceId, customerId }: { deviceId: string; customerId: string }) =>
+      bindDeviceCustomer(deviceId, customerId),
+    [qk.devices],
+  );
+}
+
+export function useUnbindDeviceCustomer() {
+  return useApiMutation(
+    (deviceId: string) => unbindDeviceCustomer(deviceId),
+    [qk.devices],
+  );
+}
+
+export function useDeviceModels(enabled = true) {
+  return useQuery({
+    queryKey: qk.deviceModels,
+    queryFn: fetchDeviceModels,
+    enabled,
   });
 }
 

@@ -347,20 +347,20 @@ Device:
 
 ---
 
-### 切片 05 — 前端地基:types/endpoints/queries + isHQStaff + 路由
+### 切片 05 — 前端地基:types/endpoints/queries + isHQStaff + 路由 ✅ 分支 feat/devices-frontend-foundation-slice-05(PR 待开)
 
 **Blocked by:** 03(`DeviceHqRead` schema 定型),04(`DeviceBindResponse` schema 定型)
 
 **What it delivers:** 前端拿到 devices/device-models 的完整类型和 API client,hq_staff 在前端可被识别,`/devices` 路由可达(空页即可,UI 实现留给切片 06/07)。
 
 **Acceptance criteria:**
-- [ ] `frontend/src/api/types.ts`:`Device`、`DeviceCreate`、`DeviceUpdate`、`DeviceBindRequest`、`DeviceBindResponse`、`DeviceHqRead`、`DeviceModelPublic`(`{id, name, specs}`,未来 device-models 管理页共用此类型)
-- [ ] `frontend/src/api/endpoints.ts`:`fetchDevices()`、`fetchDevice(id)`、`createDevice(payload)`、`updateDevice(id, payload)`、`deleteDevice(id)`、`bindDeviceCustomer(id, customerId)`、`unbindDeviceCustomer(id)`、`fetchDeviceModels()`(打 `/api/v1/device-models/`,返 `DeviceModelPublicRead`)
-- [ ] `frontend/src/hooks/queries.ts`:`qk.devices` / `qk.deviceModels` + `useDevices()`、`useCreateDevice()`、`useUpdateDevice()`、`useDeleteDevice()`、`useBindDeviceCustomer()`、`useUnbindDeviceCustomer()`、`useDeviceModels()`(下拉用,enabled 守卫参照 `useAllTenants`)
-- [ ] `frontend/src/lib/permission.ts`:新增 `isHQStaff(me)` helper(参照 `isSuperAdmin` L27-29 范式)
-- [ ] `frontend/src/App.tsx`:`const DevicesPage = lazy(...)` + `<Route path="/devices" element={<DevicesPage/>}/>`(裸 ProtectedRoute,member 可读)
-- [ ] `frontend/src/components/layout/nav-items.ts`:业务管理 subgroup 加 `{ to: "/devices", label: "设备", icon: <Monitor/>, menuCode: "menu:devices" }`
-- [ ] `cd frontend && npm run build` + `npx oxlint` 通过
+- [x] `frontend/src/api/types.ts`:`Device`、`DeviceCreate`、`DeviceUpdate`、`DeviceBindRequest`、`DeviceBindResponse`、`DeviceHqRead`、`DeviceModelPublic`(`{id, name, specs}`,未来 device-models 管理页共用此类型)
+- [x] `frontend/src/api/endpoints.ts`:`fetchDevices()`、`fetchDevice(id)`、`createDevice(payload)`、`updateDevice(id, payload)`、`deleteDevice(id)`、`bindDeviceCustomer(id, customerId)`、`unbindDeviceCustomer(id)`、`fetchDeviceModels()`(打 `/api/v1/device-models/`,返 `DeviceModelPublicRead`)
+- [x] `frontend/src/hooks/queries.ts`:`qk.devices` / `qk.deviceModels` + `useDevices()`、`useCreateDevice()`、`useUpdateDevice()`、`useDeleteDevice()`、`useBindDeviceCustomer()`、`useUnbindDeviceCustomer()`、`useDeviceModels()`(下拉用,enabled 守卫参照 `useAllTenants`)
+- [x] `frontend/src/lib/permission.ts`:新增 `isHQStaff(me)` helper(参照 `isSuperAdmin` L27-29 范式)
+- [x] `frontend/src/App.tsx`:`const DevicesPage = lazy(...)` + `<Route path="/devices" element={<DevicesPage/>}/>`(裸 ProtectedRoute,member 可读)
+- [x] `frontend/src/components/layout/nav-items.ts`:业务管理 subgroup 加 `{ to: "/devices", label: "设备", icon: <Monitor/>, menuCode: "menu:devices" }`(注:文件约定用 component ref `icon: Monitor`,非 JSX `<Monitor/>`)
+- [x] `cd frontend && npm run build` + `npx oxlint` 通过(实测 build 3.28s 通过,oxlint 0 warnings 0 errors)
 
 ---
 
