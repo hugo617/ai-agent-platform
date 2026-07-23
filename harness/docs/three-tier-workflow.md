@@ -81,6 +81,17 @@ plan 文档的「实施切片」段**齐全**(含 0/1/N 个切片):
 
 > 即:**EP2 只产切片规划,不含实施**。实施一律走 EP3。
 
+### EP2 收尾:plan 自检(进 EP3 前的轻量 gate)
+
+EP2 产出 N 个切片后、正式进 EP3 实施前,跑一次**轻量自检**(防止规划缺陷拖到实施期才暴露,返工成本高):
+
+- [ ] **切片依赖图无环**:每个切片的 `Blocked by` 指向更早的切片,不存在循环依赖
+- [ ] **每片有 acceptance criteria**:每片至少有 1 条 `- [ ]` 可执行检查(文件级或行为级)
+- [ ] **首片可立即开工**:至少存在 1 个 `Blocked by: 无` 的切片(frontier)
+- [ ] **plan 主体决策已落定**:PRD 段(Problem/Solution/Implementation Decisions)无 `TODO`/`待定` 悬空项
+
+自检不过 → 回到 `/to-tickets` 补齐,不要带病进 EP3。自检通过 → 回填 feature_list.json 的 `plan` 字段指向本文档;`status` 按 §5 规则:**依赖满足(当前 frontier)置 `in_progress`,依赖未满足(排队)保持 `not_started` + plan 已填**。
+
 ---
 
 ## §4. EP3:切片 → 实施 → 提交
@@ -138,14 +149,17 @@ frontier = 切片 05(其 blocker 切片 02/03/04 中,04 是最后一个完成的
 | 层级 | 真相源 | 状态字段 | 维护时机 |
 |---|---|---|---|
 | 切片级 | **plan 文档 checklist**(`plan-<feature>.md` 的「实施切片」段) | `- [ ]` / `- [x]` + 标题行 `✅ PR #NN` | `/code-review` 通过后、commit 前(强制,clean-state 第 9 项) |
-| feature 级 | **feature_list.json** 的 `status` | `not_started` / `in_progress` / `passing` | 第一个切片开做即 `in_progress`;全切片完才 `passing` |
+| feature 级 | **feature_list.json** 的 `status` | `not_started` / `in_progress` / `passing` | **EP2 完成 + 依赖满足(当前 frontier)→ `in_progress`**;EP2 完成但依赖未满足(排队)→ `not_started` + `plan` 字段已填;全切片完才 `passing` |
 | 会话级 | **progress.md** 顶部摘要 + Session 记录 | 自由文本(`切片 01 ✅ PR#90 / 切片 04 ⏳`)| agent 做 Session 记录时同步(**手维护,非脚本派生**) |
 | 系列级 | **overview 文档** 的「系列状态」段 | `✅ 全部完成` | **只在系列收官时写一次**(进行中不写) |
 
 ### 关键规则
 
 1. **plan checklist 是切片级唯一结构化真相源**。git log 是辅助取证(PR 号/commit hash 从这取),但不替代 checklist。
-2. **多切片 feature 第一个切片开做即 `in_progress`**(不是 `not_started`)。理由:`not_started` 会让新会话 agent 误判"没开始"从而重跑 EP2 grill——这正是本工作流要防的。`in_progress` 才是"当前唯一进行中"的正确语义(对齐 [`task-workflow.md`](./task-workflow.md) §3 WIP=1)。
+2. **多切片 feature EP2 完成且依赖已满足 → `in_progress`**(不是 `not_started`)。理由:`not_started` 表示"连规划都没做",会让新会话 agent 误判"没开始"从而重跑 EP2 grill——这正是本工作流要防的。规则:
+   - **EP2 完成 + 所有 `depends_on` 已 `passing`**(= 当前 frontier)→ 置 `in_progress`
+   - **EP2 完成但依赖未满足**(排队等着,如 device-booking 等 devices-crud-ui 收官)→ 保持 `not_started`,但靠 `plan` 字段已填区分「已规划待实施」vs「未规划」(plan 字段为空 = 未规划)
+   - 这样既守 WIP=1(同时只有一个 in_progress),又让 feature_list.json 能区分三种态:未规划(not_started + plan 空)/ 已规划待实施(not_started + plan 已填)/ 进行中(in_progress)
 3. **progress.md 顶部摘要是手维护**(由 agent 在 Session 记录时同步)。注意:**`scripts/sync-active-features.sh` 不碰 progress.md**(它只生成 active.json + archive.json),所以不存在"派生"机制,必须人手对齐 plan checklist。
 4. **overview 进度段只在系列收官写**。进行中的系列,进度看 progress.md 顶部摘要;overview 只在最后一个 feature passing 时追加「系列状态:✅ 全部完成」段(范例见 [plan-permission-redesign-overview.md](./plan-permission-redesign-overview.md) 末尾)。
 5. **切片跨 feature 引用约定**:用 `<feature-id>#NN` 格式(如 `devices-crud-ui#04`)。切片本身无独立 id,沿用「切片 NN」序数。

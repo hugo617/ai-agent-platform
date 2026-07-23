@@ -19,7 +19,7 @@
 - [ ] **基础验证可用**:`./init.sh` 跑过(`ruff check` + `pytest` 全绿)
 - [ ] **进度已记录**:`progress.md` 已追加本轮 Session 记录(目标/已完成/验证/下一步)
 - [ ] **功能状态真实**:`feature_list.json` 的状态真实反映 passing 和「未验证」的边界
-  —— 没跑完整验证的绝不能标 passing(没有假 passing)。多切片 feature 第一个切片开做即 `in_progress`(非 not_started)
+  —— 没跑完整验证的绝不能标 passing(没有假 passing)。多切片 feature **EP2 完成 + 依赖满足(当前 frontier)即 `in_progress`**;EP2 完成但依赖未满足(排队)保持 `not_started` + `plan` 字段已填(区分「已规划待实施」vs plan 为空的「未规划」)
 - [ ] **active 视图已同步**:若本期有 feature 状态变化(新增/状态流转/归档),跑过
   `./scripts/sync-active-features.sh` 刷新 `feature_list.active.json`
   —— 漏跑代价:active.json 过时,token 节省失效;**无数据丢失**,agent 兜底可读完整 `feature_list.json`
