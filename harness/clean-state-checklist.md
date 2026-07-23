@@ -31,7 +31,7 @@
 - [ ] **切片 checklist 已勾选**:若本次完成(或推进)了某 `plan-<feature>.md` 的切片,
   `/code-review` 通过后、commit 前已把该切片的 acceptance criteria 从 `- [ ]` 改 `- [x]`,
   并在切片标题行追加 `✅ PR #NN commit <hash>`(切片级真相源,见
-  [`docs/three-tier-workflow.md`](docs/three-tier-workflow.md) §4/§5)。**末切片完成时,另跑 feature 收尾仪式**(evidence + status=passing + sync)
+  [`docs/three-tier-workflow.md`](docs/three-tier-workflow.md) §4/§5)。**末切片完成时,另跑 feature 收尾仪式**(evidence + status=passing + sync + **依赖解锁扫描 §4 第7步**)
 
 ---
 
