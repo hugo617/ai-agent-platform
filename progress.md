@@ -8,7 +8,7 @@
 - **标准启动路径**: `./init.sh`(装依赖 + ruff + pytest)
 - **标准验证路径**: `./init.sh`(同上,后端快速验证,SQLite 内存库)
 - **完整验证路径**(需 docker): `alembic upgrade head && alembic check` + `cd frontend && npm run build`
-- **当前最高优先级未完成功能**: **`device-booking`(priority 63,设备预约订单 CRUD + 排期,系列 3/4,status=`not_started`,EP2 回环已完成 ✅ Session 130)**。设备功能系列进度:61(device-models-crud)✅ → 62(devices-crud-ui)✅ **全 passing(切片 01-07 全合并 main,见下方 Session 131)** → **63(device-booking `not_started`,plan-device-booking.md 含 7 切片 + 12 决策,EP3 从切片 01「Booking 表 + 时段冲突 + 状态守卫 CRUD」接 `/implement`)** → 64(device-poweron)。切片级状态真相源 = `harness/docs/plan-device-booking.md` 的 acceptance criteria checklist(7 切片全 `[ ]` 待 EP3 勾)。最新合并到 main:`devices-crud-ui 切片 06`(priority 62)✅ 前端 StoreView(PR #99 commit ad9a4f7)。**下一步**:device-booking 切片 01(后端地基 Booking 表 + 时段冲突 400 + 状态守卫 + 4 端点),走 `/implement`(EP3,从 frontier 切片接)。提示词已备在下方 Session 130 收尾段。
+- **当前最高优先级未完成功能**: **`device-booking`(priority 63,设备预约订单 CRUD + 排期,系列 3/4,status=`in_progress`,EP2 回环已完成 ✅ Session 130,依赖 devices-crud-ui Session 131 收尾 passing 后解锁)**。设备功能系列进度:61(device-models-crud)✅ → 62(devices-crud-ui)✅ **全 passing(切片 01-07 全合并 main,见下方 Session 131)** → **63(device-booking `in_progress`,plan-device-booking.md 含 7 切片 + 12 决策,EP3 从切片 01「Booking 表 + 时段冲突 + 状态守卫 CRUD」接 `/implement`)** → 64(device-poweron)。切片级状态真相源 = `harness/docs/plan-device-booking.md` 的 acceptance criteria checklist(7 切片全 `[ ]` 待 EP3 勾)。最新合并到 main:`devices-crud-ui 切片 07`(feature 收官,PR #101 commit 6105ae0)。**下一步**:device-booking 切片 01(后端地基 Booking 表 + 时段冲突 400 + 状态守卫 + 4 端点),走 `/implement`(EP3,从 frontier 切片接)。
 - **当前 blocker**: 无
 
 ## 后续任务规划

@@ -139,8 +139,9 @@ frontier = 切片 05(其 blocker 切片 02/03/04 中,04 是最后一个完成的
 4. `./scripts/sync-active-features.sh` 刷新 active 视图
 5. `progress.md` 加 Session 记录 + 更新「当前最高优先级未完成功能」
 6. 文档影响评估(4 行格式,见 [`doc-impact-assessment.md`](./doc-impact-assessment.md))
+7. **依赖解锁扫描**(防下游 feature 卡在错误的 not_started):扫描 feature_list.json,凡 `depends_on` 指向**本 feature** 且 EP2 已完成(`plan` 字段已填)的下游 feature,其依赖现已满足 → 按 §5 规则置 `in_progress`(当前新 frontier)。例:devices-crud-ui 收尾 passing 后,device-booking(EP2 已完成 + depends_on=devices-crud-ui)应立即从 not_started 翻 in_progress。
 
-> 这 6 条 = [`task-workflow.md`](./task-workflow.md) §3「完成定义 4 条」的展开。
+> 这 7 条 = [`task-workflow.md`](./task-workflow.md) §3「完成定义 4 条」的展开。**第 7 步是依赖链自动推进的关键** —— 漏跑会导致下游 feature 的 status 字段与实际「已可实施」状态脱节,新会话 agent 误判"还没轮到"。
 
 ---
 
