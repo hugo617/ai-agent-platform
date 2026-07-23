@@ -24,6 +24,13 @@ Chapter layout (matches plan-device-booking.md slice 01 acceptance criteria):
 - G. walk-in (customer_id None) — created 201, GET shows null customer_id.
 - H. device SET NULL — soft-deleted device's booking still GETs (FK SET NULL
   keeps the row; device_id stays but the device is gone).
+- K. backfill (slice 02): bring pre-existing tenants up to the bookings perm set.
+  - K1 fixture: a tenant with NO bookings policies (DB + casbin)
+  - K2 run backfill_bookings_perms_for_existing_tenants
+  - K3 owner gets bookings:create/read/update/delete + menu:bookings
+  - K4 member gets bookings:read + menu:bookings but NOT bookings:create
+  - K5 idempotent: re-run backfill, no error, no duplicate grants
+  - K6 other existing perms (customers:read, devices:read) untouched
 
 Test-organization note (matches test_devices_api.py): each test uses ONE
 client fixture. The conftest seeds bookings:* perms for owner/admin/member
@@ -934,3 +941,252 @@ async def test_create_inverted_window_400(app_client, db_session, test_env):
         headers=AUTH,
     )
     assert resp.status_code == 400, resp.text
+
+
+# ----------------------------------------- K. backfill (slice 02)
+#
+# K chapter verifies ``backfill_bookings_perms_for_existing_tenants``: the
+# function that brings pre-existing tenants (created before slice 02 shipped)
+# up to the bookings permission set. Each test stands alone (no client fixture
+# — these are pure DB + permission_service assertions) so they don't interact
+# with the shared owner/seeded-casbin state in the A-H chapters.
+#
+# The test_env's seeded enforcer already carries bookings:* policies for
+# test_env.tenant_id (simulating a backfilled tenant — see conftest). For K we
+# create a FRESH tenant with zero bookings grants and run the backfill against it.
+
+
+async def _seed_backfill_target_tenant(db_session, test_env=None):
+    """K1: build a tenant that pre-dates device-booking slice 02.
+
+    The tenant has the three system roles (owner/admin/member) and a couple of
+    unrelated permission grants (customers:read, devices:read) to prove the K6
+    contract — backfill must NOT touch other perms. Critically, it has ZERO
+    bookings-related rows (no Permission rows, no RolePermission grants, no
+    casbin policies) when this helper returns.
+
+    The non-bookings grants are mirrored in BOTH the DB (SCD2 grants) AND
+    casbin (so ``permission_service.check`` returns True before backfill —
+    without the casbin policy the DB grant is invisible to enforcement).
+    Mirroring is the same two-step write path the production
+    ``seed_tenant_defaults`` uses.
+    """
+    import uuid
+
+    from app.models.rbac import Permission, Role, RolePermission
+    from app.models.tenant import Tenant
+
+    tenant_id = f"tnt-k-{uuid.uuid4().hex}"
+    db_session.add(Tenant(id=tenant_id, name="K Backfill Target"))
+
+    # Three system roles.
+    role_ids: dict[str, str] = {}
+    for code in ("owner", "admin", "member"):
+        rid = uuid.uuid4().hex
+        db_session.add(
+            Role(
+                id=rid,
+                tenant_id=tenant_id,
+                name=code.capitalize(),
+                code=code,
+                is_system=True,
+                data_scope="tenant",
+            )
+        )
+        role_ids[code] = rid
+
+    # Seed an unrelated permission (customers:read) on all three roles +
+    # a second unrelated perm (devices:read) to prove backfill doesn't touch
+    # existing grants (K6). Mirrored in casbin below so ``check`` returns True.
+    perm_id = uuid.uuid4().hex
+    db_session.add(
+        Permission(
+            id=perm_id,
+            tenant_id=tenant_id,
+            name="客户-查看",
+            code="customers:read",
+            type="api",
+            is_system=True,
+        )
+    )
+    dev_perm_id = uuid.uuid4().hex
+    db_session.add(
+        Permission(
+            id=dev_perm_id,
+            tenant_id=tenant_id,
+            name="设备-查看",
+            code="devices:read",
+            type="api",
+            is_system=True,
+        )
+    )
+    from datetime import UTC, datetime
+
+    for code in ("owner", "admin", "member"):
+        db_session.add(
+            RolePermission(
+                role_id=role_ids[code],
+                permission_id=perm_id,
+                tenant_id=tenant_id,
+                valid_from=datetime.now(UTC),
+                valid_to=None,
+            )
+        )
+    # devices:read only on owner (just to exercise the K6 untouched contract;
+    # the specific role distribution doesn't matter for the assertions below).
+    db_session.add(
+        RolePermission(
+            role_id=role_ids["owner"],
+            permission_id=dev_perm_id,
+            tenant_id=tenant_id,
+            valid_from=datetime.now(UTC),
+            valid_to=None,
+        )
+    )
+    await db_session.commit()
+
+    # Casbin mirror — the SCD2 grants above are the source of truth but casbin
+    # is what ``check`` actually reads. Add the same (role, obj, act) pairs so
+    # the pre-backfill assertions pass (K6 is "other perms work before AND
+    # after").
+    if test_env is not None:
+        for role in ("owner", "admin", "member"):
+            test_env.enforcer.add_policy(role, tenant_id, "customers", "read")
+        test_env.enforcer.add_policy("owner", tenant_id, "devices", "read")
+
+    return tenant_id, role_ids
+
+
+@pytest.mark.asyncio
+async def test_k_backfill_grants_bookings_perms_correctly(db_session, test_env):
+    """K2 + K3 + K4: backfill grants owner the full bookings set, member only
+    read; both pick up menu:bookings. Verified through the production code path
+    (permission_service.check) so a casbin-sync regression surfaces."""
+    from unittest.mock import patch
+
+    from app.core import casbin_enforcer as casbin_mod
+    from app.services.permission_service import (
+        backfill_bookings_perms_for_existing_tenants,
+        permission_service,
+    )
+
+    tenant_id, _ = await _seed_backfill_target_tenant(db_session, test_env)
+    # The enforcer patch mirrors what app_client sets up: without it, the
+    # production ``get_enforcer`` would route casbin calls to the unrelated
+    # global SQLite DB (MissingGreenlet). Patch for the whole test.
+    with patch.object(casbin_mod, "get_enforcer", return_value=test_env.enforcer):
+        # K2: run the backfill. ``db`` must be the same session the assertions
+        # use so the writes are visible (test fixture shares one connection).
+        stats = await backfill_bookings_perms_for_existing_tenants(db_session)
+
+        # The backfill should have added: owner gets 4 api + 1 menu = 5; admin
+        # 3 + 1 = 4; member 1 + 1 = 2. The seeded customers:read (3) and
+        # devices:read (1) are NOT counted (pre-existing → grant was a no-op).
+        assert stats[tenant_id] == 5 + 4 + 2, stats
+
+        # K3: owner gets all four bookings api perms + menu:bookings. The role
+        # name itself is a casbin subject (see conftest _make_casbin), so we
+        # check the role directly — no user binding needed.
+        for act in ("create", "read", "update", "delete"):
+            ok = await permission_service.check(
+                "owner", tenant_id, "bookings", act
+            )
+            assert ok, f"owner should have bookings:{act} after backfill"
+        ok = await permission_service.check("owner", tenant_id, "menu", "bookings")
+        assert ok, "owner should have menu:bookings after backfill"
+
+        # K4: member gets bookings:read + menu:bookings only — NOT create.
+        ok = await permission_service.check("member", tenant_id, "bookings", "read")
+        assert ok, "member should have bookings:read after backfill"
+        denied = await permission_service.check(
+            "member", tenant_id, "bookings", "create"
+        )
+        assert not denied, "member must NOT get bookings:create (anti-overgrant)"
+
+
+@pytest.mark.asyncio
+async def test_k_backfill_idempotent(db_session, test_env):
+    """K5: re-running backfill on an already-backfilled tenant is a no-op —
+    same grants, no error, no duplicate rows."""
+    from unittest.mock import patch
+
+    from sqlalchemy import select
+
+    from app.core import casbin_enforcer as casbin_mod
+    from app.models.rbac import RolePermission
+    from app.services.permission_service import (
+        backfill_bookings_perms_for_existing_tenants,
+    )
+
+    tenant_id, _ = await _seed_backfill_target_tenant(db_session, test_env)
+
+    with patch.object(casbin_mod, "get_enforcer", return_value=test_env.enforcer):
+        await backfill_bookings_perms_for_existing_tenants(db_session)
+        # Snapshot the post-backfill grants so we can detect drift after the
+        # second run (active = valid_to IS NULL).
+        before_rows = (
+            await db_session.execute(
+                select(RolePermission).where(
+                    RolePermission.tenant_id == tenant_id,
+                    RolePermission.valid_to.is_(None),
+                )
+            )
+        ).scalars().all()
+        before_ids = {r.id for r in before_rows}
+
+        # K5: run it again. Must not raise, must report zero new grants
+        # (everything is already there), must not create duplicate grant rows.
+        second = await backfill_bookings_perms_for_existing_tenants(db_session)
+        assert second[tenant_id] == 0, "second run must add 0 grants"
+
+        after_rows = (
+            await db_session.execute(
+                select(RolePermission).where(
+                    RolePermission.tenant_id == tenant_id,
+                    RolePermission.valid_to.is_(None),
+                )
+            )
+        ).scalars().all()
+        after_ids = {r.id for r in after_rows}
+        assert before_ids == after_ids, "no new grant rows should appear"
+
+
+@pytest.mark.asyncio
+async def test_k_backfill_preserves_other_perms(db_session, test_env):
+    """K6: backfill touches ONLY bookings/menu:bookings. The pre-existing
+    customers:read and devices:read grants survive unchanged — both before/after
+    the backfill."""
+    from unittest.mock import patch
+
+    from app.core import casbin_enforcer as casbin_mod
+    from app.services.permission_service import (
+        backfill_bookings_perms_for_existing_tenants,
+        permission_service,
+    )
+
+    tenant_id, _ = await _seed_backfill_target_tenant(db_session, test_env)
+
+    with patch.object(casbin_mod, "get_enforcer", return_value=test_env.enforcer):
+        # Pre-backfill: customers:read works for owner/admin/member; devices:read
+        # works for owner. (No bookings perms yet.)
+        for role in ("owner", "admin", "member"):
+            ok = await permission_service.check(
+                role, tenant_id, "customers", "read"
+            )
+            assert ok, f"{role} had customers:read before backfill"
+        ok = await permission_service.check("owner", tenant_id, "devices", "read")
+        assert ok, "owner had devices:read before backfill"
+
+        await backfill_bookings_perms_for_existing_tenants(db_session)
+
+        # Post-backfill: the original perms still work AND bookings perms work.
+        for role in ("owner", "admin", "member"):
+            ok = await permission_service.check(
+                role, tenant_id, "customers", "read"
+            )
+            assert ok, f"{role} should still have customers:read after backfill"
+        ok = await permission_service.check("owner", tenant_id, "devices", "read")
+        assert ok, "owner should still have devices:read after backfill"
+        # And a bookings perm does work (backfill actually did something).
+        ok = await permission_service.check("owner", tenant_id, "bookings", "read")
+        assert ok, "owner should have bookings:read after backfill"

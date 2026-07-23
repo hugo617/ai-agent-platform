@@ -502,6 +502,10 @@ DEFAULT_OWNER_PERMS: list[tuple[str, str]] = [
     ("knowledge", "read"), ("knowledge", "create"), ("knowledge", "delete"),
     # devices (devices-crud-ui slice 02): owner full CRUD — mirrors customers.
     ("devices", "read"), ("devices", "create"), ("devices", "update"), ("devices", "delete"),
+    # bookings (device-booking slice 02): owner full CRUD + cancel (cancel
+    # reuses the delete perm — see bookings.py). Mirrors the customer/device
+    # convention: owner owns the full booking lifecycle.
+    ("bookings", "read"), ("bookings", "create"), ("bookings", "update"), ("bookings", "delete"),
 ]
 DEFAULT_ADMIN_PERMS: list[tuple[str, str]] = [
     ("agents", "read"), ("agents", "create"), ("agents", "update"), ("agents", "export"),
@@ -518,6 +522,10 @@ DEFAULT_ADMIN_PERMS: list[tuple[str, str]] = [
     # devices (devices-crud-ui slice 02): admin writes, NO delete — mirrors
     # the customer convention (admin cannot delete business records).
     ("devices", "read"), ("devices", "create"), ("devices", "update"),
+    # bookings (device-booking slice 02): admin reads + writes, no delete
+    # (cancel reuses the delete perm, so admin CANNOT cancel — mirrors the
+    # customer / device admin convention).
+    ("bookings", "read"), ("bookings", "create"), ("bookings", "update"),
 ]
 DEFAULT_MEMBER_PERMS: list[tuple[str, str]] = [
     ("agents", "read"),
@@ -528,6 +536,8 @@ DEFAULT_MEMBER_PERMS: list[tuple[str, str]] = [
     ("knowledge", "read"),
     # devices (devices-crud-ui slice 02): member read-only — mirrors customers.
     ("devices", "read"),
+    # bookings (device-booking slice 02): member read-only — mirrors devices.
+    ("bookings", "read"),
 ]
 
 # ---------------------------------------------------------------------------
@@ -551,18 +561,25 @@ DEFAULT_MENU_PERMS: dict[str, list[str]] = {
         "members", "users", "roles", "permissions", "settings", "knowledge",
         # devices (devices-crud-ui slice 02): owner sees the devices nav entry.
         "devices",
+        # bookings (device-booking slice 02): owner sees the bookings nav entry.
+        "bookings",
     ],
     "admin": [
         "dashboard", "agents", "chat", "groups", "customers",
         "members", "users", "roles", "permissions", "settings", "knowledge",
         # devices (devices-crud-ui slice 02): admin sees the devices nav entry.
         "devices",
+        # bookings (device-booking slice 02): admin sees the bookings nav entry.
+        "bookings",
     ],
     "member": [
         "dashboard", "agents", "chat", "groups", "customers", "knowledge",
         # devices (devices-crud-ui slice 02): member sees the devices nav entry
         # (page itself is read-only via api perms; the menu just unlocks entry).
         "devices",
+        # bookings (device-booking slice 02): member sees the bookings nav entry
+        # (read-only via api perms; menu just unlocks entry).
+        "bookings",
     ],
 }
 
@@ -586,6 +603,8 @@ OBJ_CN: dict[str, str] = {
     "knowledge": "知识库",
     # devices (devices-crud-ui slice 02): catalogue label for the new perm set.
     "devices": "设备",
+    # bookings (device-booking slice 02): catalogue label for the new perm set.
+    "bookings": "预约",
     "menu": "菜单",
 }
 ACT_CN: dict[str, str] = {
@@ -617,6 +636,8 @@ MENU_CN: dict[str, str] = {
     "knowledge": "知识库",
     # devices (devices-crud-ui slice 02): menu-code label for the new entry.
     "devices": "设备",
+    # bookings (device-booking slice 02): menu-code label for the new entry.
+    "bookings": "预约",
 }
 
 
@@ -726,6 +747,111 @@ async def backfill_devices_perms_for_existing_tenants(db: AsyncSession) -> dict[
             for code in menu_codes:
                 if code != "devices":
                     continue  # scope guardrail — only the devices menu entry
+                await service.add_policy(role_code, tenant.id, "menu", code)
+                pid = await service._upsert_permission(
+                    db, tenant.id, "menu", code, perm_type="menu"
+                )
+                if pid not in existing_per_role[role_code]:
+                    await rp_repo.grant(rid, pid, tenant.id)
+                    new_count += 1
+            await service.sync_role_permissions_to_casbin(db, rid, tenant.id)
+
+        await db.flush()
+        stats[tenant.id] = new_count
+
+    return stats
+
+
+# ---------------------------------------------------------------------------
+# One-shot backfill for the bookings permission set (device-booking slice 02).
+#
+# Structural mirror of ``backfill_devices_perms_for_existing_tenants`` — the
+# bookings object follows the identical seed/backfill lifecycle as devices
+# (both are tenant-scoped business records that mirror the customer
+# convention). The only difference is the scope guardrail obj name.
+#
+# Scope guardrail: this function ONLY touches ``(obj="bookings", *)`` and
+# ``(obj="menu", act="bookings")`` rows. It never grants/revokes anything else,
+# so re-running it after other permission work is always safe (idempotent and
+# side-effect-bounded).
+# ---------------------------------------------------------------------------
+async def backfill_bookings_perms_for_existing_tenants(db: AsyncSession) -> dict[str, int]:
+    """Grant ``bookings``/``menu:bookings`` perms to every tenant's system roles.
+
+    Walks the ``tenants`` table and, for each tenant, ensures owner/admin/member
+    hold the bookings-related entries from ``DEFAULT_*_PERMS`` plus the
+    ``menu:bookings`` entry from ``DEFAULT_MENU_PERMS``. Existing tenants created
+    before device-booking slice 02 shipped are missing these; new tenants get
+    them via ``seed_tenant_defaults`` automatically.
+
+    Idempotent at three layers (same as the devices backfill):
+      * ``PermissionService._upsert_permission`` returns the existing row id
+        when the catalogue already has ``bookings:<act>`` / ``menu:bookings``;
+      * ``RolePermissionRepository.grant`` no-ops on an already-active grant;
+      * ``sync_role_permissions_to_casbin`` is a full rebuild from SCD2 current
+        state, so re-syncing converges.
+
+    Returns a stats dict (tenant_id → count of newly-granted role×permission
+    pairs) for the one-shot script's report. The count is "rows newly added by
+    this run" — re-running on an already-backfilled tenant yields 0 per pair.
+
+    Only ``bookings``/``menu:bookings`` are touched. Other permissions
+    (``customers:read``, ``devices:read``, etc.) are left untouched, which is
+    the K6 contract in the plan.
+    """
+    from app.models.tenant import Tenant  # local import to avoid module cycles
+    from app.repositories.rbac import RolePermissionRepository
+
+    service = PermissionService()
+    rp_repo = RolePermissionRepository(db)
+
+    # Snapshot existing (role_id, permission_id) active grants once per tenant
+    # so we can count *new* grants without a second round-trip per pair. The
+    # SCD2 "active" predicate (valid_to IS NULL) lives in the repository.
+    tenants = (await db.execute(select(Tenant))).scalars().all()
+    stats: dict[str, int] = {}
+
+    for tenant in tenants:
+        role_ids = await service._role_ids_by_code(db, tenant.id)
+        # Pre-collect existing active grants per role (permission_id set) so
+        # we can tell "new" from "already granted" without N round-trips.
+        existing_per_role: dict[str, set[str]] = {}
+        for role_code, rid in role_ids.items():
+            active = await rp_repo.current_permissions(rid, tenant.id)
+            existing_per_role[role_code] = {row.permission_id for row in active}
+
+        new_count = 0
+
+        # --- api perms: only (obj="bookings", *) rows ------------------------
+        for role_code, perms in (
+            ("owner", DEFAULT_OWNER_PERMS),
+            ("admin", DEFAULT_ADMIN_PERMS),
+            ("member", DEFAULT_MEMBER_PERMS),
+        ):
+            rid = role_ids.get(role_code)
+            if rid is None:
+                # Tenant doesn't have this system role (rare: member never
+                # created). Nothing to grant — skip cleanly.
+                continue
+            for obj, act in perms:
+                if obj != "bookings":
+                    continue  # scope guardrail — never touch non-bookings perms
+                pid = await service._upsert_permission(db, tenant.id, obj, act)
+                if pid not in existing_per_role[role_code]:
+                    await rp_repo.grant(rid, pid, tenant.id)
+                    new_count += 1
+            # Casbin sync is per-role (sync_role_permissions_to_casbin is a
+            # full rebuild from SCD2 current state — cheap and convergent).
+            await service.sync_role_permissions_to_casbin(db, rid, tenant.id)
+
+        # --- menu perms: only ("menu", "bookings") --------------------------
+        for role_code, menu_codes in DEFAULT_MENU_PERMS.items():
+            rid = role_ids.get(role_code)
+            if rid is None:
+                continue
+            for code in menu_codes:
+                if code != "bookings":
+                    continue  # scope guardrail — only the bookings menu entry
                 await service.add_policy(role_code, tenant.id, "menu", code)
                 pid = await service._upsert_permission(
                     db, tenant.id, "menu", code, perm_type="menu"

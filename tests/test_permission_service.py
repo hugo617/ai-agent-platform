@@ -234,6 +234,10 @@ def test_default_owner_perms_cover_full_catalogue():
         # cannot silently drop the devices perm set.
         ("devices", "read"), ("devices", "create"), ("devices", "update"),
         ("devices", "delete"),
+        # bookings (device-booking slice 02): owner has full CRUD + cancel
+        # (cancel reuses the delete perm — see bookings.py). Mirrors devices.
+        ("bookings", "read"), ("bookings", "create"), ("bookings", "update"),
+        ("bookings", "delete"),
     }
     assert set(DEFAULT_OWNER_PERMS) == expected
 
@@ -291,11 +295,12 @@ def test_cn_label_maps_cover_catalogue():
 # ---------------------------------------------------------------------------
 
 # The business menus every full-trust role (owner/admin) sees. ``devices`` is
-# added in devices-crud-ui slice 02 alongside the rest of the business surface.
+# added in devices-crud-ui slice 02 and ``bookings`` in device-booking slice 02,
+# alongside the rest of the business surface.
 _ALL_BUSINESS_MENUS = {
     "dashboard", "agents", "chat", "groups", "customers",
     "members", "users", "roles", "permissions", "settings", "knowledge",
-    "devices",
+    "devices", "bookings",
 }
 
 
@@ -321,6 +326,9 @@ def test_default_menu_perms_member_only_sees_business_menus():
         # devices (devices-crud-ui slice 02): member sees the nav entry — the
         # page itself is read-only via api perms; the menu just unlocks entry.
         "devices",
+        # bookings (device-booking slice 02): member sees the nav entry — the
+        # page itself is read-only via api perms; the menu just unlocks entry.
+        "bookings",
     }
     # management menus hidden from member
     assert member_menus.isdisjoint(
