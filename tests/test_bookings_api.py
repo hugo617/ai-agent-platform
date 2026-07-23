@@ -1,0 +1,936 @@
+"""Booking API tests — slice 01 (Booking table + overlap + status-guarded CRUD).
+
+Chapter layout (matches plan-device-booking.md slice 01 acceptance criteria):
+- A. owner/admin CRUD — create + list + get + update + cancel, full-field
+  assertions; admin can create/update but NOT cancel (cancel reuses the
+  delete perm, which admin lacks — mirrors devices).
+- B. cross-tenant isolation — bookings in another tenant invisible;
+  GET/PUT/cancel → 404 (no enumeration leak).
+- C. time-slot overlap (D4 left-closed/right-open, D1 → 400 NOT 409):
+  - C1 same device same window overlap → 400
+  - C2 back-to-back (one ends 11:00, next starts 11:00) → 201 (no conflict)
+  - C3 cancelled booking's slot reusable → 201
+  - C4 reschedule (PUT) excludes self → 200
+- D. status-guard (schema is the front guard):
+  - D1 POST with status=done → created, status still pending
+  - D2 PUT with status → ignored (status unchanged)
+  - D3 POST with started_at/feedback → ignored (still None)
+- E. status transitions (pending↔cancelled):
+  - E1 pending → cancel → 204, then GET shows cancelled
+  - E2 cancelled → PUT reschedule → 400 (terminal, not mutable)
+  - E3 cancelled → cancel again → 204 (idempotent no-op)
+- F. permission matrix — member read-only (write → 403); admin no cancel
+  (delete perm → 403); unauth → 401.
+- G. walk-in (customer_id None) — created 201, GET shows null customer_id.
+- H. device SET NULL — soft-deleted device's booking still GETs (FK SET NULL
+  keeps the row; device_id stays but the device is gone).
+
+Test-organization note (matches test_devices_api.py): each test uses ONE
+client fixture. The conftest seeds bookings:* perms for owner/admin/member
+(simulating a backfilled tenant, same rationale as devices) so slice-01 tests
+can exercise the CRUD path today; production DEFAULT_*_PERMS gets them in
+slice 02.
+"""
+
+from datetime import UTC, datetime, timedelta
+from decimal import Decimal
+
+import pytest
+
+AUTH = {"Authorization": "Bearer fake"}
+
+# A fixed reference instant for deterministic window construction. Using a
+# far-future date keeps tests independent of "today" and avoids any
+# date-filter surprises in future slices.
+_BASE = datetime(2030, 1, 1, 10, 0, tzinfo=UTC)
+
+
+def _window(start_offset_hours: float = 0, duration_hours: float = 1):
+    """Build a (start, end) pair offset from _BASE. Returns ISO strings
+    suitable for JSON bodies + the aware datetimes for direct ORM seeding."""
+    start = _BASE + timedelta(hours=start_offset_hours)
+    end = start + timedelta(hours=duration_hours)
+    return start, end
+
+
+# ---------------------------------------------------------------- helpers
+
+
+async def _seed_model(db_session, **overrides):
+    """Insert a DeviceModel row directly (bookings reference devices, which
+    reference device_models via FK)."""
+    from app.models.device_model import DeviceModel
+
+    defaults = {
+        "name": f"M-{overrides.get('name', 'x')}",
+        "unit_cost": Decimal("1234.56"),
+        "specs": {"form_factor": "chamber"},
+    }
+    defaults.update(overrides)
+    model = DeviceModel(**defaults)
+    db_session.add(model)
+    await db_session.commit()
+    return model
+
+
+async def _seed_device(db_session, *, tenant_id, model_id, serial, **overrides):
+    """Insert a Device row directly (the booking's device_id target)."""
+    from app.models.device import Device
+
+    defaults = {
+        "tenant_id": tenant_id,
+        "model_id": model_id,
+        "serial_number": serial,
+    }
+    defaults.update(overrides)
+    device = Device(**defaults)
+    db_session.add(device)
+    await db_session.commit()
+    return device
+
+
+async def _seed_customer_with_profile(
+    db_session, *, tenant_id, name, identity_key=None, **overrides
+):
+    """Insert a global Customer + a live CustomerProfile in tenant_id.
+
+    Bookings reference the *global* Customer (customers.id), but the service's
+    ``_assert_customer_in_tenant`` check needs a live ``CustomerProfile`` in
+    the caller's tenant — so a bare global Customer with no profile here would
+    fail the create guard. Returns ``(customer, profile)``.
+    """
+    import uuid
+
+    from app.models.customer import Customer, CustomerProfile
+
+    if identity_key is None:
+        identity_key = f"phone-{uuid.uuid4().hex}"
+    customer = Customer(name=name, identity_key=identity_key)
+    db_session.add(customer)
+    await db_session.commit()
+    profile = CustomerProfile(
+        customer_id=customer.id,
+        tenant_id=tenant_id,
+        status=overrides.pop("status", "active"),
+        **overrides,
+    )
+    db_session.add(profile)
+    await db_session.commit()
+    return customer, profile
+
+
+def _iso(dt) -> str:
+    return dt.isoformat()
+
+
+# ----------------------------------------------------- A. owner/admin CRUD
+
+
+@pytest.mark.asyncio
+async def test_a_owner_create_list_get_update_cancel(app_client, db_session, test_env):
+    """Full CRUD round-trip as the tenant owner. Asserts every field on the
+    read DTO so a schema-shape regression (added/renamed field) surfaces."""
+    model = await _seed_model(db_session, name="A-Model")
+    device = await _seed_device(
+        db_session, tenant_id=test_env.tenant_id, model_id=model.id, serial="A-DEV"
+    )
+    customer, _profile = await _seed_customer_with_profile(
+        db_session, tenant_id=test_env.tenant_id, name="A-客户"
+    )
+    start, end = _window(0, 1)
+
+    # create
+    resp = await app_client.post(
+        "/api/v1/bookings/",
+        json={
+            "device_id": device.id,
+            "customer_id": customer.id,
+            "scheduled_start_at": _iso(start),
+            "scheduled_end_at": _iso(end),
+            "notes": "首次预约",
+        },
+        headers=AUTH,
+    )
+    assert resp.status_code == 201, resp.text
+    body = resp.json()
+    assert body["device_id"] == device.id
+    assert body["customer_id"] == customer.id
+    assert body["status"] == "pending"  # always starts pending
+    assert body["notes"] == "首次预约"
+    # Lifecycle placeholders owned by device-poweron are present but None.
+    assert body["started_at"] is None
+    assert body["ended_at"] is None
+    assert body["feedback"] is None
+    assert body["created_by"] is not None  # owner user id
+    assert "id" in body and "tenant_id" in body
+    assert "created_at" in body and "updated_at" in body
+    booking_id = body["id"]
+
+    # list
+    resp = await app_client.get("/api/v1/bookings/", headers=AUTH)
+    assert resp.status_code == 200
+    items = resp.json()
+    assert len(items) == 1
+    assert items[0]["id"] == booking_id
+
+    # get
+    resp = await app_client.get(f"/api/v1/bookings/{booking_id}", headers=AUTH)
+    assert resp.status_code == 200
+    assert resp.json()["notes"] == "首次预约"
+
+    # update (reschedule window + notes; device_id immutable)
+    new_start, new_end = _window(24, 1)  # next day, no overlap with self
+    resp = await app_client.put(
+        f"/api/v1/bookings/{booking_id}",
+        json={
+            "scheduled_start_at": _iso(new_start),
+            "scheduled_end_at": _iso(new_end),
+            "notes": "改约",
+        },
+        headers=AUTH,
+    )
+    assert resp.status_code == 200, resp.text
+    updated = resp.json()
+    assert updated["notes"] == "改约"
+    assert updated["scheduled_start_at"] is not None
+    # Unchanged fields preserved.
+    assert updated["device_id"] == device.id
+    assert updated["status"] == "pending"
+
+    # cancel (pending → cancelled, 204)
+    resp = await app_client.post(
+        f"/api/v1/bookings/{booking_id}/cancel", headers=AUTH
+    )
+    assert resp.status_code == 204
+    # GET reflects the cancelled status (row stays — no soft delete).
+    resp = await app_client.get(f"/api/v1/bookings/{booking_id}", headers=AUTH)
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "cancelled"
+    # List still contains it (cancelled bookings are NOT filtered out).
+    resp = await app_client.get("/api/v1/bookings/", headers=AUTH)
+    assert any(b["id"] == booking_id for b in resp.json())
+
+
+@pytest.mark.asyncio
+async def test_a_admin_can_create_update_but_not_cancel(
+    tenant_admin_client, db_session, test_env
+):
+    """admin has bookings:read/create/update (not delete). cancel reuses the
+    delete perm, so admin CANNOT cancel — mirrors the devices convention."""
+    model = await _seed_model(db_session, name="ADM-Model")
+    device = await _seed_device(
+        db_session, tenant_id=test_env.tenant_id, model_id=model.id, serial="ADM-DEV"
+    )
+    start, end = _window(0, 1)
+    resp = await tenant_admin_client.post(
+        "/api/v1/bookings/",
+        json={
+            "device_id": device.id,
+            "scheduled_start_at": _iso(start),
+            "scheduled_end_at": _iso(end),
+        },
+        headers=AUTH,
+    )
+    assert resp.status_code == 201, resp.text
+    booking_id = resp.json()["id"]
+
+    new_start, new_end = _window(48, 1)
+    resp = await tenant_admin_client.put(
+        f"/api/v1/bookings/{booking_id}",
+        json={
+            "scheduled_start_at": _iso(new_start),
+            "scheduled_end_at": _iso(new_end),
+        },
+        headers=AUTH,
+    )
+    assert resp.status_code == 200
+
+    resp = await tenant_admin_client.get("/api/v1/bookings/", headers=AUTH)
+    assert resp.status_code == 200
+    assert len(resp.json()) == 1
+
+    # admin has no bookings:delete → cancel is 403.
+    resp = await tenant_admin_client.post(
+        f"/api/v1/bookings/{booking_id}/cancel", headers=AUTH
+    )
+    assert resp.status_code == 403
+
+
+# ---------------------------------------------- B. cross-tenant isolation
+
+
+@pytest.mark.asyncio
+async def test_b_cross_tenant_get_put_cancel_returns_404(
+    app_client, db_session, test_env
+):
+    """Bookings in another tenant are invisible: GET/PUT/cancel all 404 (no
+    'exists but not yours' leak → no enumeration)."""
+    import uuid
+
+    from app.models.booking import Booking
+    from app.models.tenant import Tenant
+
+    model = await _seed_model(db_session, name="ISO-Model")
+    other_tenant_id = f"tnt-iso-{uuid.uuid4().hex}"
+    db_session.add(Tenant(id=other_tenant_id, name="Iso Tenant"))
+    await db_session.commit()
+    other_device = await _seed_device(
+        db_session, tenant_id=other_tenant_id, model_id=model.id, serial="ISO-DEV"
+    )
+    start, end = _window(0, 1)
+    # Seed a booking directly in the OTHER tenant.
+    other_booking = Booking(
+        tenant_id=other_tenant_id,
+        device_id=other_device.id,
+        scheduled_start_at=start,
+        scheduled_end_at=end,
+    )
+    db_session.add(other_booking)
+    await db_session.commit()
+
+    # The owner (test_env.tenant_id) cannot see / touch other_tenant's booking.
+    resp = await app_client.get(
+        f"/api/v1/bookings/{other_booking.id}", headers=AUTH
+    )
+    assert resp.status_code == 404
+    new_start, new_end = _window(72, 1)
+    resp = await app_client.put(
+        f"/api/v1/bookings/{other_booking.id}",
+        json={
+            "scheduled_start_at": _iso(new_start),
+            "scheduled_end_at": _iso(new_end),
+        },
+        headers=AUTH,
+    )
+    assert resp.status_code == 404
+    resp = await app_client.post(
+        f"/api/v1/bookings/{other_booking.id}/cancel", headers=AUTH
+    )
+    assert resp.status_code == 404
+    # List scoped to caller's tenant → empty.
+    resp = await app_client.get("/api/v1/bookings/", headers=AUTH)
+    assert resp.status_code == 200
+    assert resp.json() == []
+
+
+# ------------------------------- C. time-slot overlap (D4 / D1: 400 not 409)
+
+
+@pytest.mark.asyncio
+async def test_c1_overlap_same_device_same_window_400(app_client, db_session, test_env):
+    """Same device, overlapping window → 400 (BizError, NOT 409 — D1)."""
+    model = await _seed_model(db_session, name="C1-Model")
+    device = await _seed_device(
+        db_session, tenant_id=test_env.tenant_id, model_id=model.id, serial="C1-DEV"
+    )
+    s1, e1 = _window(0, 2)  # 10:00–12:00
+    resp = await app_client.post(
+        "/api/v1/bookings/",
+        json={
+            "device_id": device.id,
+            "scheduled_start_at": _iso(s1),
+            "scheduled_end_at": _iso(e1),
+        },
+        headers=AUTH,
+    )
+    assert resp.status_code == 201
+    # Overlapping: 11:00–13:00 (intersects 11:00–12:00).
+    s2, e2 = _window(1, 2)
+    resp = await app_client.post(
+        "/api/v1/bookings/",
+        json={
+            "device_id": device.id,
+            "scheduled_start_at": _iso(s2),
+            "scheduled_end_at": _iso(e2),
+        },
+        headers=AUTH,
+    )
+    assert resp.status_code == 400, resp.text
+
+
+@pytest.mark.asyncio
+async def test_c2_back_to_back_no_conflict_201(app_client, db_session, test_env):
+    """Back-to-back: one ends 11:00, next starts 11:00 → 201 (left-closed /
+    right-open means the boundary touches but does not overlap)."""
+    model = await _seed_model(db_session, name="C2-Model")
+    device = await _seed_device(
+        db_session, tenant_id=test_env.tenant_id, model_id=model.id, serial="C2-DEV"
+    )
+    s1, e1 = _window(0, 1)  # 10:00–11:00
+    resp = await app_client.post(
+        "/api/v1/bookings/",
+        json={
+            "device_id": device.id,
+            "scheduled_start_at": _iso(s1),
+            "scheduled_end_at": _iso(e1),
+        },
+        headers=AUTH,
+    )
+    assert resp.status_code == 201
+    # Starts exactly when the first ends: 11:00–12:00.
+    s2, e2 = _window(1, 1)
+    resp = await app_client.post(
+        "/api/v1/bookings/",
+        json={
+            "device_id": device.id,
+            "scheduled_start_at": _iso(s2),
+            "scheduled_end_at": _iso(e2),
+        },
+        headers=AUTH,
+    )
+    assert resp.status_code == 201, resp.text
+
+
+@pytest.mark.asyncio
+async def test_c3_cancelled_slot_reusable_201(app_client, db_session, test_env):
+    """A cancelled booking has released its slot: the same window can be
+    booked again (active-states-only overlap filter)."""
+    model = await _seed_model(db_session, name="C3-Model")
+    device = await _seed_device(
+        db_session, tenant_id=test_env.tenant_id, model_id=model.id, serial="C3-DEV"
+    )
+    s, e = _window(0, 1)
+    first = await app_client.post(
+        "/api/v1/bookings/",
+        json={
+            "device_id": device.id,
+            "scheduled_start_at": _iso(s),
+            "scheduled_end_at": _iso(e),
+        },
+        headers=AUTH,
+    )
+    assert first.status_code == 201
+    # Cancel it → slot released.
+    cancel = await app_client.post(
+        f"/api/v1/bookings/{first.json()['id']}/cancel", headers=AUTH
+    )
+    assert cancel.status_code == 204
+    # Same window now bookable again.
+    resp = await app_client.post(
+        "/api/v1/bookings/",
+        json={
+            "device_id": device.id,
+            "scheduled_start_at": _iso(s),
+            "scheduled_end_at": _iso(e),
+        },
+        headers=AUTH,
+    )
+    assert resp.status_code == 201, resp.text
+
+
+@pytest.mark.asyncio
+async def test_c4_reschedule_excludes_self_200(app_client, db_session, test_env):
+    """PUT moves the window — the overlap check must exclude the booking
+    being moved, otherwise it would always conflict with its own old slot."""
+    model = await _seed_model(db_session, name="C4-Model")
+    device = await _seed_device(
+        db_session, tenant_id=test_env.tenant_id, model_id=model.id, serial="C4-DEV"
+    )
+    s, e = _window(0, 2)  # 10:00–12:00
+    create = await app_client.post(
+        "/api/v1/bookings/",
+        json={
+            "device_id": device.id,
+            "scheduled_start_at": _iso(s),
+            "scheduled_end_at": _iso(e),
+        },
+        headers=AUTH,
+    )
+    bid = create.json()["id"]
+    # Reschedule within an overlapping window (11:00–13:00 overlaps old
+    # 10:00–12:00). exclude_id=self → must succeed.
+    ns, ne = _window(1, 2)
+    resp = await app_client.put(
+        f"/api/v1/bookings/{bid}",
+        json={
+            "scheduled_start_at": _iso(ns),
+            "scheduled_end_at": _iso(ne),
+        },
+        headers=AUTH,
+    )
+    assert resp.status_code == 200, resp.text
+
+
+# ----------------------------------- D. status-guard (schema front guard)
+
+
+@pytest.mark.asyncio
+async def test_d1_post_status_ignored_still_pending(app_client, db_session, test_env):
+    """POST with status=done in the body → created, status is still pending
+    (the create schema doesn't carry status; Pydantic drops the unknown key)."""
+    model = await _seed_model(db_session, name="D1-Model")
+    device = await _seed_device(
+        db_session, tenant_id=test_env.tenant_id, model_id=model.id, serial="D1-DEV"
+    )
+    s, e = _window(0, 1)
+    resp = await app_client.post(
+        "/api/v1/bookings/",
+        json={
+            "device_id": device.id,
+            "scheduled_start_at": _iso(s),
+            "scheduled_end_at": _iso(e),
+            "status": "done",  # must be ignored
+        },
+        headers=AUTH,
+    )
+    assert resp.status_code == 201, resp.text
+    assert resp.json()["status"] == "pending"
+
+
+@pytest.mark.asyncio
+async def test_d2_put_status_ignored(app_client, db_session, test_env):
+    """PUT with status in the body → ignored, status unchanged (only /cancel
+    can move status)."""
+    model = await _seed_model(db_session, name="D2-Model")
+    device = await _seed_device(
+        db_session, tenant_id=test_env.tenant_id, model_id=model.id, serial="D2-DEV"
+    )
+    s, e = _window(0, 1)
+    create = await app_client.post(
+        "/api/v1/bookings/",
+        json={
+            "device_id": device.id,
+            "scheduled_start_at": _iso(s),
+            "scheduled_end_at": _iso(e),
+        },
+        headers=AUTH,
+    )
+    bid = create.json()["id"]
+    resp = await app_client.put(
+        f"/api/v1/bookings/{bid}",
+        json={"status": "done", "notes": "试图改状态"},
+        headers=AUTH,
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["status"] == "pending"  # unchanged
+    assert body["notes"] == "试图改状态"  # notes DID apply
+
+
+@pytest.mark.asyncio
+async def test_d3_post_lifecycle_fields_ignored(app_client, db_session, test_env):
+    """POST with started_at / feedback → ignored (those are owned by
+    device-poweron's /start / /end; never settable on create)."""
+    model = await _seed_model(db_session, name="D3-Model")
+    device = await _seed_device(
+        db_session, tenant_id=test_env.tenant_id, model_id=model.id, serial="D3-DEV"
+    )
+    s, e = _window(0, 1)
+    resp = await app_client.post(
+        "/api/v1/bookings/",
+        json={
+            "device_id": device.id,
+            "scheduled_start_at": _iso(s),
+            "scheduled_end_at": _iso(e),
+            "started_at": _iso(s),
+            "feedback": {"score": 5},
+        },
+        headers=AUTH,
+    )
+    assert resp.status_code == 201, resp.text
+    body = resp.json()
+    assert body["started_at"] is None
+    assert body["feedback"] is None
+
+
+# --------------------- E. status transitions (pending↔cancelled)
+
+
+@pytest.mark.asyncio
+async def test_e1_pending_cancel_204(app_client, db_session, test_env):
+    """pending → cancel → 204, GET shows cancelled."""
+    model = await _seed_model(db_session, name="E1-Model")
+    device = await _seed_device(
+        db_session, tenant_id=test_env.tenant_id, model_id=model.id, serial="E1-DEV"
+    )
+    s, e = _window(0, 1)
+    create = await app_client.post(
+        "/api/v1/bookings/",
+        json={
+            "device_id": device.id,
+            "scheduled_start_at": _iso(s),
+            "scheduled_end_at": _iso(e),
+        },
+        headers=AUTH,
+    )
+    bid = create.json()["id"]
+    resp = await app_client.post(f"/api/v1/bookings/{bid}/cancel", headers=AUTH)
+    assert resp.status_code == 204
+    get = await app_client.get(f"/api/v1/bookings/{bid}", headers=AUTH)
+    assert get.json()["status"] == "cancelled"
+
+
+@pytest.mark.asyncio
+async def test_e2_cancelled_put_reschedule_400(app_client, db_session, test_env):
+    """cancelled is terminal: PUT reschedule → 400 (D10 — can't revive a
+    cancelled booking by moving its window)."""
+    model = await _seed_model(db_session, name="E2-Model")
+    device = await _seed_device(
+        db_session, tenant_id=test_env.tenant_id, model_id=model.id, serial="E2-DEV"
+    )
+    s, e = _window(0, 1)
+    create = await app_client.post(
+        "/api/v1/bookings/",
+        json={
+            "device_id": device.id,
+            "scheduled_start_at": _iso(s),
+            "scheduled_end_at": _iso(e),
+        },
+        headers=AUTH,
+    )
+    bid = create.json()["id"]
+    await app_client.post(f"/api/v1/bookings/{bid}/cancel", headers=AUTH)
+    ns, ne = _window(96, 1)
+    resp = await app_client.put(
+        f"/api/v1/bookings/{bid}",
+        json={
+            "scheduled_start_at": _iso(ns),
+            "scheduled_end_at": _iso(ne),
+        },
+        headers=AUTH,
+    )
+    assert resp.status_code == 400, resp.text
+
+
+@pytest.mark.asyncio
+async def test_e3_cancel_idempotent_204(app_client, db_session, test_env):
+    """Re-cancelling an already-cancelled booking → 204 (idempotent no-op,
+    no DB write). Mirrors DELETE-idempotency (device unbind convention)."""
+    model = await _seed_model(db_session, name="E3-Model")
+    device = await _seed_device(
+        db_session, tenant_id=test_env.tenant_id, model_id=model.id, serial="E3-DEV"
+    )
+    s, e = _window(0, 1)
+    create = await app_client.post(
+        "/api/v1/bookings/",
+        json={
+            "device_id": device.id,
+            "scheduled_start_at": _iso(s),
+            "scheduled_end_at": _iso(e),
+        },
+        headers=AUTH,
+    )
+    bid = create.json()["id"]
+    first = await app_client.post(f"/api/v1/bookings/{bid}/cancel", headers=AUTH)
+    assert first.status_code == 204
+    second = await app_client.post(f"/api/v1/bookings/{bid}/cancel", headers=AUTH)
+    assert second.status_code == 204
+    get = await app_client.get(f"/api/v1/bookings/{bid}", headers=AUTH)
+    assert get.json()["status"] == "cancelled"
+
+
+# ----------------------------------------- F. permission matrix + unauth
+
+
+@pytest.mark.asyncio
+async def test_f_member_read_only_end_to_end(member_client, db_session, test_env):
+    """member has bookings:read only — create/update/cancel → 403."""
+    model = await _seed_model(db_session, name="F-Member-Model")
+    device = await _seed_device(
+        db_session, tenant_id=test_env.tenant_id, model_id=model.id, serial="F-MEM-DEV"
+    )
+    s, e = _window(0, 1)
+    # Seed a booking via db_session (owner path) so member has something to read.
+    from app.models.booking import Booking
+
+    booking = Booking(
+        tenant_id=test_env.tenant_id,
+        device_id=device.id,
+        scheduled_start_at=s,
+        scheduled_end_at=e,
+    )
+    db_session.add(booking)
+    await db_session.commit()
+
+    # member can read the list + one.
+    resp = await member_client.get("/api/v1/bookings/", headers=AUTH)
+    assert resp.status_code == 200
+    assert any(b["id"] == booking.id for b in resp.json())
+    resp = await member_client.get(f"/api/v1/bookings/{booking.id}", headers=AUTH)
+    assert resp.status_code == 200
+    # member cannot create.
+    resp = await member_client.post(
+        "/api/v1/bookings/",
+        json={
+            "device_id": device.id,
+            "scheduled_start_at": _iso(s),
+            "scheduled_end_at": _iso(e),
+        },
+        headers=AUTH,
+    )
+    assert resp.status_code == 403
+    # member cannot update.
+    resp = await member_client.put(
+        f"/api/v1/bookings/{booking.id}",
+        json={"notes": "x"},
+        headers=AUTH,
+    )
+    assert resp.status_code == 403
+    # member cannot cancel.
+    resp = await member_client.post(
+        f"/api/v1/bookings/{booking.id}/cancel", headers=AUTH
+    )
+    assert resp.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_f_hq_staff_writes_are_403(hq_staff_client, db_session, test_env):
+    """hq_staff is the HQ read-only viewer — writes (create/update/cancel) all
+    403. The hq_staff fixture binds the user to the ``member`` tenant role (no
+    bookings:create/update/delete in casbin), and ``permission_service.check``
+    only short-circuits hq_staff for ``act == "read"`` — writes fall through to
+    casbin and are denied. Acceptance F lists hq_staff write → 403 explicitly.
+
+    NOTE: slice 01 keeps reads behind a router-level ``require_permission(
+    "bookings", "read")``; the member role grants bookings:read so hq_staff
+    (bound to member) CAN read here. Slice 03 moves the read guard into the
+    endpoint body so the HQ panorama branch serves hq_staff without a tenant
+    role — that refactor is where the hq_staff read test belongs."""
+    model = await _seed_model(db_session, name="F-HQ-Model")
+    device = await _seed_device(
+        db_session, tenant_id=test_env.tenant_id, model_id=model.id, serial="F-HQ-DEV"
+    )
+    s, e = _window(0, 1)
+    # hq_staff cannot create.
+    resp = await hq_staff_client.post(
+        "/api/v1/bookings/",
+        json={
+            "device_id": device.id,
+            "scheduled_start_at": _iso(s),
+            "scheduled_end_at": _iso(e),
+        },
+        headers=AUTH,
+    )
+    assert resp.status_code == 403
+    # Seed a booking via db_session so we have an id to update/cancel.
+    from app.models.booking import Booking
+
+    booking = Booking(
+        tenant_id=test_env.tenant_id,
+        device_id=device.id,
+        scheduled_start_at=s,
+        scheduled_end_at=e,
+    )
+    db_session.add(booking)
+    await db_session.commit()
+    # hq_staff cannot update.
+    ns, ne = _window(120, 1)
+    resp = await hq_staff_client.put(
+        f"/api/v1/bookings/{booking.id}",
+        json={"scheduled_start_at": _iso(ns), "scheduled_end_at": _iso(ne)},
+        headers=AUTH,
+    )
+    assert resp.status_code == 403
+    # hq_staff cannot cancel.
+    resp = await hq_staff_client.post(
+        f"/api/v1/bookings/{booking.id}/cancel", headers=AUTH
+    )
+    assert resp.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_f_unauthenticated_401(test_env):
+    """No Authorization header → 401 (get_current_user raises 401)."""
+    from httpx import ASGITransport, AsyncClient
+
+    from app.main import create_app
+
+    transport = ASGITransport(app=create_app())
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        resp = await client.get("/api/v1/bookings/")
+        assert resp.status_code == 401
+
+
+# ----------------------------------------- G. walk-in (customer_id None)
+
+
+@pytest.mark.asyncio
+async def test_g_walk_in_customer_none_201(app_client, db_session, test_env):
+    """Walk-in booking (customer_id omitted / null) → created 201; GET shows
+    customer_id null. The customer guard is skipped when customer_id is None
+    (D3)."""
+    model = await _seed_model(db_session, name="G-Model")
+    device = await _seed_device(
+        db_session, tenant_id=test_env.tenant_id, model_id=model.id, serial="G-DEV"
+    )
+    s, e = _window(0, 1)
+    resp = await app_client.post(
+        "/api/v1/bookings/",
+        json={
+            "device_id": device.id,
+            "scheduled_start_at": _iso(s),
+            "scheduled_end_at": _iso(e),
+            # customer_id intentionally absent → walk-in.
+        },
+        headers=AUTH,
+    )
+    assert resp.status_code == 201, resp.text
+    bid = resp.json()["id"]
+    assert resp.json()["customer_id"] is None
+    get = await app_client.get(f"/api/v1/bookings/{bid}", headers=AUTH)
+    assert get.json()["customer_id"] is None
+
+
+@pytest.mark.asyncio
+async def test_g_customer_not_in_tenant_400(app_client, db_session, test_env):
+    """customer_id that has no live profile in this tenant → 400 (nonexistent
+    + cross-tenant both collapse to the same BizError — no enumeration)."""
+    import uuid
+
+    from app.models.customer import Customer
+    from app.models.tenant import Tenant
+
+    model = await _seed_model(db_session, name="G2-Model")
+    device = await _seed_device(
+        db_session, tenant_id=test_env.tenant_id, model_id=model.id, serial="G2-DEV"
+    )
+    # A customer whose only profile is in a DIFFERENT tenant.
+    other_tenant_id = f"tnt-g2-{uuid.uuid4().hex}"
+    db_session.add(Tenant(id=other_tenant_id, name="G2 Other Tenant"))
+    await db_session.commit()
+    customer = Customer(name="外店客户", identity_key=f"phone-{uuid.uuid4().hex}")
+    db_session.add(customer)
+    await db_session.commit()
+    from app.models.customer import CustomerProfile
+
+    db_session.add(
+        CustomerProfile(
+            customer_id=customer.id, tenant_id=other_tenant_id, status="active"
+        )
+    )
+    await db_session.commit()
+
+    s, e = _window(0, 1)
+    resp = await app_client.post(
+        "/api/v1/bookings/",
+        json={
+            "device_id": device.id,
+            "customer_id": customer.id,
+            "scheduled_start_at": _iso(s),
+            "scheduled_end_at": _iso(e),
+        },
+        headers=AUTH,
+    )
+    assert resp.status_code == 400, resp.text
+
+
+# ----------------------------------------- H. device SET NULL (FK dead-bolt)
+
+
+@pytest.mark.asyncio
+async def test_h_soft_deleted_device_booking_still_gets(
+    app_client, db_session, test_env
+):
+    """A booking whose device is soft-deleted AFTER the booking was created
+    still reads back fine (device_id FK is SET NULL — the booking row survives;
+    the device_id column keeps its value but the device relation is gone).
+    Mirrors the devices.customer_id convention."""
+    from datetime import UTC, datetime
+
+    from app.models.device import Device
+
+    model = await _seed_model(db_session, name="H-Model")
+    device = await _seed_device(
+        db_session, tenant_id=test_env.tenant_id, model_id=model.id, serial="H-DEV"
+    )
+    s, e = _window(0, 1)
+    create = await app_client.post(
+        "/api/v1/bookings/",
+        json={
+            "device_id": device.id,
+            "scheduled_start_at": _iso(s),
+            "scheduled_end_at": _iso(e),
+        },
+        headers=AUTH,
+    )
+    bid = create.json()["id"]
+    # Soft-delete the device after the booking exists.
+    row = await db_session.get(Device, device.id)
+    assert row is not None
+    row.is_deleted = True
+    row.deleted_at = datetime.now(UTC)
+    await db_session.commit()
+
+    resp = await app_client.get(f"/api/v1/bookings/{bid}", headers=AUTH)
+    assert resp.status_code == 200
+    # device_id is preserved (SET NULL is the FK ondelete behaviour for a
+    # HARD delete; under the current soft-delete path the column value stays).
+    assert resp.json()["device_id"] == device.id
+
+
+@pytest.mark.asyncio
+async def test_h_create_with_device_not_in_tenant_400(
+    app_client, db_session, test_env
+):
+    """device_id that is not a live device in this tenant → 400 (nonexistent +
+    cross-tenant + soft-deleted all collapse to one BizError — no enumeration)."""
+    import uuid
+
+    from app.models.tenant import Tenant
+
+    model = await _seed_model(db_session, name="H2-Model")
+    other_tenant_id = f"tnt-h2-{uuid.uuid4().hex}"
+    db_session.add(Tenant(id=other_tenant_id, name="H2 Other Tenant"))
+    await db_session.commit()
+    other_device = await _seed_device(
+        db_session, tenant_id=other_tenant_id, model_id=model.id, serial="H2-OTHER"
+    )
+    s, e = _window(0, 1)
+    resp = await app_client.post(
+        "/api/v1/bookings/",
+        json={
+            "device_id": other_device.id,
+            "scheduled_start_at": _iso(s),
+            "scheduled_end_at": _iso(e),
+        },
+        headers=AUTH,
+    )
+    assert resp.status_code == 400, resp.text
+
+
+@pytest.mark.asyncio
+async def test_h_customer_set_null_fk_declared():
+    """Acceptance H also covers the customer side of the SET NULL dead-bolt:
+    when a Customer is hard-deleted, the booking row must survive with
+    ``customer_id`` cleared (FK ``ondelete=SET NULL``), NOT be cascaded.
+
+    The runtime SET NULL behaviour is enforced by Postgres at FK-check time
+    (SQLite via aiosqlite does not enable FK enforcement by default, so the
+    column-clear cannot be exercised in the in-memory test DB). What we CAN
+    assert here is that the ORM model declares the constraint correctly —
+    that declaration is what the migration emits and what Postgres enforces.
+    This keeps the test honest about the SQLite limitation while still
+    guarding the H-chapter contract (booking survives a customer hard-delete).
+    """
+    from app.models.booking import Booking
+
+    fk = list(Booking.__table__.c.customer_id.foreign_keys)[0]
+    assert fk.column.table.name == "customers"
+    # ondelete must be SET NULL — a RESTRICT/CASCADE here would take the booking
+    # down with a hard-deleted customer, violating the H contract.
+    assert fk.ondelete == "SET NULL"
+
+
+# ----------------------------------------- validation edge: inverted window
+
+
+@pytest.mark.asyncio
+async def test_create_inverted_window_400(app_client, db_session, test_env):
+    """scheduled_end <= scheduled_start → 400 (BizError, enforced in the
+    service — see BookingCreate docstring for why it's not a schema
+    ``model_validator``)."""
+    model = await _seed_model(db_session, name="Inv-Model")
+    device = await _seed_device(
+        db_session, tenant_id=test_env.tenant_id, model_id=model.id, serial="INV-DEV"
+    )
+    s, e = _window(1, -1)  # end before start
+    resp = await app_client.post(
+        "/api/v1/bookings/",
+        json={
+            "device_id": device.id,
+            "scheduled_start_at": _iso(s),
+            "scheduled_end_at": _iso(e),
+        },
+        headers=AUTH,
+    )
+    assert resp.status_code == 400, resp.text

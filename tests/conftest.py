@@ -59,6 +59,11 @@ def _make_casbin(owner_user: str, tenant_id: str):
         # simulates a tenant that has already been backfilled so slice-01 tests
         # can exercise the CRUD path today.
         ("devices", "read"), ("devices", "create"), ("devices", "update"), ("devices", "delete"),
+        # bookings (device-booking slice 01): owner full CRUD + cancel (cancel
+        # reuses the delete perm — see booking_service / bookings.py). Same
+        # fixture rationale as devices: production DEFAULT_*_PERMS gets these
+        # in slice 02 (backfill).
+        ("bookings", "read"), ("bookings", "create"), ("bookings", "update"), ("bookings", "delete"),
     ]:
         e.add_policy("owner", tenant_id, obj, act)
     # Menu visibility perms for owner (all business menus; menu:tenants is
@@ -66,7 +71,7 @@ def _make_casbin(owner_user: str, tenant_id: str):
     for code in [
         "dashboard", "agents", "chat", "groups", "customers",
         "members", "users", "roles", "permissions", "settings", "knowledge",
-        "devices",
+        "devices", "bookings",
     ]:
         e.add_policy("owner", tenant_id, "menu", code)
     # admin: manage users + read-mostly elsewhere (no agent/customer delete).
@@ -88,12 +93,16 @@ def _make_casbin(owner_user: str, tenant_id: str):
         # devices (devices-crud-ui slice 01): admin reads + writes, no delete
         # (mirrors the customer convention). Backfilled in slice 02.
         ("devices", "read"), ("devices", "create"), ("devices", "update"),
+        # bookings (device-booking slice 01): admin reads + writes, no delete
+        # (cancel reuses delete perm, so admin CANNOT cancel — mirrors the
+        # customer / device admin convention).
+        ("bookings", "read"), ("bookings", "create"), ("bookings", "update"),
     ]:
         e.add_policy("admin", tenant_id, obj, act)
     for code in [
         "dashboard", "agents", "chat", "groups", "customers",
         "members", "users", "roles", "permissions", "settings", "knowledge",
-        "devices",
+        "devices", "bookings",
     ]:
         e.add_policy("admin", tenant_id, "menu", code)
     for obj, act in [
@@ -105,10 +114,12 @@ def _make_casbin(owner_user: str, tenant_id: str):
         ("knowledge", "read"),
         # devices (devices-crud-ui slice 01): member read-only.
         ("devices", "read"),
+        # bookings (device-booking slice 01): member read-only.
+        ("bookings", "read"),
     ]:
         e.add_policy("member", tenant_id, obj, act)
     # member: only the business menus (no user-management / settings menus).
-    for code in ["dashboard", "agents", "chat", "groups", "customers", "knowledge", "devices"]:
+    for code in ["dashboard", "agents", "chat", "groups", "customers", "knowledge", "devices", "bookings"]:
         e.add_policy("member", tenant_id, "menu", code)
     return e
 
@@ -134,6 +145,7 @@ async def test_env() -> AsyncIterator[_TestEnv]:
         agent,
         agent_specialist,
         api_token,
+        booking,
         customer,
         device,
         device_model,

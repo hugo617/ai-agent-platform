@@ -16,6 +16,7 @@ from app.api.v1 import (
     api_tokens,
     auth,
     billing,
+    bookings,
     chat,
     conversations,
     customers,
@@ -144,6 +145,7 @@ def create_app() -> FastAPI:
     app.include_router(groups.router, prefix=prefix)
     app.include_router(device_models.router, prefix=prefix)
     app.include_router(devices.router, prefix=prefix)
+    app.include_router(bookings.router, prefix=prefix)
     app.include_router(billing.router, prefix=prefix)
     app.include_router(dashboard.router, prefix=prefix)
     app.include_router(logs.router, prefix=prefix)
