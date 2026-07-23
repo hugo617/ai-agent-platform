@@ -383,7 +383,7 @@ Device:
 
 ---
 
-### 切片 07 — 前端 HqView + 整体验证收尾 ✅ PR 待回填(feature 收官)
+### 切片 07 — 前端 HqView + 整体验证收尾 ✅ PR #101 commit 6105ae0(feature 收官)
 
 **Blocked by:** 06
 
