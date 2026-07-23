@@ -383,22 +383,22 @@ Device:
 
 ---
 
-### 切片 07 — 前端 HqView + 整体验证收尾
+### 切片 07 — 前端 HqView + 整体验证收尾 ✅ PR 待回填(feature 收官)
 
 **Blocked by:** 06
 
 **What it delivers:** super_admin 和 hq_staff 在 `/devices` 看到跨租户只读全景表格;整 feature 走完 `./init.sh` 全绿 + feature_list.json/progress.md 更新 + 文档影响评估。
 
 **Acceptance criteria:**
-- [ ] `devices-page.tsx` 顶层 `isSuperAdmin(me) || isHQStaff(me) ? <HqView/> : <StoreView/>`
-- [ ] HqView:跨租户表格(列:tenant_name / 序列号 / 型号名 / 状态 Badge / 绑定客户),只读,无写按钮
-- [ ] **不修 customers-page.tsx**(WIP=1,既存 hq_staff 不可见 bug 留给后续 customer feature)
-- [ ] `./init.sh` 全绿(ruff + pytest 全章节 A-K + frontend build + oxlint)
-- [ ] `alembic upgrade head && alembic check` 本地通过(若本地 docker 起不来,依赖 CI 通过)
-- [ ] `feature_list.json`:`devices-crud-ui` status=`passing` + evidence 字段写实测结果
-- [ ] `./scripts/sync-active-features.sh` 刷新 active 视图
-- [ ] `progress.md` 加 Session 记录 + 更新「当前最高优先级未完成功能」指向 device-booking
-- [ ] 文档影响评估(4 行格式):含"customers-page HqView 对 hq_staff 不可见"既存 bug 记录(供下个 customer feature 修)
+- [x] `devices-page.tsx` 顶层 `isSuperAdmin(me) || isHQStaff(me) ? <HqView/> : <StoreView/>`
+- [x] HqView:跨租户表格(列:tenant_name / 序列号 / 型号名 / 状态 Badge / 绑定客户),只读,无写按钮
+- [x] **不修 customers-page.tsx**(WIP=1,既存 hq_staff 不可见 bug 留给后续 customer feature)
+- [x] `./init.sh` 全绿(ruff + pytest 全章节 A-K + frontend build + oxlint)
+- [x] `alembic upgrade head && alembic check` 本地通过(若本地 docker 起不来,依赖 CI 通过)
+- [x] `feature_list.json`:`devices-crud-ui` status=`passing` + evidence 字段写实测结果
+- [x] `./scripts/sync-active-features.sh` 刷新 active 视图
+- [x] `progress.md` 加 Session 记录 + 更新「当前最高优先级未完成功能」指向 device-booking
+- [x] 文档影响评估(4 行格式):含"customers-page HqView 对 hq_staff 不可见"既存 bug 记录(供下个 customer feature 修)
 
 ---
 

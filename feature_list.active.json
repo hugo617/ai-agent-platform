@@ -1,7 +1,7 @@
 {
   "project": "ai-agent-platform",
   "description": "多租户 AI 智能体 SaaS 平台脚手架(FastAPI + React + pycasbin + LangGraph)",
-  "last_updated": "2026-07-22",
+  "last_updated": "2026-07-23",
   "harness_version": "stage1-clean-state",
   "rules": {
     "single_active_feature": true,
@@ -12,32 +12,6 @@
     "standard_start_command": "RUN_START_COMMAND=1 ./init.sh"
   },
   "features": [
-    {
-      "id": "devices-crud-ui",
-      "priority": 62,
-      "area": "业务实体",
-      "title": "门店设备实例 CRUD + 绑定客户(租户隔离)",
-      "user_visible_behavior": "门店管理员能在门店端管理本店设备实例:入库(选型号 + 填序列号)、编辑状态(active/maintenance/retired)、绑定/解绑客户、软删。设备归属本租户,跨租户不可见。序列号在同租户内唯一",
-      "status": "in_progress",
-      "verification": [
-        "后端:POST/GET/PUT/DELETE /api/v1/devices + POST /devices/{id}/bind(绑定/解绑客户);TenantScopedRepository 强制 tenant_id 过滤;部分唯一索引 (tenant_id, serial_number WHERE is_deleted=False)",
-        "权限:门店 owner/admin 写,member 只读,super_admin 跨租户只读;device.customer_id FK→customers SET NULL(设备软删或客户删时保留历史)",
-        "前端:门店端设备管理页(路由 /devices,member 可读),列表 + 入库 Dialog(型号下拉从 /device-models 拉) + 状态切换 + 绑定客户 Dialog",
-        "pytest:覆盖 CRUD + 租户隔离(跨租户 404)+ 权限矩阵 + (tenant_id, serial_number) 唯一约束 + 软删 + 绑定/解绑 + alembic check 无 drift",
-        "cd frontend && npm run build 通过 + oxlint 0 warnings"
-      ],
-      "notes": "设备功能系列 2/4。租户级表(devices.tenant_id FK→tenants CASCADE)。status 用简化业务态 active/maintenance/retired(不用 StorePilot 混合 online/offline/low_battery/maintenance —— 在没有 IoT 上报链路的当下,在线状态会变成永远 stale 的脏数据,硬件细节归 device_metrics 后续 backlog 采集)。**重要语义:devices.status 是设备管理态(active/maintenance/retired),「设备是否正被占用」由 bookings 派生(WHERE device_id=? AND status='in_service'),不是 devices.status 的职责**——未来 GET /devices/available 排期查询要 join bookings 排除正在 in_service 的设备,不能只看 devices.status=active,否则会撞车。无 kind 字段(物理形态由 model.specs 表达)。model_id FK→device_models RESTRICT(型号被引用时禁硬删)。依赖:[device-models-crud]。",
-      "depends_on": "device-models-crud",
-      "plan": "harness/docs/plan-devices-crud-ui.md",
-      "evidence": [
-        "切片 01 后端地基(Device 表 + 软删租户隔离 CRUD + model_id 完整性)✅ PR #90 commit fbbee29(Session 124,已合并 main)",
-        "切片 02 权限 seed + 老租户 backfill(三档默认 perms + 菜单项 + 一次性 backfill)✅ PR #92 commit 2043dec(Session 125,已合并 main)",
-        "切片 03 HQ 全景视图后端(DeviceHqRead + selectinload + platform_role 分叉 + 端点内分流)✅ PR #93 commit 9ac9ac4(Session 126,已合并 main)",
-        "切片 04 客户绑定端点 bind/unbind(幂等语义 + already_bound 标记 + 跨租户/不存在 customer 400)✅ PR #94 commit 125ad2b(Session 127,已合并 main)",
-        "切片 05 前端地基(7 类型 + 8 endpoints + 7 hooks/qk + isHQStaff + /devices 路由 + nav 项 + stub 页;build 3.28s 通过 + oxlint 0 warnings)✅ PR #96 commit 1fa192b(Session 128,已合并 main)",
-        "进行中:切片 06-07(前端 StoreView/HqView + 整体验证收尾)待做。本 feature 7 个切片中 5 个已完成,切片级状态真相源见 plan-devices-crud-ui.md 的 acceptance criteria checklist"
-      ]
-    },
     {
       "id": "device-booking",
       "priority": 63,
@@ -76,6 +50,13 @@
       "depends_on": "device-booking"
     },
     {
+      "id": "devices-crud-ui",
+      "priority": 62,
+      "area": "业务实体",
+      "title": "门店设备实例 CRUD + 绑定客户(租户隔离)",
+      "status": "passing"
+    },
+    {
       "id": "device-models-crud",
       "priority": 61,
       "area": "业务实体",
@@ -104,17 +85,10 @@
       "status": "passing"
     },
     {
-      "id": "knowledge-base-rag",
-      "priority": 57,
-      "area": "AI 内核",
-      "title": "知识库/RAG(激活 pgvector,文档检索增强 Agent)",
-      "status": "passing"
-    },
-    {
       "id": "_milestone_archived",
       "priority": 0,
       "area": "里程碑",
-      "title": "[已归档 56 条 passing,见 archive/features-passing-archive.json]",
+      "title": "[已归档 57 条 passing,见 archive/features-passing-archive.json]",
       "status": "passing"
     }
   ],

@@ -1,28 +1,27 @@
 /**
- * Devices page — slice 06 StoreView (devices-crud-ui 系列 2/4).
+ * Devices page — devices-crud-ui 系列 2/4(切片 06 StoreView + 切片 07 HqView)。
  *
- * Store owners/admins manage their tenant's device instances here: list,
- * onboard (create), edit status, bind/unbind a customer, and soft-delete.
- * Members are read-only (write buttons hidden by ``hasPermission``).
- *
- * The top-level branch is ``isSuperAdmin(me) || isHQStaff(me) ? <HqView/> :
- * <StoreView/>``. The HqView lands in slice 07 — this slice ships only the
- * StoreView, with the branch stubbed so the route keeps working. Slice 05
- * already wired the data hooks (useDevices / useDeviceModels / bind-unbind
- * family) and types; this file just consumes them.
+ * Top-level branch: ``isSuperAdmin(me) || isHQStaff(me) ? <HqView/> :
+ * <StoreView/>``. StoreView is the within-tenant CRUD surface (slice 06);
+ * HqView is the cross-tenant read-only panorama (slice 07). Both consume the
+ * same ``useDevices()`` hook — the backend ``GET /devices/`` branches on
+ * ``platform_role`` and returns ``Device[]`` (store) or ``DeviceHqRead[]``
+ * (HQ, with tenant_name/model_name/customer_name pre-expanded server-side).
  *
  * Backend guard notes (see plan-devices-crud-ui.md):
  * - ``DeviceRead`` (store view) carries only ``model_id`` — no ``model_name``.
  *   We build the name locally from ``useDeviceModels()``. A device whose
  *   model_id is NOT in the live-models list was bound to a since-soft-deleted
  *   model; the edit dialog renders it read-only/greyed (plan §3 boundary #1-c).
+ * - ``DeviceHqRead`` (HQ view) pre-expands the three display names so the
+ *   panorama table renders without N client-side lookups or a models/tenants
+ *   feed — the HQ endpoint joins them server-side.
  * - bind/unbind are dedicated sub-resource endpoints (POST/DELETE
  *   /devices/{id}/bind); customer_id is intentionally NOT part of DeviceUpdate.
  */
 import { useMemo, useState } from "react";
 
 import {
-  Cpu,
   Link2,
   Link2Off,
   Monitor,
@@ -84,6 +83,7 @@ import type {
   CustomerProfileRead,
   Device,
   DeviceCreate,
+  DeviceHqRead,
   DeviceStatus,
   DeviceUpdate,
 } from "@/api/types";
@@ -115,11 +115,11 @@ const NONE = "_none";
 
 export function DevicesPage() {
   const { me } = useAuth();
-  // HQ panorama (super_admin / hq_staff) lands in slice 07. Until then, HQ
-  // viewers still need a reachable route, so we fall back to a read-only
-  // note. The branch shape (isSuperAdmin || isHQStaff) is final — slice 07
-  // only swaps this placeholder for <HqView/>.
-  return isSuperAdmin(me) || isHQStaff(me) ? <HqPlaceholder /> : <StoreView />;
+  // super_admin and hq_staff see the cross-tenant panorama; everyone else
+  // (store owner/admin/member) lands on the within-tenant StoreView. The HQ
+  // backend guard mirrors this branch (require_cross_tenant_viewer), so both
+  // roles get DeviceHqRead[] from the same endpoint.
+  return isSuperAdmin(me) || isHQStaff(me) ? <HqView /> : <StoreView />;
 }
 
 // ============================================================ store view
@@ -591,26 +591,91 @@ function StoreView() {
   );
 }
 
-// ============================================================ HQ placeholder
-// Slice 07 replaces this with the real cross-tenant panorama (<HqView/>).
-// Kept minimal so the /devices route stays reachable for super_admin / hq_staff
-// between slices, and the final branch shape is already in place.
-function HqPlaceholder() {
+// ============================================================ HQ panorama view
+// Cross-tenant read-only view (super_admin / hq_staff). The HQ endpoint
+// (GET /devices/ behind require_cross_tenant_viewer) already expands
+// tenant_name/model_name/customer_name server-side, so this table needs no
+// client-side lookups into the models/tenants/profiles feeds — it just renders
+// the DeviceHqRead rows it gets back. There are no write controls: HQ viewers
+// observe the fleet across stores, never mutate it.
+function HqView() {
+  const { data: devices, isLoading } = useDevices();
+  // useDevices() returns a union (Device[] | DeviceHqRead[]). The backend
+  // guarantees DeviceHqRead[] for HQ roles (the same guard that routes us
+  // here), so we narrow once at the view boundary. A store viewer never
+  // reaches this component — the top-level DevicesPage branch sees to that.
+  const list = (devices ?? []) as DeviceHqRead[];
+
   return (
-    <div className="mx-auto max-w-5xl px-4 py-8">
+    <div className="space-y-6">
+      <PageHeader
+        title="设备（总部视图）"
+        subtitle="跨店聚合：查看所有门店的设备实例。此视图为只读，写操作请切换到门店视角。"
+      />
+
       <Card>
         <CardHeader>
-          <div className="flex items-center gap-2">
-            <Monitor className="h-5 w-5 text-muted-foreground" />
-            <CardTitle>设备(总部视图)</CardTitle>
-          </div>
+          <CardTitle>全局设备列表</CardTitle>
           <CardDescription>
-            跨租户设备全景视图将在切片 07 上线。当前请切换到门店视角查看本店设备。
+            共 {list.length} 台设备（跨全部门店）
           </CardDescription>
         </CardHeader>
-        <CardContent className="flex items-center gap-2 text-sm text-muted-foreground">
-          <Cpu className="h-4 w-4" />
-          全景表格建设中。
+        <CardContent>
+          <ListState
+            isLoading={isLoading}
+            isEmpty={list.length === 0}
+            loadingVariant="skeleton"
+            skeletonRows={8}
+            emptyContent={
+              <EmptyState
+                icon={Monitor}
+                title="暂无设备"
+                description="跨全部门店暂无设备实例"
+              />
+            }
+          >
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>所属门店</TableHead>
+                  <TableHead>序列号</TableHead>
+                  <TableHead>型号</TableHead>
+                  <TableHead>状态</TableHead>
+                  <TableHead>绑定客户</TableHead>
+                  <TableHead>创建时间</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {list.map((d) => (
+                  <TableRow key={d.id}>
+                    <TableCell className="text-muted-foreground">
+                      {/* tenant_name is null only if the tenant row was hard-
+                          deleted — the FK is CASCADE so this is effectively
+                          unreachable, but we guard for display safety. */}
+                      {d.tenant_name ?? "（门店已删除）"}
+                    </TableCell>
+                    <TableCell className="font-medium">
+                      {d.serial_number}
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">
+                      {d.model_name ?? (
+                        <span className="text-destructive">型号已删除</span>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      <StatusBadge status={d.status} />
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">
+                      {d.customer_name ?? "-"}
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">
+                      {fmt(d.created_at)}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </ListState>
         </CardContent>
       </Card>
     </div>
