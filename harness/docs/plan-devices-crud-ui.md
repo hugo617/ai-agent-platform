@@ -364,7 +364,7 @@ Device:
 
 ---
 
-### 切片 06 — 前端 StoreView(门店设备管理页)
+### 切片 06 — 前端 StoreView(门店设备管理页) ✅ PR #99 commit ad9a4f7
 
 **Blocked by:** 05
 
