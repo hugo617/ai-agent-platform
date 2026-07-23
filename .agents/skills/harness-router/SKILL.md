@@ -10,7 +10,63 @@ disable-model-invocation: true
 >
 > `disable-model-invocation: true` 意味着**只能由用户键入 `/harness-router` 调用**,agent 不会自动触发。若未来需要 agent 自动路由,去掉此 flag 即可。
 
-## 先确认你在哪一层(EP1 / EP2 / EP3)
+## 入口 A:项目方向探索(不知道做什么时用)
+
+用户说「探索下一步」「项目还能做什么」「给关键词」时走这条路。**读项目数据 → 输出 3 类选项 → 选后给可复制提示词**。
+
+### 探索流程(4 步)
+
+**第 1 步:读数据**(并行读 3 个源)
+- `feature_list.json` —— 扫活跃任务(`in_progress`/`not_started`),提取 id/status/depends_on/plan 字段
+- `harness/docs/plan-mvp-completion-overview.md` —— 扫 12 个 MVP backlog 缺口(三梯队:SaaS 体面/配套/V2),提取 priority/现状/依赖
+- `progress.md` 顶部摘要 —— 确认当前 frontier(谁在 in_progress、卡在哪)
+
+**第 2 步:分类输出选项**(3 类,用表格)
+
+| 类别 | 条件 | 数据来源 |
+|---|---|---|
+| **① 添加新开发任务**(EP1) | 用户给关键词,或从 backlog 选 | MVP backlog 12 缺口 + 现场关键词 |
+| **② 对未拆切片的任务拆切片**(EP2) | feature 状态 `not_started` + plan 字段为空 | feature_list.json 扫「未拆」 |
+| **③ 完成某任务的切片**(EP3) | feature 状态 `in_progress`/`not_started` + plan 已填 + checklist 有未勾 | feature_list.json + plan 文档 |
+
+**第 3 步:用户选** —— 用户挑一个(或给新关键词现场拆)。若用户给的关键词在 backlog 找不到匹配,转现场 `/grill-with-docs` 拆新方向(EP1)。
+
+**第 4 步:输出可复制提示词** —— 按选定类别,套用下方模板,输出「复制到新会话」的完整提示词块。
+
+### 提示词模板(3 类,套用即出)
+
+**① EP1 新任务**(用户选了 backlog 缺口,如「数据导出」):
+```
+针对"<关键词/缺口名>"启动 EP1:按 harness/docs/three-tier-workflow.md §2,
+用 /grill-with-docs 烤清大方向边界,再用 /to-spec 落
+harness/docs/plan-<series>-overview.md + feature_list.json 登记 N 条 not_started。
+参考 MVP backlog: harness/docs/plan-mvp-completion-overview.md。
+```
+
+**② EP2 拆切片**(用户选了未拆 feature,如 device-poweron):
+```
+为 <feature-id> 拆分全部切片(EP2):按 three-tier-workflow.md §3,用
+/grill-with-docs → /to-spec → /to-tickets 一个回环内完成,产出
+harness/docs/plan-<feature>.md 的「实施切片」段。中途 context>60% 就
+/handoff 换 session 继续,并在 progress.md 顶部记 EP2 断点。
+先跑 three-tier §3 的 plan 自检 4 项再交付。
+```
+
+**③ EP3 做切片**(用户选了已拆 feature 的某切片,如 device-booking 切片01):
+```
+继续推进 <feature-id> 的切片 <NN>(<切片标题简述>)。
+这是 EP3:读 harness/docs/plan-<feature>.md 的「切片 <NN>」章节,
+按 acceptance criteria 实施。用 /implement 实施,完成后 /code-review,
+通过后勾选 plan checklist 对应项 + 标题追加 ✅ PR 证据。
+<若是末切片,补:因这是末切片,完成后执行 feature 收尾仪式
+(three-tier §4 第1-7步,含依赖解锁扫描)。>
+```
+
+> 提示词里 `<尖括号>` 部分由探索器从数据填充。EP3 要判断是不是末切片(查 plan 依赖图,看后面还有没有未完成切片)。
+
+---
+
+## 入口 B:先确认你在哪一层(EP1 / EP2 / EP3)
 
 本项目的任务流程分**三层入口**,先判断你在哪一层,再决定 skill 串。详见 [`harness/docs/three-tier-workflow.md`](../../../harness/docs/three-tier-workflow.md)。
 
@@ -61,6 +117,7 @@ disable-model-invocation: true
 
 ## 分支决策(常见判断)
 
+- **Branch — 不知道做什么?** 走**入口 A(项目方向探索)**:读项目数据 → 输出 3 类选项(新任务/拆切片/做切片)→ 选后给可复制提示词。这是「连方向都没定」时的起点。
 - **Branch — 这是不是 bug?** Yes → `/diagnosing-bugs`(系统性根因 + 复现 + 回归测试),流程见 `harness/docs/bug-tracking.md`。No → 走主流程。
 - **Branch — 任务能不能一次会话做完?** No(改 >10 文件 / 跨模块 / 需技术选型)→ 先 `/to-spec` 落 PRD,再 `/to-tickets` 拆切片,每片一个 context。Yes → 直接 `/implement`。
 - **Branch — PRD 已经在 plan 文档里了?** Yes → 跳过 `/to-spec`,直接 `/to-tickets` 拆切片。No → 先 `/to-spec`。

@@ -75,6 +75,7 @@ agent 不再凭自觉用 skill,按任务状态变化硬触发(详见
 | context 接近 60% | `/handoff` |
 
 不确定用哪个?输入 `/harness-router` 让路由器推荐(阶段 3 后可用)。
+**连方向都没定?** `/harness-router` 走**入口 A(项目方向探索)**:读项目数据(feature_list + MVP backlog)→ 输出 3 类选项(添加新任务 / 拆切片 / 做切片)→ 选后给可复制的新会话提示词。
 
 ---
 
