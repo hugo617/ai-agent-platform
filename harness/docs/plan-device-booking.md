@@ -213,22 +213,22 @@
 >
 > 实施节奏:一次一个切片,用 `/implement` 推进,切片间清 context。WIP=1 仍然适用 —— 同一时刻只在一个切片上 in_progress,该切片全绿才进下一个。**前置条件**:`devices-crud-ui` 全 passing(本 feature 依赖其切片 01 的 Device 表 + DeviceService,虽已合并 main,但 EP3 开工须等 devices-crud-ui 收尾)。
 
-### 切片 01 — 后端地基:Booking 表 + 时段冲突 + 状态守卫 CRUD
+### 切片 01 — 后端地基:Booking 表 + 时段冲突 + 状态守卫 CRUD ✅ (PR #106)
 
 **Blocked by:** 无 —— 可立即开工(依赖 devices-crud-ui 切片 01 已 ✅)
 
 **What it delivers:** 一个 tenant 内的 owner/admin 能创建/读/改/取消本店设备的预约订单(选设备 + 可选客户 + 预约时段),member 只读,跨租户操作返 404 防 enumeration。同设备同时段重叠 → 400(走 BizError,非 409)。POST/PUT schema 层忽略 status/started_at/ended_at/feedback(防绕过状态机)。本切片**不含** HQ 全景、不含排期网格端点、不含 customer own 端点、不含前端、不含权限 backfill。
 
 **Acceptance criteria:**
-- [ ] `app/models/booking.py`:`Booking` ORM model(audit 列 / 6 态 status CHECK / 5 个时间字段一次建齐 / FK 写法对齐 `Device`)
-- [ ] alembic 迁移:down_revision=`a0eaec7aab7c`,`create_table` + `CheckConstraint(status IN (...))` name=`ck_bookings_status_valid` + 4 个 index(`idx_bookings_tenant`/`idx_bookings_device_schedule`/`idx_bookings_customer`/`idx_bookings_status`),**upgrade 和 downgrade 都写全**(防 drift)
-- [ ] `app/schemas/booking.py`:`BookingStatus = Literal[...]`、`BookingBase`/`BookingCreate`(**不含** status/started_at/ended_at/feedback)/`BookingUpdate`(**不含** status/device_id,仅 pending 可调)/`BookingRead`
-- [ ] `app/repositories/booking.py`:`BookingRepository(TenantScopedRepository[Booking])`,重写 `get_for_tenant`/`list_for_tenant`(无软删,故不滤 is_deleted),新增 `find_overlap(tenant_id, device_id, new_start, new_end, exclude_id=None)`(左闭右开 SQL,只对 pending/confirmed/in_service 态判冲突)、`list_for_device_schedule(tenant_id, device_id, range_start, range_end)`
-- [ ] `app/services/booking_service.py`:`_get_live_booking`(跨租户/不存在 → NotFoundError)、`_assert_no_overlap`(→ BizError 400,**不是 409**)、`_assert_device_in_tenant`(设备须本租户活设备,复用 `DeviceRepository.get_for_tenant`)、`_assert_customer_in_tenant`(可空,非空时校验,复用 `CustomerProfileRepository`)、`create`/`update`(PUT 仅 pending 可调,cancelled 等终态 → BizError)、`cancel`(pending→cancelled)
-- [ ] `app/api/v1/bookings.py`:`GET/POST/PUT /api/v1/bookings` + `POST /api/v1/bookings/{id}/cancel`(→ 204,**无 DELETE 端点**,D8/D9)+ `app/main.py` 注册 router
-- [ ] `tests/conftest.py` 的 `from app.models import (...)` 块加 `Booking`
-- [ ] `tests/test_bookings_api.py` 章节:A(CRUD 全字段断言)+ B(跨租户 GET/PUT/cancel → 404 防 enumeration)+ C(时段冲突:同设备同时段重叠 → **400**;背靠背 11:00 结束+11:00 开始 → 201;cancelled 态占的时段可复用 → 201;改约 exclude 自身 → 200)+ D(状态守卫:POST 传 status=done → 仍 pending;PUT 传 status → 忽略;POST 传 started_at/feedback → 忽略)+ E(状态流转:pending→cancel 204;cancelled→PUT 改约 → 400;cancelled→cancel 再调 → 幂等 204 或 400 见实施时定)+ F(权限矩阵:owner/admin 写 200,member 写 403,unauth 401)+ G(walk-in:customer_id 空 → 创建成功 201,GET 正常显示「未指定客户」)+ H(device/customer SET NULL:设备软删后 booking 仍可见)
-- [ ] 本地 `alembic upgrade head` 通过(SQLite 内存库)
+- [x] `app/models/booking.py`:`Booking` ORM model(audit 列 / 6 态 status CHECK / 5 个时间字段一次建齐 / FK 写法对齐 `Device`)
+- [x] alembic 迁移:down_revision=`a0eaec7aab7c`,`create_table` + `CheckConstraint(status IN (...))` name=`ck_bookings_status_valid` + 4 个 index(`idx_bookings_tenant`/`idx_bookings_device_schedule`/`idx_bookings_customer`/`idx_bookings_status`),**upgrade 和 downgrade 都写全**(防 drift)
+- [x] `app/schemas/booking.py`:`BookingStatus = Literal[...]`、`BookingBase`/`BookingCreate`(**不含** status/started_at/ended_at/feedback)/`BookingUpdate`(**不含** status/device_id,仅 pending 可调)/`BookingRead`
+- [x] `app/repositories/booking.py`:`BookingRepository(TenantScopedRepository[Booking])`,重写 `get_for_tenant`/`list_for_tenant`(无软删,故不滤 is_deleted),新增 `find_overlap(tenant_id, device_id, new_start, new_end, exclude_id=None)`(左闭右开 SQL,只对 pending/confirmed/in_service 态判冲突)、`list_for_device_schedule(tenant_id, device_id, range_start, range_end)`
+- [x] `app/services/booking_service.py`:`_get_live_booking`(跨租户/不存在 → NotFoundError)、`_assert_no_overlap`(→ BizError 400,**不是 409**)、`_assert_device_in_tenant`(设备须本租户活设备,复用 `DeviceRepository.get_for_tenant`)、`_assert_customer_in_tenant`(可空,非空时校验,复用 `CustomerProfileRepository`)、`create`/`update`(PUT 仅 pending 可调,cancelled 等终态 → BizError)、`cancel`(pending→cancelled)
+- [x] `app/api/v1/bookings.py`:`GET/POST/PUT /api/v1/bookings` + `POST /api/v1/bookings/{id}/cancel`(→ 204,**无 DELETE 端点**,D8/D9)+ `app/main.py` 注册 router
+- [x] `tests/conftest.py` 的 `from app.models import (...)` 块加 `Booking`
+- [x] `tests/test_bookings_api.py` 章节:A(CRUD 全字段断言)+ B(跨租户 GET/PUT/cancel → 404 防 enumeration)+ C(时段冲突:同设备同时段重叠 → **400**;背靠背 11:00 结束+11:00 开始 → 201;cancelled 态占的时段可复用 → 201;改约 exclude 自身 → 200)+ D(状态守卫:POST 传 status=done → 仍 pending;PUT 传 status → 忽略;POST 传 started_at/feedback → 忽略)+ E(状态流转:pending→cancel 204;cancelled→PUT 改约 → 400;cancelled→cancel 再调 → 幂等 204)+ F(权限矩阵:owner/admin 写 200,member 写 403,hq_staff 写 403,unauth 401)+ G(walk-in:customer_id 空 → 创建成功 201,GET 正常显示「未指定客户」)+ H(device/customer SET NULL:设备软删后 booking 仍可见 + customer SET NULL FK 声明校验)
+- [x] 本地 `alembic upgrade head` 通过(SQLite 内存库)—— 注:本仓库迁移为 PG-only(早期迁移用 `now()` 默认值),SQLite 走 `Base.metadata.create_all`(conftest 既有路径);alembic head 链 `a0eaec7aab7c → 8423ee2df128` 已验证正确,真 PG `alembic check` 走 CI
 
 ---
 
