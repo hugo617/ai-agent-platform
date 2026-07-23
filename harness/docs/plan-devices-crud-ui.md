@@ -371,15 +371,15 @@ Device:
 **What it delivers:** 门店 owner/admin 在 `/devices` 看到本店设备表格,能入库/改状态/绑定客户/解绑/软删;member 只读,写按钮按 `hasPermission` 隐藏。
 
 **Acceptance criteria:**
-- [ ] `frontend/src/pages/devices-page.tsx` StoreView:列表 Table(序列号 / 型号名 / 状态 Badge / 绑定客户 / 创建时间 / 操作 DropdownMenu)
-- [ ] 状态 Badge 映射:active→运行中(dot-success)/ maintenance→维护中(dot-warning)/ retired→已退役(dot-destructive)
-- [ ] 入库 Dialog:`useDeviceModels()` 填型号 Select(只活型号,API 已过滤)+ serial_number Input + 初始 status Select(active 默认)
-- [ ] 编辑 Dialog:serial_number + status 三态 Select + customer Select(可选,`useCustomerProfiles()`)+ 「不绑定」选项
-- [ ] **软删型号 UX**(plan §3 关键边界 #1-c):device 已绑定软删型号时,编辑 Dialog 型号字段只读灰显当前型号名,不允许改成软删型号
-- [ ] 绑定客户 Dialog:内联 Select 范式参照 `chat-page.tsx:685-707`,从 `useCustomerProfiles()` 拉
-- [ ] 删除确认 Dialog(destructive variant)
-- [ ] `canCreate`/`canUpdate`/`canDelete` 用 `hasPermission(me,"devices",act)` 隐藏写按钮
-- [ ] `cd frontend && npm run build` + `npx oxlint` 通过
+- [x] `frontend/src/pages/devices-page.tsx` StoreView:列表 Table(序列号 / 型号名 / 状态 Badge / 绑定客户 / 创建时间 / 操作 DropdownMenu)
+- [x] 状态 Badge 映射:active→运行中(dot-success)/ maintenance→维护中(dot-warning)/ retired→已退役(dot-destructive)
+- [x] 入库 Dialog:`useDeviceModels()` 填型号 Select(只活型号,API 已过滤)+ serial_number Input + 初始 status Select(active 默认)
+- [x] 编辑 Dialog:serial_number + status 三态 Select + customer Select(可选,`useCustomerProfiles()`)+ 「不绑定」选项
+- [x] **软删型号 UX**(plan §3 关键边界 #1-c):device 已绑定软删型号时,编辑 Dialog 型号字段只读灰显当前型号名,不允许改成软删型号
+- [x] 绑定客户 Dialog:内联 Select 范式参照 `chat-page.tsx:685-707`,从 `useCustomerProfiles()` 拉
+- [x] 删除确认 Dialog(destructive variant)
+- [x] `canCreate`/`canUpdate`/`canDelete` 用 `hasPermission(me,"devices",act)` 隐藏写按钮
+- [x] `cd frontend && npm run build` + `npx oxlint` 通过(实测 build 1.90s 通过,oxlint 0 warnings 0 errors)
 
 ---
 
