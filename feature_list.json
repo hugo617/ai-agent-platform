@@ -1557,7 +1557,7 @@
         "切片 04 客户绑定端点 bind/unbind(幂等语义 + already_bound 标记 + 跨租户/不存在 customer 400)✅ PR #94 commit 125ad2b(Session 127,已合并 main)",
         "切片 05 前端地基(7 类型 + 8 endpoints + 7 hooks/qk + isHQStaff + /devices 路由 + nav 项 + stub 页;build 3.28s 通过 + oxlint 0 warnings)✅ PR #96 commit 1fa192b(Session 128,已合并 main)",
         "切片 06 前端 StoreView(设备列表 6 列 + 状态 Badge 三态 + 入库/编辑/绑定/删除 4 Dialog + hasPermission 写按钮守卫 + 软删型号只读;build 通过 + oxlint 0 warnings)✅ PR #99 commit ad9a4f7(Session 129,已合并 main)",
-        "切片 07 前端 HqView + feature 收尾(顶层 isSuperAdmin||isHQStaff 分叉 + HqView 跨租户只读全景表格 6 列:所属门店/序列号/型号名/状态/绑定客户/创建时间,DeviceHqRead 服务端预展开,无写控件;不修 customers-page hq_staff 不可见既存 bug(WIP=1 留给后续 customer feature)+ ./init.sh 全绿 ruff clean + pytest 613 passed + frontend build 2.16s + oxlint 0 warnings 0 errors+ alembic 无新迁移本切片不触及,依赖 CI 通过)✅ 本 Session(待 PR 合并后回填 commit)"
+        "切片 07 前端 HqView + feature 收尾(顶层 isSuperAdmin||isHQStaff 分叉 + HqView 跨租户只读全景表格 6 列:所属门店/序列号/型号名/状态/绑定客户/创建时间,DeviceHqRead 服务端预展开,无写控件;不修 customers-page hq_staff 不可见既存 bug(WIP=1 留给后续 customer feature)+ ./init.sh 全绿 ruff clean + pytest 613 passed + frontend build 2.16s + oxlint 0 warnings 0 errors+ alembic 无新迁移本切片不触及,依赖 CI 通过)✅ PR #101 commit 6105ae0(Session 131,已合并 main)"
       ]
     },
     {
