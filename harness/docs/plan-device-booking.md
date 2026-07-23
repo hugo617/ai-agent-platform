@@ -232,18 +232,18 @@
 
 ---
 
-### 切片 02 — 权限 seed + 老租户 backfill(不破坏现存租户)
+### 切片 02 — 权限 seed + 老租户 backfill(不破坏现存租户) ✅ PR #107
 
 **Blocked by:** 01(bookings obj/act 已在 Service 里被 require,backfill 才有目标)
 
 **What it delivers:** 新建租户的 owner/admin/member 自动拿到 bookings 权限和 `menu:bookings`;**现存所有租户**也能拿到(backfill 幂等),功能上线即用,不破坏其他 perm。
 
 **Acceptance criteria:**
-- [ ] `app/services/permission_service.py`:`DEFAULT_OWNER_PERMS`/`DEFAULT_ADMIN_PERMS` 加 `bookings:create/read/update/delete`;`DEFAULT_MEMBER_PERMS` 加 `bookings:read`
-- [ ] `DEFAULT_MENU_PERMS["owner"|"admin"|"member"]` 各加 `"bookings"` code(对应 `menu:bookings`)
-- [ ] 新增 `backfill_bookings_perms_for_existing_tenants(db)` 函数:扫 `tenants` 表未软删租户,对每个租户的 owner/admin/member role 幂等补 bookings 相关 perm(调 `_upsert_permission` + `RolePermissionRepository.grant` + `sync_role_permissions_to_casbin`),**只动 bookings/menu:bookings 相关,不碰其他 perm**(复刻 devices 切片 02 范式)
-- [ ] `scripts/backfill_bookings_perms.py` 独立一次性脚本(async main + DB session 初始化 + 调上述函数 + 打印每租户补了几条),CI 不跑,手动执行一次
-- [ ] `tests/test_bookings_api.py` K 章节:K1 造无 bookings 策略租户 fixture → K2 跑 backfill → K3 owner 拿全 + `menu:bookings` → K4 member 只 `bookings:read` + `menu:bookings`(防过度授权)→ K5 幂等(再跑 no-op 不报错)→ K6 其他 perm(如 `devices:read`)不受影响
+- [x] `app/services/permission_service.py`:`DEFAULT_OWNER_PERMS`/`DEFAULT_ADMIN_PERMS` 加 `bookings:create/read/update/delete`;`DEFAULT_MEMBER_PERMS` 加 `bookings:read`
+- [x] `DEFAULT_MENU_PERMS["owner"|"admin"|"member"]` 各加 `"bookings"` code(对应 `menu:bookings`)
+- [x] 新增 `backfill_bookings_perms_for_existing_tenants(db)` 函数:扫 `tenants` 表未软删租户,对每个租户的 owner/admin/member role 幂等补 bookings 相关 perm(调 `_upsert_permission` + `RolePermissionRepository.grant` + `sync_role_permissions_to_casbin`),**只动 bookings/menu:bookings 相关,不碰其他 perm**(复刻 devices 切片 02 范式)
+- [x] `scripts/backfill_bookings_perms.py` 独立一次性脚本(async main + DB session 初始化 + 调上述函数 + 打印每租户补了几条),CI 不跑,手动执行一次
+- [x] `tests/test_bookings_api.py` K 章节:K1 造无 bookings 策略租户 fixture → K2 跑 backfill → K3 owner 拿全 + `menu:bookings` → K4 member 只 `bookings:read` + `menu:bookings`(防过度授权)→ K5 幂等(再跑 no-op 不报错)→ K6 其他 perm(如 `devices:read`)不受影响
 
 ---
 

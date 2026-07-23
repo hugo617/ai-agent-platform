@@ -1,7 +1,7 @@
 {
   "project": "ai-agent-platform",
   "description": "多租户 AI 智能体 SaaS 平台脚手架(FastAPI + React + pycasbin + LangGraph)",
-  "last_updated": "2026-07-23",
+  "last_updated": "2026-07-24",
   "harness_version": "stage1-clean-state",
   "rules": {
     "single_active_feature": true,
@@ -1580,7 +1580,9 @@
       "depends_on": "devices-crud-ui",
       "plan": "harness/docs/plan-device-booking.md",
       "evidence": [
-        "EP2 完成(Session 130,plan-device-booking.md 含 7 切片 + 12 决策);依赖 devices-crud-ui 于 Session 131 收尾 passing → 依赖解锁,按 three-tier §5 规则置 in_progress(当前 frontier,EP3 待从切片 01 接)"
+        "EP2 完成(Session 130,plan-device-booking.md 含 7 切片 + 12 决策);依赖 devices-crud-ui 于 Session 131 收尾 passing → 依赖解锁,按 three-tier §5 规则置 in_progress(当前 frontier,EP3 待从切片 01 接)",
+        "EP3 切片 01 已合并(PR #106 commit f2bfc93):Booking 表(6 态 CHECK + 5 时间字段一次建齐 + device/customer FK SET NULL)+ alembic 8423ee2df128 + 时段冲突左闭右开走 BizError 400 + 状态守卫(POST/PUT schema 层忽略 status/started_at/ended_at/feedback)+ CRUD + POST /cancel(204 幂等)+ 跨租户 404。pytest 633 passed(20 新测试 A-H 章节)",
+        "EP3 切片 02 已合并(PR #107):DEFAULT_OWNER/ADMIN/MEMBER_PERMS + DEFAULT_MENU_PERMS 加 bookings + OBJ_CN/MENU_CN 加中文标签 + backfill_bookings_perms_for_existing_tenants(db) 函数(复刻 devices slice 02,scope guardrail 只动 bookings/menu:bookings)+ scripts/backfill_bookings_perms.py 一次性脚本 + tests/test_bookings_api.py K 章节(K1-K6 幂等 + 防过度授权 + 不破坏其他 perm)+ tests/test_permission_service.py 3 个 catalogue pinning 测试同步。pytest 638 passed(3 K 新 + 0 failed)。无迁移。feature 仍 in_progress(切片 03-07 待做)"
       ]
     },
     {
