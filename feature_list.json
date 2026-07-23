@@ -1575,8 +1575,9 @@
         "pytest:覆盖 CRUD + 状态流转(pending↔cancelled)+ 状态机绕过防护(POST 传 status=done 仍为 pending)+ 时段冲突(同设备同 scheduled_start_at 重叠拒绝 409)+ 租户隔离 + 权限矩阵 + customer own 校验 + 排期聚合 SQL + alembic check 无 drift",
         "cd frontend && npm run build 通过 + oxlint 0 warnings"
       ],
-      "notes": "设备功能系列 3/4。**booking 表时间字段(开工时务必建齐):scheduled_start_at/scheduled_end_at NOT NULL(预定时段,本 feature CRUD 写,排期聚合源)、started_at/ended_at nullable(实际服务时段,留给 device-poweron feature 写)、feedback JSONB nullable(留给 device-poweron 的 end 动作写)**——原方案漏了时间字段定义,排期网格/今日 filter 无字段可依。6 态状态机含 confirmed/no_show 但本 feature 不实现 /confirm 端点(confirmed 作前向兼容 CHECK 值保留,booking 直接从 pending 跳 in_service,backlog 待业务需要时补 confirm 端点——对齐 StorePilot v1 处理);confirmed 是 CHECK 占位态,在补 /confirm 端点前永远走不到。拆分原则:本 feature 只做预约订单生命周期 CRUD + 时段管理,状态机的 start/end/no-show 动作归 device-poweron。时段冲突检测:同设备同 scheduled_start_at 区间重叠拒绝 409(参考既有 Group 名冲突 → 409 模式)。依赖:[devices-crud-ui]。",
-      "depends_on": "devices-crud-ui"
+      "notes": "设备功能系列 3/4。**booking 表时间字段(开工时务必建齐):scheduled_start_at/scheduled_end_at NOT NULL(预定时段,本 feature CRUD 写,排期聚合源)、started_at/ended_at nullable(实际服务时段,留给 device-poweron feature 写)、feedback JSON nullable(留给 device-poweron 的 end 动作写,用通用 JSON 非 JSONB,双库兼容)**——原方案漏了时间字段定义,排期网格/今日 filter 无字段可依。6 态状态机含 confirmed/no_show 但本 feature 不实现 /confirm 端点(confirmed 作前向兼容 CHECK 值保留,booking 直接从 pending 跳 in_service,backlog 待业务需要时补 confirm 端点——对齐 StorePilot v1 处理);confirmed 是 CHECK 占位态,在补 /confirm 端点前永远走不到。拆分原则:本 feature 只做预约订单生命周期 CRUD + 时段管理,状态机的 start/end/no-show 动作归 device-poweron。**时段冲突检测修正:同设备同时段区间重叠拒绝走 BizError → HTTP 400(不是 409——全仓库无 409 概念,Group 同名/device 序列号重复都走 400,verification 字段写的 409 是笔误,以 plan §0 D1 为准);左闭右开无 buffer(背靠背合法);只对 pending/confirmed/in_service 活跃态判冲突,cancelled/done/no_show 已释放时段**。**删除语义修正:bookings 不软删(D8),不加 is_deleted 列,无 DELETE /bookings/{id} 端点;取消 = POST /bookings/{id}/cancel 动作端点(pending→cancelled,→204)**。**EP2 回环已完成(Session 130,2026-07-23):plan-device-booking.md 含 12 项决策(D1-D12)+ 7 个 tracer-bullet 切片(01 后端地基→02 权限 backfill→03 HQ+排期后端→04 customer own→05 前端地基→06 StoreView→07 HqView+customer 视图+收尾)+ 切片依赖图**。依赖:[devices-crud-ui](EP3 开工须等其全 passing,WIP=1)。",
+      "depends_on": "devices-crud-ui",
+      "plan": "harness/docs/plan-device-booking.md"
     },
     {
       "id": "device-poweron",
