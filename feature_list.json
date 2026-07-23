@@ -1,7 +1,7 @@
 {
   "project": "ai-agent-platform",
   "description": "多租户 AI 智能体 SaaS 平台脚手架(FastAPI + React + pycasbin + LangGraph)",
-  "last_updated": "2026-07-22",
+  "last_updated": "2026-07-23",
   "harness_version": "stage1-clean-state",
   "rules": {
     "single_active_feature": true,
@@ -1539,7 +1539,7 @@
       "area": "业务实体",
       "title": "门店设备实例 CRUD + 绑定客户(租户隔离)",
       "user_visible_behavior": "门店管理员能在门店端管理本店设备实例:入库(选型号 + 填序列号)、编辑状态(active/maintenance/retired)、绑定/解绑客户、软删。设备归属本租户,跨租户不可见。序列号在同租户内唯一",
-      "status": "in_progress",
+      "status": "passing",
       "verification": [
         "后端:POST/GET/PUT/DELETE /api/v1/devices + POST /devices/{id}/bind(绑定/解绑客户);TenantScopedRepository 强制 tenant_id 过滤;部分唯一索引 (tenant_id, serial_number WHERE is_deleted=False)",
         "权限:门店 owner/admin 写,member 只读,super_admin 跨租户只读;device.customer_id FK→customers SET NULL(设备软删或客户删时保留历史)",
@@ -1556,7 +1556,8 @@
         "切片 03 HQ 全景视图后端(DeviceHqRead + selectinload + platform_role 分叉 + 端点内分流)✅ PR #93 commit 9ac9ac4(Session 126,已合并 main)",
         "切片 04 客户绑定端点 bind/unbind(幂等语义 + already_bound 标记 + 跨租户/不存在 customer 400)✅ PR #94 commit 125ad2b(Session 127,已合并 main)",
         "切片 05 前端地基(7 类型 + 8 endpoints + 7 hooks/qk + isHQStaff + /devices 路由 + nav 项 + stub 页;build 3.28s 通过 + oxlint 0 warnings)✅ PR #96 commit 1fa192b(Session 128,已合并 main)",
-        "进行中:切片 06-07(前端 StoreView/HqView + 整体验证收尾)待做。本 feature 7 个切片中 5 个已完成,切片级状态真相源见 plan-devices-crud-ui.md 的 acceptance criteria checklist"
+        "切片 06 前端 StoreView(设备列表 6 列 + 状态 Badge 三态 + 入库/编辑/绑定/删除 4 Dialog + hasPermission 写按钮守卫 + 软删型号只读;build 通过 + oxlint 0 warnings)✅ PR #99 commit ad9a4f7(Session 129,已合并 main)",
+        "切片 07 前端 HqView + feature 收尾(顶层 isSuperAdmin||isHQStaff 分叉 + HqView 跨租户只读全景表格 6 列:所属门店/序列号/型号名/状态/绑定客户/创建时间,DeviceHqRead 服务端预展开,无写控件;不修 customers-page hq_staff 不可见既存 bug(WIP=1 留给后续 customer feature)+ ./init.sh 全绿 ruff clean + pytest 613 passed + frontend build 2.16s + oxlint 0 warnings 0 errors+ alembic 无新迁移本切片不触及,依赖 CI 通过)✅ 本 Session(待 PR 合并后回填 commit)"
       ]
     },
     {
