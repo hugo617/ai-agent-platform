@@ -13,6 +13,7 @@ from app.core.database import get_db
 from app.core.security import (
     TokenError,
     decode_token,
+    extract_customer_id,
     extract_platform_role,
     extract_subject,
     extract_tenant,
@@ -52,6 +53,7 @@ class CurrentUser:
         email: str | None = None,
         jti: str | None = None,
         platform_role: str | None = None,
+        customer_id: str | None = None,
     ) -> None:
         self.user_id = user_id
         self.tenant_id = tenant_id
@@ -60,6 +62,11 @@ class CurrentUser:
         self.jti = jti
         # Platform-level role ("super_admin" or None for normal users).
         self.platform_role = platform_role
+        # Customer identity the token is bound to (slice 04). None for store-
+        # staff tokens — the ``GET /me/bookings`` endpoint rejects those (403),
+        # since it is a customer-only surface. Resolved from a custom JWT claim
+        # (``customer_id``); store-staff tokens simply don't carry it.
+        self.customer_id = customer_id
 
 
 async def get_current_user(
@@ -160,8 +167,18 @@ async def get_current_user(
     platform_role = extract_platform_role(claims) or (
         getattr(user, "platform_role", None) if user else None
     )
+    # Customer identity claim (slice 04). Only present on customer-bound tokens;
+    # store-staff tokens omit it, so customer_id stays None and the /me/bookings
+    # endpoint rejects them (403). Read purely from the claim — there is no
+    # User→Customer column to fall back on (customer is a separate identity axis).
+    customer_id = extract_customer_id(claims)
     return CurrentUser(
-        user_id=user_id, tenant_id=tenant_id, email=email, jti=jti_str, platform_role=platform_role
+        user_id=user_id,
+        tenant_id=tenant_id,
+        email=email,
+        jti=jti_str,
+        platform_role=platform_role,
+        customer_id=customer_id,
     )
 
 

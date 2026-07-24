@@ -136,6 +136,35 @@ class BookingRepository(TenantScopedRepository[Booking]):
         )
         return list((await self.db.execute(stmt)).scalars().all())
 
+    # ------------------------------------------------ customer own (slice 04)
+
+    async def list_for_customer(self, customer_id: str) -> list[Booking]:
+        """All bookings bound to a customer identity, newest first.
+
+        Backs ``GET /me/bookings`` (slice 04). The caller is a customer
+        principal — ``customer_id`` comes from the resolved token, never from
+        request input (anti-override defence, plan §7 risk table). The query is
+        NOT tenant-scoped: a ``Customer`` is a *global* identity (see the
+        customer model), so a customer who has bookings across several stores
+        sees all of them. (Plan §4.2 notes tenant scope may be added if a store
+        wants to restrict; the default is global, matching the customer
+        identity model.)
+
+        Walk-in bookings (``customer_id`` NULL) are excluded by the
+        ``customer_id == customer_id`` predicate — they have no customer binding
+        and therefore belong to no customer principal. Bookings are never soft-
+        deleted (D8), so cancelled bookings still appear (the customer sees
+        their own cancellation history).
+        """
+        stmt = (
+            select(Booking)
+            .where(Booking.customer_id == customer_id)
+            .order_by(
+                Booking.scheduled_start_at.desc(), Booking.created_at.desc()
+            )
+        )
+        return list((await self.db.execute(stmt)).scalars().all())
+
     # -------------------------------------------------- HQ panorama (slice 03)
 
     async def list_all_with_meta(self) -> list[Booking]:

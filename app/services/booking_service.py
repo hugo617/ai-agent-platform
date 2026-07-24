@@ -341,6 +341,33 @@ class BookingService:
             schedule[day] = [await self._to_read(b) for b in group]
         return schedule
 
+    async def list_my_bookings(
+        self, customer_id: str | None
+    ) -> list[BookingRead]:
+        """The customer-principal's own bookings (slice 04, ``GET /me/bookings``).
+
+        ``customer_id`` is read off the resolved principal by the endpoint —
+        it never comes from request input (the plan's anti-override defence
+        against "fetch another customer's bookings"). A store-staff token has
+        ``customer_id`` None and is rejected here with ``PermissionError`` (→
+        403): this is a customer-only surface, and staff read via
+        ``GET /bookings/`` instead.
+
+        Returns ``BookingRead`` (NOT ``BookingHqRead``) — a customer only ever
+        sees their own rows, so the cross-tenant panorama fields
+        (``tenant_name`` / ``device_name`` / ``customer_name``) are pointless;
+        the plain within-store shape is what the customer view renders. The
+        repo query is customer-scoped and ignores tenancy (a customer is a
+        global identity), so a customer with bookings across stores sees all
+        of them.
+        """
+        if customer_id is None:
+            raise PermissionError(
+                "GET /me/bookings 仅限客户身份;门店员工请使用 GET /bookings/"
+            )
+        bookings = await self.repo.list_for_customer(customer_id)
+        return [await self._to_read(b) for b in bookings]
+
     # ---------------------------------------------------------------- write
 
     async def create(

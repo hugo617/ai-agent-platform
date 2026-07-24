@@ -161,3 +161,16 @@ def extract_platform_role(claims: dict[str, Any]) -> str | None:
     """Return the platform role from JWT claims, or None for normal users."""
     role = claims.get("platform_role")
     return str(role) if role else None
+
+
+def extract_customer_id(claims: dict[str, Any]) -> str | None:
+    """Return the customer identity from JWT claims, or None.
+
+    A customer-bound token carries a ``customer_id`` custom claim naming the
+    global ``Customer`` row the principal acts as (slice 04 — the GET /me/
+    bookings endpoint filters on this). Store-staff tokens omit it, so this
+    returns None and that endpoint rejects them (403). Mirrors
+    ``extract_platform_role`` — a custom Logto JWT claim read verbatim.
+    """
+    customer_id = claims.get("customer_id")
+    return str(customer_id) if customer_id else None
