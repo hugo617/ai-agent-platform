@@ -293,23 +293,23 @@
 
 ---
 
-### 切片 06 — 前端门店端 StoreView(列表 + filter chips + 排期网格 + CRUD Dialog)
+### 切片 06 — 前端门店端 StoreView(列表 + filter chips + 排期网格 + CRUD Dialog) ✅ PR #112
 
 **Blocked by:** 05
 
 **What it delivers:** 门店 owner/admin 在 `/bookings` 看到本店预约表格,能创建/改约/取消;member 只读,写按钮按 `hasPermission` 隐藏。filter chips(今日/明日/本周/待确认/爽约)过滤列表。排期网格 slot-box 三态(booked/active/done)按天展示某设备的预约。
 
 **Acceptance criteria:**
-- [ ] `frontend/src/pages/bookings-page.tsx` StoreView:列表 Table(设备名 / 客户名 / 预约时段 / 状态 Badge / 创建时间 / 操作 DropdownMenu)
-- [ ] filter chips:今日 / 明日 / 本周 / 待确认(status=pending)/ 爽约(status=no_show)—— 复用 shadcn Badge/Tabs 或新建 chip 组件(无既有范式,新建)
-- [ ] 状态 Badge 映射:pending→待确认(dot-warning)/ confirmed→已确认 / in_service→服务中(dot-success)/ done→已完成 / cancelled→已取消(dot-muted)/ no_show→爽约(dot-destructive)
-- [ ] 创建 Dialog:设备 Select(本租户活设备,从 `useDevices()` 拉)+ 客户 Select(可选,从 `useCustomerProfiles()` 拉,含「不指定客户」walk-in 选项)+ scheduled_start_at/scheduled_end_at DateTime Input + 备注 Input
-- [ ] 改约 Dialog:仅 pending 态可点(cancelled/done 等禁用按钮);可改 scheduled_*/customer_id/notes,**不可改 device_id**(灰显)
-- [ ] 取消按钮:pending → 点击确认 Dialog → `cancelBooking(id)`;cancelled/done 等终态隐藏取消按钮
-- [ ] 排期网格:选某设备后展示 7 天 × slot-box,每格列出当天 booking(状态三态色);复用 `useDeviceSchedule(deviceId, today, today+7d)`
-- [ ] 时段冲突 UX:创建/改约返 400 时,toast 显示后端冲突信息(不前端预判)
-- [ ] `canCreate`/`canUpdate`/`canCancel` 用 `hasPermission(me,"bookings",act)` 隐藏写按钮
-- [ ] `cd frontend && npm run build` + `npx oxlint` 通过
+- [x] `frontend/src/pages/bookings-page.tsx` StoreView:列表 Table(设备名 / 客户名 / 预约时段 / 状态 Badge / 创建时间 / 操作 DropdownMenu)
+- [x] filter chips:今日 / 明日 / 本周 / 待确认(status=pending)/ 爽约(status=no_show)—— 复用 shadcn Badge/Tabs 或新建 chip 组件(无既有范式,新建)
+- [x] 状态 Badge 映射:pending→待确认(dot-warning)/ confirmed→已确认 / in_service→服务中(dot-success)/ done→已完成 / cancelled→已取消(dot-muted)/ no_show→爽约(dot-destructive)
+- [x] 创建 Dialog:设备 Select(本租户活设备,从 `useDevices()` 拉)+ 客户 Select(可选,从 `useCustomerProfiles()` 拉,含「不指定客户」walk-in 选项)+ scheduled_start_at/scheduled_end_at DateTime Input + 备注 Input
+- [x] 改约 Dialog:仅 pending 态可点(cancelled/done 等禁用按钮);可改 scheduled_*/customer_id/notes,**不可改 device_id**(灰显)
+- [x] 取消按钮:pending → 点击确认 Dialog → `cancelBooking(id)`;cancelled/done 等终态隐藏取消按钮
+- [x] 排期网格:选某设备后展示 7 天 × slot-box,每格列出当天 booking(状态三态色);复用 `useDeviceSchedule(deviceId, today, today+7d)`
+- [x] 时段冲突 UX:创建/改约返 400 时,toast 显示后端冲突信息(不前端预判)
+- [x] `canCreate`/`canUpdate`/`canCancel` 用 `hasPermission(me,"bookings",act)` 隐藏写按钮
+- [x] `cd frontend && npm run build` + `npx oxlint` 通过(✓ built 1.93s + 0 warnings/errors)
 
 ---
 

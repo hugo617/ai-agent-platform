@@ -65,3 +65,51 @@ export function formatTokens(n: number): string {
 export function formatCurrency(n: number | null | undefined): string {
   return n === null || n === undefined ? "-" : `¥${n.toFixed(4)}`;
 }
+
+// ------------------------------------------------------------- datetime-local
+//
+// Native ``<input type="datetime-local">`` uses the "local, no tz" wire format
+// ``YYYY-MM-DDTHH:mm`` (no seconds, no ``Z`` suffix). Two conversion helpers
+// bridge that to/from the ISO-8601 strings the API stores. Kept here (not in
+// the bookings page) so the next datetime input reuses them instead of
+// re-deriving the slice logic.
+//
+// Why not a real datetime picker? The plan (device-booking slice 06) explicitly
+// chose native datetime-local over a calendar widget ("无既有范式... 用原生
+// <input type=datetime-local>,别过度设计"). Local time is the right model for
+// a store's booking window — the appointment is "14:00 today", not "06:00 UTC".
+
+/**
+ * ISO timestamp / Date → the ``YYYY-MM-DDTHH:mm`` value a ``datetime-local``
+ * input renders. Empty string for null/undefined (the input's "no value" state).
+ *
+ * Slices seconds + timezone off — the appointment is a local wall-clock time.
+ */
+export function toDatetimeLocalValue(s?: string | null): string {
+  if (!s) return "";
+  const d = new Date(s);
+  if (Number.isNaN(d.getTime())) return "";
+  // Pad each component to 2 digits; toLocaleString would work but rebuilding
+  // from getFullYear/Month/Date/Hours/Minutes keeps it tz-stable (no implicit
+  // UTC shift) and matches the input's expected wire format exactly.
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return (
+    `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}` +
+    `T${pad(d.getHours())}:${pad(d.getMinutes())}`
+  );
+}
+
+/**
+ * ``YYYY-MM-DDTHH:mm`` (datetime-local) → ISO-8601 string for the API.
+ *
+ * The native value has no timezone, so we treat it as local time and emit a
+ * naive ISO (``YYYY-MM-DDTHH:mm:ss``, no offset). The backend stores naive
+ * datetimes (the SQLAlchemy column is ``DateTime``, not ``DateTime(timezone-
+ * true)``), so a naive ISO round-trips cleanly on both SQLite and Postgres.
+ */
+export function fromDatetimeLocalValue(v: string): string {
+  // ``new Date("YYYY-MM-DDTHH:mm")`` parses as local but then ``toISOString``
+  // shifts to UTC. We want to keep the wall-clock time, so append seconds and
+  // emit the string directly (no Date round-trip).
+  return v.length >= 16 ? `${v}:00` : v;
+}
