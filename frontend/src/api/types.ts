@@ -753,6 +753,18 @@ export interface BookingUpdate {
   notes?: string | null;
 }
 
+/** POST /bookings/{id}/end body (device-poweron, plan §0 D10 + AC6). Mirrors
+ * backend ``BookingEndPayload``. ``feedback`` is an optional free-form dict
+ * persisted verbatim into ``bookings.feedback``; omitting it or sending
+ * ``undefined`` leaves the column untouched (the service skips the write).
+ * Only ``/end`` carries a body; ``/start`` and ``/no-show`` are body-less POSTs.
+ *
+ * Defined here for type-contract completeness per plan AC6 (the ``/end`` hook
+ * + store「结束」button land in slice 03). */
+export interface BookingEndPayload {
+  feedback?: Record<string, unknown>;
+}
+
 /** HQ panorama booking (GET /bookings/ for super_admin / hq_staff). Extends
  * Booking with three display names — nullable because the related row may be
  * gone (soft-deleted tenant / walk-in booking with no customer). Note

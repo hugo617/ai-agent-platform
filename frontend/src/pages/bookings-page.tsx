@@ -114,6 +114,7 @@ import {
   useDeviceSchedule,
   useDevices,
   useMyBookings,
+  useStartBooking,
   useUpdateBooking,
 } from "@/hooks/queries";
 
@@ -766,10 +767,25 @@ function HqView() {
 // only device_id); we don't fetch the devices feed here to keep this view
 // cheap — the device_id prefix is shown as a fallback identifier, matching the
 // store view's soft-delete transient handling.
-function MyBookingsView() {
+export function MyBookingsView() {
   const { data: bookings, isLoading } = useMyBookings();
+  // 切片 02:customer 自助「确认开机」(pending → in_service)。后端按 caller
+  // 的 customer_id 做 own 校验(防越权)+ walk-in 拦截(散客预约仅门店可开机),
+  // 故前端无需传 customer_id,真调 startBooking(id) 即可。失败 toast 透传后端
+  // 信息(非法态 400 / 无权 403)。
+  const startMut = useStartBooking();
+  const toast = useToast();
 
   const list = (bookings ?? []) as Booking[];
+
+  async function confirmStart(b: Booking) {
+    try {
+      await startMut.mutateAsync(b.id);
+      toast.success("已开机");
+    } catch (err) {
+      toast.error("开机失败", apiErrorMessage(err));
+    }
+  }
 
   return (
     <div className="space-y-6">
@@ -804,6 +820,7 @@ function MyBookingsView() {
                   <TableHead>预约时段</TableHead>
                   <TableHead>状态</TableHead>
                   <TableHead>创建时间</TableHead>
+                  <TableHead className="text-right">操作</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -827,6 +844,21 @@ function MyBookingsView() {
                     </TableCell>
                     <TableCell className="text-muted-foreground">
                       {fmt(b.created_at)}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {/* 状态机:pending → in_service 合法跳转。其余态
+                          (in_service/done/cancelled/no_show/confirmed)均无按钮。
+                          注:``confirmed`` 是前向兼容占位态(device-booking 无
+                          /confirm 端点,运行期不可达),按 spec L259 不渲染按钮。 */}
+                      {b.status === "pending" && (
+                        <Button
+                          size="sm"
+                          onClick={() => confirmStart(b)}
+                          disabled={startMut.isPending}
+                        >
+                          确认开机
+                        </Button>
+                      )}
                     </TableCell>
                   </TableRow>
                 ))}
