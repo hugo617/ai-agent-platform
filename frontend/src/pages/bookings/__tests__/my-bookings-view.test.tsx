@@ -13,7 +13,7 @@ import { afterEach, describe, expect, it, vi, type Mock } from "vitest";
 import userEvent from "@testing-library/user-event";
 import { within } from "@testing-library/react";
 import { renderWithProviders } from "@/test/test-utils";
-import { MyBookingsView } from "../bookings-page";
+import { MyBookingsView } from "../my-bookings-view";
 import type { Booking } from "@/api/types";
 
 // ---- helpers ----

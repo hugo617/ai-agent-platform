@@ -788,30 +788,6 @@
       "notes": "纯前端任务。核心是双视角切换(isSuperAdmin = me.platform_role==='super_admin' 条件渲染两套表格)。参照 users-page.tsx 的 super_admin 跨租户视图模式。创建时跨店复用 identity_key 由后端自动处理,前端正常显示 201。前置 customers-api(5 个端点就绪)。hq_staff 视角在 hq-platform-role 任务适配(本任务只 super_admin + 门店视角)。不做搜索/筛选/导入导出/去重合并(MVP)。"
     },
     {
-      "id": "hq-platform-role",
-      "priority": 36,
-      "area": "权限",
-      "title": "平台角色 hq_staff —— 总部业务员(各司其职)+ 跨租户只读",
-      "user_visible_behavior": "总部业务员(hq_staff)能跨店只读所有门店 + 客户档案聚合视图,但不能创建/编辑/删除;总部超管(super_admin)行为不变",
-      "status": "passing",
-      "plan": "harness/docs/plan-hq-platform-role.md",
-      "verification": [
-        "permission_service.check() 加 hq_staff + act=='read' 短路(任意 obj 的 read 放行)",
-        "抽象 helper is_cross_tenant_viewer(platform_role)(super_admin + hq_staff 都算跨租户查看者)",
-        "Customer/Group Service 的跨租户查询分支:从 == 'super_admin' 扩展为 in ('super_admin','hq_staff');写操作 hq_staff 走 casbin 无策略则 403(天然只读)",
-        "pytest tests/test_hq_platform_role.py 覆盖:hq_staff 跨店读客户/组织 200、写客户 403、改组织 403、读门店内其它资源 200、super_admin 不回归",
-        "./init.sh 全绿(现有 super_admin 测试无回归)"
-      ],
-      "evidence": [
-        "./init.sh 全绿:ruff + 281 passed(基线 265 + 新增 16 test_hq_platform_role)",
-        "无迁移(platform_role 是自由字符串字段)",
-        "偏差:hq_staff_client fixture 绑定 member 角色(非 owner),避免 owner 写权限泄漏导致写操作误返 200",
-        "偏差:HQ 读端点守卫从 require_super_admin 改为 require_cross_tenant_viewer(plan 隐含但需显式)"
-      ],
-      "depends_on": "customers-api",
-      "notes": "用户「总部各司其职」需求的具体落地。platform_role 是自由字符串无 Enum 约束(tenant.py:92-96),加 hq_staff 无需迁移/JWT 改动。设计=check() 方案 A(加分支),不改 casbin 架构。hq_staff 定位=总部看板/巡检员,能看全貌不能改。MVP 两个平台角色(super_admin 全权 + hq_staff 只读),可扩展(后续加财务/客服等岗位再升级到平台级 casbin domain)。前置 customers-api(用 Customer 域作跨租户只读验证载体)。前端 customers-ui/groups-ui 的 isSuperAdmin 判定可顺带改为 isCrossTenantViewer(若已合并)。"
-    },
-    {
       "id": "chat-overflow-title-fix",
       "priority": 35,
       "area": "AI 内核",
@@ -837,6 +813,30 @@
       ],
       "depends_on": "chat-markdown-rendering",
       "notes": "用户反馈 bug 修复。决策:标题在后端 create_or_get 内用首条 user 消息截前 20 字生成(用户确认首条消息截断方案,否决 LLM 总结/列表返回 first_message 两案);前端信任后端 title 字段,conversationLabel 的 firstMessage 参数保留供未来按需展开。溢出修复纯 CSS:列表 Card 加 flex flex-col + CardContent min-h-0 flex-1(min-h-0 是 flex 子项能收缩的关键);user 气泡 [overflow-wrap:anywhere];assistant 气泡 overflow-hidden 兜底。顺带修移动端双倍超高(70vh)和删除按钮点击区(min-h/min-w)。无 schema/迁移改动。"
+    },
+    {
+      "id": "hq-platform-role",
+      "priority": 36,
+      "area": "权限",
+      "title": "平台角色 hq_staff —— 总部业务员(各司其职)+ 跨租户只读",
+      "user_visible_behavior": "总部业务员(hq_staff)能跨店只读所有门店 + 客户档案聚合视图,但不能创建/编辑/删除;总部超管(super_admin)行为不变",
+      "status": "passing",
+      "plan": "harness/docs/plan-hq-platform-role.md",
+      "verification": [
+        "permission_service.check() 加 hq_staff + act=='read' 短路(任意 obj 的 read 放行)",
+        "抽象 helper is_cross_tenant_viewer(platform_role)(super_admin + hq_staff 都算跨租户查看者)",
+        "Customer/Group Service 的跨租户查询分支:从 == 'super_admin' 扩展为 in ('super_admin','hq_staff');写操作 hq_staff 走 casbin 无策略则 403(天然只读)",
+        "pytest tests/test_hq_platform_role.py 覆盖:hq_staff 跨店读客户/组织 200、写客户 403、改组织 403、读门店内其它资源 200、super_admin 不回归",
+        "./init.sh 全绿(现有 super_admin 测试无回归)"
+      ],
+      "evidence": [
+        "./init.sh 全绿:ruff + 281 passed(基线 265 + 新增 16 test_hq_platform_role)",
+        "无迁移(platform_role 是自由字符串字段)",
+        "偏差:hq_staff_client fixture 绑定 member 角色(非 owner),避免 owner 写权限泄漏导致写操作误返 200",
+        "偏差:HQ 读端点守卫从 require_super_admin 改为 require_cross_tenant_viewer(plan 隐含但需显式)"
+      ],
+      "depends_on": "customers-api",
+      "notes": "用户「总部各司其职」需求的具体落地。platform_role 是自由字符串无 Enum 约束(tenant.py:92-96),加 hq_staff 无需迁移/JWT 改动。设计=check() 方案 A(加分支),不改 casbin 架构。hq_staff 定位=总部看板/巡检员,能看全貌不能改。MVP 两个平台角色(super_admin 全权 + hq_staff 只读),可扩展(后续加财务/客服等岗位再升级到平台级 casbin domain)。前置 customers-api(用 Customer 域作跨租户只读验证载体)。前端 customers-ui/groups-ui 的 isSuperAdmin 判定可顺带改为 isCrossTenantViewer(若已合并)。"
     },
     {
       "id": "demo-seed",
@@ -1617,6 +1617,52 @@
         "cd frontend && npm run build ✓ 1.53s + npx oxlint 0 warnings 0 errors(80 files 102 rules)+ npx vitest run ✓ 12/12(2 files:my-bookings-view 6 + store-view 6)",
         "/code-review 双轴(Standards + Spec)通过:0 阻断;修 1 注释误导(submitEnd fallback 不再归因 customers-page '标签 JSON' 范式);ACTIONABLE_STATUS 含 confirmed 经核实是 plan §0a B4 / §8 L276-278 显式要求的防御性渲染,非 speculative generality"
       ]
+    },
+    {
+      "id": "bookings-page-split",
+      "priority": 65,
+      "area": "工程化",
+      "title": "bookings-page 按视图拆 module(巡检候选 1,纯 locality 重构)",
+      "user_visible_behavior": "无用户可见行为变化(纯前端代码重构)。frontend/src/pages/bookings-page.tsx 1373 行按 view 边界拆成 frontend/src/pages/bookings/ 文件夹:BookingsPage 三叉路由入口 + StoreView/HqView/MyBookingsView 三个 view module + shared module(STATUS_META/FILTER/date helpers)。现有 12 个 vitest 测试全绿验证零行为变更,顺便给零测试的 HqView 补 smoke test。",
+      "status": "passing",
+      "verification": [
+        "frontend/src/pages/bookings-page.tsx 已删除",
+        "frontend/src/pages/bookings/ 文件夹存在:bookings-page.tsx(barrel re-export BookingsPage)+ index.tsx(三叉路由 ~15 行)+ store-view.tsx(~680)+ hq-view.tsx(~105)+ my-bookings-view.tsx(~105)+ shared.ts(~250)",
+        "App.tsx lazy import 指向 @/pages/bookings/bookings-page,路由 /bookings 正常",
+        "cd frontend && npx vitest run → 15/15 绿(12 现有 store-view 6 + my-bookings-view 6 + 3 新 hq-view smoke)",
+        "cd frontend && npm run build 绿 + npx oxlint 0 warning + npx tsc -b 绿",
+        "./init.sh 全绿(后端无改动,基线不应回归)",
+        "5 处 as cast(候选 8 范围)原样保留在各自 view,代码注释标注委托;无新 TODO/FIXME"
+      ],
+      "notes": "巡检产出([codebase-health-log.md] 2026-07-25 候选 1,Strong)。grill 4 决策(D2 bookings/ 子文件夹 / D4 测试跟 view 走 / D6 只拆不碰 cast / D7 现有测试全绿+补 HqView smoke)。**不越界**:cast 处理(候选 8)/ submitEnd JSON.parse 搬 endpoint(候选 7)/ cancel 并入状态机(候选 2,后端)/ queries-endpoints-types 拆分(候选 5)/ CrossTenantReadOnlyTable 抽取(候选 7)/ 其他 page 补测(候选 4)均在 Out of Scope。项目首个 page 子文件夹先例(目前所有 page 是 xxx-page.tsx 平铺)。plan:plan-bookings-page-split.md。",
+      "plan": "harness/docs/plan-bookings-page-split.md",
+      "depends_on": "device-poweron",
+      "evidence": [
+        "拆分:frontend/src/pages/bookings-page.tsx(1373 行)→ bookings/ 文件夹 5 module + barrel:bookings-page.tsx(barrel re-export)+ index.tsx(三叉路由 ~30 行)+ store-view.tsx(StoreView + 4 Dialog + DropdownMenu 三动作 ~680 行)+ hq-view.tsx(HqView export ~140 行)+ my-bookings-view.tsx(MyBookingsView ~150 行)+ shared.tsx(STATUS_META/NONE/MUTABLE/ACTIONABLE 常量 + FilterChips/BookingStatusBadge/deviceNameOf + date helpers + slotTone + ScheduleGridCard/ScheduleSlot ~360 行)",
+        "测试挪位:store-view.test.tsx + my-bookings-view.test.tsx 从 pages/__tests__/ git mv 到 bookings/__tests__/(保留历史),import 路径从 ../bookings-page 改为 ../store-view / ../my-bookings-view;新增 hq-view.test.tsx smoke 3 tests(渲染跨店表+列头+行数据 / 空态 EmptyState / null fallback:tenant_name 门店硬删 + walk-in 散客 + device_name 软删)",
+        "App.tsx lazy import 路径:@/pages/bookings-page → @/pages/bookings/bookings-page(barrel re-export BookingsPage 保路由兼容,路由 /bookings 不变)",
+        "验证:cd frontend && npx vitest run ✓ 15/15(3 files:store-view 6 + my-bookings-view 6 + hq-view 3)+ npm run build ✓ 1.75s(bookings-page chunk 18.98 kB 与拆分前一致,零行为变更)+ npx oxlint 0 warnings 0 errors(86 files 102 rules)+ npx tsc -b ✓ 绿;./init.sh 全绿 714 passed(后端无改动,基线无回归)",
+        "code-review 双轴:Standards 无 hard violation(AGENTS.md 铁律未触达,纯前端 view 搬运);judgement call 发现 shared.tsx 轻微 Divergent Change(ScheduleGridCard + 私有 date helpers 只 StoreView 用却混共享文件)→ 本次不拆登记为独立后续候选;Spec 核心达成(零行为变更 + locality),处置 1 处冲突:§10.10「无新 TODO」vs §4.5 D3「注释标注委托」→ TODO(candidate-X) 改 Note(candidate-X)(保标注价值不触发 IDE TODO 扫描);订正 plan 文字瑕疵(cast 5→7 处 / shared.ts→shared.tsx)",
+        "7 处 as cast 原样保留(hq-view ×1 as BookingHqRead[] / my-bookings-view ×1 as Booking[] / store-view ×1 as Booking[] + ×3 as Device[] + ×1 as Device 类型守卫),代码注释 Note(candidate-8) 标注委托范围;frontend/src/ TODO 总数回到基线 2(Logto OIDC 占位不变)"
+      ]
+    },
+    {
+      "id": "device-models-admin-ui",
+      "priority": 66,
+      "area": "业务实体",
+      "title": "设备型号目录管理页(super_admin 后台前端页)",
+      "user_visible_behavior": "超级管理员能在后台界面维护设备型号目录:进入「设备型号」管理页,新增/编辑/软删型号(品牌、规格 JSON、供应商、单位成本),查看完整目录列表。该页与门店端「设备入库」共享同一型号下拉数据源,但只有 super_admin 可见可写",
+      "status": "not_started",
+      "verification": [
+        "前端:新增 /device-models 路由 + DevicesModelsAdminPage 页面,RequireSuperAdmin 路由守卫(非 super_admin 重定向/403);列表(名称/品牌/规格摘要/单位成本/操作)+ 新增 Dialog + 编辑 Dialog + 软删确认 Dialog",
+        "前端导航:在 super_admin 可见的导航分组下挂「设备型号」菜单项(menu:device-models);普通门店角色看不到该入口",
+        "前端 hooks/endpoints:复用既有 useDeviceModels 只读下拉?不,新增 useDeviceModelsAdmin(拉完整字段含 unit_cost)+ useCreateDeviceModel/useUpdateDeviceModel/useDeleteDeviceModel(对应 POST/PUT/DELETE /api/v1/device-models,需 super_admin token)",
+        "pytest:无新增后端测试(device-models 后端 CRUD 已被 device-models-crud 覆盖),仅回归确认现有 test_device_models_api.py 全绿",
+        "cd frontend && npm run build 通过 + npx oxlint src/ 0 warnings + (若有组件测) vitest 通过"
+      ],
+      "evidence": [],
+      "notes": "设备功能系列补遗(61 device-models-crud 的范围漂移修复)。**缺口溯源**:feature 61 的 verification 字段明确写了「前端:后台型号管理页(路由 /device-models,RequireSuperAdmin 守卫)」,但 evidence 最后一条范围决策把它剥离给了 62;62(devices-crud-ui)实际只做了门店「设备入库」下拉,从未交付 super_admin 管理页。导致缺口:device_models 表无任何 seed,无任何 UI 可建型号,门店入库下拉永远为空,链路从源头断掉。**本 feature 仅做前端**(后端 CRUD 全齐,2026-07-25 Session 已实测端到端:super_admin token 建型号 → 门店 owner 建设备 → 列表回读全通)。**不做的事**(避免越界):不补 seed 脚本(种子数据是 dev 体验问题,非产品能力,留给用户按需 curl 或独立 seed feature);不进权限矩阵 UI(device_models 不走 casbin,对齐 groups 平台级资源范式);不重构现有 devices-page 的型号下拉(已正常工作)。依赖:[device-models-crud](passing)。**当前 WIP=0,所有活跃 feature 都 passing,本 feature 可作为下一个 frontier**。开工时写 plan,走 EP2 回环(/grill-with-docs → /to-spec → 切片)。",
+      "depends_on": "device-models-crud"
     }
   ]
 }

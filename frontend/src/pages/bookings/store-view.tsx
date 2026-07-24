@@ -1,20 +1,18 @@
 /**
- * Bookings page — device-booking 系列 3/4(切片 06 StoreView + 切片 07 HqView /
- * MyBookingsView + 三叉路由,末切片)。
+ * bookings/ StoreView — within-tenant booking CRUD surface.
  *
- * Top-level three-way branch (slice 07):
+ * Extracted from the original bookings-page.tsx (plan-bookings-page-split.md).
+ * Pure locality move: zero behaviour change. The ``as Booking[]`` / ``as
+ * Device[]`` casts on union returns are preserved verbatim — narrowing them
+ * is candidate 8 in the 2026-07-25 architecture review, intentionally out of
+ * scope here.
  *
- *   isSuperAdmin(me) || isHQStaff(me) ? <HqView/>            // cross-tenant panorama
- *   : hasCustomerIdentity(me)         ? <MyBookingsView/>    // customer "my bookings"
- *   : <StoreView/>                                           // within-tenant CRUD
- *
- * HQ viewers take precedence over a customer binding (an HQ role wouldn't carry
- * one anyway). StoreView (slice 06) is the within-tenant CRUD surface — a
+ * StoreView (device-booking slice 06) is the within-tenant CRUD surface — a
  * filterable booking list + per-device 7-day schedule grid, gating create /
  * reschedule / cancel behind ``hasPermission(me, "bookings", act)`` (members
- * only hold ``bookings:read`` so the write actions stay hidden). HqView is the
- * cross-tenant read-only panorama (no write controls). MyBookingsView is the
- * customer's read-only list (creating bookings is a store-staff responsibility).
+ * only hold ``bookings:read`` so the write actions stay hidden). device-poweron
+ * (slice 03) added the DropdownMenu with three lifecycle actions (start /
+ * end / no-show) gated on ACTIONABLE_STATUS (pending/confirmed/in_service).
  *
  * Backend guard notes (see plan-device-booking.md):
  * - State-guard rule: the create/update payloads carry NO ``status`` /
@@ -43,7 +41,6 @@ import {
   XCircle,
 } from "lucide-react";
 
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -90,104 +87,42 @@ import {
 import { useToast } from "@/components/ui/toast";
 import { apiErrorMessage } from "@/api/client";
 import { useAuth } from "@/components/auth/auth-context";
+import { hasPermission } from "@/lib/permission";
 import {
-  hasCustomerIdentity,
-  hasPermission,
-  isHQStaff,
-  isSuperAdmin,
-} from "@/lib/permission";
-import {
-  fromDatetimeLocalValue,
-  formatDateTime as fmt,
   toDatetimeLocalValue,
 } from "@/lib/format";
 import type {
   Booking,
   BookingCreate,
   BookingEndPayload,
-  BookingHqRead,
-  BookingStatus,
   BookingUpdate,
   Device,
 } from "@/api/types";
 import {
   useBookings,
-  useCreateBooking,
   useCancelBooking,
+  useCreateBooking,
   useCustomerProfiles,
-  useDeviceSchedule,
   useDevices,
   useEndBooking,
-  useMyBookings,
   useNoShowBooking,
   useStartBooking,
   useUpdateBooking,
 } from "@/hooks/queries";
+import {
+  ACTIONABLE_STATUS,
+  BookingStatusBadge,
+  FilterChips,
+  MUTABLE_STATUS,
+  NONE,
+  ScheduleGridCard,
+  applyBookingFilter,
+  deviceNameOf,
+  fmt,
+  fromDatetimeLocalValue,
+  type BookingFilter,
+} from "./shared";
 
-// 6-state status → {label, badge}. Each badge value is the literal Badge
-// variant name (``dot-warning`` / ``dot-success`` / ``dot-muted`` /
-// ``dot-destructive``), so STATUS_META reads as the plan's colour mapping
-// verbatim with no intermediate token to collapse. pending/in_service/no_show
-// pick a tinted dot; the neutral "settled" states (confirmed / done /
-// cancelled) share the muted grey dot — informational, not warning/danger.
-//
-// ``confirmed`` is a forward-compat placeholder (no /confirm endpoint yet, see
-// plan §0 D2) — the mapping is defined for completeness but unreachable in
-// this feature; a booking never enters that state here.
-const STATUS_META: Record<
-  BookingStatus,
-  {
-    label: string;
-    badge: "dot-warning" | "dot-success" | "dot-muted" | "dot-destructive";
-  }
-> = {
-  pending: { label: "待确认", badge: "dot-warning" },
-  confirmed: { label: "已确认", badge: "dot-muted" },
-  in_service: { label: "服务中", badge: "dot-success" },
-  done: { label: "已完成", badge: "dot-muted" },
-  cancelled: { label: "已取消", badge: "dot-muted" },
-  no_show: { label: "爽约", badge: "dot-destructive" },
-};
-
-// SelectValue can't render an empty string; "_none" is the sentinel for the
-// "walk-in (no customer)" option in the create/edit dialog. Mirrors the
-// devices-page bind dialog convention (chat-page.tsx:685-707 lineage).
-const NONE = "_none";
-
-// Only ``pending`` bookings are mutable (D10) — reschedule / cancel are hidden
-// for every other state. ``confirmed`` is a forward-compat placeholder state
-// that this feature never enters, so it's intentionally NOT in the mutable set
-// (it would be cancelled via a future /confirm + /cancel flow, not here).
-const MUTABLE_STATUS: ReadonlySet<BookingStatus> = new Set(["pending"]);
-
-// device-poweron (切片 03):the status set that still has a state-machine action
-// available. Reschedule / cancel stay gated on ``MUTABLE_STATUS`` (pending only)
-// — those are bookings edits, not lifecycle actions. ``ACTIONABLE_STATUS`` gates
-// the lifecycle menu (start / end / no-show): pending / confirmed / in_service
-// each have ≥1 action; the terminal states (done / cancelled / no_show) have
-// none and hide the menu entirely. ``confirmed`` is included defensively — the
-// state machine allows start/no-show from it, but device-booking never writes
-// ``confirmed`` so the branch is unreachable at runtime (code comment only).
-const ACTIONABLE_STATUS: ReadonlySet<BookingStatus> = new Set([
-  "pending",
-  "confirmed",
-  "in_service",
-]);
-
-export function BookingsPage() {
-  const { me } = useAuth();
-
-  // Three-way view fork (slice 07). HQ viewers take precedence over a customer
-  // binding — an HQ role wouldn't carry one anyway, but ordering the checks
-  // this way keeps the cross-tenant panorama authoritative. StoreView (slice 06)
-  // is the fallthrough for everyone else: tenant owners/admins/members with no
-  // customer identity.
-  if (isSuperAdmin(me) || isHQStaff(me)) return <HqView />;
-  if (hasCustomerIdentity(me)) return <MyBookingsView />;
-  return <StoreView />;
-}
-
-// ============================================================ store view
 // Exported for component tests (vitest, slice 03 store-view.test.tsx). Not
 // consumed anywhere else — the top-level ``BookingsPage`` is the public entry.
 export function StoreView() {
@@ -197,7 +132,7 @@ export function StoreView() {
   const { data: bookings, isLoading } = useBookings();
   const { data: devices } = useDevices();
   // Customer profiles feed the create/edit dialog's customer Select. Only
-  // fetched here (the store view); slice 07's HqView is read-only + reads
+  // fetched here (the store view); HqView is read-only + reads
   // HQ-pre-expanded names, so it won't need this feed.
   const { data: profiles } = useCustomerProfiles();
 
@@ -286,6 +221,8 @@ export function StoreView() {
   // the empty array every render and trip react-hooks/exhaustive-deps. Keeping
   // ``bookings`` (the react-query result, stable until data changes) as the
   // sole data dep is the clean fix.
+  //
+  // Note(candidate-8): split fetchBookings so this cast goes away.
   const filtered = useMemo(
     () => applyBookingFilter((bookings ?? []) as Booking[], filter),
     [bookings, filter],
@@ -389,6 +326,8 @@ export function StoreView() {
   // textarea is explicitly optional, mirroring the customers-page tags-JSON
   // convention. We do NOT block submit on parse failure (free-form audit note,
   // not structured data): the backend stores whatever dict we send verbatim.
+  //
+  // Note(candidate-7): move this JSON.parse fallback into the endpoint layer.
   const submitEnd = async () => {
     if (!endTarget) return;
     const trimmed = endFeedback.trim();
@@ -880,494 +819,4 @@ export function StoreView() {
       </Dialog>
     </div>
   );
-}
-
-// ============================================================ HQ panorama view
-//
-// Cross-tenant read-only view (super_admin / hq_staff). The HQ endpoint
-// (GET /bookings/ behind require_cross_tenant_viewer) already expands
-// tenant_name/device_name/customer_name server-side (BookingHqRead), so this
-// table needs no client-side lookups into the devices/profiles feeds — it just
-// renders the rows it gets back. There are no write controls: HQ viewers
-// observe bookings across stores, never mutate them. Mirrors devices-page's
-// HqView (the cross-tenant read-only fleet view) — same skeleton, data source
-// swapped (useDevices→useBookings) + field mapping (serial_number→device_name,
-// model_name→customer_name, status Badge→scheduled window).
-function HqView() {
-  const { data: bookings, isLoading } = useBookings();
-  // useBookings() returns a union (Booking[] | BookingHqRead[]). The backend
-  // guarantees BookingHqRead[] for HQ roles (the same guard that routes us
-  // here), so we narrow once at the view boundary. A store viewer never reaches
-  // this component — the top-level BookingsPage branch sees to that.
-  const list = (bookings ?? []) as BookingHqRead[];
-
-  return (
-    <div className="space-y-6">
-      <PageHeader
-        title="预约（总部视图）"
-        subtitle="跨店聚合：查看所有门店的设备预约。此视图为只读，写操作请切换到门店视角。"
-      />
-
-      <Card>
-        <CardHeader>
-          <CardTitle>全局预约列表</CardTitle>
-          <CardDescription>
-            共 {list.length} 条预约（跨全部门店）
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <ListState
-            isLoading={isLoading}
-            isEmpty={list.length === 0}
-            loadingVariant="skeleton"
-            skeletonRows={8}
-            emptyContent={
-              <EmptyState
-                icon={CalendarX}
-                title="暂无预约"
-                description="跨全部门店暂无设备预约"
-              />
-            }
-          >
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>所属门店</TableHead>
-                  <TableHead>设备</TableHead>
-                  <TableHead>客户</TableHead>
-                  <TableHead>预约时段</TableHead>
-                  <TableHead>状态</TableHead>
-                  <TableHead>创建时间</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {list.map((b) => (
-                  <TableRow key={b.id}>
-                    <TableCell className="text-muted-foreground">
-                      {/* tenant_name is null only if the tenant row was hard-
-                          deleted — the FK is CASCADE so this is effectively
-                          unreachable, but we guard for display safety. */}
-                      {b.tenant_name ?? "（门店已删除）"}
-                    </TableCell>
-                    <TableCell className="font-medium">
-                      {/* device_name is sourced from Device.serial_number on
-                          the backend (devices have no ``name`` column).
-                          device_id null is unreachable (a booking always has a
-                          device FK) but typed nullable, so guard defensively. */}
-                      {b.device_name ??
-                        (b.device_id
-                          ? `设备(${b.device_id.slice(0, 8)})`
-                          : "—")}
-                    </TableCell>
-                    <TableCell className="text-muted-foreground">
-                      {/* Walk-in bookings (customer_id null) arrive with
-                          customer_name null — render as "散客" to match the
-                          store view's convention. */}
-                      {b.customer_name ?? "散客(walk-in)"}
-                    </TableCell>
-                    <TableCell className="text-muted-foreground">
-                      {fmt(b.scheduled_start_at)} → {fmt(b.scheduled_end_at)}
-                    </TableCell>
-                    <TableCell>
-                      <BookingStatusBadge status={b.status} />
-                    </TableCell>
-                    <TableCell className="text-muted-foreground">
-                      {fmt(b.created_at)}
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </ListState>
-        </CardContent>
-      </Card>
-    </div>
-  );
-}
-
-// ============================================================ customer "my bookings" view
-//
-// Customer-bound principal (a token carrying ``customer_id``). The
-// GET /me/bookings endpoint (slice 04) already filters server-side to the
-// caller's own bookings — no client-side filter needed. Read-only: creating a
-// booking is a store-staff responsibility (a customer can't book for itself),
-// so there are no write controls here.
-//
-// A customer never sees a walk-in booking on this surface (those have
-// customer_id null and are excluded by the backend predicate), so every row
-// has a real scheduled window. Device name isn't in BookingRead (it carries
-// only device_id); we don't fetch the devices feed here to keep this view
-// cheap — the device_id prefix is shown as a fallback identifier, matching the
-// store view's soft-delete transient handling.
-export function MyBookingsView() {
-  const { data: bookings, isLoading } = useMyBookings();
-  // 切片 02:customer 自助「确认开机」(pending → in_service)。后端按 caller
-  // 的 customer_id 做 own 校验(防越权)+ walk-in 拦截(散客预约仅门店可开机),
-  // 故前端无需传 customer_id,真调 startBooking(id) 即可。失败 toast 透传后端
-  // 信息(非法态 400 / 无权 403)。
-  const startMut = useStartBooking();
-  const toast = useToast();
-
-  const list = (bookings ?? []) as Booking[];
-
-  async function confirmStart(b: Booking) {
-    try {
-      await startMut.mutateAsync(b.id);
-      toast.success("已开机");
-    } catch (err) {
-      toast.error("开机失败", apiErrorMessage(err));
-    }
-  }
-
-  return (
-    <div className="space-y-6">
-      <PageHeader
-        title="我的预约"
-        subtitle="查看您的设备预约记录。如需预约或修改，请联系门店工作人员。"
-      />
-
-      <Card>
-        <CardHeader>
-          <CardTitle>我的预约列表</CardTitle>
-          <CardDescription>共 {list.length} 条预约</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <ListState
-            isLoading={isLoading}
-            isEmpty={list.length === 0}
-            loadingVariant="skeleton"
-            skeletonRows={6}
-            emptyContent={
-              <EmptyState
-                icon={CalendarX}
-                title="暂无预约"
-                description="您目前没有任何设备预约记录"
-              />
-            }
-          >
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>设备</TableHead>
-                  <TableHead>预约时段</TableHead>
-                  <TableHead>状态</TableHead>
-                  <TableHead>创建时间</TableHead>
-                  <TableHead className="text-right">操作</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {list.map((b) => (
-                  <TableRow key={b.id}>
-                    <TableCell className="font-medium">
-                      {/* BookingRead carries only device_id (no device_name —
-                          that's a BookingHqRead field). We don't pull the
-                          devices feed here (keeps this view cheap + avoids
-                          surfacing other tenants' devices for a customer
-                          principal); the id prefix is a stable fallback.
-                          device_id null is unreachable (a booking always has a
-                          device FK) but typed nullable, so guard defensively. */}
-                      {b.device_id ? `设备(${b.device_id.slice(0, 8)})` : "—"}
-                    </TableCell>
-                    <TableCell className="text-muted-foreground">
-                      {fmt(b.scheduled_start_at)} → {fmt(b.scheduled_end_at)}
-                    </TableCell>
-                    <TableCell>
-                      <BookingStatusBadge status={b.status} />
-                    </TableCell>
-                    <TableCell className="text-muted-foreground">
-                      {fmt(b.created_at)}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      {/* 状态机:pending → in_service 合法跳转。其余态
-                          (in_service/done/cancelled/no_show/confirmed)均无按钮。
-                          注:``confirmed`` 是前向兼容占位态(device-booking 无
-                          /confirm 端点,运行期不可达),按 spec L259 不渲染按钮。 */}
-                      {b.status === "pending" && (
-                        <Button
-                          size="sm"
-                          onClick={() => confirmStart(b)}
-                          disabled={startMut.isPending}
-                        >
-                          确认开机
-                        </Button>
-                      )}
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </ListState>
-        </CardContent>
-      </Card>
-    </div>
-  );
-}
-
-// ============================================================ schedule grid
-//
-// The per-device 7-day grid. No calendar widget (plan: "别过度设计,不做日历
-// 控件"). Layout: a device picker + one column per day for the next 7 days
-// (today → today+6); each column lists that day's bookings as slot-box cards,
-// tinted by the three display buckets (active = pending/confirmed/in_service,
-// done = done, released = cancelled/no_show). Empty days render a muted
-// placeholder so the column shape is stable.
-//
-// ``useDeviceSchedule(id, today, today+7d)`` returns only days with ≥1 booking,
-// so we look up each of the 7 days in the result map (missing key → empty col).
-function ScheduleGridCard({
-  devices,
-  selectedId,
-  onSelect,
-}: {
-  devices: Device[];
-  selectedId: string;
-  onSelect: (id: string) => void;
-}) {
-  // The 7-day window: today → today+7d (exclusive end, matching the backend's
-  // left-closed/right-open overlap semantics). Computed once per render; the
-  // user isn't paginating weeks in this slice.
-  const { days, startIso, endIso } = useMemo(() => {
-    const today = startOfToday();
-    const end = addDays(today, 7);
-    const arr: { iso: string; label: string }[] = [];
-    for (let i = 0; i < 7; i++) {
-      const d = addDays(today, i);
-      arr.push({ iso: isoDate(d), label: dayLabel(d, i) });
-    }
-    return { days: arr, startIso: today.toISOString(), endIso: end.toISOString() };
-  }, []);
-
-  const { data: schedule, isLoading } = useDeviceSchedule(
-    selectedId || null,
-    startIso,
-    endIso,
-  );
-
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle>设备排期</CardTitle>
-        <CardDescription>
-          选择一台设备,查看未来 7 天的预约排布。
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        <Field label="设备">
-          <Select value={selectedId} onValueChange={onSelect}>
-            <SelectTrigger>
-              <SelectValue placeholder="选择设备查看排期" />
-            </SelectTrigger>
-            <SelectContent>
-              {devices.map((d) => (
-                <SelectItem key={d.id} value={d.id}>
-                  {d.serial_number}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </Field>
-
-        {!selectedId ? (
-          <p className="py-8 text-center text-sm text-muted-foreground">
-            选择一台设备以查看排期。
-          </p>
-        ) : (
-          // The 7 columns always render (one per day), so there's no list-level
-          // empty state — each empty day shows its own "空" placeholder inside
-          // the column. ListState is used here purely as a loading gate while
-          // the schedule fetch is in flight.
-          <ListState isLoading={isLoading} isEmpty={false}>
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-7">
-              {days.map((day) => {
-                const dayBookings = schedule?.[day.iso] ?? [];
-                return (
-                  <div
-                    key={day.iso}
-                    className="min-h-32 rounded-md border bg-muted/30 p-2"
-                  >
-                    <div className="mb-2 text-xs font-medium text-muted-foreground">
-                      {day.label}
-                    </div>
-                    {dayBookings.length === 0 ? (
-                      <p className="py-4 text-center text-xs text-muted-foreground/60">
-                        空
-                      </p>
-                    ) : (
-                      <div className="space-y-1.5">
-                        {dayBookings.map((b) => (
-                          <ScheduleSlot key={b.id} booking={b} />
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          </ListState>
-        )}
-      </CardContent>
-    </Card>
-  );
-}
-
-/** One booking inside a schedule day column. Colour-coded by the three display
- * buckets (active / done / released) so a glance reads the device's day. */
-function ScheduleSlot({ booking }: { booking: Booking }) {
-  const tone = slotTone(booking.status);
-  const time = `${hhmm(booking.scheduled_start_at)}–${hhmm(booking.scheduled_end_at)}`;
-  return (
-    <div
-      className={`rounded border px-2 py-1 text-xs ${tone.cls}`}
-      title={`${time} · ${STATUS_META[booking.status].label}`}
-    >
-      <div className="font-medium">{time}</div>
-      <div className="opacity-80">{STATUS_META[booking.status].label}</div>
-    </div>
-  );
-}
-
-// ============================================================ shared bits
-
-/** List filter presets for the chip row. "all" = no filter. */
-type BookingFilter =
-  | "all"
-  | "today"
-  | "tomorrow"
-  | "this_week"
-  | "pending"
-  | "no_show";
-
-const FILTER_OPTIONS: { value: BookingFilter; label: string }[] = [
-  { value: "all", label: "全部" },
-  { value: "today", label: "今日" },
-  { value: "tomorrow", label: "明日" },
-  { value: "this_week", label: "本周" },
-  { value: "pending", label: "待确认" },
-  { value: "no_show", label: "爽约" },
-];
-
-/** Hand-rolled mutually-exclusive button row. Mirrors the dashboard trend-days
- * toggle (dashboard-page.tsx:244) — no shadcn Tabs primitive exists in this
- * project, and settings-page deliberately avoids adding one. */
-function FilterChips({
-  value,
-  onChange,
-}: {
-  value: BookingFilter;
-  onChange: (v: BookingFilter) => void;
-}) {
-  return (
-    <div className="flex flex-wrap gap-1">
-      {FILTER_OPTIONS.map((opt) => (
-        <Button
-          key={opt.value}
-          variant={value === opt.value ? "default" : "outline"}
-          size="sm"
-          onClick={() => onChange(opt.value)}
-        >
-          {opt.label}
-        </Button>
-      ))}
-    </div>
-  );
-}
-
-function BookingStatusBadge({ status }: { status: BookingStatus }) {
-  const meta = STATUS_META[status];
-  return <Badge variant={meta.badge}>{meta.label}</Badge>;
-}
-
-/** Resolve a booking's device_id to its serial number for display. Falls back
- * to the id prefix when the device was soft-deleted between list fetches (the
- * backend's SET-NULL FK keeps the booking row, but a live device list filters
- * soft-deleted rows out — a rare transient). */
-function deviceNameOf(
-  deviceId: string | null,
-  deviceMap: Map<string, string>,
-): string {
-  if (!deviceId) return "—";
-  return deviceMap.get(deviceId) ?? `设备(${deviceId.slice(0, 8)})`;
-}
-
-// ------------------------------------------------------------- date helpers
-//
-// Local-time date math for the filter chips + schedule grid. All comparisons
-// are on calendar days (``YYYY-MM-DD``), not timestamps — a "today" filter
-// matches the whole local day, ignoring hours. Kept local (no UTC shift)
-// because a store's booking sheet is read in wall-clock time.
-
-function startOfToday(): Date {
-  const d = new Date();
-  d.setHours(0, 0, 0, 0);
-  return d;
-}
-
-function addDays(base: Date, days: number): Date {
-  const d = new Date(base);
-  d.setDate(d.getDate() + days);
-  return d;
-}
-
-/** ``YYYY-MM-DD`` for a Date (local). Used as the DeviceSchedule map key. */
-function isoDate(d: Date): string {
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-}
-
-/** ``HH:mm`` from an ISO timestamp (local). Slot card time label. */
-function hhmm(iso: string): string {
-  const d = new Date(iso);
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
-}
-
-/** ``周一 7/24`` style label for a schedule column header. ``offset`` is 0 for
- * today (rendered as "今天"). */
-function dayLabel(d: Date, offset: number): string {
-  const weekdays = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"];
-  const prefix = offset === 0 ? "今天" : offset === 1 ? "明天" : weekdays[d.getDay()];
-  return `${prefix} ${d.getMonth() + 1}/${d.getDate()}`;
-}
-
-/** Apply a chip filter to the booking list. Time filters compare on the local
- * calendar day of ``scheduled_start_at``; status filters are an exact match. */
-function applyBookingFilter(
-  list: Booking[],
-  filter: BookingFilter,
-): Booking[] {
-  if (filter === "all") return list;
-  if (filter === "pending" || filter === "no_show") {
-    return list.filter((b) => b.status === filter);
-  }
-  const today = startOfToday();
-  const todayKey = isoDate(today);
-  const tomorrowKey = isoDate(addDays(today, 1));
-  // "本周" = the Monday-containing week of today (Mon→Sun), so a sheet printed
-  // mid-week still shows the whole current week.
-  const weekStart = addDays(today, -((today.getDay() + 6) % 7)); // Mon of this week
-  const weekEnd = addDays(weekStart, 7); // exclusive
-  return list.filter((b) => {
-    const start = new Date(b.scheduled_start_at);
-    const key = isoDate(start);
-    if (filter === "today") return key === todayKey;
-    if (filter === "tomorrow") return key === tomorrowKey;
-    // this_week: start date within [weekStart, weekEnd)
-    return start >= weekStart && start < weekEnd;
-  });
-}
-
-/** Slot-box colour bucket for the schedule grid. Three display tones match the
- * plan's "booked/active/done 三态色" mapping (active = pending/confirmed/
- * in_service; done = done; released = cancelled/no_show). */
-function slotTone(
-  status: BookingStatus,
-): { cls: string } {
-  if (status === "done") {
-    return { cls: "border-border bg-background text-muted-foreground" };
-  }
-  if (status === "cancelled" || status === "no_show") {
-    return { cls: "border-destructive/30 bg-destructive/5 text-destructive/80 line-through" };
-  }
-  // active bucket: pending / confirmed / in_service
-  return { cls: "border-primary/30 bg-primary/5 text-primary" };
 }
