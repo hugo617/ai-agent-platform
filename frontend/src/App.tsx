@@ -36,6 +36,9 @@ const CustomersPage = lazy(() =>
 const DevicesPage = lazy(() =>
   import("@/pages/devices-page").then((m) => ({ default: m.DevicesPage })),
 );
+const BookingsPage = lazy(() =>
+  import("@/pages/bookings-page").then((m) => ({ default: m.BookingsPage })),
+);
 const RolesPage = lazy(() =>
   import("@/pages/roles-page").then((m) => ({ default: m.RolesPage })),
 );
@@ -124,6 +127,12 @@ export default function App() {
                     所以裸 ProtectedRoute,无额外守卫;写按钮在页内按
                     hasPermission 隐藏(切片 06)。 */}
                 <Route path="/devices" element={<DevicesPage />} />
+                {/* 设备预约订单(device-booking 系列 3/4 切片 05)— 切片 05 只铺
+                    地基:types/endpoints/queries + 本路由 + nav 项,页面暂为
+                    占位(无 UI)。member 可读(后端 bookings:read 切片 02 已 seed
+                    给 owner/admin/member),所以裸 ProtectedRoute,无额外守卫;
+                    写按钮 + 三叉视图(Store/HQ/customer)留给切片 06/07。 */}
+                <Route path="/bookings" element={<BookingsPage />} />
                 <Route path="/knowledge" element={<KnowledgePage />} />
 
                 {/* 个人中心 — self-service account management. Every

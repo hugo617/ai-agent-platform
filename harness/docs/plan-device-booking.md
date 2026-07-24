@@ -277,19 +277,19 @@
 
 ---
 
-### 切片 05 — 前端地基:types/endpoints/queries + 路由 + nav
+### 切片 05 — 前端地基:types/endpoints/queries + 路由 + nav ✅ PR #111
 
 **Blocked by:** 03(`BookingHqRead` schema 定型 + schedule 端点形状定型),04(`/me/bookings` 形状定型)
 
 **What it delivers:** 前端拿到 bookings 的完整类型和 API client,`/bookings` 路由可达(空页即可),nav 项出现。UI 实现留给切片 06/07。
 
 **Acceptance criteria:**
-- [ ] `frontend/src/api/types.ts`:`Booking`、`BookingCreate`、`BookingUpdate`、`BookingStatus`、`BookingHqRead`、`DeviceSchedule`( `{ [date: string]: Booking[] }` )
-- [ ] `frontend/src/api/endpoints.ts`:`fetchBookings()`、`fetchBooking(id)`、`createBooking(payload)`、`updateBooking(id, payload)`、`cancelBooking(id)`(POST /cancel,**不是 DELETE**)、`fetchDeviceSchedule(deviceId, start, end)`、`fetchMyBookings()`(打 /me/bookings)
-- [ ] `frontend/src/hooks/queries.ts`:`qk.bookings` / `qk.deviceSchedule` / `qk.myBookings` + `useBookings()`、`useCreateBooking()`、`useUpdateBooking()`、`useCancelBooking()`、`useDeviceSchedule(deviceId, start, end)`、`useMyBookings()`
-- [ ] `frontend/src/App.tsx`:`const BookingsPage = lazy(...)` + `<Route path="/bookings" element={<BookingsPage/>}/>`(裸 ProtectedRoute,member 可读)
-- [ ] `frontend/src/components/layout/nav-items.ts`:业务管理 subgroup 加 `{ to: "/bookings", label: "预约", icon: <Calendar/>, menuCode: "menu:bookings" }`(注:文件约定用 component ref `icon: Calendar`,非 JSX)
-- [ ] `cd frontend && npm run build` + `npx oxlint` 通过
+- [x] `frontend/src/api/types.ts`:`Booking`、`BookingCreate`、`BookingUpdate`、`BookingStatus`、`BookingHqRead`、`DeviceSchedule`( `{ [date: string]: Booking[] }` )
+- [x] `frontend/src/api/endpoints.ts`:`fetchBookings()`、`fetchBooking(id)`、`createBooking(payload)`、`updateBooking(id, payload)`、`cancelBooking(id)`(POST /cancel,**不是 DELETE**)、`fetchDeviceSchedule(deviceId, start, end)`、`fetchMyBookings()`(打 /me/bookings)
+- [x] `frontend/src/hooks/queries.ts`:`qk.bookings` / `qk.deviceSchedule` / `qk.myBookings` + `useBookings()`、`useCreateBooking()`、`useUpdateBooking()`、`useCancelBooking()`、`useDeviceSchedule(deviceId, start, end)`、`useMyBookings()`(+ `useBooking(id)` 顺带补齐,与 useDevice/useCustomerProfile 范式一致)
+- [x] `frontend/src/App.tsx`:`const BookingsPage = lazy(...)` + `<Route path="/bookings" element={<BookingsPage/>}/>`(裸 ProtectedRoute,member 可读)
+- [x] `frontend/src/components/layout/nav-items.ts`:业务管理 subgroup 加 `{ to: "/bookings", label: "预约", icon: <Calendar/>, menuCode: "menu:bookings" }`(注:文件约定用 component ref `icon: Calendar`,非 JSX)
+- [x] `cd frontend && npm run build` + `npx oxlint` 通过(✓ built 1.67s + 0 warnings/errors)
 
 ---
 

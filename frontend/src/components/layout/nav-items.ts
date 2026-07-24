@@ -2,6 +2,7 @@ import {
   Bot,
   BookOpen,
   Building2,
+  Calendar,
   Contact,
   Coins,
   LayoutDashboard,
@@ -105,6 +106,18 @@ const ITEMS: NavItem[] = [
     icon: Monitor,
     menuCode: "menu:devices",
   },
+  // bookings (device-booking slice 05): menu:bookings seeded to owner/admin/
+  // member by slice 02, so the whole store-side roles see the nav entry.
+  // hq_staff / super_admin bypass menu checks (platform role), so they see it
+  // too even without a tenant role — the HQ panorama view branches in-page
+  // (slice 07). The page itself is a slice-05 placeholder; nav visibility is
+  // what this slice verifies.
+  {
+    to: "/bookings",
+    label: "预约",
+    icon: Calendar,
+    menuCode: "menu:bookings",
+  },
   {
     to: "/billing",
     label: "费用管理",
@@ -155,7 +168,9 @@ const GROUPS: NavGroup[] = [
     subgroups: [
       {
         label: "业务管理",
-        items: ["/groups", "/customers", "/devices", "/billing"].map(pick),
+        items: ["/groups", "/customers", "/devices", "/bookings", "/billing"].map(
+          pick,
+        ),
       },
       {
         label: "人员与权限",
