@@ -10,6 +10,7 @@ import type {
   ApiTokenCreated,
   Booking,
   BookingCreate,
+  BookingEndPayload,
   BookingHqRead,
   BookingUpdate,
   Conversation,
@@ -443,12 +444,32 @@ export async function cancelBooking(id: string): Promise<void> {
 }
 
 // POST /bookings/{id}/start (device-poweron 切片 02) — pending → in_service,
-// backend fills ``started_at``. Body-less POST (pure status flip). Slice 03
-// adds endBooking/noShowBooking with the store buttons (queries.ts 的
-// useStartBooking 注释处有完整 slice 边界说明,此处不重复)。
+// backend fills ``started_at``. Body-less POST (pure status flip).
 export async function startBooking(id: string): Promise<Booking> {
   const { data } = await api.post<Booking>(`/bookings/${id}/start`);
   return data;
+}
+
+// POST /bookings/{id}/end (device-poweron 切片 03) — in_service → done, backend
+// fills ``ended_at`` + persists optional ``feedback``. Body is optional; omit it
+// to end the booking with no service note. Returns the updated booking so the
+// store list reflects the new status + ended_at immediately.
+//
+// Authorization is store owner only (``bookings:delete``) — admin has no such
+// perm (per B2), so the「结束」button is hidden for admin client-side.
+export async function endBooking(
+  id: string,
+  payload?: BookingEndPayload,
+): Promise<Booking> {
+  const { data } = await api.post<Booking>(`/bookings/${id}/end`, payload);
+  return data;
+}
+
+// POST /bookings/{id}/no-show (device-poweron 切片 03) — pending / confirmed /
+// in_service → no_show. Pure status flip (no timestamp); returns 204 like
+// ``/cancel`` so there's no body to consume. Authorization: store owner only.
+export async function noShowBooking(id: string): Promise<void> {
+  await api.post(`/bookings/${id}/no-show`);
 }
 
 export async function fetchDeviceSchedule(
