@@ -8,9 +8,9 @@
 - **标准启动路径**: `./init.sh`(装依赖 + ruff + pytest)
 - **标准验证路径**: `./init.sh`(同上,后端快速验证,SQLite 内存库)
 - **完整验证路径**(需 docker): `alembic upgrade head && alembic check` + `cd frontend && npm run build`
-- **当前最高优先级未完成功能**: **`device-booking`(priority 63,设备预约订单 CRUD + 排期,系列 3/4,status=`in_progress`,EP3 进行中)**。设备功能系列进度:61(device-models-crud)✅ → 62(devices-crud-ui)✅ 全 passing → **63(device-booking `in_progress`,plan-device-booking.md 含 7 切片 + 12 决策)** → 64(device-poweron)。切片级状态真相源 = `harness/docs/plan-device-booking.md` 的 acceptance criteria checklist。切片进度:**切片 01(后端地基)✅ 已合并 PR #106 commit f2bfc93** → **切片 02(权限 seed + backfill)✅ 已合并 PR #107** → **切片 03(HQ 全景 + 排期聚合后端)✅ 已合并 PR #108 commit 2a69176** → **切片 04(customer own 端点 GET /me/bookings)✅ PR #110 已开(本地分支 feat/booking-slice-04-me-bookings commit b03bec0,代码全绿 651 passed + ruff 0 + /code-review 0 阻塞;待 CI 绿后合并)** → 切片 05(前端地基 types/endpoints/queries + 路由 + nav)待做(frontier)。**下一步**:① 等 PR #110 CI 绿后合并;② 然后走 device-booking 切片 05(前端地基:`frontend/src/api/types.ts` 加 Booking/BookingHqRead/DeviceSchedule 等 + endpoints.ts 加 fetchBookings/fetchMyBookings 等 + queries.ts + App.tsx 路由 + nav-items 加预约项),走 `/implement`(EP3,从 frontier 切片接)。注:切片 05 blocked by 03+04,现 04 PR 已开,切片 05 待 04 合并后可开。
-- **当前 blocker**: 无(PR #110 已开,等 CI)
-- **EP3 断点(Session 134)**:device-booking 切片 04 PR #110 已开(等 CI 合并)。切片 05 是下一个 frontier。续做时:先确认 PR #110 是否已合并(`gh pr view 110`),未合并则先合并;已合并则直接开切片 05。
+- **当前最高优先级未完成功能**: **`device-booking`(priority 63,设备预约订单 CRUD + 排期,系列 3/4,status=`in_progress`,EP3 进行中)**。设备功能系列进度:61(device-models-crud)✅ → 62(devices-crud-ui)✅ 全 passing → **63(device-booking `in_progress`,plan-device-booking.md 含 7 切片 + 12 决策)** → 64(device-poweron)。切片级状态真相源 = `harness/docs/plan-device-booking.md` 的 acceptance criteria checklist。切片进度:**切片 01(后端地基)✅ 已合并 PR #106 commit f2bfc93** → **切片 02(权限 seed + backfill)✅ 已合并 PR #107** → **切片 03(HQ 全景 + 排期聚合后端)✅ 已合并 PR #108 commit 2a69176** → **切片 04(customer own 端点 GET /me/bookings)✅ 已合并 PR #110 commit 24685a4(代码全绿 651 passed + ruff 0 + /code-review 0 阻塞)** → 切片 05(前端地基 types/endpoints/queries + 路由 + nav)待做(frontier)。**下一步**:device-booking 切片 05(前端地基:`frontend/src/api/types.ts` 加 Booking/BookingHqRead/DeviceSchedule 等 + endpoints.ts 加 fetchBookings/fetchMyBookings 等 + queries.ts + App.tsx 路由 + nav-items 加预约项),走 `/implement`(EP3,从 frontier 切片接)。注:切片 05 blocked by 03+04,现 04 已合并,切片 05 可开。
+- **当前 blocker**: 无
+- **EP3 断点(Session 134)**:device-booking 切片 04 已合并(PR #110 commit 24685a4)。切片 05 是下一个 frontier。续做时直接开切片 05。
 
 ## 后续任务规划
 
