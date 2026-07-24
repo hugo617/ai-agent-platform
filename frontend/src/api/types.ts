@@ -373,6 +373,11 @@ export interface MeResponse {
   // Drives nav visibility + button guards. Empty for super_admin (frontend
   // bypasses on platform_role === "super_admin").
   permissions: string[];
+  // Customer identity the token is bound to (slice 07). Null for store-staff
+  // tokens — the /bookings page branches to a customer "my bookings" view when
+  // this is non-null (hasCustomerIdentity in lib/permission). Mirrors the
+  // backend CurrentUser.customer_id claim resolution.
+  customer_id: string | null;
   // Self-service profile fields (priority 49): exposed so the profile page can
   // pre-fill rather than starting blank.
   display_name?: string | null;

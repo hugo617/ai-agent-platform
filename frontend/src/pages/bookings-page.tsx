@@ -1,18 +1,20 @@
 /**
- * Bookings page — device-booking 系列 3/4(切片 06 StoreView)。
+ * Bookings page — device-booking 系列 3/4(切片 06 StoreView + 切片 07 HqView /
+ * MyBookingsView + 三叉路由,末切片)。
  *
- * Top-level branch (slice 07 wires HqView / MyBookingsView; slice 06 only
- * delivers StoreView — the placeholder ``isSuperAdmin || isHQStaff`` /
- * ``hasCustomerIdentity`` forks live in slice 07):
+ * Top-level three-way branch (slice 07):
  *
- *   isSuperAdmin(me) || isHQStaff(me) ? <HqView/>            // slice 07
- *   : hasCustomerIdentity(me)        ? <MyBookingsView/>     // slice 07
- *   : <StoreView/>                                            // ← this slice
+ *   isSuperAdmin(me) || isHQStaff(me) ? <HqView/>            // cross-tenant panorama
+ *   : hasCustomerIdentity(me)         ? <MyBookingsView/>    // customer "my bookings"
+ *   : <StoreView/>                                           // within-tenant CRUD
  *
- * StoreView is the within-tenant CRUD surface. It renders a filterable booking
- * list + a per-device 7-day schedule grid, and gates create/reschedule/cancel
- * behind ``hasPermission(me, "bookings", act)`` (members only hold
- * ``bookings:read`` so the write actions stay hidden).
+ * HQ viewers take precedence over a customer binding (an HQ role wouldn't carry
+ * one anyway). StoreView (slice 06) is the within-tenant CRUD surface — a
+ * filterable booking list + per-device 7-day schedule grid, gating create /
+ * reschedule / cancel behind ``hasPermission(me, "bookings", act)`` (members
+ * only hold ``bookings:read`` so the write actions stay hidden). HqView is the
+ * cross-tenant read-only panorama (no write controls). MyBookingsView is the
+ * customer's read-only list (creating bookings is a store-staff responsibility).
  *
  * Backend guard notes (see plan-device-booking.md):
  * - State-guard rule: the create/update payloads carry NO ``status`` /
@@ -85,7 +87,12 @@ import {
 import { useToast } from "@/components/ui/toast";
 import { apiErrorMessage } from "@/api/client";
 import { useAuth } from "@/components/auth/auth-context";
-import { hasPermission } from "@/lib/permission";
+import {
+  hasCustomerIdentity,
+  hasPermission,
+  isHQStaff,
+  isSuperAdmin,
+} from "@/lib/permission";
 import {
   fromDatetimeLocalValue,
   formatDateTime as fmt,
@@ -94,6 +101,7 @@ import {
 import type {
   Booking,
   BookingCreate,
+  BookingHqRead,
   BookingStatus,
   BookingUpdate,
   Device,
@@ -105,6 +113,7 @@ import {
   useCustomerProfiles,
   useDeviceSchedule,
   useDevices,
+  useMyBookings,
   useUpdateBooking,
 } from "@/hooks/queries";
 
@@ -145,17 +154,15 @@ const NONE = "_none";
 const MUTABLE_STATUS: ReadonlySet<BookingStatus> = new Set(["pending"]);
 
 export function BookingsPage() {
-  // Slice 06 ships StoreView only. The HQ panorama + customer "my bookings"
-  // views + the top-level three-way branch land in slice 07:
-  //
-  //   isSuperAdmin(me) || isHQStaff(me) ? <HqView/>
-  //   : hasCustomerIdentity(me)        ? <MyBookingsView/>
-  //   : <StoreView/>
-  //
-  // Until then we render StoreView unconditionally. A super_admin / hq_staff
-  // viewer landing here gets the store list (the backend ``GET /bookings/``
-  // still branches on platform_role and returns the HQ shape); slice 07 wires
-  // the fork + the ``useAuth()`` ``me`` it needs.
+  const { me } = useAuth();
+
+  // Three-way view fork (slice 07). HQ viewers take precedence over a customer
+  // binding — an HQ role wouldn't carry one anyway, but ordering the checks
+  // this way keeps the cross-tenant panorama authoritative. StoreView (slice 06)
+  // is the fallthrough for everyone else: tenant owners/admins/members with no
+  // customer identity.
+  if (isSuperAdmin(me) || isHQStaff(me)) return <HqView />;
+  if (hasCustomerIdentity(me)) return <MyBookingsView />;
   return <StoreView />;
 }
 
@@ -638,6 +645,196 @@ function StoreView() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+    </div>
+  );
+}
+
+// ============================================================ HQ panorama view
+//
+// Cross-tenant read-only view (super_admin / hq_staff). The HQ endpoint
+// (GET /bookings/ behind require_cross_tenant_viewer) already expands
+// tenant_name/device_name/customer_name server-side (BookingHqRead), so this
+// table needs no client-side lookups into the devices/profiles feeds — it just
+// renders the rows it gets back. There are no write controls: HQ viewers
+// observe bookings across stores, never mutate them. Mirrors devices-page's
+// HqView (the cross-tenant read-only fleet view) — same skeleton, data source
+// swapped (useDevices→useBookings) + field mapping (serial_number→device_name,
+// model_name→customer_name, status Badge→scheduled window).
+function HqView() {
+  const { data: bookings, isLoading } = useBookings();
+  // useBookings() returns a union (Booking[] | BookingHqRead[]). The backend
+  // guarantees BookingHqRead[] for HQ roles (the same guard that routes us
+  // here), so we narrow once at the view boundary. A store viewer never reaches
+  // this component — the top-level BookingsPage branch sees to that.
+  const list = (bookings ?? []) as BookingHqRead[];
+
+  return (
+    <div className="space-y-6">
+      <PageHeader
+        title="预约（总部视图）"
+        subtitle="跨店聚合：查看所有门店的设备预约。此视图为只读，写操作请切换到门店视角。"
+      />
+
+      <Card>
+        <CardHeader>
+          <CardTitle>全局预约列表</CardTitle>
+          <CardDescription>
+            共 {list.length} 条预约（跨全部门店）
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <ListState
+            isLoading={isLoading}
+            isEmpty={list.length === 0}
+            loadingVariant="skeleton"
+            skeletonRows={8}
+            emptyContent={
+              <EmptyState
+                icon={CalendarX}
+                title="暂无预约"
+                description="跨全部门店暂无设备预约"
+              />
+            }
+          >
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>所属门店</TableHead>
+                  <TableHead>设备</TableHead>
+                  <TableHead>客户</TableHead>
+                  <TableHead>预约时段</TableHead>
+                  <TableHead>状态</TableHead>
+                  <TableHead>创建时间</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {list.map((b) => (
+                  <TableRow key={b.id}>
+                    <TableCell className="text-muted-foreground">
+                      {/* tenant_name is null only if the tenant row was hard-
+                          deleted — the FK is CASCADE so this is effectively
+                          unreachable, but we guard for display safety. */}
+                      {b.tenant_name ?? "（门店已删除）"}
+                    </TableCell>
+                    <TableCell className="font-medium">
+                      {/* device_name is sourced from Device.serial_number on
+                          the backend (devices have no ``name`` column).
+                          device_id null is unreachable (a booking always has a
+                          device FK) but typed nullable, so guard defensively. */}
+                      {b.device_name ??
+                        (b.device_id
+                          ? `设备(${b.device_id.slice(0, 8)})`
+                          : "—")}
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">
+                      {/* Walk-in bookings (customer_id null) arrive with
+                          customer_name null — render as "散客" to match the
+                          store view's convention. */}
+                      {b.customer_name ?? "散客(walk-in)"}
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">
+                      {fmt(b.scheduled_start_at)} → {fmt(b.scheduled_end_at)}
+                    </TableCell>
+                    <TableCell>
+                      <BookingStatusBadge status={b.status} />
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">
+                      {fmt(b.created_at)}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </ListState>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+// ============================================================ customer "my bookings" view
+//
+// Customer-bound principal (a token carrying ``customer_id``). The
+// GET /me/bookings endpoint (slice 04) already filters server-side to the
+// caller's own bookings — no client-side filter needed. Read-only: creating a
+// booking is a store-staff responsibility (a customer can't book for itself),
+// so there are no write controls here.
+//
+// A customer never sees a walk-in booking on this surface (those have
+// customer_id null and are excluded by the backend predicate), so every row
+// has a real scheduled window. Device name isn't in BookingRead (it carries
+// only device_id); we don't fetch the devices feed here to keep this view
+// cheap — the device_id prefix is shown as a fallback identifier, matching the
+// store view's soft-delete transient handling.
+function MyBookingsView() {
+  const { data: bookings, isLoading } = useMyBookings();
+
+  const list = (bookings ?? []) as Booking[];
+
+  return (
+    <div className="space-y-6">
+      <PageHeader
+        title="我的预约"
+        subtitle="查看您的设备预约记录。如需预约或修改，请联系门店工作人员。"
+      />
+
+      <Card>
+        <CardHeader>
+          <CardTitle>我的预约列表</CardTitle>
+          <CardDescription>共 {list.length} 条预约</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <ListState
+            isLoading={isLoading}
+            isEmpty={list.length === 0}
+            loadingVariant="skeleton"
+            skeletonRows={6}
+            emptyContent={
+              <EmptyState
+                icon={CalendarX}
+                title="暂无预约"
+                description="您目前没有任何设备预约记录"
+              />
+            }
+          >
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>设备</TableHead>
+                  <TableHead>预约时段</TableHead>
+                  <TableHead>状态</TableHead>
+                  <TableHead>创建时间</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {list.map((b) => (
+                  <TableRow key={b.id}>
+                    <TableCell className="font-medium">
+                      {/* BookingRead carries only device_id (no device_name —
+                          that's a BookingHqRead field). We don't pull the
+                          devices feed here (keeps this view cheap + avoids
+                          surfacing other tenants' devices for a customer
+                          principal); the id prefix is a stable fallback.
+                          device_id null is unreachable (a booking always has a
+                          device FK) but typed nullable, so guard defensively. */}
+                      {b.device_id ? `设备(${b.device_id.slice(0, 8)})` : "—"}
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">
+                      {fmt(b.scheduled_start_at)} → {fmt(b.scheduled_end_at)}
+                    </TableCell>
+                    <TableCell>
+                      <BookingStatusBadge status={b.status} />
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">
+                      {fmt(b.created_at)}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </ListState>
+        </CardContent>
+      </Card>
     </div>
   );
 }

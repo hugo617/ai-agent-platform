@@ -62,6 +62,11 @@ async def _build_me_response(user: CurrentUser, db: AsyncSession) -> MeResponse:
         platform_role=platform_role,
         roles=roles,
         permissions=permissions,
+        # customer_id is carried on the token's CurrentUser (slice 04); surface
+        # it on the response so the SPA's /bookings three-way fork (slice 07)
+        # can detect a customer principal without a second round-trip. Store-
+        # staff tokens simply don't carry the claim, so this stays None for them.
+        customer_id=user.customer_id,
         display_name=db_user.display_name if db_user else None,
         real_name=db_user.real_name if db_user else None,
         phone=db_user.phone if db_user else None,

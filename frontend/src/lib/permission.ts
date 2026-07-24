@@ -44,6 +44,26 @@ export function isHQStaff(me: MeResponse | null | undefined): boolean {
 }
 
 /**
+ * Does the current user carry a customer identity?
+ *
+ * Customer-bound tokens expose ``me.customer_id`` (slice 07); store-staff
+ * tokens leave it null. The /bookings page uses this to route a customer
+ * principal to the read-only "my bookings" view (creating bookings is a store-
+ * staff responsibility). Mirrors ``isHQStaff``'s shape so the top-level three-
+ * way fork reads symmetrically:
+ *
+ *   isSuperAdmin(me) || isHQStaff(me) ? <HqView/>
+ *   : hasCustomerIdentity(me)         ? <MyBookingsView/>
+ *   : <StoreView/>
+ *
+ * HQ / super_admin viewers take precedence — a customer binding is irrelevant
+ * to a cross-tenant panorama viewer (and an HQ role wouldn't carry one anyway).
+ */
+export function hasCustomerIdentity(me: MeResponse | null | undefined): boolean {
+  return !!me?.customer_id;
+}
+
+/**
  * Does the current user hold the `<obj>:<act>` permission?
  *
  * super_admin short-circuits to true (bypasses all checks; the backend returns
