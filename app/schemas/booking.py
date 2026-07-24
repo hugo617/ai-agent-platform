@@ -20,10 +20,11 @@ as ``devices.status``.
 ``BookingStatus`` is a Literal (not an Enum) so the 422-on-bad-value behaviour
 falls out of Pydantic for free and the CHECK constraint is a backstop.
 
-The HQ panorama shape (``BookingHqRead``, with tenant_name / device_name /
-customer_name) is intentionally NOT defined here yet — it lands in slice 03
-together with the cross-tenant read branch. Slice 01 returns ``BookingRead``
-only.
+The HQ panorama shape (``BookingHqRead``, slice 03) extends ``BookingRead``
+with three cross-tenant display fields (``tenant_name`` / ``device_name`` /
+``customer_name``) so a super_admin / hq_staff viewer can see which store,
+which device, and which customer a booking belongs to without N client-side
+lookups — mirrors the ``DeviceHqRead`` convention.
 """
 
 from datetime import datetime
@@ -115,9 +116,40 @@ class BookingRead(BaseModel):
     updated_at: datetime
 
 
+class BookingHqRead(BookingRead):
+    """HQ panorama read shape — cross-tenant viewer (super_admin / hq_staff).
+
+    Extends ``BookingRead`` with three display fields that name the related
+    rows (tenant / device / customer) so the HQ UI can render a single booking
+    row without N client-side lookups. ``tenant_id`` / ``device_id`` /
+    ``customer_id`` are inherited from the base (the panorama needs
+    ``tenant_id`` to *group* bookings by store, and ``device_id`` /
+    ``customer_id`` to disambiguate when two stores reuse the same name).
+
+    ``*_name`` are nullable because the related row may be gone: a soft-deleted
+    tenant, a device whose ``device_id`` is NULL (walk-in / orphaned — the FK
+    is SET NULL on hard-delete; under the current soft-delete-only device path
+    a soft-deleted device still has a row, so ``device_name`` surfaces), or a
+    walk-in booking with no customer binding. The HQ view still renders the
+    booking — a missing name shows as None rather than hiding the row (an HQ
+    viewer needs the full ledger, including walk-ins and orphaned device
+    references).
+
+    Note: ``device_name`` is sourced from ``Device.serial_number`` (devices have
+    no ``name`` column — ``serial_number`` IS their business identifier; see
+    ``BookingService._to_hq_read``). The field is named ``device_name`` for
+    frontend symmetry with ``tenant_name`` / ``customer_name``.
+    """
+
+    tenant_name: str | None = None
+    device_name: str | None = None
+    customer_name: str | None = None
+
+
 # Re-export for callers that need it.
 __all__ = [
     "BookingCreate",
+    "BookingHqRead",
     "BookingRead",
     "BookingStatus",
     "BookingUpdate",

@@ -1,21 +1,25 @@
-"""Booking endpoints — tenant-scoped device-usage reservations (slice 01).
+"""Booking endpoints — tenant-scoped device-usage reservations.
 
-Slice 01 surface: ``GET /`` , ``GET /{id}``, ``POST /``, ``PUT /{id}``,
-``POST /{id}/cancel``. There is deliberately **no** ``DELETE`` endpoint (D8 —
-bookings are cancelled, not deleted; the row stays as the audit trail).
+Reads (``GET /`` and ``GET /{booking_id}``) branch in the endpoint body on
+the caller's platform role:
+- **Cross-tenant viewers** (super_admin / hq_staff) → HQ panorama
+  (``BookingHqRead`` across every tenant). No router-level read guard —
+  ``hq_staff`` has no tenant role, so ``require_permission("bookings",
+  "read")`` would 403 them before the branch. The actual bypass lives in
+  ``permission_service.check`` (``hq_staff`` + ``read`` short-circuit +
+  ``super_admin`` bypass), reached via the service's panorama path (which
+  skips ``require`` entirely). Mirrors the devices.py slice-03 refactor.
+- **Tenant roles** (owner / admin / member) → within-store ``BookingRead``,
+  scoped to the caller's tenant. Permission is enforced inside
+  ``BookingService.list / get`` (``require("bookings", "read")``); member
+  passes because the default perms grant ``bookings:read``.
 
-Reads are behind router-level ``require_permission("bookings", "read")`` for
-now; slice 03 will move the read guard into the endpoint body so the HQ
-panorama branch (super_admin / hq_staff) can be served without a tenant role
-(same refactor devices.py went through in its slice 03).
+Writes (POST / PUT / cancel) keep the router-level
+``require_permission("bookings", <act>)`` guard — hq_staff / super_admin
+without a store role are correctly 403'd there (the HQ viewer is read-only).
 
-Writes keep the router-level guard:
-- POST → ``bookings:create`` (owner / admin)
-- PUT → ``bookings:update`` (owner / admin)
-- cancel → ``bookings:delete`` (owner / admin). Cancel is semantically a
-  "delete" of the booking's active lifecycle, so it reuses the delete perm
-  rather than introducing a bespoke ``bookings:cancel`` — matches how the
-  plan's permission impact (§4.3) models it.
+There is deliberately **no** ``DELETE`` endpoint (D8 — bookings are
+cancelled, not deleted; the row stays as the audit trail).
 
 Cancel returns **204** (D9): it's a POST-to-a-sub-resource action that
 transitions state, not a resource creation. It's also idempotent: re-cancelling
@@ -28,42 +32,55 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import CurrentUser, get_current_user, require_permission
 from app.core.database import get_db
-from app.schemas.booking import BookingCreate, BookingRead, BookingUpdate
+from app.schemas.booking import (
+    BookingCreate,
+    BookingHqRead,
+    BookingRead,
+    BookingUpdate,
+)
 from app.services.booking_service import BookingService
 
 router = APIRouter(prefix="/bookings", tags=["bookings"])
 
 
 # -------------------------------------------------------------------- reads
+#
+# ``response_model=None`` because the return shape branches on the caller's
+# role: ``BookingRead`` for tenant roles, ``BookingHqRead`` (a subclass that
+# adds ``tenant_name`` / ``device_name`` / ``customer_name``) for cross-tenant
+# viewers. Declaring either as the response_model would either drop the
+# panorama fields (``BookingRead``) or pollute the store view with three null
+# ``*_name`` keys (``BookingHqRead``). ``response_model=None`` keeps each
+# branch's shape honest; mirrors devices.py.
 
 
-@router.get("/", response_model=list[BookingRead])
+@router.get("/", response_model=None)
 async def list_bookings(
     user: CurrentUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
-) -> list[BookingRead]:
-    """List this tenant's bookings (slice 01 — within-store only).
+) -> list[BookingRead] | list[BookingHqRead]:
+    """List bookings.
 
-    Slice 03 replaces the router-level read guard with an endpoint-body HQ
-    branch (cross-tenant viewers → ``BookingHqRead`` panorama).
+    - super_admin / hq_staff → HQ panorama (``BookingHqRead``, every tenant).
+    - owner / admin / member → this tenant's bookings (``BookingRead``).
     """
     return await BookingService(db).list(
         user.user_id, user.tenant_id, platform_role=user.platform_role
     )
 
 
-@router.get(
-    "/{booking_id}",
-    response_model=BookingRead,
-    dependencies=[Depends(require_permission("bookings", "read"))],
-)
+@router.get("/{booking_id}", response_model=None)
 async def get_booking(
     booking_id: str,
     user: CurrentUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
-) -> BookingRead:
-    """Get one booking. A foreign tenant's id collapses to 404 (no
-    enumeration leak)."""
+) -> BookingRead | BookingHqRead:
+    """Get one booking.
+
+    - super_admin / hq_staff → HQ panorama (``BookingHqRead``, any tenant).
+    - owner / admin / member → this tenant's booking (``BookingRead``); a
+      foreign tenant's id collapses to 404 (no enumeration leak).
+    """
     return await BookingService(db).get(
         user.user_id,
         user.tenant_id,

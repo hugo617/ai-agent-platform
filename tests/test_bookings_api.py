@@ -31,6 +31,12 @@ Chapter layout (matches plan-device-booking.md slice 01 acceptance criteria):
   - K4 member gets bookings:read + menu:bookings but NOT bookings:create
   - K5 idempotent: re-run backfill, no error, no duplicate grants
   - K6 other existing perms (customers:read, devices:read) untouched
+- HQ. panorama (slice 03) — super_admin + hq_staff cross-tenant read with the
+  ``BookingHqRead`` panorama fields (tenant_name / device_name / customer_name);
+  hq_staff writes (create/update/cancel) → 403.
+- SCH. schedule grid (slice 03) — GET /devices/{device_id}/schedule day
+  aggregation: same-day bookings grouped under one key; empty days omitted;
+  cross-tenant / nonexistent device → 404.
 
 Test-organization note (matches test_devices_api.py): each test uses ONE
 client fixture. The conftest seeds bookings:* perms for owner/admin/member
@@ -128,6 +134,16 @@ async def _seed_customer_with_profile(
 
 def _iso(dt) -> str:
     return dt.isoformat()
+
+
+def _iso_q(dt) -> str:
+    """ISO-8601 string safe to embed in a URL query string.
+
+    ``datetime.isoformat()`` on a tz-aware value yields ``...+00:00``, and the
+    ``+`` is decoded as a space by query-string parsing → 422. The ``Z``
+    suffix is equivalent (UTC) and URL-safe. Used for the schedule endpoint's
+    ``start`` / ``end`` query params."""
+    return dt.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 # ----------------------------------------------------- A. owner/admin CRUD
@@ -1190,3 +1206,375 @@ async def test_k_backfill_preserves_other_perms(db_session, test_env):
         # And a bookings perm does work (backfill actually did something).
         ok = await permission_service.check("owner", tenant_id, "bookings", "read")
         assert ok, "owner should have bookings:read after backfill"
+
+
+# ============================================================================
+# HQ panorama (slice 03) — super_admin / hq_staff cross-tenant read.
+#
+# These mirror the devices.py slice-03 HQ tests: cross-tenant viewers see
+# ``BookingHqRead`` (with tenant_name / device_name / customer_name) across
+# EVERY tenant, while writes stay 403 for hq_staff (read-only viewer).
+#
+# Each test uses ONE client fixture (see the file header note):
+# super_admin tests use ``super_admin_client`` (seeds a 2nd tenant "Other
+# Tenant" + cross-user + marks owner as super_admin), hq_staff tests use
+# ``hq_staff_client`` (seeds a 2nd tenant + binds the user as member with
+# platform_role=hq_staff). Mixing fixtures in one function would corrupt the
+# shared owner user.
+# ============================================================================
+
+
+async def _seed_two_tenant_bookings(db_session, test_env):
+    """Seed one booking in the caller's own tenant AND one in a 2nd tenant,
+    each with its own device + customer, so cross-tenant HQ assertions have
+    data in both stores. Returns the seeded rows.
+
+    The 2nd tenant mirrors what ``super_admin_client`` / ``hq_staff_client``
+    seed ("Other Tenant") but creates its own to stay self-contained (the
+    fixtures' tenant is for the user-membership side; the bookings need a
+    device + customer in that tenant too, which the fixtures don't provide).
+    """
+    import uuid
+
+    from app.models.booking import Booking
+    from app.models.tenant import Tenant
+
+    model = await _seed_model(db_session, name="HQ-Model")
+
+    # Own-tenant device + customer + booking.
+    own_device = await _seed_device(
+        db_session,
+        tenant_id=test_env.tenant_id,
+        model_id=model.id,
+        serial="HQ-OWN",
+    )
+    own_customer, _own_profile = await _seed_customer_with_profile(
+        db_session, tenant_id=test_env.tenant_id, name="HQ-本店客户"
+    )
+    own_start, own_end = _window(0, 1)
+    own_booking = Booking(
+        tenant_id=test_env.tenant_id,
+        device_id=own_device.id,
+        customer_id=own_customer.id,
+        scheduled_start_at=own_start,
+        scheduled_end_at=own_end,
+        notes="本店预约",
+    )
+    db_session.add(own_booking)
+
+    # 2nd tenant + its device + customer + booking.
+    other_tenant_id = f"tnt-hq-{uuid.uuid4().hex}"
+    db_session.add(Tenant(id=other_tenant_id, name="HQ Other Tenant"))
+    other_device = await _seed_device(
+        db_session,
+        tenant_id=other_tenant_id,
+        model_id=model.id,
+        serial="HQ-OTHER",
+    )
+    other_customer, _other_profile = await _seed_customer_with_profile(
+        db_session, tenant_id=other_tenant_id, name="HQ-他店客户"
+    )
+    other_start, other_end = _window(24, 1)
+    other_booking = Booking(
+        tenant_id=other_tenant_id,
+        device_id=other_device.id,
+        customer_id=other_customer.id,
+        scheduled_start_at=other_start,
+        scheduled_end_at=other_end,
+        notes="他店预约",
+    )
+    db_session.add(other_booking)
+    await db_session.commit()
+    return {
+        "own_booking": own_booking,
+        "own_device": own_device,
+        "own_customer": own_customer,
+        "other_booking": other_booking,
+        "other_device": other_device,
+        "other_customer": other_customer,
+        "other_tenant_id": other_tenant_id,
+        "model": model,
+    }
+
+
+@pytest.mark.asyncio
+async def test_hq1_super_admin_list_returns_panorama(
+    super_admin_client, db_session, test_env
+):
+    """HQ-1: super_admin ``GET /bookings/`` returns ``BookingHqRead`` across
+    every tenant — panorama fields tenant_name / device_name / customer_name
+    populated, and bookings from tenants other than the caller's own are
+    visible (the core cross-tenant read guarantee)."""
+    seeded = await _seed_two_tenant_bookings(db_session, test_env)
+    resp = await super_admin_client.get("/api/v1/bookings/", headers=AUTH)
+    assert resp.status_code == 200, resp.text
+    items = {b["id"]: b for b in resp.json()}
+    # Both tenants' bookings visible.
+    assert seeded["own_booking"].id in items
+    assert seeded["other_booking"].id in items
+
+    own_row = items[seeded["own_booking"].id]
+    assert own_row["tenant_name"] == "Test Tenant"
+    # device_name sourced from serial_number (devices have no name column).
+    assert own_row["device_name"] == "HQ-OWN"
+    assert own_row["customer_name"] == "HQ-本店客户"
+
+    other_row = items[seeded["other_booking"].id]
+    assert other_row["tenant_name"] == "HQ Other Tenant"
+    assert other_row["device_name"] == "HQ-OTHER"
+    assert other_row["customer_name"] == "HQ-他店客户"
+
+
+@pytest.mark.asyncio
+async def test_hq2_super_admin_get_one_cross_tenant_returns_panorama(
+    super_admin_client, db_session, test_env
+):
+    """HQ-2: super_admin ``GET /bookings/{id}`` on ANOTHER tenant's booking
+    returns 200 + ``BookingHqRead`` (the HQ viewer reads any tenant's booking;
+    no 404 for a foreign id — unlike the tenant-role path)."""
+    seeded = await _seed_two_tenant_bookings(db_session, test_env)
+    resp = await super_admin_client.get(
+        f"/api/v1/bookings/{seeded['other_booking'].id}", headers=AUTH
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["id"] == seeded["other_booking"].id
+    assert body["tenant_name"] == "HQ Other Tenant"
+    assert body["device_name"] == "HQ-OTHER"
+    assert body["customer_name"] == "HQ-他店客户"
+
+
+@pytest.mark.asyncio
+async def test_hq2b_super_admin_get_nonexistent_returns_404(
+    super_admin_client, db_session, test_env
+):
+    """HQ-2b: HQ ``GET /{id}`` on a nonexistent id → 404 (the panorama path
+    turns a missing row into NotFoundError, same surface as within-store)."""
+    resp = await super_admin_client.get(
+        "/api/v1/bookings/nonexistent-id-xxx", headers=AUTH
+    )
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_hq3_hq_staff_list_returns_panorama(
+    hq_staff_client, db_session, test_env
+):
+    """HQ-3: hq_staff sees the same panorama as super_admin on reads — the
+    bypass is ``permission_service.check``'s ``hq_staff`` + ``read``
+    short-circuit. This is the core regression guard: before slice 03, the
+    router-level ``require_permission("bookings","read")`` 403'd hq_staff."""
+    seeded = await _seed_two_tenant_bookings(db_session, test_env)
+    resp = await hq_staff_client.get("/api/v1/bookings/", headers=AUTH)
+    assert resp.status_code == 200, resp.text
+    items = {b["id"]: b for b in resp.json()}
+    assert seeded["own_booking"].id in items
+    assert seeded["other_booking"].id in items
+    own_row = items[seeded["own_booking"].id]
+    assert own_row["tenant_name"] == "Test Tenant"
+    assert own_row["device_name"] == "HQ-OWN"
+    assert own_row["customer_name"] == "HQ-本店客户"
+
+
+@pytest.mark.asyncio
+async def test_hq4_hq_staff_writes_are_403(hq_staff_client, db_session, test_env):
+    """HQ-4: hq_staff is read-only — create / update / cancel all 403.
+
+    The hq_staff fixture binds the user to the ``member`` tenant role (no
+    bookings:create/update/delete in casbin), and ``permission_service.check``
+    only short-circuits hq_staff for ``act == "read"`` — writes fall through
+    to casbin and are denied. The HQ viewer can SEE everything but touch
+    nothing (WIP=1 boundary)."""
+    model = await _seed_model(db_session, name="HQ-Write-Model")
+    device = await _seed_device(
+        db_session,
+        tenant_id=test_env.tenant_id,
+        model_id=model.id,
+        serial="HQ-WRITE",
+    )
+    s, e = _window(0, 1)
+    # create → 403 (router-level require_permission("bookings","create"))
+    resp = await hq_staff_client.post(
+        "/api/v1/bookings/",
+        json={
+            "device_id": device.id,
+            "scheduled_start_at": _iso(s),
+            "scheduled_end_at": _iso(e),
+        },
+        headers=AUTH,
+    )
+    assert resp.status_code == 403
+
+    # Seed a booking directly (hq_staff can't create one) to exercise update/cancel.
+    from app.models.booking import Booking
+
+    booking = Booking(
+        tenant_id=test_env.tenant_id,
+        device_id=device.id,
+        scheduled_start_at=s,
+        scheduled_end_at=e,
+    )
+    db_session.add(booking)
+    await db_session.commit()
+
+    new_s, new_e = _window(48, 1)
+    resp = await hq_staff_client.put(
+        f"/api/v1/bookings/{booking.id}",
+        json={
+            "scheduled_start_at": _iso(new_s),
+            "scheduled_end_at": _iso(new_e),
+        },
+        headers=AUTH,
+    )
+    assert resp.status_code == 403
+    resp = await hq_staff_client.post(
+        f"/api/v1/bookings/{booking.id}/cancel", headers=AUTH
+    )
+    assert resp.status_code == 403
+
+
+# ============================================================================
+# Schedule grid (slice 03) — GET /devices/{device_id}/schedule
+#
+# Day-grouped booking aggregation: ``{ "2030-01-01": [booking, ...], ... }``.
+# Only days with ≥1 booking appear. Cross-tenant device → 404 (enumeration
+# defence, same as GET /devices/{id}).
+# ============================================================================
+
+
+@pytest.mark.asyncio
+async def test_sch1_two_bookings_same_day_aggregated(
+    app_client, db_session, test_env
+):
+    """SCH-1: two bookings on the same device + same day → one date key with
+    both bookings (len==2), ordered by scheduled_start_at asc."""
+    from app.models.booking import Booking
+
+    model = await _seed_model(db_session, name="SCH1-Model")
+    device = await _seed_device(
+        db_session,
+        tenant_id=test_env.tenant_id,
+        model_id=model.id,
+        serial="SCH1-DEV",
+    )
+    # Two bookings on the same day (_BASE day): 10:00–11:00 and 14:00–15:00.
+    s1, e1 = _window(0, 1)
+    s2, e2 = _window(4, 1)
+    for s, e in ((s1, e1), (s2, e2)):
+        db_session.add(
+            Booking(
+                tenant_id=test_env.tenant_id,
+                device_id=device.id,
+                scheduled_start_at=s,
+                scheduled_end_at=e,
+            )
+        )
+    await db_session.commit()
+
+    # Window must cover _BASE (2030-01-01). Use an explicit wide range so the
+    # test is independent of "today".
+    range_start = _iso_q(_BASE - timedelta(days=1))
+    range_end = _iso_q(_BASE + timedelta(days=2))
+    resp = await app_client.get(
+        f"/api/v1/devices/{device.id}/schedule?start={range_start}&end={range_end}",
+        headers=AUTH,
+    )
+    assert resp.status_code == 200, resp.text
+    grid = resp.json()
+    # One day key, two bookings under it.
+    assert len(grid) == 1, f"expected one day key, got {list(grid.keys())}"
+    day_key = next(iter(grid.keys()))
+    assert day_key == _BASE.date().isoformat()
+    assert len(grid[day_key]) == 2
+    # Ordered by scheduled_start_at asc.
+    starts = [b["scheduled_start_at"] for b in grid[day_key]]
+    assert starts == sorted(starts)
+
+
+@pytest.mark.asyncio
+async def test_sch2_empty_days_omitted(app_client, db_session, test_env):
+    """SCH-2: days with no booking do NOT appear as keys (omitted, not
+    keyed to []). Two bookings on different days → two keys, nothing in
+    between."""
+    from app.models.booking import Booking
+
+    model = await _seed_model(db_session, name="SCH2-Model")
+    device = await _seed_device(
+        db_session,
+        tenant_id=test_env.tenant_id,
+        model_id=model.id,
+        serial="SCH2-DEV",
+    )
+    # Day 0 (_BASE) and day 3 — days 1 and 2 are empty.
+    s1, e1 = _window(0, 1)
+    s2, e2 = _window(72, 1)  # 3 days later
+    for s, e in ((s1, e1), (s2, e2)):
+        db_session.add(
+            Booking(
+                tenant_id=test_env.tenant_id,
+                device_id=device.id,
+                scheduled_start_at=s,
+                scheduled_end_at=e,
+            )
+        )
+    await db_session.commit()
+
+    range_start = _iso_q(_BASE - timedelta(days=1))
+    range_end = _iso_q(_BASE + timedelta(days=5))
+    resp = await app_client.get(
+        f"/api/v1/devices/{device.id}/schedule?start={range_start}&end={range_end}",
+        headers=AUTH,
+    )
+    assert resp.status_code == 200, resp.text
+    grid = resp.json()
+    assert set(grid.keys()) == {
+        _BASE.date().isoformat(),
+        (_BASE + timedelta(days=3)).date().isoformat(),
+    }
+    # Each day has exactly one booking.
+    assert all(len(v) == 1 for v in grid.values())
+
+
+@pytest.mark.asyncio
+async def test_sch3_cross_tenant_device_returns_404(
+    app_client, db_session, test_env
+):
+    """SCH-3: a device belonging to ANOTHER tenant → 404 (read-side
+    enumeration defence). The owner (test_env.tenant_id) must not learn
+    whether a foreign device id exists. Mirrors GET /devices/{id}."""
+    import uuid
+
+    from app.models.tenant import Tenant
+
+    model = await _seed_model(db_session, name="SCH3-Model")
+    other_tenant_id = f"tnt-sch-{uuid.uuid4().hex}"
+    db_session.add(Tenant(id=other_tenant_id, name="SCH Other Tenant"))
+    other_device = await _seed_device(
+        db_session,
+        tenant_id=other_tenant_id,
+        model_id=model.id,
+        serial="SCH3-OTHER",
+    )
+    await db_session.commit()
+
+    range_start = _iso_q(_BASE - timedelta(days=1))
+    range_end = _iso_q(_BASE + timedelta(days=2))
+    resp = await app_client.get(
+        f"/api/v1/devices/{other_device.id}/schedule?start={range_start}&end={range_end}",
+        headers=AUTH,
+    )
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_sch4_nonexistent_device_returns_404(app_client, db_session, test_env):
+    """SCH-4: a totally nonexistent device id → 404 (same surface as
+    cross-tenant; no distinction between "missing" and "foreign")."""
+    range_start = _iso_q(_BASE - timedelta(days=1))
+    range_end = _iso_q(_BASE + timedelta(days=2))
+    resp = await app_client.get(
+        "/api/v1/devices/nonexistent-device-id/schedule"
+        f"?start={range_start}&end={range_end}",
+        headers=AUTH,
+    )
+    assert resp.status_code == 404

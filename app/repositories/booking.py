@@ -19,12 +19,21 @@ cancelled / done / no_show have released theirs and are excluded.
 ``list_for_device_schedule`` is the per-device windowed read backing the
 schedule-grid endpoint (slice 03) — defined here in slice 01 so the repo
 surface is complete, but only exercised by slice 03's tests.
+
+Cross-tenant aggregation (HQ panorama, super_admin / hq_staff) lives in
+``list_all_with_meta`` / ``get_all_with_meta``: they pre-load the tenant /
+device / customer relationships via ``selectinload`` so the async session
+never hits a lazy-load ``MissingGreenlet`` when the service reads
+``booking.tenant.name``. Mirrors the ``DeviceRepository`` convention; the
+only difference is bookings have no ``is_deleted`` so the panorama returns
+every row (cancelled bookings included — they're part of the ledger).
 """
 
 from datetime import datetime
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.core.database import Base
 from app.models.booking import Booking
@@ -126,6 +135,52 @@ class BookingRepository(TenantScopedRepository[Booking]):
             .order_by(Booking.scheduled_start_at.asc())
         )
         return list((await self.db.execute(stmt)).scalars().all())
+
+    # -------------------------------------------------- HQ panorama (slice 03)
+
+    async def list_all_with_meta(self) -> list[Booking]:
+        """All bookings across every tenant, with tenant/device/customer
+        pre-loaded for the HQ panorama DTO.
+
+        ``selectinload`` issues one extra IN query per relationship (3 here)
+        instead of N+1 lazy loads, and — critically for the async session —
+        populates the relationship eagerly so reading
+        ``booking.tenant.name`` later does NOT trigger a lazy load
+        (``MissingGreenlet`` under SQLAlchemy 2.0 async). Bookings are never
+        soft-deleted (D8), so every row is returned (cancelled bookings are
+        part of the HQ ledger, not tombstones).
+        """
+        stmt = (
+            select(Booking)
+            .options(
+                selectinload(Booking.tenant),
+                selectinload(Booking.device),
+                selectinload(Booking.customer),
+            )
+            .order_by(
+                Booking.scheduled_start_at.desc(), Booking.created_at.desc()
+            )
+        )
+        return list((await self.db.execute(stmt)).scalars().all())
+
+    async def get_all_with_meta(self, booking_id: str) -> Booking | None:
+        """One booking by id (any tenant) with relations pre-loaded.
+
+        HQ ``GET /{id}`` path: unlike ``get_for_tenant`` this does NOT filter
+        by tenant (the HQ viewer may read any tenant's booking), and there is
+        no soft-delete filter (bookings are never soft-deleted). Returns None
+        if the id is absent — the service turns that into a 404.
+        """
+        stmt = (
+            select(Booking)
+            .where(Booking.id == booking_id)
+            .options(
+                selectinload(Booking.tenant),
+                selectinload(Booking.device),
+                selectinload(Booking.customer),
+            )
+        )
+        return (await self.db.execute(stmt)).scalar_one_or_none()
 
 
 # Re-export Base for type hints in callers that need it.
