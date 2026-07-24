@@ -1801,3 +1801,719 @@ async def test_n2_me_response_customer_id_null_for_store_staff(app_client):
     assert resp.status_code == 200, resp.text
     body = resp.json()
     assert body["customer_id"] is None
+
+
+# ============================================================================
+# P. lifecycle action endpoints (device-poweron slice 01)
+# ----------------------------------------------------------------------------
+# POST /bookings/{id}/start | /end | /no-show drive the booking through its
+# active lifecycle via the ``booking_state`` pure function (6 legal edges).
+# This chapter pins the full contract: legal transitions + side effects,
+# illegal transitions → 400, the start permission matrix (customer own /
+# walk-in guard / store owner+admin / member / hq_staff), the end/no-show
+# owner-only matrix (admin 403 — no bookings:delete), and cross-tenant → 404.
+#
+# Non-pending starting states (confirmed / in_service / done / no_show) are
+# seeded by direct DB writes (Booking(..., status=...)) — device-booking
+# never produces them via the API, but the 6-state CHECK allows them and the
+# state machine must handle each. Mirrors the cross-tenant / special-state
+# seeding pattern at L1228 / L1599.
+# ============================================================================
+
+
+async def _seed_lifecycle_fixture(db_session, test_env):
+    """Seed the rows the P-chapter tests share: one device/model, one bound
+    customer, one walk-in (customer_id None) — all bookings start ``pending``
+    unless a test overrides ``status`` at seed time (the helper exposes a
+    factory for that). Returns the seeded rows + a ``make_booking`` factory.
+
+    Keeping one fixture for the whole chapter avoids re-seeding a device per
+    test; each test mints its own booking(s) via ``make_booking`` so they
+    don't interfere (distinct windows, no overlap)."""
+    model = await _seed_model(db_session, name="PWR-Model")
+    device = await _seed_device(
+        db_session,
+        tenant_id=test_env.tenant_id,
+        model_id=model.id,
+        serial="PWR-DEV",
+    )
+    customer, _profile = await _seed_customer_with_profile(
+        db_session, tenant_id=test_env.tenant_id, name="开机测试客户"
+    )
+
+    from app.models.booking import Booking
+
+    async def make_booking(
+        *,
+        status: str = "pending",
+        customer_id: str | None = customer.id,
+        offset_hours: float = 10,
+    ) -> Booking:
+        """Direct-DB insert of a booking in the caller's tenant. ``status``
+        defaults to pending (the only state device-booking writes via API);
+        tests wanting a non-pending starting state pass it explicitly — the
+        6-state CHECK constraint allows it, and the state machine must handle
+        each. ``customer_id=None`` produces a walk-in booking."""
+        start, end = _window(offset_hours, 1)
+        b = Booking(
+            tenant_id=test_env.tenant_id,
+            device_id=device.id,
+            customer_id=customer_id,
+            status=status,
+            scheduled_start_at=start,
+            scheduled_end_at=end,
+        )
+        db_session.add(b)
+        await db_session.commit()
+        await db_session.refresh(b)
+        return b
+
+    return {
+        "model": model,
+        "device": device,
+        "customer": customer,
+        "make_booking": make_booking,
+    }
+
+
+# ----------------------------------------------------- P-1: legal edges (6)
+
+
+# Each legal edge: (starting status, action path, expected status, side-effect
+# assertion key). Mirrors ``booking_state._TRANSITIONS``. Parametrized so all 6
+# edges are covered; ``start`` / ``end`` return BookingRead (assert the
+# timestamp landed), ``no_show`` returns 204 (no body).
+@pytest.mark.parametrize(
+    ("start_status", "action_path", "expected_status", "side_effect"),
+    [
+        ("pending", "start", "in_service", "started_at"),
+        ("confirmed", "start", "in_service", "started_at"),
+        ("in_service", "end", "done", "ended_at"),
+        ("pending", "no-show", "no_show", None),
+        ("confirmed", "no-show", "no_show", None),
+        ("in_service", "no-show", "no_show", None),
+    ],
+    ids=[
+        "pending__start",
+        "confirmed__start",
+        "in_service__end",
+        "pending__no_show",
+        "confirmed__no_show",
+        "in_service__no_show",
+    ],
+)
+@pytest.mark.asyncio
+async def test_p1_legal_transition_writes_side_effect(
+    app_client,
+    db_session,
+    test_env,
+    start_status,
+    action_path,
+    expected_status,
+    side_effect,
+):
+    """P-1: each of the 6 legal edges flips the booking to ``expected_status``
+    and, for start/end, writes the corresponding timestamp column. Non-pending
+    starting states are seeded by direct DB write (the API never produces them
+    in device-booking, but the state machine must handle them)."""
+    fixture = await _seed_lifecycle_fixture(db_session, test_env)
+    booking = await fixture["make_booking"](status=start_status)
+
+    if action_path == "end":
+        resp = await app_client.post(
+            f"/api/v1/bookings/{booking.id}/end",
+            headers=AUTH,
+            json={"feedback": {"rating": 5}},
+        )
+    else:
+        resp = await app_client.post(
+            f"/api/v1/bookings/{booking.id}/{action_path}", headers=AUTH
+        )
+
+    assert resp.status_code == 200 or resp.status_code == 204, resp.text
+    if action_path == "no-show":
+        assert resp.status_code == 204
+    else:
+        body = resp.json()
+        assert body["status"] == expected_status
+        if side_effect is not None:
+            assert body[side_effect] is not None, (
+                f"{side_effect} should be set after {action_path}"
+            )
+
+
+# ------------------------------------------------- P-2: illegal → 400
+
+
+# Each illegal edge the plan calls out, plus the terminal-state invariant.
+# (The exhaustive 12-pair coverage lives in test_booking_state.py; here we
+# pin the API surface: 400 not 409, and the message is locale-correct.)
+@pytest.mark.parametrize(
+    ("start_status", "action_path"),
+    [
+        # Can't end what hasn't started.
+        ("pending", "end"),
+        # Can't restart an in-service booking.
+        ("in_service", "start"),
+        # Terminal states reject every action.
+        ("done", "start"),
+        ("done", "end"),
+        ("done", "no-show"),
+        ("cancelled", "start"),
+        ("cancelled", "end"),
+        ("cancelled", "no-show"),
+        ("no_show", "start"),
+        ("no_show", "end"),
+        ("no_show", "no-show"),
+    ],
+    ids=lambda v: v.replace("_", "__") if isinstance(v, str) else v,
+)
+@pytest.mark.asyncio
+async def test_p2_illegal_transition_returns_400(
+    app_client, db_session, test_env, start_status, action_path
+):
+    """P-2: any illegal ``(state, action)`` → 400 (InvalidTransition subclasses
+    BizError; the repo has no 409 concept — plan §0 D1). Covers terminal-state
+    rejection + the "can't end pending" / "can't restart in_service" rules."""
+    fixture = await _seed_lifecycle_fixture(db_session, test_env)
+    booking = await fixture["make_booking"](status=start_status)
+
+    resp = await app_client.post(
+        f"/api/v1/bookings/{booking.id}/{action_path}", headers=AUTH
+    )
+    assert resp.status_code == 400, (
+        f"expected 400 for ({start_status}, {action_path}), "
+        f"got {resp.status_code}: {resp.text}"
+    )
+
+
+# ------------------------------------------- P-3: start permission matrix
+
+
+@pytest.mark.asyncio
+async def test_p3_start_customer_own_booking_200(
+    customer_client_factory, db_session, test_env
+):
+    """P-3a: a customer principal starting their own pending booking → 200.
+    The customer path bypasses casbin (no tenant role needed) and keys off
+    ``customer_id`` ownership instead."""
+    fixture = await _seed_lifecycle_fixture(db_session, test_env)
+    booking = await fixture["make_booking"]()
+    client = await customer_client_factory(customer_id=fixture["customer"].id)
+
+    resp = await client.post(
+        f"/api/v1/bookings/{booking.id}/start", headers=AUTH
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["status"] == "in_service"
+    assert resp.json()["started_at"] is not None
+
+
+@pytest.mark.asyncio
+async def test_p3_start_customer_other_booking_403(
+    customer_client_factory, db_session, test_env
+):
+    """P-3b: a customer principal starting another customer's booking → 403
+    (ownership check: booking.customer_id != principal customer_id)."""
+    fixture = await _seed_lifecycle_fixture(db_session, test_env)
+    booking = await fixture["make_booking"]()
+    # A different customer principal — not the booking's owner.
+    client = await customer_client_factory(
+        customer_id=f"other-{uuid.uuid4().hex}"
+    )
+
+    resp = await client.post(
+        f"/api/v1/bookings/{booking.id}/start", headers=AUTH
+    )
+    assert resp.status_code == 403, resp.text
+
+
+@pytest.mark.asyncio
+async def test_p3_start_customer_walkin_booking_403(
+    customer_client_factory, db_session, test_env
+):
+    """P-3c: a customer principal starting a walk-in booking (customer_id
+    None) → 403 (walk-in guard fires before the ownership check; walk-in
+    bookings are store-staff-only to start — anti-impersonation, plan §0 D5)."""
+    fixture = await _seed_lifecycle_fixture(db_session, test_env)
+    booking = await fixture["make_booking"](customer_id=None)
+    client = await customer_client_factory(customer_id=fixture["customer"].id)
+
+    resp = await client.post(
+        f"/api/v1/bookings/{booking.id}/start", headers=AUTH
+    )
+    assert resp.status_code == 403, resp.text
+
+
+@pytest.mark.asyncio
+async def test_p3_start_owner_200(app_client, db_session, test_env):
+    """P-3d: store owner starting any pending booking → 200 (has
+    bookings:update). Owner is the ``app_client`` fixture."""
+    fixture = await _seed_lifecycle_fixture(db_session, test_env)
+    booking = await fixture["make_booking"]()
+
+    resp = await app_client.post(
+        f"/api/v1/bookings/{booking.id}/start", headers=AUTH
+    )
+    assert resp.status_code == 200, resp.text
+
+
+@pytest.mark.asyncio
+async def test_p3_start_admin_200(tenant_admin_client, db_session, test_env):
+    """P-3e: store admin starting a pending booking → 200 (admin has
+    bookings:update; only end/no-show are admin-forbidden, not start)."""
+    fixture = await _seed_lifecycle_fixture(db_session, test_env)
+    booking = await fixture["make_booking"]()
+
+    resp = await tenant_admin_client.post(
+        f"/api/v1/bookings/{booking.id}/start", headers=AUTH
+    )
+    assert resp.status_code == 200, resp.text
+
+
+@pytest.mark.asyncio
+async def test_p3_start_admin_walkin_200(
+    tenant_admin_client, db_session, test_env
+):
+    """P-3f: store admin starting a walk-in booking → 200 (admin can start
+    walk-ins; the walk-in restriction is customer-only, not store-only)."""
+    fixture = await _seed_lifecycle_fixture(db_session, test_env)
+    booking = await fixture["make_booking"](customer_id=None)
+
+    resp = await tenant_admin_client.post(
+        f"/api/v1/bookings/{booking.id}/start", headers=AUTH
+    )
+    assert resp.status_code == 200, resp.text
+
+
+@pytest.mark.asyncio
+async def test_p3_start_member_403(member_client, db_session, test_env):
+    """P-3g: store member starting a booking → 403 (member has no
+    bookings:update; member is read-only across the booking surface)."""
+    fixture = await _seed_lifecycle_fixture(db_session, test_env)
+    booking = await fixture["make_booking"]()
+
+    resp = await member_client.post(
+        f"/api/v1/bookings/{booking.id}/start", headers=AUTH
+    )
+    assert resp.status_code == 403, resp.text
+
+
+@pytest.mark.asyncio
+async def test_p3_start_hq_staff_403(hq_staff_client, db_session, test_env):
+    """P-3h: hq_staff starting a booking → 403 (HQ is read-only; hq_staff has
+    no store-side write role, and the store path requires bookings:update)."""
+    fixture = await _seed_lifecycle_fixture(db_session, test_env)
+    booking = await fixture["make_booking"]()
+
+    resp = await hq_staff_client.post(
+        f"/api/v1/bookings/{booking.id}/start", headers=AUTH
+    )
+    assert resp.status_code == 403, resp.text
+
+
+@pytest.mark.asyncio
+async def test_p3_start_unauthenticated_401(test_env, db_session):
+    """P-3i: no Authorization header → 401 (get_current_user refuses before
+    the action runs). No DB seeding needed — the auth guard fires first, so
+    the booking id is irrelevant (any id hits 401 before lookup)."""
+    from httpx import ASGITransport, AsyncClient
+
+    from app.main import create_app
+
+    transport = ASGITransport(app=create_app())
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        resp = await client.post(
+            "/api/v1/bookings/any-id/start"
+        )
+    assert resp.status_code == 401, resp.text
+
+
+# --------------------------------------- P-4: end / no-show owner-only
+
+
+@pytest.mark.asyncio
+async def test_p4_end_owner_200_writes_feedback(
+    app_client, db_session, test_env
+):
+    """P-4a: store owner ending an in_service booking → 200, ``ended_at`` set
+    + ``feedback`` persisted. Owner is the only role with bookings:delete."""
+    fixture = await _seed_lifecycle_fixture(db_session, test_env)
+    booking = await fixture["make_booking"](status="in_service")
+
+    resp = await app_client.post(
+        f"/api/v1/bookings/{booking.id}/end",
+        headers=AUTH,
+        json={"feedback": {"note": "服务顺利", "rating": 5}},
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["status"] == "done"
+    assert body["ended_at"] is not None
+    assert body["feedback"] == {"note": "服务顺利", "rating": 5}
+
+
+@pytest.mark.asyncio
+async def test_p4_end_admin_403(tenant_admin_client, db_session, test_env):
+    """P-4b: store admin ending a booking → 403. DEFAULT_ADMIN_PERMS omits
+    bookings:delete (admin can't delete business records — same convention
+    that makes admin unable to cancel). Plan §0 B2."""
+    fixture = await _seed_lifecycle_fixture(db_session, test_env)
+    booking = await fixture["make_booking"](status="in_service")
+
+    resp = await tenant_admin_client.post(
+        f"/api/v1/bookings/{booking.id}/end", headers=AUTH
+    )
+    assert resp.status_code == 403, resp.text
+
+
+@pytest.mark.asyncio
+async def test_p4_end_customer_403(
+    customer_client_factory, db_session, test_env
+):
+    """P-4c: customer ending a booking → 403 (end is store-staff-only;
+    customer path is not even reachable — the customer_id branch is
+    start-only)."""
+    fixture = await _seed_lifecycle_fixture(db_session, test_env)
+    booking = await fixture["make_booking"](status="in_service")
+    client = await customer_client_factory(customer_id=fixture["customer"].id)
+
+    resp = await client.post(
+        f"/api/v1/bookings/{booking.id}/end", headers=AUTH
+    )
+    assert resp.status_code == 403, resp.text
+
+
+@pytest.mark.asyncio
+async def test_p4_end_member_403(member_client, db_session, test_env):
+    """P-4d: store member ending a booking → 403 (no bookings:delete)."""
+    fixture = await _seed_lifecycle_fixture(db_session, test_env)
+    booking = await fixture["make_booking"](status="in_service")
+
+    resp = await member_client.post(
+        f"/api/v1/bookings/{booking.id}/end", headers=AUTH
+    )
+    assert resp.status_code == 403, resp.text
+
+
+@pytest.mark.asyncio
+async def test_p4_end_hq_staff_403(hq_staff_client, db_session, test_env):
+    """P-4e: hq_staff ending a booking → 403 (HQ read-only)."""
+    fixture = await _seed_lifecycle_fixture(db_session, test_env)
+    booking = await fixture["make_booking"](status="in_service")
+
+    resp = await hq_staff_client.post(
+        f"/api/v1/bookings/{booking.id}/end", headers=AUTH
+    )
+    assert resp.status_code == 403, resp.text
+
+
+@pytest.mark.asyncio
+async def test_p4_no_show_owner_204(app_client, db_session, test_env):
+    """P-4f: store owner no-showing a pending booking → 204 (pure status
+    flip, no body, no timestamp written)."""
+    fixture = await _seed_lifecycle_fixture(db_session, test_env)
+    booking = await fixture["make_booking"]()
+
+    resp = await app_client.post(
+        f"/api/v1/bookings/{booking.id}/no-show", headers=AUTH
+    )
+    assert resp.status_code == 204, resp.text
+    # Re-fetch to confirm the status landed; started_at/ended_at stay null
+    # (no_show owns no timestamp).
+    get_resp = await app_client.get(
+        f"/api/v1/bookings/{booking.id}", headers=AUTH
+    )
+    body = get_resp.json()
+    assert body["status"] == "no_show"
+    assert body["started_at"] is None
+    assert body["ended_at"] is None
+
+
+@pytest.mark.asyncio
+async def test_p4_no_show_admin_403(
+    tenant_admin_client, db_session, test_env
+):
+    """P-4g: store admin no-showing → 403 (no bookings:delete, same as end)."""
+    fixture = await _seed_lifecycle_fixture(db_session, test_env)
+    booking = await fixture["make_booking"]()
+
+    resp = await tenant_admin_client.post(
+        f"/api/v1/bookings/{booking.id}/no-show", headers=AUTH
+    )
+    assert resp.status_code == 403, resp.text
+
+
+# --------------------------------------- P-5: cross-tenant → 404
+
+
+@pytest.mark.asyncio
+async def test_p5_cross_tenant_actions_return_404(
+    app_client, db_session, test_env
+):
+    """P-5: operating on another tenant's booking → 404 for all three actions
+    (no enumeration leak — ``_get_live_booking`` is tenant-scoped, so a foreign
+    id collapses to NotFoundError just like a nonexistent one). Seeds a 2nd
+    tenant with its own booking; the caller's tenant-scoped repo can't see it.
+    """
+    import uuid
+
+    from app.models.booking import Booking
+    from app.models.tenant import Tenant
+
+    fixture = await _seed_lifecycle_fixture(db_session, test_env)
+
+    # A booking in a foreign tenant (its own device, so the row is internally
+    # consistent; the caller just can't see it).
+    other_tenant_id = f"tnt-pwr-{uuid.uuid4().hex}"
+    other_device = await _seed_device(
+        db_session,
+        tenant_id=other_tenant_id,
+        model_id=fixture["model"].id,
+        serial="PWR-OTHER-DEV",
+    )
+    db_session.add(Tenant(id=other_tenant_id, name="P 章节他租户"))
+    start, end = _window(20, 1)
+    other_booking = Booking(
+        tenant_id=other_tenant_id,
+        device_id=other_device.id,
+        customer_id=None,
+        scheduled_start_at=start,
+        scheduled_end_at=end,
+    )
+    db_session.add(other_booking)
+    await db_session.commit()
+
+    for action in ("start", "end", "no-show"):
+        resp = await app_client.post(
+            f"/api/v1/bookings/{other_booking.id}/{action}", headers=AUTH
+        )
+        assert resp.status_code == 404, (
+            f"{action} on foreign booking should be 404, got "
+            f"{resp.status_code}: {resp.text}"
+        )
+
+
+@pytest.mark.asyncio
+async def test_p5_cross_tenant_customer_start_404(
+    customer_client_factory, db_session, test_env
+):
+    """P-5b: a customer principal starting a foreign-tenant booking → 404
+    (not 403). The tenant-scoped fetch fires before the ownership check, so
+    the caller learns nothing about whether the id exists elsewhere. The
+    customer principal still carries a tenant_id, so the same _get_live_booking
+    path applies."""
+    import uuid
+
+    from app.models.booking import Booking
+    from app.models.tenant import Tenant
+
+    fixture = await _seed_lifecycle_fixture(db_session, test_env)
+    other_tenant_id = f"tnt-pwrc-{uuid.uuid4().hex}"
+    other_device = await _seed_device(
+        db_session,
+        tenant_id=other_tenant_id,
+        model_id=fixture["model"].id,
+        serial="PWR-OTHER-C-DEV",
+    )
+    db_session.add(Tenant(id=other_tenant_id, name="P 章节他租户(customer 路径)"))
+    start, end = _window(22, 1)
+    other_booking = Booking(
+        tenant_id=other_tenant_id,
+        device_id=other_device.id,
+        customer_id=fixture["customer"].id,  # same global customer id
+        scheduled_start_at=start,
+        scheduled_end_at=end,
+    )
+    db_session.add(other_booking)
+    await db_session.commit()
+
+    client = await customer_client_factory(customer_id=fixture["customer"].id)
+    resp = await client.post(
+        f"/api/v1/bookings/{other_booking.id}/start", headers=AUTH
+    )
+    assert resp.status_code == 404, resp.text
+
+
+@pytest.mark.asyncio
+async def test_p5_cross_tenant_non_owner_returns_404_not_403(
+    tenant_admin_client, db_session, test_env
+):
+    """P-5c: a cross-tenant caller WITHOUT ``bookings:delete`` must still get
+    404 (not 403) on ``end`` / ``no-show``. The tenant-scoped fetch runs BEFORE
+    the permission check (mirrors ``start`` / plan §4.5), so a foreign booking
+    collapses to NotFoundError before ``require`` ever runs — no enumeration
+    leak regardless of the caller's role. ``tenant_admin_client`` is an admin
+    in the CALLER's tenant (no delete perm), but the booking lives in another
+    tenant entirely, so the 404 path fires first.
+    """
+    import uuid
+
+    from app.models.booking import Booking
+    from app.models.tenant import Tenant
+
+    fixture = await _seed_lifecycle_fixture(db_session, test_env)
+    other_tenant_id = f"tnt-pwrno-{uuid.uuid4().hex}"
+    other_device = await _seed_device(
+        db_session,
+        tenant_id=other_tenant_id,
+        model_id=fixture["model"].id,
+        serial="PWR-NO-OWNER-DEV",
+    )
+    db_session.add(Tenant(id=other_tenant_id, name="P 章节他租户(非 owner)"))
+    start, end = _window(24, 1)
+    other_booking = Booking(
+        tenant_id=other_tenant_id,
+        device_id=other_device.id,
+        customer_id=None,
+        status="in_service",  # so /end is a legal edge if it were reachable
+        scheduled_start_at=start,
+        scheduled_end_at=end,
+    )
+    db_session.add(other_booking)
+    await db_session.commit()
+
+    for action in ("end", "no-show"):
+        resp = await tenant_admin_client.post(
+            f"/api/v1/bookings/{other_booking.id}/{action}", headers=AUTH
+        )
+        assert resp.status_code == 404, (
+            f"{action} by cross-tenant non-owner should be 404 (not 403), "
+            f"got {resp.status_code}: {resp.text}"
+        )
+
+
+# ------------------------------------------- P-6: side-effect persistence
+
+
+@pytest.mark.asyncio
+async def test_p6_started_at_persisted_after_start(
+    app_client, db_session, test_env
+):
+    """P-6a: ``started_at`` is non-None after a successful start. Re-reads
+    from the DB (not just the response body) to confirm the column truly
+    persisted, and that ``ended_at`` (owned by /end) stays None.
+
+    We assert non-None rather than ``>= before`` because SQLite stores
+    tz-aware datetimes as naive (drops the tzinfo on round-trip), so an
+    aware-vs-naive comparison would raise — and the persistence itself, not
+    the exact instant, is what this test pins. Postgres keeps the tz; both
+    confirm the column was written."""
+    from sqlalchemy import select
+
+    from app.models.booking import Booking as BookingModel
+
+    fixture = await _seed_lifecycle_fixture(db_session, test_env)
+    booking = await fixture["make_booking"]()
+
+    resp = await app_client.post(
+        f"/api/v1/bookings/{booking.id}/start", headers=AUTH
+    )
+    assert resp.status_code == 200, resp.text
+
+    # Re-read the row from the DB (separate session) to prove persistence.
+    async with test_env.factory() as session:
+        row = (
+            await session.execute(
+                select(BookingModel).where(BookingModel.id == booking.id)
+            )
+        ).scalar_one()
+        assert row.status == "in_service"
+        assert row.started_at is not None
+        # end's column stays untouched.
+        assert row.ended_at is None
+
+
+@pytest.mark.asyncio
+async def test_p6_ended_at_and_feedback_persisted_after_end(
+    app_client, db_session, test_env
+):
+    """P-6b: ``ended_at`` + ``feedback`` round-trip through the DB after end.
+    The feedback dict survives verbatim (SQLAlchemy JSON column, not JSONB —
+    SQLite and Postgres behave identically). ``ended_at`` is asserted non-None
+    (see P-6a for why we don't compare instants across SQLite's tz drop)."""
+    from sqlalchemy import select
+
+    from app.models.booking import Booking as BookingModel
+
+    fixture = await _seed_lifecycle_fixture(db_session, test_env)
+    booking = await fixture["make_booking"](status="in_service")
+    payload = {"rating": 4, "tags": ["friendly", "on-time"], "note": "测试反馈"}
+
+    resp = await app_client.post(
+        f"/api/v1/bookings/{booking.id}/end",
+        headers=AUTH,
+        json={"feedback": payload},
+    )
+    assert resp.status_code == 200, resp.text
+
+    async with test_env.factory() as session:
+        row = (
+            await session.execute(
+                select(BookingModel).where(BookingModel.id == booking.id)
+            )
+        ).scalar_one()
+        assert row.status == "done"
+        assert row.ended_at is not None
+        assert row.feedback == payload
+
+
+@pytest.mark.asyncio
+async def test_p6_end_without_feedback_leaves_column_null(
+    app_client, db_session, test_env
+):
+    """P-6c: ending with no body (or feedback: null) leaves the ``feedback``
+    column at its previous value (None for a fresh booking) — the endpoint
+    treats feedback as optional and only writes when provided."""
+    from sqlalchemy import select
+
+    from app.models.booking import Booking as BookingModel
+
+    fixture = await _seed_lifecycle_fixture(db_session, test_env)
+    booking = await fixture["make_booking"](status="in_service")
+
+    # No body at all — FastAPI treats the optional payload as None.
+    resp = await app_client.post(
+        f"/api/v1/bookings/{booking.id}/end", headers=AUTH
+    )
+    assert resp.status_code == 200, resp.text
+
+    async with test_env.factory() as session:
+        row = (
+            await session.execute(
+                select(BookingModel).where(BookingModel.id == booking.id)
+            )
+        ).scalar_one()
+        assert row.status == "done"
+        assert row.feedback is None
+
+
+@pytest.mark.asyncio
+async def test_p6_no_show_writes_no_timestamp(
+    app_client, db_session, test_env
+):
+    """P-6d: no-show writes neither ``started_at`` nor ``ended_at`` — it's a
+    pure status flip. ``started_at`` / ``ended_at`` are owned by start / end
+    respectively (plan §0 D4); a no-show records nothing about when the
+    absence was judged."""
+    from sqlalchemy import select
+
+    from app.models.booking import Booking as BookingModel
+
+    fixture = await _seed_lifecycle_fixture(db_session, test_env)
+    booking = await fixture["make_booking"]()
+
+    resp = await app_client.post(
+        f"/api/v1/bookings/{booking.id}/no-show", headers=AUTH
+    )
+    assert resp.status_code == 204, resp.text
+
+    async with test_env.factory() as session:
+        row = (
+            await session.execute(
+                select(BookingModel).where(BookingModel.id == booking.id)
+            )
+        ).scalar_one()
+        assert row.status == "no_show"
+        assert row.started_at is None
+        assert row.ended_at is None
