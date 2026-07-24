@@ -262,18 +262,18 @@
 
 ---
 
-### 切片 04 — customer own 端点(GET /me/bookings,防越权)
+### 切片 04 — customer own 端点(GET /me/bookings,防越权) ✅ PR #110
 
 **Blocked by:** 01(共用 BookingService 骨架)
 
 **What it delivers:** customer 身份能看自己的预约列表(只读,只看 `customer_id = current_user.customer_id` 的 booking)。门店员工账号(无 customer_id)调此端点 → 403。后端注入 customer_id,**忽略**客户端传入参数(防越权看他人预约)。
 
 **Acceptance criteria:**
-- [ ] `app/api/v1/me.py`(或并入 bookings.py):新增 `GET /api/v1/me/bookings`,用 `current_user.customer_id` 过滤;若 `customer_id` 为 None(门店员工)→ 403 `BizError`/`PermissionError`
-- [ ] **端点不接受 customer_id 查询参数**(防越权);复用 `BookingRepository.list_for_customer(customer_id)` 或新增方法
-- [ ] `app/repositories/booking.py`:新增 `list_for_customer(customer_id)`(按 customer_id 过滤,无需 tenant_id 校验 —— customer 是全局身份,但对齐仓库可加 tenant scope)
-- [ ] `app/services/booking_service.py`:`list_my_bookings(customer_id)` 返 `list[BookingRead]`(不带 tenant_name 等 HQ 字段,customer 只看自己)
-- [ ] `tests/test_bookings_api.py` M 章节:M1 customer 身份 → 只看自己的 booking(造 2 条自己 + 1 条他人,只返 2 条)+ M2 门店员工身份(无 customer_id)→ 403 + M3 walk-in booking(customer_id 空)→ 不出现在任何 customer 的 /me/bookings + M4 端点忽略传入的 customer_id 参数(传他人 id 仍只返自己的)
+- [x] `app/api/v1/me.py`(或并入 bookings.py):新增 `GET /api/v1/me/bookings`,用 `current_user.customer_id` 过滤;若 `customer_id` 为 None(门店员工)→ 403 `BizError`/`PermissionError`
+- [x] **端点不接受 customer_id 查询参数**(防越权);复用 `BookingRepository.list_for_customer(customer_id)` 或新增方法
+- [x] `app/repositories/booking.py`:新增 `list_for_customer(customer_id)`(按 customer_id 过滤,无需 tenant_id 校验 —— customer 是全局身份,但对齐仓库可加 tenant scope)
+- [x] `app/services/booking_service.py`:`list_my_bookings(customer_id)` 返 `list[BookingRead]`(不带 tenant_name 等 HQ 字段,customer 只看自己)
+- [x] `tests/test_bookings_api.py` M 章节:M1 customer 身份 → 只看自己的 booking(造 2 条自己 + 1 条他人,只返 2 条)+ M2 门店员工身份(无 customer_id)→ 403 + M3 walk-in booking(customer_id 空)→ 不出现在任何 customer 的 /me/bookings + M4 端点忽略传入的 customer_id 参数(传他人 id 仍只返自己的)
 
 ---
 

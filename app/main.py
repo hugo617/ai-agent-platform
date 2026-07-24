@@ -27,6 +27,7 @@ from app.api.v1 import (
     groups,
     knowledge,
     logs,
+    me,
     members,
     notifications,
     permissions,
@@ -146,6 +147,7 @@ def create_app() -> FastAPI:
     app.include_router(device_models.router, prefix=prefix)
     app.include_router(devices.router, prefix=prefix)
     app.include_router(bookings.router, prefix=prefix)
+    app.include_router(me.router, prefix=prefix)
     app.include_router(billing.router, prefix=prefix)
     app.include_router(dashboard.router, prefix=prefix)
     app.include_router(logs.router, prefix=prefix)

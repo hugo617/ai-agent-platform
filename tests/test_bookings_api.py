@@ -1578,3 +1578,185 @@ async def test_sch4_nonexistent_device_returns_404(app_client, db_session, test_
         headers=AUTH,
     )
     assert resp.status_code == 404
+
+
+# ============================================================================
+# M. customer own endpoint (slice 04) — GET /me/bookings.
+#
+# A customer principal (a token whose claims carry ``customer_id``) sees ONLY
+# the bookings whose ``customer_id`` equals its own. Store-staff accounts (no
+# ``customer_id`` claim) get 403 — this is a customer-only surface. The backend
+# injects the id from the resolved principal and NEVER trusts a client-supplied
+# ``customer_id`` query param (M4 anti-override check).
+#
+# The ``customer_client`` fixture (conftest) mints a token with a ``customer_id``
+# claim; ``BookingService.list_my_bookings`` reads it off ``current_user`` and
+# filters via ``BookingRepository.list_for_customer``.
+# ============================================================================
+
+
+async def _seed_my_bookings_fixture(db_session, test_env):
+    """Seed the data the M-chapter tests share: one device/model, two customers
+    (``own`` + ``other``), and bookings bound to each. Returns the seeded rows.
+
+    ``own_customer`` gets 2 bookings; ``other_customer`` gets 1. A walk-in
+    booking (customer_id None) is also seeded for M3. Each test picks the
+    ``customer_id`` to impersonate and re-reads the list itself (keeps tests
+    independent of seed ordering drift)."""
+    model = await _seed_model(db_session, name="MY-Model")
+    device = await _seed_device(
+        db_session,
+        tenant_id=test_env.tenant_id,
+        model_id=model.id,
+        serial="MY-DEV",
+    )
+    own_customer, _own_profile = await _seed_customer_with_profile(
+        db_session, tenant_id=test_env.tenant_id, name="我的客户"
+    )
+    other_customer, _other_profile = await _seed_customer_with_profile(
+        db_session, tenant_id=test_env.tenant_id, name="他人客户"
+    )
+
+    from app.models.booking import Booking
+
+    bookings = []
+    # Two bookings for own_customer (distinct windows, no overlap).
+    for i, offset in enumerate((0, 2)):
+        s, e = _window(offset, 1)
+        b = Booking(
+            tenant_id=test_env.tenant_id,
+            device_id=device.id,
+            customer_id=own_customer.id,
+            scheduled_start_at=s,
+            scheduled_end_at=e,
+            notes=f"我的预约{i}",
+        )
+        db_session.add(b)
+        bookings.append(b)
+    # One booking for other_customer.
+    s_o, e_o = _window(4, 1)
+    other_b = Booking(
+        tenant_id=test_env.tenant_id,
+        device_id=device.id,
+        customer_id=other_customer.id,
+        scheduled_start_at=s_o,
+        scheduled_end_at=e_o,
+        notes="他人预约",
+    )
+    db_session.add(other_b)
+    # One walk-in booking (customer_id None) — M3 asserts it never appears.
+    s_w, e_w = _window(6, 1)
+    walkin_b = Booking(
+        tenant_id=test_env.tenant_id,
+        device_id=device.id,
+        customer_id=None,
+        scheduled_start_at=s_w,
+        scheduled_end_at=e_w,
+        notes="散客 walk-in",
+    )
+    db_session.add(walkin_b)
+    await db_session.commit()
+    return {
+        "model": model,
+        "device": device,
+        "own_customer": own_customer,
+        "other_customer": other_customer,
+        "own_booking_ids": [b.id for b in bookings],
+        "other_booking_id": other_b.id,
+        "walkin_booking_id": walkin_b.id,
+    }
+
+
+@pytest.mark.asyncio
+async def test_m1_customer_sees_only_own_bookings(
+    customer_client_factory, db_session, test_env
+):
+    """M1: a customer principal sees only the bookings whose ``customer_id``
+    matches its own. Seeds 2 own + 1 other + 1 walk-in, impersonates the own
+    customer, asserts exactly the 2 own bookings come back (no other-customer,
+    no walk-in)."""
+    seeded = await _seed_my_bookings_fixture(db_session, test_env)
+    own_id = seeded["own_customer"].id
+    client = await customer_client_factory(customer_id=own_id)
+
+    resp = await client.get("/api/v1/me/bookings", headers=AUTH)
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    returned_ids = {b["id"] for b in body}
+    assert returned_ids == set(seeded["own_booking_ids"]), (
+        f"expected only own bookings {seeded['own_booking_ids']}, got {returned_ids}"
+    )
+    # Defence-in-depth: the other customer's + walk-in bookings must NOT leak.
+    assert seeded["other_booking_id"] not in returned_ids
+    assert seeded["walkin_booking_id"] not in returned_ids
+    # Shape: BookingRead (no HQ panorama fields tenant_name/device_name).
+    assert "tenant_name" not in body[0]
+    assert "device_name" not in body[0]
+
+
+@pytest.mark.asyncio
+async def test_m2_store_staff_without_customer_id_gets_403(
+    app_client, db_session, test_env
+):
+    """M2: a store-staff account (a normal tenant principal with NO
+    ``customer_id`` claim) calling GET /me/bookings → 403. This endpoint is a
+    customer-only surface; staff use GET /bookings/ instead. ``app_client``
+    impersonates the tenant owner — no customer_id claim — so it must be
+    rejected. (No seed data needed: the identity check fires before any read.)"""
+    resp = await app_client.get("/api/v1/me/bookings", headers=AUTH)
+    assert resp.status_code == 403, resp.text
+
+
+@pytest.mark.asyncio
+async def test_m3_walkin_booking_absent_from_customer_view(
+    customer_client_factory, db_session, test_env
+):
+    """M3: a walk-in booking (customer_id NULL) must NOT appear in ANY
+    customer's /me/bookings — it has no customer binding, so no customer
+    principal owns it. Impersonate the own customer; the walk-in booking seeded
+    in the fixture must be absent from the returned set."""
+    seeded = await _seed_my_bookings_fixture(db_session, test_env)
+    own_id = seeded["own_customer"].id
+    client = await customer_client_factory(customer_id=own_id)
+
+    resp = await client.get("/api/v1/me/bookings", headers=AUTH)
+    assert resp.status_code == 200, resp.text
+    returned_ids = {b["id"] for b in resp.json()}
+    assert seeded["walkin_booking_id"] not in returned_ids, (
+        "walk-in booking must never surface under any customer's /me/bookings"
+    )
+    # And the OTHER customer impersonation also excludes the walk-in.
+    other_client = await customer_client_factory(
+        customer_id=seeded["other_customer"].id
+    )
+    resp2 = await other_client.get("/api/v1/me/bookings", headers=AUTH)
+    assert resp2.status_code == 200, resp2.text
+    assert seeded["walkin_booking_id"] not in {
+        b["id"] for b in resp2.json()
+    }
+
+
+@pytest.mark.asyncio
+async def test_m4_endpoint_ignores_supplied_customer_id_param(
+    customer_client_factory, db_session, test_env
+):
+    """M4 (anti-override): the endpoint MUST NOT honour a client-supplied
+    ``customer_id`` query param. Impersonate the own customer but request the
+    OTHER customer's id in the query string — the response still contains only
+    the own customer's bookings. This is the vertical-line defence in the
+    plan risk table (customer own bypass → High)."""
+    seeded = await _seed_my_bookings_fixture(db_session, test_env)
+    own_id = seeded["own_customer"].id
+    other_id = seeded["other_customer"].id
+    client = await customer_client_factory(customer_id=own_id)
+
+    # Try to impersonate the other customer via the query string.
+    resp = await client.get(
+        f"/api/v1/me/bookings?customer_id={other_id}", headers=AUTH
+    )
+    assert resp.status_code == 200, resp.text
+    returned_ids = {b["id"] for b in resp.json()}
+    # Own bookings only — the other customer's booking must NOT leak despite
+    # the param naming it.
+    assert returned_ids == set(seeded["own_booking_ids"])
+    assert seeded["other_booking_id"] not in returned_ids

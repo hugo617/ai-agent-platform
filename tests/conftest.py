@@ -442,6 +442,113 @@ async def hq_staff_client(test_env: _TestEnv) -> AsyncIterator[AsyncClient]:
 
 
 @pytest_asyncio.fixture
+async def customer_client_factory(test_env: _TestEnv):
+    """Factory yielding an AsyncClient impersonating a *customer* principal.
+
+    A customer token carries a ``customer_id`` claim; here we surface it by
+    overriding the ``get_current_user`` dependency directly with a ``CurrentUser``
+    whose ``customer_id`` is set (rather than patching the module-global
+    ``decode_token``). This keeps every override scoped to the per-app
+    ``dependency_overrides`` map — nothing global is mutated, so a later test
+    that relies on real JWT verification (e.g. ``app_client_real_auth``) cannot
+    be corrupted by a leaked mock. Mirrors how ``get_db`` is overridden in the
+    other client fixtures.
+
+    The customer is bound as a plain ``member`` of the test tenant — the role
+    is irrelevant to /me/bookings (that endpoint keys off ``customer_id``, not
+    casbin), but a membership row is seeded so any other endpoint that re-reads
+    membership behaves realistically.
+
+    Usage: ``client = await customer_client_factory(customer_id=...)``. Each
+    call mints a fresh user+membership so two distinct customer principals can
+    coexist in one test (M3 impersonates two customers).
+    """
+    from contextlib import AsyncExitStack, asynccontextmanager
+
+    from app.api.deps import CurrentUser, get_current_user
+    from app.core import casbin_enforcer as casbin_mod
+    from app.core.database import get_db
+    from app.main import create_app
+    from app.models.tenant import User, UserTenant
+
+    async_stacks: list[AsyncExitStack] = []
+    apps: list = []  # parallel to async_stacks; both indexed together, LIFO
+
+    async def _make(*, customer_id: str) -> AsyncClient:
+        user_id = f"cust-{uuid.uuid4().hex}"
+        async with test_env.factory() as session:
+            session.add(User(id=user_id, email=f"{user_id}@example.com", status="active"))
+            session.add(
+                UserTenant(
+                    user_id=user_id, tenant_id=test_env.tenant_id, role="member"
+                )
+            )
+            await session.commit()
+        test_env.enforcer.add_role_for_user_in_domain(
+            user_id, "member", test_env.tenant_id
+        )
+
+        app = create_app()
+
+        @asynccontextmanager
+        async def noop_lifespan(_app):
+            yield
+
+        app.router.lifespan_context = noop_lifespan
+
+        async def override_get_db():
+            async with test_env.factory() as session:
+                yield session
+
+        app.dependency_overrides[get_db] = override_get_db
+
+        # Override the principal directly — no global decode_token mock, so
+        # teardown is just clearing this app's overrides.
+        resolved = CurrentUser(
+            user_id=user_id,
+            tenant_id=test_env.tenant_id,
+            email=f"{user_id}@example.com",
+            customer_id=customer_id,
+        )
+
+        async def override_current_user():
+            return resolved
+
+        app.dependency_overrides[get_current_user] = override_current_user
+
+        stack = AsyncExitStack()
+        # get_enforcer is read inside the request handlers (not just at
+        # auth time), so patch it for this client's lifetime. Scoped to the
+        # stack so it cannot outlive the client.
+        stack.enter_context(
+            patch.object(casbin_mod, "get_enforcer", return_value=test_env.enforcer)
+        )
+        transport = ASGITransport(app=app)
+        client = await stack.enter_async_context(
+            AsyncClient(transport=transport, base_url="http://test")
+        )
+        async_stacks.append(stack)
+        apps.append(app)
+        return client
+
+    yield _make
+
+    # Teardown: close each client (which also exits its get_enforcer patch via
+    # the shared stack) then clear the per-app overrides. Nothing global
+    # survives — dependency_overrides is app-local. Reverse order so the most
+    # recently created client tears down first (LIFO, like nested with-blocks).
+    for idx in range(len(async_stacks) - 1, -1, -1):
+        try:
+            await async_stacks[idx].aclose()
+        except Exception:
+            pass
+        try:
+            apps[idx].dependency_overrides.clear()
+        except Exception:
+            pass
+
+
+@pytest_asyncio.fixture
 async def app_client_real_auth(test_env: _TestEnv) -> AsyncIterator[AsyncClient]:
     """Like ``app_client`` but with REAL JWT verification (no decode_token mock).
 
