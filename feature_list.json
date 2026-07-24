@@ -1652,16 +1652,17 @@
       "area": "业务实体",
       "title": "设备型号目录管理页(super_admin 后台前端页)",
       "user_visible_behavior": "超级管理员能在后台界面维护设备型号目录:进入「设备型号」管理页,新增/编辑/软删型号(品牌、规格 JSON、供应商、单位成本),查看完整目录列表。该页与门店端「设备入库」共享同一型号下拉数据源,但只有 super_admin 可见可写",
-      "status": "not_started",
+      "status": "in_progress",
+      "plan": "harness/docs/plan-device-models-admin-ui.md",
       "verification": [
         "前端:新增 /device-models 路由 + DevicesModelsAdminPage 页面,RequireSuperAdmin 路由守卫(非 super_admin 重定向/403);列表(名称/品牌/规格摘要/单位成本/操作)+ 新增 Dialog + 编辑 Dialog + 软删确认 Dialog",
-        "前端导航:在 super_admin 可见的导航分组下挂「设备型号」菜单项(menu:device-models);普通门店角色看不到该入口",
+        "前端导航:在 super_admin 可见的「平台」导航分组下挂「设备型号」菜单项(platformOnly: true,不走 casbin menu code,对齐 /tenants /billing/admin 平台级资源范式);普通门店角色看不到该入口",
         "前端 hooks/endpoints:复用既有 useDeviceModels 只读下拉?不,新增 useDeviceModelsAdmin(拉完整字段含 unit_cost)+ useCreateDeviceModel/useUpdateDeviceModel/useDeleteDeviceModel(对应 POST/PUT/DELETE /api/v1/device-models,需 super_admin token)",
         "pytest:无新增后端测试(device-models 后端 CRUD 已被 device-models-crud 覆盖),仅回归确认现有 test_device_models_api.py 全绿",
         "cd frontend && npm run build 通过 + npx oxlint src/ 0 warnings + (若有组件测) vitest 通过"
       ],
       "evidence": [],
-      "notes": "设备功能系列补遗(61 device-models-crud 的范围漂移修复)。**缺口溯源**:feature 61 的 verification 字段明确写了「前端:后台型号管理页(路由 /device-models,RequireSuperAdmin 守卫)」,但 evidence 最后一条范围决策把它剥离给了 62;62(devices-crud-ui)实际只做了门店「设备入库」下拉,从未交付 super_admin 管理页。导致缺口:device_models 表无任何 seed,无任何 UI 可建型号,门店入库下拉永远为空,链路从源头断掉。**本 feature 仅做前端**(后端 CRUD 全齐,2026-07-25 Session 已实测端到端:super_admin token 建型号 → 门店 owner 建设备 → 列表回读全通)。**不做的事**(避免越界):不补 seed 脚本(种子数据是 dev 体验问题,非产品能力,留给用户按需 curl 或独立 seed feature);不进权限矩阵 UI(device_models 不走 casbin,对齐 groups 平台级资源范式);不重构现有 devices-page 的型号下拉(已正常工作)。依赖:[device-models-crud](passing)。**当前 WIP=0,所有活跃 feature 都 passing,本 feature 可作为下一个 frontier**。开工时写 plan,走 EP2 回环(/grill-with-docs → /to-spec → 切片)。",
+      "notes": "设备功能系列补遗(61 device-models-crud 的范围漂移修复)。**缺口溯源**:feature 61 的 verification 字段明确写了「前端:后台型号管理页(路由 /device-models,RequireSuperAdmin 守卫)」,但 evidence 最后一条范围决策把它剥离给了 62;62(devices-crud-ui)实际只做了门店「设备入库」下拉,从未交付 super_admin 管理页。导致缺口:device_models 表无任何 seed,无任何 UI 可建型号,门店入库下拉永远为空,链路从源头断掉。**本 feature 仅做前端**(后端 CRUD 全齐,2026-07-25 Session 已实测端到端:super_admin token 建型号 → 门店 owner 建设备 → 列表回读全通)。**不做的事**(避免越界):不补 seed 脚本(种子数据是 dev 体验问题,非产品能力,留给用户按需 curl 或独立 seed feature);不进权限矩阵 UI(device_models 不走 casbin,对齐 groups 平台级资源范式);不重构现有 devices-page 的型号下拉(已正常工作)。依赖:[device-models-crud](passing)。**EP2 回环已完成(2026-07-25 Session 140)**:plan 文档 `harness/docs/plan-device-models-admin-ui.md` 落地,含 PRD 主体 + 2 个实施切片(切片 01 前端地基 types/endpoints/hooks,切片 02 UI 层 page/route/nav + 新组件 KeySpecRows + vitest)。grill 决策:specs 用结构化 key-value 行编辑器(全量版多类型 string/number/boolean)、unit_cost 货币格式、brand datalist 联想、列表加名称/品牌搜索框、nav 挂平台分组 platformOnly。status `not_started → in_progress`(当前 frontier,依赖 device-models-crud 已 passing)。下一步:EP3 切片 01(`/implement`)。",
       "depends_on": "device-models-crud"
     }
   ]
