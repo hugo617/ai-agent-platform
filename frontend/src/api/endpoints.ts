@@ -26,7 +26,10 @@ import type {
   DeviceBindResponse,
   DeviceCreate,
   DeviceHqRead,
+  DeviceModelCreate,
   DeviceModelPublic,
+  DeviceModelRead,
+  DeviceModelUpdate,
   DeviceSchedule,
   DeviceUpdate,
   DashboardOverview,
@@ -389,6 +392,50 @@ export async function unbindDeviceCustomer(id: string): Promise<void> {
 export async function fetchDeviceModels(): Promise<DeviceModelPublic[]> {
   const { data } = await api.get<DeviceModelPublic[]>("/device-models/");
   return data;
+}
+
+// ---------- device-models admin (device-models-admin-ui, super_admin CRUD) ----------
+//
+// These hit the same /device-models/ router as fetchDeviceModels above but
+// return the fuller DeviceModelRead shape (the backend branches on
+// platform_role: super_admin / hq_staff get full fields incl. unit_cost; tenant
+// roles get DeviceModelPublicRead). Writes (create/update/delete) require
+// super_admin — the backend guards POST/PUT/DELETE with require_super_admin();
+// the frontend RequireSuperAdmin route guard is the UX layer on top.
+//
+// Cache key is shared with fetchDeviceModels (qk.deviceModels) so the store
+// device-picker dropdown refreshes when an admin adds/removes a model — see
+// plan §9 risk table (same-key-different-type is low-risk: the dropdown only
+// reads id/name/specs and won't break on the extra fields).
+export async function fetchDeviceModelsAdmin(): Promise<DeviceModelRead[]> {
+  const { data } = await api.get<DeviceModelRead[]>("/device-models/");
+  return data;
+}
+
+export async function createDeviceModel(
+  payload: DeviceModelCreate,
+): Promise<DeviceModelRead> {
+  const { data } = await api.post<DeviceModelRead>("/device-models/", payload);
+  return data;
+}
+
+// PUT is whole-replace on specs (backend DeviceModelUpdate semantics); the form
+// always sends the full specs dict reconstructed by KeySpecRows.
+export async function updateDeviceModel(
+  id: string,
+  payload: DeviceModelUpdate,
+): Promise<DeviceModelRead> {
+  const { data } = await api.put<DeviceModelRead>(
+    `/device-models/${id}`,
+    payload,
+  );
+  return data;
+}
+
+// Soft-delete (sets is_deleted=true; the row stays as the audit trail and the
+// name becomes reusable). Returns 204 — no body to consume.
+export async function deleteDeviceModel(id: string): Promise<void> {
+  await api.delete(`/device-models/${id}`);
 }
 
 // ---------- bookings (设备预约订单, device-booking 系列 3/4) ----------

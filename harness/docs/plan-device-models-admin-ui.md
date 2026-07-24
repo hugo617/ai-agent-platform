@@ -128,10 +128,10 @@
 >
 > 本节是**简表概览**,完整 acceptance criteria checklist 见文末「[实施切片](#实施切片2-个-tracer-bullet-垂直切片每个切片一个-context-window-完成)」段(EP3 实施时以文末详表为准勾选)。
 
-### 切片 01 — 前端地基:types + endpoints + hooks
+### 切片 01 — 前端地基:types + endpoints + hooks ✅(PR #119,commit 048ca56)
 - **What to build**:补齐前端 API 层完整字段契约 —— 新增 `DeviceModelRead/Create/Update` 类型 + admin 版 fetch/create/update/delete 函数与 hooks
 - **Blocked by**:无(frontier)
-- **验证**:`tsc` 通过 + 切片 02 的依赖就绪
+- **验证**:`tsc` 通过 + 切片 02 的依赖就绪 ✅(tsc exit 0 + oxlint 0 warnings)
 
 ### 切片 02 — UI 层:page + 路由 + nav + `KeySpecRows` 组件
 - **What to build**:落地可见的管理页 + 守卫 + 入口;`KeySpecRows` 是本 feature 新组件
@@ -197,18 +197,18 @@
 >
 > 实施节奏:一次一个切片,用 `/implement` 推进,切片间清 context。本 feature 仅前端 + 后端齐备,故切片粒度比 devices-crud-ui(7 片全栈)轻得多。
 
-### 切片 01 — 前端地基:types + endpoints + hooks(无 blocker,frontier)
+### 切片 01 — 前端地基:types + endpoints + hooks(无 blocker,frontier) ✅(PR #119,commit 048ca56)
 
 **Blocked by:** 无 —— 可立即开工
 
 **What it delivers:** 前端 API 层完整字段契约就位 —— `DeviceModelRead/Create/Update` 类型、admin 版 CRUD endpoints、四个 hooks(useDeviceModelsAdmin + useCreate/Update/DeleteDeviceModel)。本片**不含**任何 UI,产物是「切片 02 的 page 能直接 import 这些符号编译通过」。
 
 **Acceptance criteria:**
-- [ ] `frontend/src/api/types.ts`:新增 `DeviceModelRead` / `DeviceModelCreate` / `DeviceModelUpdate` 三 interface,与后端 `app/schemas/device_model.py` 字段对齐(`unit_cost: string` 因 Decimal 序列化、`specs: Record<string, unknown>`);**保留**既有 `DeviceModelPublic`(门店下拉用,不动)
-- [ ] `frontend/src/api/endpoints.ts`:新增 `fetchDeviceModelsAdmin(): Promise<DeviceModelRead[]>` + `createDeviceModel(payload: DeviceModelCreate)` + `updateDeviceModel(id, payload: DeviceModelUpdate)` + `deleteDeviceModel(id): Promise<void>`,路径 `/device-models/` 与 `/device-models/{id}`
-- [ ] `frontend/src/hooks/queries.ts`:新增 `useDeviceModelsAdmin()`(queryKey 复用 `qk.deviceModels`,与门店下拉共用 cache);新增 `useCreateDeviceModel` / `useUpdateDeviceModel` / `useDeleteDeviceModel` 三个 `useApiMutation`,失效 `qk.deviceModels`
-- [ ] `cd frontend && npx tsc --noEmit` 通过(无类型错;此时 page 还没建,hooks 暂未被消费但导出即可)
-- [ ] `npx oxlint src/` 0 warnings
+- [x] `frontend/src/api/types.ts`:新增 `DeviceModelRead` / `DeviceModelCreate` / `DeviceModelUpdate` 三 interface,与后端 `app/schemas/device_model.py` 字段对齐(`unit_cost: string` 因 Decimal 序列化、`specs: Record<string, unknown>`);**保留**既有 `DeviceModelPublic`(门店下拉用,不动)
+- [x] `frontend/src/api/endpoints.ts`:新增 `fetchDeviceModelsAdmin(): Promise<DeviceModelRead[]>` + `createDeviceModel(payload: DeviceModelCreate)` + `updateDeviceModel(id, payload: DeviceModelUpdate)` + `deleteDeviceModel(id): Promise<void>`,路径 `/device-models/` 与 `/device-models/{id}`
+- [x] `frontend/src/hooks/queries.ts`:新增 `useDeviceModelsAdmin()`(queryKey 复用 `qk.deviceModels`,与门店下拉共用 cache);新增 `useCreateDeviceModel` / `useUpdateDeviceModel` / `useDeleteDeviceModel` 三个 `useApiMutation`,失效 `qk.deviceModels`
+- [x] `cd frontend && npx tsc --noEmit` 通过(无类型错;此时 page 还没建,hooks 暂未被消费但导出即可)
+- [x] `npx oxlint src/` 0 warnings
 
 ---
 
