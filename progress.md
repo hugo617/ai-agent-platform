@@ -8,11 +8,12 @@
 - **标准启动路径**: `./init.sh`(装依赖 + ruff + pytest)
 - **标准验证路径**: `./init.sh`(同上,后端快速验证,SQLite 内存库)
 - **完整验证路径**(需 docker): `alembic upgrade head && alembic check` + `cd frontend && npm run build`
-- **当前最高优先级未完成功能**: **设备功能系列(61-64)已于 2026-07-25 Session 138 全部收官 ✅,无在途 frontier**。所有活跃 feature 都 passing;下一步需用户排新需求(若无指示,可读 `harness/docs/archive/` 复盘历史 + 扫 `feature_list.json` 中的 `not_started`/`backlog` 项决定下一 frontier)。**三个总纲系列进度**:① 权限重构(39-42)✅ 收官;② Token 费用(43-46)✅ 收官;③ 设备功能(61-64)✅ **本日收官**。
+- **当前最高优先级未完成功能**: **bookings-page-split(priority 65,工程化)已于 2026-07-25 Session 139 收官 ✅**。下一个 frontier = **device-models-admin-ui(priority 66,业务实体)** —— 设备型号目录管理页(super_admin 后台前端页),设备功能系列补遗(61 device-models-crud 的范围漂移修复:verification 写了「前端管理页」但 evidence 剥离给 62,62 实际只做门店下拉,缺口一直未补;后端 CRUD 全齐,本 feature 仅前端)。
+- **bookings-page-split ✅ passing(2026-07-25 Session 139 收尾)**:巡检产出任务([codebase-health-log.md] 2026-07-25 候选 1,Strong)。`hugo` 暗号触发 → 三源验真(device 系列 61-64 全 passing)+ 跑 `/improve-codebase-architecture` 巡检(8 候选:Strong ×4 拆 Booking 三视图 / 状态机 cancel 未并入 / end-no_show auth 推 body / 前端 9 page 零单测;Worth exploring ×4 Customer principal 参数透传 / HQ Panorama mirror / 三叉路由 4 page 复制 / union endpoint cast)→ HTML 报告归档 `~/.cache/ai-agent-platform-architecture-reviews/2026-07-25.html` → grill 候选 1(4 决策:bookings/ 子文件夹 / 测试跟 view 走 / 只拆不碰 cast / 现有测试全绿+补 HqView smoke)→ 产 plan-bookings-page-split.md → 登记 feature priority 65 → 实施:bookings-page.tsx(1373 行)拆成 bookings/ 文件夹 5 module + barrel(bookings-page.tsx barrel re-export + index.tsx 三叉路由 + store-view.tsx StoreView+4Dialog + hq-view.tsx HqView export + my-bookings-view.tsx + shared.tsx STATUS_META/filters/date helpers/ScheduleGridCard)+ 测试挪位(git mv 保留历史)+ 新增 hq-view.test.tsx smoke 3 tests。验证:vitest 15/15(12 现有 + 3 新 HqView)+ build 1.75s(bookings-page chunk 18.98 kB 与拆分前一致)+ oxlint 0 + tsc -b 绿 + init.sh 714 passed。/code-review 双轴:Standards 无 hard violation,1 judgement call(shared.tsx 轻微 Divergent Change,ScheduleGridCard 只 StoreView 用却混共享 → 登记独立后续候选);Spec 核心达成,处置 1 冲突(§10.10 无新 TODO vs D3 注释标注委托 → TODO(candidate-X) 改 Note(candidate-X))+ 订正 plan 文字(cast 5→7 处 / shared.ts→shared.tsx)。7 处 as cast 原样保留(委托候选 8)。**巡检本身也是 stage 5 首次完整走通**(Step 0-3 全跑:Explore → HTML 报告 → grill 产 plan → 实施)。
 - **device-poweron ✅ passing(2026-07-25 Session 138 收尾)**:3 切片全合并(01 后端地基 PR#114 commit 6e74073 → 02 前端基建 vitest+customer 确认开机 PR#115 commit 1621c99 → **03 store 三按钮+feature 收尾 PR#116**)。切片 03(末切片)加 store DropdownMenu 三动作(确认开机 walk-in / 结束服务弹 feedback Dialog / 标记爽约确认 Dialog),`ACTIONABLE_STATUS`(pending/confirmed/in_service)松绑 `MUTABLE_STATUS`(pending-only)守卫 —— 改约/取消仍守 pending,动作菜单按态显示;新增 `endBooking`/`noShowBooking` endpoints + `useEndBooking`/`useNoShowBooking` hooks(都失效 `BOOKING_WRITE_KEYS`);组件测 store-view.test.tsx 6 tests(walk-in start / in_service end+feedback Dialog / no-show 确认 / 终态无按钮 / member 无写 / pending 行四菜单项共存)。feature 收尾:verification 三处笔误修正(① 409→400 对齐 D1 + InvalidTransition;② JSONB→JSON 对齐 device-booking 双库兼容;③ 补 vitest 组件测条目)+ status→passing + evidence 6 条 + sync-active 刷新。验证:./init.sh 全绿 714 passed + npm build ✓ 1.53s + oxlint 0 warnings + vitest 12/12(2 files)。/code-review 双轴 0 阻断(修 1 注释误导)。设备功能系列(61-64)**收官**:61 device-models-crud ✅ → 62 devices-crud-ui ✅ → 63 device-booking ✅ → 64 device-poweron ✅。
 - **device-booking ✅ passing(2026-07-24 Session 137 收尾)**:7 切片全合并(01 后端地基 PR#106 → 02 权限 seed PR#107 → 03 HQ+排期后端 PR#108 → 04 customer own PR#110 → 05 前端地基 PR#111 → 06 StoreView PR#112 → **07 HqView+MyBookingsView+三叉路由 PR#113 commit 5b75fb4**)。切片 07(末切片)把 /bookings 升级为三叉视图:`isSuperAdmin||isHQStaff?HqView:hasCustomerIdentity?MyBookingsView:StoreView`。HqView 复刻 devices-page HqView 骨架(跨租户只读表 BookingHqRead[],walk-in 显散客)。MyBookingsView 调 useMyBookings()(customer 只读,后端按 caller customer_id 过滤)。hasCustomerIdentity helper 新建于 permission.ts(照 isHQStaff)。**Blocker 修复**:plan 要求 me.customer_id 判断但 MeResponse API 契约未暴露(切片 04 只加后端内部 CurrentUser)→ 补 MeResponse.customer_id(schema+endpoint+frontend type,无新迁移)+ N1/N2 测试。feature 收尾:verification 笔误修正(第 3 条 409→400 对齐 D1 / 第 4 条 DELETE→POST /cancel 对齐 D8)+ status→passing + evidence 9 条 + sync-active 刷新。验证:./init.sh 全绿 653 passed(基线 651+N1/N2)+ npm build ✓ 1.94s + oxlint 0 warnings。/code-review 双轴 0 阻塞。已知 UX 缺口:MyBookingsView 设备列显 device_id 前缀(BookingRead 不带 device_name,拉 devices feed 会跨租户泄露故不拉,后端加 selectinload 留未来增量,plan 未硬定列故 spec 合规)。
 - **当前 blocker**: 无
-- **EP3 断点(Session 138 → 待定)**:device-poweron 全 3 切片合并完成(2026-07-25),设备功能系列(61-64)**全部收官**。**无在途 frontier**,所有活跃 feature 都 passing。下一步需用户排新需求 —— 选项包括(按 `feature_list.json` 扫描):① MVP 补全系列(47-58)剩余项;② 全新需求走 `/grill-me`(无 codebase)或 `/grill-with-docs`(有 codebase)起 EP1。若无指示,读 `harness/docs/archive/` 复盘历史。
+- **EP3 断点(Session 139 → 待定)**:bookings-page-split(巡检候选 1)合并完成后,**下一个 frontier = device-models-admin-ui(priority 66)**。该 feature 是设备功能系列补遗(61 的范围漂移修复),后端 CRUD 全齐(已实测端到端),仅前端 super_admin 管理页缺口。开工时走 EP2 回环(/grill-with-docs → /to-spec → 切片)。**巡检剩余 7 候选**(candidate 2-8)未做,plan-bookings-page-split.md §8 列了 Out of Scope,可按 friction 优先级逐个起独立任务。
 
 ## 后续任务规划
 
@@ -3209,5 +3210,113 @@ devices-crud-ui 全 passing(7 切片全合并 main,迁移 head = `a0eaec7aab7c`)
 | `feature_list.json` + 派生视图 | ✅ 已更新 | device-poweron `in_progress` → `passing`;verification 三处笔误修正(409→400 / JSONB→JSON / 补 vitest);evidence 6 条;sync 刷新 |
 
 > 判断依据:本次 feature 切片 03 是纯前端改动(store 三按钮 + 组件测),所有改动都是**既有范式内的实例**(`useApiMutation` 骨架 / DropdownMenu+Dialog 模式 / vitest hoisted mocks 模式 / `BOOKING_WRITE_KEYS` 失效集),不改变架构约定。后端状态机/service/三端点由切片 01 已落地,本切片只读引用。故 02-后端架构 / 04-前端架构 文档无需同步;plan/progress/feature_list 三源已更新。
+
+---
+
+## Session 139(2026-07-25):`hugo` 暗号 → 巡检 stage 5 首次完整走通 + bookings-page-split 重构
+
+### 入口:`hugo` 暗号 → 三源验真 → 探索流程
+
+用户触发 `hugo` 暗号。按 AGENTS.md 路由表,这是入口 A 硬触发。判断子模式:上一轮(device-poweron Session 138)已合并完成,本轮进入时**无在途 frontier**,这是**回归验证流程**(三源交叉验真)。
+
+**三源验真结果:✅ 一致**
+- 源1 feature_list.json status:device-poweron / device-booking / devices-crud-ui / device-models-crud 全 passing
+- 源2 git log 合并 commit:设备系列 PR#106-116 全 merge 入 main
+- 源3 plan checklist:device-poweron 3 切片 + EP2 收尾 + 自检 + 收尾动作全 `[x]`
+
+验真通过后,扫 feature_list.json 找下一 frontier,发现**全部 64 feature passing,无 not_started**(当时 active.json 未刷新)。用户选「代码健康度巡检」选项。
+
+### Stage 5 巡检完整走通(Step 0-3)
+
+按 `harness/docs/codebase-health-check.md` + `/improve-codebase-architecture` skill 流程:
+
+**Step 0 bootstrap**:CONTEXT.md 已存在(2026-07-20 创建),docs/adr/ 不存在(lazy 契约)。
+
+**Step 1 Explore**:
+- 找 hot spots:`git log --since="2026-07-20" --name-only` 看自上次巡检改动频次 top —— bookings-page.tsx(5)+ queries/endpoints/types(各 4)+ booking_service.py(4)+ devices.py(4)
+- wc -l 对比 baseline(2026-07-20):`permission_service.py` 617→**867**(+40%,超 §1.2 阈值)+ bookings-page.tsx —→**1373**(新建,超 settings-page)+ booking_service.py —→681(新建)
+- 派 2 个并行 Explore sub-agent(后端 booking/device + 前端 fat files)做有机走读,返 14 候选
+- 精选去重为 8 个 friction 点(Strong ×4 + Worth exploring ×4)
+
+**Step 2 HTML 报告**:
+- 写自包含 HTML 到 `$TMPDIR/architecture-review-20260725-010252.html`(600 行)
+- 归档到 `~/.cache/ai-agent-platform-architecture-reviews/2026-07-25.html`(不入库,SKILL.md 契约)
+- macOS `open` 浏览器打开
+- 8 候选每个含 before/after Mermaid 图 + Problem/Solution/Wins/Deletion test + badge
+- Top recommendation:候选 1(Booking 三视图拆 module)+ 候选 2(cancel 并入状态机)
+
+**Step 3 Grill 候选 1**(用户选):
+- 调 `/grilling` skill,一次一问,4 个 decision:
+  - D2 目录结构 → **bookings/ 子文件夹**(项目首个 page 子文件夹先例)
+  - D4 测试位置 → **bookings/__tests__/**(测试跟 view 走)
+  - D6 范围边界 → **只拆不碰 cast**(守不越界,候选 8 独立切片)
+  - D7 验证策略 → **现有 12 测试全绿 + 补 HqView smoke test**
+- 产 `harness/docs/plan-bookings-page-split.md`(196 行,非复杂任务跳过 §7 对抗式审查)
+
+### 实施(bookings-page-split,priority 65,工程化 area)
+
+**EP2 收尾**:登记 feature_list.json(priority 65,area=工程化,status=not_started)+ sync active + 翻 in_progress。
+
+**拆分**(纯机械搬运,零行为变更):
+- `frontend/src/pages/bookings-page.tsx`(1373 行)→ 删
+- 新建 `frontend/src/pages/bookings/` 文件夹:
+  - `bookings-page.tsx`(barrel re-export BookingsPage,保 App.tsx lazy import 路径兼容)
+  - `index.tsx`(三叉路由入口 ~30 行:`isSuperAdmin||isHQStaff?HqView:hasCustomerIdentity?MyBookingsView:StoreView`)
+  - `store-view.tsx`(StoreView + 4 Dialog + DropdownMenu 三动作 ~680 行)
+  - `hq-view.tsx`(HqView export ~140 行,原私有,拆分后首次可测)
+  - `my-bookings-view.tsx`(MyBookingsView ~150 行)
+  - `shared.tsx`(STATUS_META/NONE/MUTABLE/ACTIONABLE 常量 + FilterChips/BookingStatusBadge/deviceNameOf + date helpers + slotTone + ScheduleGridCard/ScheduleSlot ~360 行)
+- `App.tsx`:lazy import `@/pages/bookings-page` → `@/pages/bookings/bookings-page`
+- 测试:`git mv` 挪 store-view.test.tsx + my-bookings-view.test.tsx 到 `bookings/__tests__/`(保留历史)+ 改 import 路径
+- 新增 `hq-view.test.tsx` smoke 3 tests(渲染跨店表+列头+行数据 / 空态 EmptyState / null fallback:tenant_name 门店硬删 + walk-in 散客 + device_name 软删)
+
+**验证(全绿)**:
+- `npx tsc -b` ✓(修 1 处 unused import:shared.tsx 误导入 EmptyState)
+- `npx vitest run` ✓ **15/15**(3 files:store-view 6 + my-bookings-view 6 + hq-view 3)
+- `npx oxlint` ✓ 0 warnings 0 errors(86 files 102 rules)
+- `npm run build` ✓ 1.75s(bookings-page chunk 18.98 kB 与拆分前一致 → 零行为变更证据)
+- `./init.sh` ✓ 714 passed(后端无改动,基线无回归)
+
+### /code-review 双轴审查
+
+派 2 个并行 general-purpose sub-agent(Standards + Spec):
+
+**Standards 轴**:无 hard violation(AGENTS.md 铁律均未触达,纯前端 view 搬运)。Judgement call:
+- 🟡 `shared.tsx` 轻微 **Divergent Change** —— ScheduleGridCard + 其私有 date helpers(slotTone/dayLabel/hhmm 等)只被 StoreView 消费,却混在所有 view 共享文件里。本次不拆(plan 守纯 locality 范围),登记为独立后续候选 `bookings-shared-split`。
+- 🟢 `bookings-page.tsx` Middle Man —— 单行 re-export,但 plan §4.5 D1 有意识保留(保路由兼容),注释讲清楚。放行。
+- 🟢 `Note(candidate-X)` 非 Speculative Generality —— 是「守卫:这里有意保留原状」的标注,非未实现扩展点。
+
+**Spec 轴**:核心目标达成(零行为变更 + locality)。发现:
+- 🔴 §10.10「无新 TODO/FIXME」vs §4.5 D3「注释标注委托 candidate 8」**自相矛盾** —— 我加了 4 处 `TODO(candidate-7/8)`。
+- 🟡 §10.9 cast 计数有误(spec 写 5 处,实际原文件 7 处)。
+- 🟡 `shared.ts` → `shared.tsx`(spec 写 .ts,实际含 JSX 故 .tsx)。
+
+**处置**:
+- 🔴 TODO 冲突 → 改 `TODO(candidate-X)` 为 `Note(candidate-X)`(保标注价值,不触发 IDE TODO 扫描器)。frontend/src/ TODO 总数回到基线 2(Logto 占位)。
+- 🟡 plan 文字瑕疵订正:cast 5→7 处、shared.ts→shared.tsx、§10.10 措辞改「无新 TODO/FIXME 引入(基线 2 处 Logto 占位不变)」。
+- 🟡 shared.tsx Divergent Change → plan §4.5 D1 加「已知 smell」注释,登记独立后续候选。
+
+### feature 收尾
+
+- `feature_list.json`:bookings-page-split status `in_progress` → `passing` + evidence 6 条
+- `./scripts/sync-active-features.sh` 刷新(archive 累计 60 条)
+- `progress.md`:顶部「最高优先级」改 bookings-page-split 收官 + 下一 frontier = device-models-admin-ui(priority 66);EP3 断点段更新;追加本 Session 139 记录
+
+### 关键发现:device-models-admin-ui(priority 66)
+
+sync-active 刷新后发现 active.json 出现 `device-models-admin-ui not_started`。查证:这是**既存 feature**(不是我本次加的),notes 写「设备功能系列补遗(61 device-models-crud 的范围漂移修复)」—— feature 61 verification 写了「前端管理页」但 evidence 剥离给 62,62 实际只做门店下拉,super_admin 管理页缺口一直未补。后端 CRUD 全齐(已实测端到端),本 feature 仅前端。**这是真实的下一个 frontier**(priority 66,依赖 device-models-crud 已 passing)。
+
+### Session 139 文档影响评估
+
+| 文档 | 是否需更新 | 本 Session 动作 |
+|---|---|---|
+| `项目指南/04-前端架构/*`(page 组织/mutation 范式) | ❌ 无影响 | 本次是纯机械搬运,view 内业务逻辑原样保留;bookings/ 子文件夹是项目首个 page 子文件夹先例,但属「单 feature 体量 justify」的局部决策,不上升为架构约定(其他 page 仍 xxx-page.tsx 平铺) |
+| `harness/docs/codebase-health-log.md` | ✅ 已更新 | 回填 2026-07-20 待填字段 + 追加 2026-07-25 行(8 候选 + Top + grill=Yes + plan 文档名)+ 新 baseline 快照段(permission 867 / bookings-page 1373 / 测试 714 passed + vitest 12→15) |
+| `harness/docs/plan-bookings-page-split.md` | ✅ 已创建 + 订正 | grill 产出 196 行;code-review 后订正 4 处(cast 5→7 / shared.ts→shared.tsx / §10.10 措辞 / 加「已知 smell」Divergent Change 注释) |
+| `progress.md` | ✅ 已更新 | 顶部状态改 bookings-page-split 收官 + 下一 frontier = device-models-admin-ui;EP3 断点更新;追加 Session 139 记录 |
+| `feature_list.json` + 派生视图 | ✅ 已更新 | 新增 bookings-page-split(priority 65,area=工程化)+ status in_progress→passing + evidence 6 条;sync 刷新 active/archive |
+| `~/.cache/ai-agent-platform-architecture-reviews/2026-07-25.html` | ✅ 已归档(不入库) | 巡检 HTML 报告,SKILL.md 契约规定不入库 |
+
+> 判断依据:本次是巡检产出 + 纯前端机械搬运重构,所有改动都在**既有范式内**(vitest 基建 / view module 组织 / lazy import / shared module 抽取),不改变架构约定。bookings/ 子文件夹是单 feature 体量的局部决策,不上升为全局约定。巡检剩余 7 候选(candidate 2-8)在 plan §8 Out of Scope 列明,各自独立后续任务。
 
 ---

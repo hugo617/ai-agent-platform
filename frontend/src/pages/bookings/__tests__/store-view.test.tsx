@@ -16,7 +16,7 @@ import { afterEach, describe, expect, it, vi, type Mock } from "vitest";
 import userEvent from "@testing-library/user-event";
 import { fireEvent, within } from "@testing-library/react";
 import { renderWithProviders } from "@/test/test-utils";
-import { StoreView } from "../bookings-page";
+import { StoreView } from "../store-view";
 import type { Booking, MeResponse } from "@/api/types";
 
 // ---- mock wiring ----

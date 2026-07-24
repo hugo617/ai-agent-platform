@@ -37,7 +37,7 @@ const DevicesPage = lazy(() =>
   import("@/pages/devices-page").then((m) => ({ default: m.DevicesPage })),
 );
 const BookingsPage = lazy(() =>
-  import("@/pages/bookings-page").then((m) => ({ default: m.BookingsPage })),
+  import("@/pages/bookings/bookings-page").then((m) => ({ default: m.BookingsPage })),
 );
 const RolesPage = lazy(() =>
   import("@/pages/roles-page").then((m) => ({ default: m.RolesPage })),
