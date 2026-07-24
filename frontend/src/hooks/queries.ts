@@ -90,6 +90,7 @@ import {
   revokeRolePermission,
   setConversationPinned,
   setConversationStarred,
+  startBooking,
   unbindDeviceCustomer,
   updateAgent,
   updateBooking,
@@ -521,6 +522,21 @@ export function useUpdateBooking() {
 
 export function useCancelBooking() {
   return useApiMutation((id: string) => cancelBooking(id), BOOKING_WRITE_KEYS);
+}
+
+/** Start a booking (POST /bookings/{id}/start, device-poweron 切片 02) —
+ * pending/confirmed → in_service. Invalidates the same ``BOOKING_WRITE_KEYS``
+ * set as the other writes so the customer's own list (``qk.myBookings``), the
+ * store list (``qk.bookings``) and any open device grid all refresh.
+ *
+ * Slice 02 wires only this one; ``useEndBooking`` / ``useNoShowBooking`` land
+ * in slice 03 alongside the store「结束」/「爽约」buttons (no pre-built empty
+ * scaffolding, 铁律6). */
+export function useStartBooking() {
+  return useApiMutation(
+    (id: string) => startBooking(id),
+    BOOKING_WRITE_KEYS,
+  );
 }
 
 /** Day-grouped booking grid for one device in [start, end). ``enabled`` gates

@@ -241,24 +241,24 @@
 
 ---
 
-### 切片 02 — 前端基建:vitest + customer「确认开机」按钮 + 组件测
+### 切片 02 — 前端基建:vitest + customer「确认开机」按钮 + 组件测 ✅(PR #115,commit 1621c99)
 
 **Blocked by:** 01(`/start` 端点形状 + `BookingRead` 带 started_at 定型)
 
 **What it delivers:** 引入本项目首个前端单测基建(vitest + RTL + jsdom);customer 在 `MyBookingsView` 的 `pending` 行看到「确认开机」按钮,点击真调 `startBooking()` → 成功 toast + 列表刷新(in_service);非 pending 行无按钮。组件测覆盖按钮渲染/调用/禁用/toast。**本切片只建 `start` 相关的 endpoint/hook**(`end`/`no-show` 留给切片03,避免预建空架子,铁律6)。
 
 **Acceptance criteria:**
-- [ ] `frontend/package.json`:devDeps 加(锁最低版本,v2)`vitest@^3` / `@testing-library/react@^16.1.0`(React 19 支持)/ `@testing-library/jest-dom@^6` / `@testing-library/user-event@^14` / `jsdom@^25`;`scripts` 加 `"test": "vitest run"`(独立 script,不并入 build)
-- [ ] `frontend/vitest.config.ts`(或并入 `vite.config.ts` 顶部加 `/// <reference types="vitest/config" />` 后挂 `test:` 字段,二选一,v2 明确):`environment: 'jsdom'`、`setupFiles: ['./src/test/setup.ts']`、`globals: true`、复用 vite 的 `@vitejs/plugin-react` + alias `@`(用 `mergeConfig` 从 vite.config 引入,避免抄配置漂移)
-- [ ] `frontend/tsconfig.app.json`(v2 新增,否则 `tsc -b` 红闸):`types` 从 `["vite/client"]` 改为 `["vite/client","vitest/globals","@testing-library/jest-dom"]`
-- [ ] `frontend/src/test/setup.ts`:`import '@testing-library/jest-dom'` + `afterEach(cleanup)`
-- [ ] `frontend/src/test/test-utils.tsx`(v2 新增,组件测必需):导出 `renderWithProviders(ui)`,内含新建 `QueryClient`(`defaultOptions.queries.retry:false`、`staleTime:Infinity` 防 refetch)+ `ToastProvider`;组件测通过它 render,否则 `useMyBookings`/`useToast` 抛「must be used within Provider」
-- [ ] `frontend/src/api/types.ts`:加 `BookingEndPayload { feedback?: Record<string, unknown> }`(对齐后端,虽 02 不用但类型完整)
-- [ ] `frontend/src/api/endpoints.ts`:加 `startBooking(id)`(POST /start)—— **只建 start**(`endBooking`/`noShowBooking` 留切片03)
-- [ ] `frontend/src/hooks/queries.ts`:加 `useStartBooking()` mutation(`useApiMutation` 骨架),`onSuccess` 失效 `BOOKING_WRITE_KEYS`(`[qk.bookings, ["device-schedule"], qk.myBookings]`,v2 修正:用既有数组,非 `qk.deviceSchedule` 函数)
-- [ ] `frontend/src/pages/bookings-page.tsx` `MyBookingsView`:`pending` 行加「确认开机」`Button`(调 `useStartBooking`),成功 toast「已开机」+ 失败 toast `apiErrorMessage(err)`;非 pending 行不渲染按钮(in_service/done/cancelled/no_show/confirmed 无按钮)
-- [ ] `frontend/src/pages/__tests__/my-bookings-view.test.tsx`(用 `renderWithProviders` + `vi.mock("@/hooks/queries")` stub `useMyBookings`/`useStartBooking`,v2):`pending` 行渲染按钮 / 点击触发 `startBooking`(断言 mutation 调用)/ 成功 toast 出现 / 非 pending 行无按钮 / `isPending` 时按钮 disabled
-- [ ] `cd frontend && npm run build` + `npx oxlint` + `npx vitest run` 全绿(0 warnings/errors;若 oxlint 扫 test 目录报 warning,在 `.oxlintrc.json` 加 `overrides` 把 `**/*.test.tsx` 的 `no-unused-vars` 调为 `warn`/`off`)
+- [x] `frontend/package.json`:devDeps 加(锁最低版本,v2)`vitest@^3` / `@testing-library/react@^16.1.0`(React 19 支持)/ `@testing-library/jest-dom@^6` / `@testing-library/user-event@^14` / `jsdom@^25`;`scripts` 加 `"test": "vitest run"`(独立 script,不并入 build)
+- [x] `frontend/vitest.config.ts`(或并入 `vite.config.ts` 顶部加 `/// <reference types="vitest/config" />` 后挂 `test:` 字段,二选一,v2 明确):`environment: 'jsdom'`、`setupFiles: ['./src/test/setup.ts']`、`globals: true`、复用 vite 的 `@vitejs/plugin-react` + alias `@`(用 `mergeConfig` 从 vite.config 引入,避免抄配置漂移)
+- [x] `frontend/tsconfig.app.json`(v2 新增,否则 `tsc -b` 红闸):`types` 从 `["vite/client"]` 改为 `["vite/client","vitest/globals","@testing-library/jest-dom"]`
+- [x] `frontend/src/test/setup.ts`:`import '@testing-library/jest-dom'` + `afterEach(cleanup)`
+- [x] `frontend/src/test/test-utils.tsx`(v2 新增,组件测必需):导出 `renderWithProviders(ui)`,内含新建 `QueryClient`(`defaultOptions.queries.retry:false`、`staleTime:Infinity` 防 refetch)+ `ToastProvider`;组件测通过它 render,否则 `useMyBookings`/`useToast` 抛「must be used within Provider」
+- [x] `frontend/src/api/types.ts`:加 `BookingEndPayload { feedback?: Record<string, unknown> }`(对齐后端,虽 02 不用但类型完整)
+- [x] `frontend/src/api/endpoints.ts`:加 `startBooking(id)`(POST /start)—— **只建 start**(`endBooking`/`noShowBooking` 留切片03)
+- [x] `frontend/src/hooks/queries.ts`:加 `useStartBooking()` mutation(`useApiMutation` 骨架),`onSuccess` 失效 `BOOKING_WRITE_KEYS`(`[qk.bookings, ["device-schedule"], qk.myBookings]`,v2 修正:用既有数组,非 `qk.deviceSchedule` 函数)
+- [x] `frontend/src/pages/bookings-page.tsx` `MyBookingsView`:`pending` 行加「确认开机」`Button`(调 `useStartBooking`),成功 toast「已开机」+ 失败 toast `apiErrorMessage(err)`;非 pending 行不渲染按钮(in_service/done/cancelled/no_show/confirmed 无按钮)
+- [x] `frontend/src/pages/__tests__/my-bookings-view.test.tsx`(用 `renderWithProviders` + `vi.mock("@/hooks/queries")` stub `useMyBookings`/`useStartBooking`,v2):`pending` 行渲染按钮 / 点击触发 `startBooking`(断言 mutation 调用)/ 成功 toast 出现 / 非 pending 行无按钮 / `isPending` 时按钮 disabled
+- [x] `cd frontend && npm run build` + `npx oxlint` + `npx vitest run` 全绿(0 warnings/errors;若 oxlint 扫 test 目录报 warning,在 `.oxlintrc.json` 加 `overrides` 把 `**/*.test.tsx` 的 `no-unused-vars` 调为 `warn`/`off`)
 
 ---
 

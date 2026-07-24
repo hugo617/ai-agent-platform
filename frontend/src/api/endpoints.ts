@@ -442,6 +442,15 @@ export async function cancelBooking(id: string): Promise<void> {
   await api.post(`/bookings/${id}/cancel`);
 }
 
+// POST /bookings/{id}/start (device-poweron 切片 02) — pending → in_service,
+// backend fills ``started_at``. Body-less POST (pure status flip). Slice 03
+// adds endBooking/noShowBooking with the store buttons (queries.ts 的
+// useStartBooking 注释处有完整 slice 边界说明,此处不重复)。
+export async function startBooking(id: string): Promise<Booking> {
+  const { data } = await api.post<Booking>(`/bookings/${id}/start`);
+  return data;
+}
+
 export async function fetchDeviceSchedule(
   deviceId: string,
   start?: string,
