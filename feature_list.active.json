@@ -17,18 +17,7 @@
       "priority": 64,
       "area": "业务实体",
       "title": "设备开机/结束/爽约状态机动作(不含硬件下发)",
-      "user_visible_behavior": "客户/店员点击「开机」按钮 → 设备订单从 pending 流转到 in_service,记录开始时间;点击「结束」→ 流转到 done,记录结束时间 + 可填反馈;爽约按钮 → 流转到 no_show。⚠️ 当前只到状态机层,「点击开机 → 设备真开启」的硬件下发链路(MQTT/WS/寻址)留空,归于未来 backlog",
-      "status": "in_progress",
-      "verification": [
-        "后端:POST /bookings/{id}/start(pending/confirmed→in_service,填 started_at)、POST /bookings/{id}/end(in_service→done,填 ended_at + 写 feedback JSONB)、POST /bookings/{id}/no-show(→no_show);状态机纯函数(参考 StorePilot booking_state.py,6 条合法跳转)+ ConflictError → HTTP 409",
-        "权限:start 可由 customer(自己的 booking 且 customer_id 非空)或 store_staff+ 触发;walk-in booking(customer_id 为空)必须由 store_staff+ start,customer 端无权;end/no-show 仅 store_staff+;所有端点强制 tenant_id + customer_id(如适用)校验防越权",
-        "前端:customer 端 BookView「确认开机」按钮真调 API(StorePilot 仅 Toast 是已知占位,本项目必须补真调用);门店端预约列表的「结束」「爽约」操作按钮",
-        "pytest:覆盖 6 条合法跳转 + 非法跳转 409 + 权限矩阵 + customer own 校验 + **walk-in booking(customer_id 为空)customer start 应 403,store_staff start 应 200** + started_at/ended_at 自动填充 + feedback 落库 + alembic check 无 drift",
-        "cd frontend && npm run build 通过 + oxlint 0 warnings"
-      ],
-      "notes": "设备功能系列 4/4 收官。**重要边界:硬件下发链路不在范围** —— 与 StorePilot slice-30-d3-iot-static.md 阶段 1 妥协一致(MQTT broker/WebSocket 实时流/设备寻址下发均推迟)。devices 表本次不加 mqtt_topic/hw_address 字段(YAGNI,等真上 IoT 时一次迁移补)。devices.serial_number 已有,未来硬件寻址可复用。开机动作不加 StorePilot 的 risk_ack/血压采集前置(那是医疗设备特定业务,本项目作为通用 SaaS 脚手架不该假设客户业务有此合规要求)。**walk-in booking 边界:customer_id 为空的预约只能由 store_staff+ start,customer 端无权触发(避免匿名预约被冒认)**。本 feature 写入的 started_at/ended_at/feedback 字段由 device-booking feature 先建好 schema(见其 notes),本 feature 不需要再加迁移列。未来要落地真实硬件下发时,新开 feature(预计 priority 65+,area=基础设施或 IoT)。依赖:[device-booking]。",
-      "plan": "harness/docs/plan-device-poweron.md",
-      "depends_on": "device-booking"
+      "status": "passing"
     },
     {
       "id": "device-booking",
@@ -59,17 +48,10 @@
       "status": "passing"
     },
     {
-      "id": "db-design-cleanup-and-scenario-rebuild",
-      "priority": 59,
-      "area": "数据库",
-      "title": "数据库设计修复 + 大健康连锁场景清空重建(12 项问题修复)",
-      "status": "passing"
-    },
-    {
       "id": "_milestone_archived",
       "priority": 0,
       "area": "里程碑",
-      "title": "[已归档 58 条 passing,见 archive/features-passing-archive.json]",
+      "title": "[已归档 59 条 passing,见 archive/features-passing-archive.json]",
       "status": "passing"
     }
   ],

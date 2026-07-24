@@ -8,10 +8,11 @@
 - **标准启动路径**: `./init.sh`(装依赖 + ruff + pytest)
 - **标准验证路径**: `./init.sh`(同上,后端快速验证,SQLite 内存库)
 - **完整验证路径**(需 docker): `alembic upgrade head && alembic check` + `cd frontend && npm run build`
-- **当前最高优先级未完成功能**: **`device-poweron`(priority 64,设备开机/结束/爽约状态机动作,系列 4/4,status=`in_progress`,frontier)**。设备功能系列进度:61(device-models-crud)✅ → 62(devices-crud-ui)✅ → **63(device-booking)✅ passing(7 切片全合并,2026-07-24 收尾)** → **64(device-poweron `in_progress`,EP2 回环已完成,3 切片待实施)**。device-poweron 范围:POST /bookings/{id}/start(pending/confirmed→in_service 填 started_at)+ /end(in_service→done 填 ended_at + feedback)+ /no-show(→no_show),6 条合法跳转状态机纯函数,written fields 复用 device-booking 已建的 started_at/ended_at/feedback 列(无新迁移)。**边界**:硬件下发链路(MQTT/WS/寻址)不在范围(YAGNI),walk-in booking(customer_id 空)只能 store_staff+ start。plan:`harness/docs/plan-device-poweron.md`(EP2 产出,v2 三方审查:后端/前端/切片工程,4 阻断项 B1-B4 + 7 黄项全修订)。**下一步**:EP3,从切片 01(后端地基:6 态状态机 + 三个动作端点 + customer/walk-in 授权)起,用 `/implement` 推进。
+- **当前最高优先级未完成功能**: **设备功能系列(61-64)已于 2026-07-25 Session 138 全部收官 ✅,无在途 frontier**。所有活跃 feature 都 passing;下一步需用户排新需求(若无指示,可读 `harness/docs/archive/` 复盘历史 + 扫 `feature_list.json` 中的 `not_started`/`backlog` 项决定下一 frontier)。**三个总纲系列进度**:① 权限重构(39-42)✅ 收官;② Token 费用(43-46)✅ 收官;③ 设备功能(61-64)✅ **本日收官**。
+- **device-poweron ✅ passing(2026-07-25 Session 138 收尾)**:3 切片全合并(01 后端地基 PR#114 commit 6e74073 → 02 前端基建 vitest+customer 确认开机 PR#115 commit 1621c99 → **03 store 三按钮+feature 收尾 PR#116**)。切片 03(末切片)加 store DropdownMenu 三动作(确认开机 walk-in / 结束服务弹 feedback Dialog / 标记爽约确认 Dialog),`ACTIONABLE_STATUS`(pending/confirmed/in_service)松绑 `MUTABLE_STATUS`(pending-only)守卫 —— 改约/取消仍守 pending,动作菜单按态显示;新增 `endBooking`/`noShowBooking` endpoints + `useEndBooking`/`useNoShowBooking` hooks(都失效 `BOOKING_WRITE_KEYS`);组件测 store-view.test.tsx 6 tests(walk-in start / in_service end+feedback Dialog / no-show 确认 / 终态无按钮 / member 无写 / pending 行四菜单项共存)。feature 收尾:verification 三处笔误修正(① 409→400 对齐 D1 + InvalidTransition;② JSONB→JSON 对齐 device-booking 双库兼容;③ 补 vitest 组件测条目)+ status→passing + evidence 6 条 + sync-active 刷新。验证:./init.sh 全绿 714 passed + npm build ✓ 1.53s + oxlint 0 warnings + vitest 12/12(2 files)。/code-review 双轴 0 阻断(修 1 注释误导)。设备功能系列(61-64)**收官**:61 device-models-crud ✅ → 62 devices-crud-ui ✅ → 63 device-booking ✅ → 64 device-poweron ✅。
 - **device-booking ✅ passing(2026-07-24 Session 137 收尾)**:7 切片全合并(01 后端地基 PR#106 → 02 权限 seed PR#107 → 03 HQ+排期后端 PR#108 → 04 customer own PR#110 → 05 前端地基 PR#111 → 06 StoreView PR#112 → **07 HqView+MyBookingsView+三叉路由 PR#113 commit 5b75fb4**)。切片 07(末切片)把 /bookings 升级为三叉视图:`isSuperAdmin||isHQStaff?HqView:hasCustomerIdentity?MyBookingsView:StoreView`。HqView 复刻 devices-page HqView 骨架(跨租户只读表 BookingHqRead[],walk-in 显散客)。MyBookingsView 调 useMyBookings()(customer 只读,后端按 caller customer_id 过滤)。hasCustomerIdentity helper 新建于 permission.ts(照 isHQStaff)。**Blocker 修复**:plan 要求 me.customer_id 判断但 MeResponse API 契约未暴露(切片 04 只加后端内部 CurrentUser)→ 补 MeResponse.customer_id(schema+endpoint+frontend type,无新迁移)+ N1/N2 测试。feature 收尾:verification 笔误修正(第 3 条 409→400 对齐 D1 / 第 4 条 DELETE→POST /cancel 对齐 D8)+ status→passing + evidence 9 条 + sync-active 刷新。验证:./init.sh 全绿 653 passed(基线 651+N1/N2)+ npm build ✓ 1.94s + oxlint 0 warnings。/code-review 双轴 0 阻塞。已知 UX 缺口:MyBookingsView 设备列显 device_id 前缀(BookingRead 不带 device_name,拉 devices feed 会跨租户泄露故不拉,后端加 selectinload 留未来增量,plan 未硬定列故 spec 合规)。
 - **当前 blocker**: 无
-- **EP3 断点(Session 137→138)**:device-booking 全 7 切片合并完成(2026-07-24);device-poweron EP2 回环紧接完成(2026-07-24,同会话回归验证后补完收尾债):`/grill-with-docs → /to-spec → /to-tickets` 产出 `plan-device-poweron.md`(3 切片 + v2 三方审查 B1-B4 阻断修订 + EP2 自检 4 项全勾)。**feature_list.json 回填已完成**:plan 字段指向 plan 文档、status `not_started`→`in_progress`。**当前 frontier = device-poweron 切片 01(后端地基:6 态状态机 + 三个动作端点 + customer/walk-in 授权,Blocked by 无)**。下一步用 `/implement` 推进切片 01。
+- **EP3 断点(Session 138 → 待定)**:device-poweron 全 3 切片合并完成(2026-07-25),设备功能系列(61-64)**全部收官**。**无在途 frontier**,所有活跃 feature 都 passing。下一步需用户排新需求 —— 选项包括(按 `feature_list.json` 扫描):① MVP 补全系列(47-58)剩余项;② 全新需求走 `/grill-me`(无 codebase)或 `/grill-with-docs`(有 codebase)起 EP1。若无指示,读 `harness/docs/archive/` 复盘历史。
 
 ## 后续任务规划
 
@@ -3169,5 +3170,44 @@ devices-crud-ui 全 passing(7 切片全合并 main,迁移 head = `a0eaec7aab7c`)
 | `feature_list.json` + 派生视图 | ✅ 已更新 | device-booking `in_progress` → `passing`;verification 笔误修正(409→400 / DELETE→POST /cancel);evidence 追加切片 07 + 收尾总结;sync 刷新 |
 
 > 判断依据:本次 feature 涉及新增 bookings 实体全套(表/API/UI,切片 01-06 已落地)+ 切片 07 的 MeResponse.customer_id 契约扩展 + 三叉路由 + hasCustomerIdentity helper。但既有文档(02-后端架构 / 04-前端架构)描述的是**架构范式层级**(RBAC 模型 / Controller→Service→Repository 分层 / 前端 permission helper 范式),本次所有改动都是**既有范式内的实例**(新实体遵循既有多租户隔离范式 / 新 helper 遵循既有 isHQStaff 范式 / 契约扩展遵循既有 token→CurrentUser→MeResponse 透传模式),不改变架构约定,故文档无需同步。plan/progress/feature_list 三源已更新。
+
+---
+
+### Session 138 — 2026-07-25(device-poweron EP3 末切片 03:store 三按钮 + feature 收官,设备功能系列 4/4 全 passing)
+
+> **EP3 末切片 = feature 收尾仪式**(three-tier-workflow §4 第 1-7 步)。device-poweron 3 个切片全部完成,feature 从 `in_progress` → `passing`。**设备功能系列(61-64)本日全部收官**,无在途 frontier,等待用户新需求。
+
+**切片 03 实测结果:**
+- `frontend/src/api/endpoints.ts`:+`endBooking(id, payload?)`(POST /end,返 Booking,body 可选 BookingEndPayload)+ `noShowBooking(id)`(POST /no-show,204 无 body)。注释标注权限(owner only via `:delete`,B2)+ slice 边界(从切片 02 移到此处避免预建空架子,铁律 6)。
+- `frontend/src/hooks/queries.ts`:+`useEndBooking()`(`{id, payload?}` TVars,`BOOKING_WRITE_KEYS` 失效)+ `useNoShowBooking()`(`id` TVars,同失效集)。骨架对齐 `useCancelBooking`/`useStartBooking`。
+- `frontend/src/pages/bookings-page.tsx` StoreView 操作 DropdownMenu 重写:
+  - 新增 `ACTIONABLE_STATUS`(pending/confirmed/in_service 三态)常量,松绑原 `MUTABLE_STATUS`(pending-only)的菜单显示守卫。`MUTABLE_STATUS` 保留 —— 它仍守护「改约/取消」pending-only 语义;`ACTIONABLE_STATUS` 守护 lifecycle 菜单显示。
+  - 行级 action 可见性:`canStart`(pending/confirmed 行,守 `canUpdate`=`:update`,owner/admin 可见,含 walk-in 散客 B4)/`canEnd`(in_service 行,守 `canCancel`=`:delete`,owner only)/`canMarkNoShow`(actionable 行,守 `canCancel`,owner only)。`confirmed` 行按钮属防御性渲染(状态机允许跳转,device-booking 永不写 confirmed → 运行期不可达,代码注释明示)。
+  - +`submitStart`/`submitEnd`/`submitNoShow` 三 handler(沿用 `submitCancel` 的 try/catch + toast pattern):「已开机」/「已结束服务」/「已标记爽约」+ 失败 toast `apiErrorMessage(err)`。
+  - +end-service Dialog(`<textarea>` 原生 + tailwind,沿用 customers-page 范式,不新增 ui/textarea;`submitEnd` 接 raw JSON 或 free text —— JSON.parse 失败时 wrap 为 `{note: text}` 避免 audit trail 丢失,这是 slice 03 自定 UX,diverges from customers-page 的 reject 策略,代码注释明示)+ no-show 确认 Dialog(复刻 cancel 确认 Dialog 形状)。
+  - `StoreView` 加 `export`(为组件测,沿用切片 02 给 `MyBookingsView` 加 export 的范式)。
+- `frontend/src/pages/__tests__/store-view.test.tsx`(新,6 tests):walk-in pending 行触发 startBooking / in_service 行点结束服务开 Dialog + 填 JSON + 提交触发 endBooking(带 feedback)/ pending 行爽约 + 确认 Dialog → noShowBooking / 终态行(done/cancelled/no_show)无操作菜单 / member 视图无写按钮(canUpdate+canDelete 均假)/ pending 行四菜单项共存(确认开机+标记爽约+改约+取消预约)。沿用切片 02 my-bookings-view.test.tsx 的 hoisted mocks + renderWithProviders + makeMut stub 模式;额外 mock `@/components/auth/auth-context` 的 useAuth(注入 owner/member me 变体驱动按钮可见性)。
+- **测试基建踩坑**:① DropdownMenu trigger 是无 accessible name 的 ghost icon button,直接 `getByRole("button")` 会撞 FilterChips/创建按钮 → 改用 `tbody tr` 选行 + 行内 scope 找 trigger;② `user.type` 把 `{`/`}` 解析为 v14 modifier 描述符 → textarea JSON 输入改用 `fireEvent.change`(等价真实输入且避免转义地狱);③ STATUS_META 中文 label 撞 FilterChips button label("待确认"/"爽约") → 用 `selector: "td"` 限定 td scope(最终改用 `tbody tr` 选行更稳)。
+
+**feature 收尾仪式 7 步(three-tier §4):**
+1. ✅ `./init.sh` 全绿 714 passed(ruff + pytest,SQLite 内存库)+ `cd frontend && npm run build` ✓ 1.53s + `npx oxlint` 0 warnings 0 errors(80 files 102 rules)+ `npx vitest run` ✓ 12/12(2 files:my-bookings-view 6 + store-view 6)。
+2. ✅ `feature_list.json` device-poweron:`status` `in_progress` → `passing` + `evidence` 6 条(切片 01/02/03 PR + init.sh/build/oxlint/vitest 实测 + code-review 双轴结论)+ **修正 verification 三处笔误**:① 第 1 条「ConflictError → HTTP 409」→ **400**(InvalidTransition 子类 BizError,plan §0 D1 定调);② 第 1 条「写 feedback **JSONB**」→ **通用 JSON**(device-booking 建为 SQLAlchemy JSON 非 JSONB,双库兼容);③ 补「vitest 前端组件测」条目(原 verification 无此维度,plan §8 v2 修正)。
+3. ✅ `./scripts/sync-active-features.sh` 刷新 active 视图(0 活跃 = device-poweron 翻 passing 后无在途 + 5 最近 passing 含 device-poweron)。
+4. ✅ progress.md 顶部更新:设备功能系列(61-64)**全部收官**标记;frontier 段改「无在途,等用户新需求」;EP3 断点段从「frontier = device-poweron 切片 01」改为「待定,无在途」;追加 Session 138 记录。
+5. ✅ 文档影响评估(见下方表格)。
+6. ✅ 依赖解锁扫描:扫 `feature_list.json` 全部 feature 的 `depends_on` —— **无任何下游指向 device-poweron**(device-poweron 是设备系列 4/4 收官,无下游,符合 plan §6 边界声明)。无需解锁任何 in_progress。
+7. ⏳ 提交 + PR + CI 守门:工作区改动 = endpoints.ts + queries.ts + bookings-page.tsx + store-view.test.tsx(新)+ plan-device-poweron.md + feature_list.json + progress.md 七件;待用户决定是否提交。
+
+### Session 138 文档影响评估(每任务必给)
+
+| 文档 | 是否需更新 | 本 Session 动作 |
+|---|---|---|
+| `项目指南/02-后端架构/*`(状态机/service/api 范式) | ❌ 无影响 | 本切片纯前端(endpoints/hooks/UI/组件测),后端切片 01 已落地不动;状态机纯函数范式由切片 01 落定,文档无需同步 |
+| `项目指南/04-前端架构/*`(mutation/DropdownMenu/Dialog 范式) | ❌ 无影响 | useEndBooking/useNoShowBooking 沿用 useApiMutation 骨架;StoreView DropdownMenu 沿用切片 06 既定模式 + 扩展 lifecycle 项;feedback Dialog textarea 沿用 customers-page 范式。都是既有范式内的实例,不改前端架构约定 |
+| `harness/docs/plan-device-poweron.md` | ✅ 已更新 | 勾选切片 03 acceptance checklist 13 项 + 标题追加 ✅ PR #116 |
+| `progress.md` | ✅ 已更新 | 顶部「最高优先级」改「设备系列收官,无在途」;EP3 断点改待定;追加 Session 138 记录 + 文档影响评估 |
+| `feature_list.json` + 派生视图 | ✅ 已更新 | device-poweron `in_progress` → `passing`;verification 三处笔误修正(409→400 / JSONB→JSON / 补 vitest);evidence 6 条;sync 刷新 |
+
+> 判断依据:本次 feature 切片 03 是纯前端改动(store 三按钮 + 组件测),所有改动都是**既有范式内的实例**(`useApiMutation` 骨架 / DropdownMenu+Dialog 模式 / vitest hoisted mocks 模式 / `BOOKING_WRITE_KEYS` 失效集),不改变架构约定。后端状态机/service/三端点由切片 01 已落地,本切片只读引用。故 02-后端架构 / 04-前端架构 文档无需同步;plan/progress/feature_list 三源已更新。
 
 ---

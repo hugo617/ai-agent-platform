@@ -262,7 +262,7 @@
 
 ---
 
-### 切片 03 — store「确认开机(walk-in)/结束/爽约」按钮 + feature 收尾(末切片)
+### 切片 03 — store「确认开机(walk-in)/结束/爽约」按钮 + feature 收尾(末切片) ✅(PR #116)
 
 **Blocked by:** 02(vitest 基建 + customer 按钮模式 + `useStartBooking`/`startBooking` 定型)
 
@@ -271,20 +271,20 @@
 > **切片内部分两段防过载**(v2,工程审查建议):先做 store 三按钮 + 配套 hooks/endpoints + 组件测全绿(本切片 AC 前 5 条),再跑收尾 7 步(后 7 条)。
 
 **Acceptance criteria:**
-- [ ] `frontend/src/api/endpoints.ts`:加 `endBooking(id, payload?)`(POST /end,返 Booking)+ `noShowBooking(id)`(POST /no-show)(v2:从切片02 移到此处,随 store 按钮一起建,避免预建空架子)
-- [ ] `frontend/src/hooks/queries.ts`:加 `useEndBooking()` / `useNoShowBooking()` mutation(`useApiMutation` 骨架),`onSuccess` 失效 `BOOKING_WRITE_KEYS`
-- [ ] `frontend/src/pages/bookings-page.tsx` `StoreView` 操作 `DropdownMenu`(v2 修正 B3 + B4):`pending`/`confirmed` 行加「确认开机」项(走 `useStartBooking`,守 `canUpdate`=`bookings:update`,owner/admin 可见);`in_service` 行加「结束」项(打开 feedback Dialog,可选 `<textarea>`(原生 + tailwind,沿用项目惯例,见 customers-page.tsx,不新增 ui/textarea)→ `endBooking(id, {feedback})`);`pending`/`confirmed`/`in_service` 行加「爽约」项(确认 Dialog → `noShowBooking(id)`);终态(done/cancelled/no_show)无动作项。**「结束」「爽约」都用 `canDelete`**(`hasPermission(me,"bookings","delete")`,沿用现有 `canCancel` 变量,B3 修正 —— 只有 owner 可见,admin 隐藏因无 `:delete`)
-- [ ] **松绑 `MUTABLE_STATUS` 守卫**:`StoreView` 的 DropdownMenu 显示条件从 `MUTABLE_STATUS.has(b.status)` 改为允许动作态(pending/confirmed/in_service 显示对应动作项,终态隐藏)
-- [ ] 成功 toast「已开机」/「已结束服务」/「已标记爽约」+ 失败 toast `apiErrorMessage(err)`(非法态 400 时透传后端信息)。`confirmed` 行按钮属**防御性渲染**(状态机允许跳转,但 device-booking 永不写 confirmed → 运行期不可达,加代码注释说明)
-- [ ] `frontend/src/pages/__tests__/store-view.test.tsx`(用 `renderWithProviders` + `vi.mock("@/hooks/queries")`,v2):「确认开机」按钮在 pending 行渲染(walk-in 场景)/ 「结束」按钮在 in_service 行渲染 + 点击开 Dialog + 提交触发 `endBooking`(带 feedback)/ 「爽约」按钮 + 确认 / 终态行无按钮 / member 视图无写按钮(`canUpdate`/`canDelete` 均假)
-- [ ] `./init.sh` 全绿(ruff + pytest 全章节 A–P + test_booking_state)
-- [ ] `cd frontend && npm run build` + `npx oxlint` + `npx vitest run` 全绿
-- [ ] `alembic upgrade head && alembic check` 本地通过(若本地 docker 起不来,依赖 CI;**本 feature 无新迁移**,迁移链 head 不变,依赖 CI 验无 drift)
-- [ ] `feature_list.json`:`device-poweron` status=`passing` + `evidence` 字段写实测结果(P 章节数 + test_booking_state 边数 + 组件测数 + init.sh/npm build/oxlint/vitest 全绿)+ **修正 verification 三处笔误**(v2:① 409→400;② JSONB→JSON;③ 补 vitest 组件测条目)
-- [ ] `./scripts/sync-active-features.sh` 刷新 active 视图
-- [ ] `progress.md` 加 Session 记录 + 更新「当前最高优先级未完成功能」(device-poweron 收官 → 下一个 frontier)+ **设备功能系列(61-64)收官标记**
-- [ ] 文档影响评估(4 行格式)
-- [ ] **依赖解锁扫描**:扫 `feature_list.json`,凡 `depends_on` 指向 `device-poweron` 的下游 feature —— 本 feature 是系列 4/4 收官,**预期无下游**(若意外有,按 three-tier §5 置 in_progress)
+- [x] `frontend/src/api/endpoints.ts`:加 `endBooking(id, payload?)`(POST /end,返 Booking)+ `noShowBooking(id)`(POST /no-show)(v2:从切片02 移到此处,随 store 按钮一起建,避免预建空架子)
+- [x] `frontend/src/hooks/queries.ts`:加 `useEndBooking()` / `useNoShowBooking()` mutation(`useApiMutation` 骨架),`onSuccess` 失效 `BOOKING_WRITE_KEYS`
+- [x] `frontend/src/pages/bookings-page.tsx` `StoreView` 操作 `DropdownMenu`(v2 修正 B3 + B4):`pending`/`confirmed` 行加「确认开机」项(走 `useStartBooking`,守 `canUpdate`=`bookings:update`,owner/admin 可见);`in_service` 行加「结束」项(打开 feedback Dialog,可选 `<textarea>`(原生 + tailwind,沿用项目惯例,见 customers-page.tsx,不新增 ui/textarea)→ `endBooking(id, {feedback})`);`pending`/`confirmed`/`in_service` 行加「爽约」项(确认 Dialog → `noShowBooking(id)`);终态(done/cancelled/no_show)无动作项。**「结束」「爽约」都用 `canDelete`**(`hasPermission(me,"bookings","delete")`,沿用现有 `canCancel` 变量,B3 修正 —— 只有 owner 可见,admin 隐藏因无 `:delete`)
+- [x] **松绑 `MUTABLE_STATUS` 守卫**:`StoreView` 的 DropdownMenu 显示条件从 `MUTABLE_STATUS.has(b.status)` 改为允许动作态(pending/confirmed/in_service 显示对应动作项,终态隐藏)
+- [x] 成功 toast「已开机」/「已结束服务」/「已标记爽约」+ 失败 toast `apiErrorMessage(err)`(非法态 400 时透传后端信息)。`confirmed` 行按钮属**防御性渲染**(状态机允许跳转,但 device-booking 永不写 confirmed → 运行期不可达,加代码注释说明)
+- [x] `frontend/src/pages/__tests__/store-view.test.tsx`(用 `renderWithProviders` + `vi.mock("@/hooks/queries")`,v2):「确认开机」按钮在 pending 行渲染(walk-in 场景)/ 「结束」按钮在 in_service 行渲染 + 点击开 Dialog + 提交触发 `endBooking`(带 feedback)/ 「爽约」按钮 + 确认 / 终态行无按钮 / member 视图无写按钮(`canUpdate`/`canDelete` 均假)
+- [x] `./init.sh` 全绿(ruff + pytest 全章节 A–P + test_booking_state)—— 714 passed
+- [x] `cd frontend && npm run build` + `npx oxlint` + `npx vitest run` 全绿 —— build 1.53s + oxlint 0 warnings + vitest 12/12(2 files)
+- [x] `alembic upgrade head && alembic check` 本地通过(若本地 docker 起不来,依赖 CI;**本 feature 无新迁移**,迁移链 head 不变,依赖 CI 验无 drift)
+- [x] `feature_list.json`:`device-poweron` status=`passing` + `evidence` 字段写实测结果(P 章节数 + test_booking_state 边数 + 组件测数 + init.sh/npm build/oxlint/vitest 全绿)+ **修正 verification 三处笔误**(v2:① 409→400;② JSONB→JSON;③ 补 vitest 组件测条目)
+- [x] `./scripts/sync-active-features.sh` 刷新 active 视图
+- [x] `progress.md` 加 Session 记录 + 更新「当前最高优先级未完成功能」(device-poweron 收官 → 下一个 frontier)+ **设备功能系列(61-64)收官标记**
+- [x] 文档影响评估(4 行格式)
+- [x] **依赖解锁扫描**:扫 `feature_list.json`,凡 `depends_on` 指向 `device-poweron` 的下游 feature —— 本 feature 是系列 4/4 收官,**预期无下游**(若意外有,按 three-tier §5 置 in_progress)—— 已扫,无下游
 
 ---
 

@@ -1,7 +1,7 @@
 {
   "project": "ai-agent-platform",
   "description": "已 passing feature 的历史归档(完整字段保留,审计用)",
-  "count": 58,
+  "count": 59,
   "features": [
     {
       "id": "data-export",
@@ -1443,6 +1443,27 @@
         "后端无报错:uvicorn log 全程 200 OK,无 exception/traceback。"
       ],
       "notes": "第三梯队 V2 大投入。现状:单 ReAct agent(create_react_agent),一个 agent 调不了另一个,无工作流编排。差异化卖点(复杂业务智能体协作)。成本高(重写编排层+多agent状态管理+调试)。详细 plan 执行到时写。独立模块。实际实现:Supervisor 模式 MVP(单轮路由),Swarm 模式/supervisor 回收循环/handoff 二级转交/实时 specialist 来源显示 留作增强(详见 plan §不做的事)。"
+    },
+    {
+      "id": "db-design-cleanup-and-scenario-rebuild",
+      "priority": 59,
+      "area": "数据库",
+      "title": "数据库设计修复 + 大健康连锁场景清空重建(12 项问题修复)",
+      "user_visible_behavior": "修复数据库设计问题:钱包开关生效、Agent 软删除保历史、死字段/死表清理、关键 FK 补齐、失败消息落库。后续阶段重建演示场景并产出对外文档",
+      "status": "passing",
+      "plan": "harness/docs/plan-db-revamp-and-scenario-rebuild.md",
+      "verification": [
+        "阶段1(完成):S1/S3/M1-M6/L1-L3 共12项修复 + 迁移 b4c5d6e7f8a9",
+        "阶段1验证:./init.sh 全绿(ruff + 535 passed); frontend build 成功",
+        "阶段1验证:alembic upgrade head 在真 PG 成功 + alembic check 无 drift",
+        "阶段2(完成):config.py 加 demo_llm/embedding_api_key + demo_login 字段;.env.example 加占位",
+        "阶段3(完成):seed_demo.py 重写——读 settings demo key、客户扩到8条含4态、新增 _seed_embedding_config/_seed_documents/_seed_orchestrator、reset 清理同步",
+        "阶段4(完成):/auth/login-hint 公开端点(dev/test 返值,prod 返 null)+ LoginHint schema + 前端 login-page useEffect 预填 + fetchLoginHint",
+        "阶段5(完成):docs/demo-scenario/ 4份对外文档(业务说明/账号清单/使用剧本/复现指南)",
+        "阶段2-4验证:./init.sh 全绿(535 passed); frontend build 成功(tsc+vite); ruff All checks passed"
+      ],
+      "evidence": "Session 110-111: 阶段1-5 全部完成。./init.sh 535 passed; alembic upgrade head 真 PG 成功 + check 无 drift; seed_demo --reset 端到端跑通 + 幂等(created=0/exists=34); frontend build 成功。演示数据:3门店+8档案(4态)+7Agent(含编排)+3文档+2组织。Session 112: test_llm_config 修复(断言改 settings.* 而非写死 deepseek-chat) + 非思考模式开关(LLM_THINKING_ENABLED, graph.py 4调用点自动生效); ./init.sh 539 passed",
+      "notes": "阶段1-5全部完成(Session 110-111)。阶段1:12项DB修复+迁移b4c5d6e7f8a9(真PG验证+check无drift)。阶段2:config/env.example+真PG数据重建(seed跑通+幂等)。阶段3:seed重写(客户4态/知识库/编排器,修复文档卡网络+orchestrator跨租户2个bug)。阶段4:登录预fill(/auth/login-hint端点+前端,prod返null安全)。阶段5:docs/demo-scenario/ 4份对外文档。Session 112追加:test_llm_config修复(用户配deepseek-v4-flash触发)+全局非思考模式开关LLM_THINKING_ENABLED(graph.py注入extra_body thinking disabled)。决策:向量/RAG搁置(DeepSeek无embedding端点,需OpenAI key,用户暂不配)。"
     }
   ]
 }
