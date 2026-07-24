@@ -8,12 +8,12 @@
 - **标准启动路径**: `./init.sh`(装依赖 + ruff + pytest)
 - **标准验证路径**: `./init.sh`(同上,后端快速验证,SQLite 内存库)
 - **完整验证路径**(需 docker): `alembic upgrade head && alembic check` + `cd frontend && npm run build`
-- **当前最高优先级未完成功能**: **bookings-page-split(priority 65,工程化)已于 2026-07-25 Session 139 收官 ✅**。下一个 frontier = **device-models-admin-ui(priority 66,业务实体)** —— 设备型号目录管理页(super_admin 后台前端页),设备功能系列补遗(61 device-models-crud 的范围漂移修复:verification 写了「前端管理页」但 evidence 剥离给 62,62 实际只做门店下拉,缺口一直未补;后端 CRUD 全齐,本 feature 仅前端)。
+- **当前最高优先级未完成功能**: **device-models-admin-ui(priority 66,业务实体)** —— 设备型号目录管理页(super_admin 后台前端页)。**EP2 回环已完成(2026-07-25 Session 140)**:plan 文档 `harness/docs/plan-device-models-admin-ui.md` 落地,含 PRD 主体 + 2 个实施切片(切片 01 前端地基 types/endpoints/hooks / 切片 02 UI 层 page+route+nav + 新组件 KeySpecRows + vitest)。status `not_started → in_progress`(当前 frontier)。**下一步:EP3 切片 01(`/implement`)**——纯前端补遗,后端 CRUD 全齐不触碰。grill 6 决策:specs 用结构化 key-value 行编辑器(全量版多类型 string/number/boolean)、unit_cost 货币格式(formatCurrency 已存在)、brand datalist 联想、列表加名称/品牌搜索框、nav 挂平台分组 platformOnly、路由裸挂 RequireSuperAdmin(对齐 /tenants 范式)。
 - **bookings-page-split ✅ passing(2026-07-25 Session 139 收尾)**:巡检产出任务([codebase-health-log.md] 2026-07-25 候选 1,Strong)。`hugo` 暗号触发 → 三源验真(device 系列 61-64 全 passing)+ 跑 `/improve-codebase-architecture` 巡检(8 候选:Strong ×4 拆 Booking 三视图 / 状态机 cancel 未并入 / end-no_show auth 推 body / 前端 9 page 零单测;Worth exploring ×4 Customer principal 参数透传 / HQ Panorama mirror / 三叉路由 4 page 复制 / union endpoint cast)→ HTML 报告归档 `~/.cache/ai-agent-platform-architecture-reviews/2026-07-25.html` → grill 候选 1(4 决策:bookings/ 子文件夹 / 测试跟 view 走 / 只拆不碰 cast / 现有测试全绿+补 HqView smoke)→ 产 plan-bookings-page-split.md → 登记 feature priority 65 → 实施:bookings-page.tsx(1373 行)拆成 bookings/ 文件夹 5 module + barrel(bookings-page.tsx barrel re-export + index.tsx 三叉路由 + store-view.tsx StoreView+4Dialog + hq-view.tsx HqView export + my-bookings-view.tsx + shared.tsx STATUS_META/filters/date helpers/ScheduleGridCard)+ 测试挪位(git mv 保留历史)+ 新增 hq-view.test.tsx smoke 3 tests。验证:vitest 15/15(12 现有 + 3 新 HqView)+ build 1.75s(bookings-page chunk 18.98 kB 与拆分前一致)+ oxlint 0 + tsc -b 绿 + init.sh 714 passed。/code-review 双轴:Standards 无 hard violation,1 judgement call(shared.tsx 轻微 Divergent Change,ScheduleGridCard 只 StoreView 用却混共享 → 登记独立后续候选);Spec 核心达成,处置 1 冲突(§10.10 无新 TODO vs D3 注释标注委托 → TODO(candidate-X) 改 Note(candidate-X))+ 订正 plan 文字(cast 5→7 处 / shared.ts→shared.tsx)。7 处 as cast 原样保留(委托候选 8)。**巡检本身也是 stage 5 首次完整走通**(Step 0-3 全跑:Explore → HTML 报告 → grill 产 plan → 实施)。
 - **device-poweron ✅ passing(2026-07-25 Session 138 收尾)**:3 切片全合并(01 后端地基 PR#114 commit 6e74073 → 02 前端基建 vitest+customer 确认开机 PR#115 commit 1621c99 → **03 store 三按钮+feature 收尾 PR#116**)。切片 03(末切片)加 store DropdownMenu 三动作(确认开机 walk-in / 结束服务弹 feedback Dialog / 标记爽约确认 Dialog),`ACTIONABLE_STATUS`(pending/confirmed/in_service)松绑 `MUTABLE_STATUS`(pending-only)守卫 —— 改约/取消仍守 pending,动作菜单按态显示;新增 `endBooking`/`noShowBooking` endpoints + `useEndBooking`/`useNoShowBooking` hooks(都失效 `BOOKING_WRITE_KEYS`);组件测 store-view.test.tsx 6 tests(walk-in start / in_service end+feedback Dialog / no-show 确认 / 终态无按钮 / member 无写 / pending 行四菜单项共存)。feature 收尾:verification 三处笔误修正(① 409→400 对齐 D1 + InvalidTransition;② JSONB→JSON 对齐 device-booking 双库兼容;③ 补 vitest 组件测条目)+ status→passing + evidence 6 条 + sync-active 刷新。验证:./init.sh 全绿 714 passed + npm build ✓ 1.53s + oxlint 0 warnings + vitest 12/12(2 files)。/code-review 双轴 0 阻断(修 1 注释误导)。设备功能系列(61-64)**收官**:61 device-models-crud ✅ → 62 devices-crud-ui ✅ → 63 device-booking ✅ → 64 device-poweron ✅。
 - **device-booking ✅ passing(2026-07-24 Session 137 收尾)**:7 切片全合并(01 后端地基 PR#106 → 02 权限 seed PR#107 → 03 HQ+排期后端 PR#108 → 04 customer own PR#110 → 05 前端地基 PR#111 → 06 StoreView PR#112 → **07 HqView+MyBookingsView+三叉路由 PR#113 commit 5b75fb4**)。切片 07(末切片)把 /bookings 升级为三叉视图:`isSuperAdmin||isHQStaff?HqView:hasCustomerIdentity?MyBookingsView:StoreView`。HqView 复刻 devices-page HqView 骨架(跨租户只读表 BookingHqRead[],walk-in 显散客)。MyBookingsView 调 useMyBookings()(customer 只读,后端按 caller customer_id 过滤)。hasCustomerIdentity helper 新建于 permission.ts(照 isHQStaff)。**Blocker 修复**:plan 要求 me.customer_id 判断但 MeResponse API 契约未暴露(切片 04 只加后端内部 CurrentUser)→ 补 MeResponse.customer_id(schema+endpoint+frontend type,无新迁移)+ N1/N2 测试。feature 收尾:verification 笔误修正(第 3 条 409→400 对齐 D1 / 第 4 条 DELETE→POST /cancel 对齐 D8)+ status→passing + evidence 9 条 + sync-active 刷新。验证:./init.sh 全绿 653 passed(基线 651+N1/N2)+ npm build ✓ 1.94s + oxlint 0 warnings。/code-review 双轴 0 阻塞。已知 UX 缺口:MyBookingsView 设备列显 device_id 前缀(BookingRead 不带 device_name,拉 devices feed 会跨租户泄露故不拉,后端加 selectinload 留未来增量,plan 未硬定列故 spec 合规)。
 - **当前 blocker**: 无
-- **EP3 断点(Session 139 → 待定)**:bookings-page-split(巡检候选 1)合并完成后,**下一个 frontier = device-models-admin-ui(priority 66)**。该 feature 是设备功能系列补遗(61 的范围漂移修复),后端 CRUD 全齐(已实测端到端),仅前端 super_admin 管理页缺口。开工时走 EP2 回环(/grill-with-docs → /to-spec → 切片)。**巡检剩余 7 候选**(candidate 2-8)未做,plan-bookings-page-split.md §8 列了 Out of Scope,可按 friction 优先级逐个起独立任务。
+- **EP3 断点(Session 140 → 待定)**:**device-models-admin-ui(priority 66)EP2 回环已完成**(2026-07-25 Session 140),plan 文档 `harness/docs/plan-device-models-admin-ui.md` 含 2 切片。下一步 = **EP3 切片 01(frontier,无 blocker)**——前端地基:`api/types.ts` 加 DeviceModelRead/Create/Update + `api/endpoints.ts` 加 admin 版 fetch/create/update/delete + `hooks/queries.ts` 加 useDeviceModelsAdmin + 三个 mutation。切片 01 acceptance 见 plan 文档。切片 02(blocked by 01)= page+route+nav+KeySpecRows 组件+vitest。**巡检剩余 7 候选**(candidate 2-8)未做,plan-bookings-page-split.md §8 列了 Out of Scope,可按 friction 优先级逐个起独立任务。
 
 ## 后续任务规划
 
@@ -3320,3 +3320,77 @@ sync-active 刷新后发现 active.json 出现 `device-models-admin-ui not_start
 > 判断依据:本次是巡检产出 + 纯前端机械搬运重构,所有改动都在**既有范式内**(vitest 基建 / view module 组织 / lazy import / shared module 抽取),不改变架构约定。bookings/ 子文件夹是单 feature 体量的局部决策,不上升为全局约定。巡检剩余 7 候选(candidate 2-8)在 plan §8 Out of Scope 列明,各自独立后续任务。
 
 ---
+
+## Session 140(2026-07-25):device-models-admin-ui EP2 回环(grill → to-spec → to-tickets)
+
+### 入口:EP2 起点
+
+按用户指令启动 EP2 回环:`device-models-admin-ui`(priority 66,业务实体)走 `/grill-with-docs → /to-spec → /to-tickets` 一个回环内完成,产出 `harness/docs/plan-device-models-admin-ui.md` 的「实施切片」段。
+
+**定位三层入口**(three-tier §1):plan 文档 `harness/docs/plan-device-models-admin-ui.md` **不存在** → 在 EP2 起点(非 EP3)。前置 feature `device-models-crud`(priority 61)已 passing,依赖满足。
+
+**开工流程**(AGENTS.md):`pwd` ✓ + 读 progress.md(知 Session 139 收官 bookings-page-split,本 feature 是下一 frontier)+ 读 feature_list.active.json(本 feature priority 66,唯一 not_started,选为 frontier)+ git log(知 bookings-page-split 已 merge)+ init.sh 全绿(714 passed)+ plan 文档不存在 → EP2 起点。
+
+### 上下文采集(进 grill 前的事实基础)
+
+读了 7 个关键文件定边界:
+- **后端 CRUD 全齐**:`app/api/v1/device_models.py`(POST/PUT/DELETE 守 `require_super_admin()`;GET 开放按 `platform_role` 分叉返 `DeviceModelRead` 全字段 vs `DeviceModelPublicRead` {id,name,specs})+ `app/schemas/device_model.py`(`DeviceModelCreate/Update/Read` 字段:name/brand/supplier/unit_cost(Decimal)/specs(dict[str,Any] 默认 {}))+ `app/models/device_model.py`(表已建,部分唯一索引 + Numeric(12,2)+ JSONB)
+- **前端范式参考**:`frontend/src/pages/groups-page.tsx`(同平台级 super_admin 范式,react-hook-form+zod+Controller,546 行)+ `devices-page.tsx`(设备业务 UI 模式)+ `components/auth/require-super-admin.tsx`(守卫范例,`me.platform_role !== "super_admin"` → Navigate to="/")+ `components/layout/nav-items.ts`(平台分组 `platformOnly: true` 范式)+ `lib/permission.ts`(isSuperAdmin helper)+ `App.tsx`(RequireSuperAdmin 路由块)
+- **前端现有 device-models 基建**:types.ts 只有 `DeviceModelPublic`(下拉视图);endpoints.ts 只有 `fetchDeviceModels()` 返 `DeviceModelPublic[]`;queries.ts 只有 `useDeviceModels()` + `qk.deviceModels` cache key。**缺**:admin 版完整字段 types + CRUD endpoints + 4 个 hooks
+- **辅助确认**:`formatCurrency(n)` 已存在(`lib/format.ts:65`)无需新建;`useApiMutation<TVars,TData>(fn,[invalidateKeys])` 签名清晰
+
+### Grill 阶段(/grill-with-docs → /grilling + /domain-modeling)
+
+调 skill,一次一问,带推荐答案。6 个决策点烤清:
+
+| 决策 | 用户选择 | 备注 |
+|---|---|---|
+| **切片粒度** | 拆 2 片(地基 + UI) | 推荐。types/endpoints/hooks 是无 UI 基建可独立 verify,page+route+nav 是可见层。对齐 devices-crud-ui 的「地基+UI」切法但更轻(无后端) |
+| **specs 编辑器** | 结构化 key-value 行编辑器,**全量版多类型** | 用户否决「原始 JSON textarea」推荐,选全量版(string/number/boolean Select)。后端 dict[str,Any] 契约允许任意 JSON 值,堵住单类型反而不一致 |
+| **KeySpecRows 边界** | 全量版多类型 | 空 key 过滤 + 重复 key 后者覆盖 + 按 type 序列化 + 反序列化 round-trip |
+| **unit_cost 呈现** | 货币格式 | 推荐。formatCurrency(Number(m.unit_cost)),Decimal→string→Number 安全 |
+| **brand/supplier** | brand 加 datalist 联想 + supplier 纯 Input | HTML 原生 datalist,无新组件 |
+| **列表** | + 名称/品牌搜索框 | client-side filter,一个 useState,参照 groups-ui 无分页 |
+| **测试** | KeySpecRows 单测(推荐) | 序列化逻辑是主要复杂点,page 不强制(对齐 devices-page 现状) |
+
+### To-Spec + To-Tickets(一个回环内完成)
+
+`/to-spec` 落 PRD 主体到 `harness/docs/plan-device-models-admin-ui.md`:
+- §1 Problem:缺口溯源(61 verification 写了管理页但 evidence 剥离给 62,62 只做门店下拉,super_admin 管理页一直未交付)
+- §4.5 决策表 18 行(已落定无 TODO/待定)+ §4.6 已查证事实 10 行(避免 EP3 返工)
+- §5 测试:KeySpecRows 4 类 case 单测,page 不强制
+- §6 切片规划:2 片
+- §7 对抗式审查自评:不达复杂任务阈值(6 改 + 2 新 < 10,不涉鉴权/迁移/跨服务),跳过
+
+`/to-tickets` 产「实施切片」段:
+- **切片 01**(frontier,无 blocker):前端地基 types+endpoints+hooks,5 条 acceptance
+- **切片 02**(blocked by 01):UI 层 page+route+nav+KeySpecRows+vitest,8 条 acceptance
+- 依赖图:01 → 02 线性串行,无环
+- EP2 收尾自检 gate:4 项全过(依赖无环 / 每片有 acceptance / 首片可开工 / plan 主体决策落定)
+
+### EP2 收尾(three-tier §3 + §5)
+
+- ✅ plan 文档「实施切片」段齐全(2 片)+ 自检 gate 4 项过
+- ✅ `feature_list.json`:回填 `plan` 字段指向 plan 文档(让「是否进过 EP2」可判)+ `status` `not_started` → `in_progress`(当前 frontier,依赖 device-models-crud 已 passing,符合 §5 规则 2)+ notes 尾部更新(EP2 已完成,下一步 EP3 切片 01)
+- ✅ `./scripts/sync-active-features.sh` 已跑(刷新 active 视图:1 活跃 + 5 最近 passing,active.json 内 status/plan 字段已正确同步)
+- ✅ `progress.md`:顶部「最高优先级」段更新(EP2 已完成,下一步 EP3 切片 01)+ EP3 断点段更新(从「下一 frontier = device-models-admin-ui」改为「EP2 已完成,EP3 切片 01 起点」)+ 追加本 Session 140 记录
+
+### 关键边界声明(守 WIP=1 不越界)
+
+- **不触碰后端**:`app/` / alembic / `device-models-crud` 已落地代码全不动
+- **不重构 devices-page 型号下拉**:`DeviceModelPublic` 类型保留不动
+- **不进权限矩阵 UI**:`device_models` 不走 casbin,对齐 groups 平台级资源范式
+- **不补 seed 脚本**:种子数据是 dev 体验问题,非产品能力
+- **不加分页 / 服务端搜索**:表预期小,client-side filter 足够
+
+### Session 140 文档影响评估
+
+| 文档 | 是否需更新 | 本 Session 动作 |
+|---|---|---|
+| `项目指南/02-后端架构/*` | ❌ 无影响 | 本 feature 纯前端,后端 CRUD 由 device-models-crud 已落地不动;无新表 / 无迁移 / 无状态机 |
+| `项目指南/04-前端架构/*` | ❌ 无影响 | 本 feature 沿用既有范式(react-hook-form+zod+Controller / useApiMutation 骨架 / RequireSuperAdmin 守卫 / platformOnly nav / formatCurrency)。唯一新组件 `KeySpecRows` 是 device-models 业务专属,不上升为架构约定 |
+| `harness/docs/plan-device-models-admin-ui.md` | ✅ 已创建 | EP2 产物:PRD 主体 + 2 切片 + 依赖图 + 自检 gate |
+| `progress.md` | ✅ 已更新 | 顶部「最高优先级」改 EP2 已完成 + 下一步 EP3 切片 01;EP3 断点更新;追加 Session 140 记录 |
+| `feature_list.json` + 派生视图 | ✅ 已更新 | 回填 `plan` 字段;`status` not_started → in_progress;notes 尾部更新;待跑 sync-active 刷新 |
+
+> 判断依据:本次 EP2 是纯规划产物(plan 文档 + feature_list 字段回填 + progress 记录),**无任何代码改动**。所有实施决策都基于已查证事实(后端 CRUD 全齐 + 前端范式参考齐备),不改变架构约定。`KeySpecRows` 是本 feature 业务专属新组件,但序列化逻辑是 dict[str,Any] 契约的必然产物,不上升为前端架构约定(其他 page 若有自由 JSON 字段才考虑抽通用组件,YAGNI)。下一步 EP3 切片 01 走 `/implement`。
