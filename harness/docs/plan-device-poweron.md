@@ -223,7 +223,7 @@
 >
 > 实施节奏:一次一个切片,用 `/implement` 推进,切片间清 context。WIP=1 仍然适用 —— 同一时刻只在一个切片上 in_progress,该切片全绿才进下一个。**前置条件**:`device-booking` 全 passing ✅(已满足,`bookings` schema + 6 态 CHECK + 三列已就位)。
 
-### 切片 01 — 后端地基:6 态状态机 + 三个动作端点 + customer/walk-in 授权 ✅(PR 待回填)
+### 切片 01 — 后端地基:6 态状态机 + 三个动作端点 + customer/walk-in 授权 ✅(PR #114,commit 6e74073)
 
 **Blocked by:** 无 —— 可立即开工(`device-booking` 已 passing,`bookings` schema 就位)
 
