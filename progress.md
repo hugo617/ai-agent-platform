@@ -8,7 +8,7 @@
 - **标准启动路径**: `./init.sh`(装依赖 + ruff + pytest)
 - **标准验证路径**: `./init.sh`(同上,后端快速验证,SQLite 内存库)
 - **完整验证路径**(需 docker): `alembic upgrade head && alembic check` + `cd frontend && npm run build`
-- **当前最高优先级未完成功能**: **`device-booking`(priority 63,设备预约订单 CRUD + 排期,系列 3/4,status=`in_progress`,EP2 回环已完成 ✅ Session 130,依赖 devices-crud-ui Session 131 收尾 passing 后解锁)**。设备功能系列进度:61(device-models-crud)✅ → 62(devices-crud-ui)✅ **全 passing(切片 01-07 全合并 main,见下方 Session 131)** → **63(device-booking `in_progress`,plan-device-booking.md 含 7 切片 + 12 决策,EP3 从切片 01「Booking 表 + 时段冲突 + 状态守卫 CRUD」接 `/implement`)** → 64(device-poweron)。切片级状态真相源 = `harness/docs/plan-device-booking.md` 的 acceptance criteria checklist(7 切片全 `[ ]` 待 EP3 勾)。最新合并到 main:`devices-crud-ui 切片 07`(feature 收官,PR #101 commit 6105ae0)。**下一步**:device-booking 切片 01(后端地基 Booking 表 + 时段冲突 400 + 状态守卫 + 4 端点),走 `/implement`(EP3,从 frontier 切片接)。
+- **当前最高优先级未完成功能**: **`device-booking`(priority 63,设备预约订单 CRUD + 排期,系列 3/4,status=`in_progress`,EP3 进行中)**。设备功能系列进度:61(device-models-crud)✅ → 62(devices-crud-ui)✅ 全 passing → **63(device-booking `in_progress`,plan-device-booking.md 含 7 切片 + 12 决策)** → 64(device-poweron)。切片级状态真相源 = `harness/docs/plan-device-booking.md` 的 acceptance criteria checklist。切片进度:**切片 01(后端地基)✅ 已合并 PR #106 commit f2bfc93** → **切片 02(权限 seed + backfill)✅ 已合并 PR #107** → 切片 03(HQ 全景 + 排期聚合后端)待做(frontier)。**下一步**:device-booking 切片 03(HQ 全景视图 GET / 改端点体内分流 + 排期聚合端点 GET /devices/{id}/schedule),走 `/implement`(EP3,从 frontier 切片接)。
 - **当前 blocker**: 无
 
 ## 后续任务规划
@@ -3082,5 +3082,51 @@ devices-crud-ui 全 passing(7 切片全合并 main,迁移 head = `a0eaec7aab7c`)
 4. git log --oneline -5 看最近发生了什么
 5. 运行 ./init.sh 装依赖 + 跑基础验证
 6. 如果基础验证失败,先修基础,不要在坏起点上叠新功能
+---
+
+### Session 132 — 2026-07-24(device-booking EP3 切片 02:权限 seed + 老租户 backfill)
+
+- **本轮目标**: device-booking 切片 02 —— 给 owner/admin/member 三个系统角色 seed bookings 权限 + `menu:bookings`,并给**现存所有租户**幂等 backfill(功能上线即用,不破坏其他 perm)。复刻 devices-crud-ui 切片 02 范式(PR #92)。前置:main 已在 f2bfc93(切片01已合并),工作区干净。
+- **实施**(4 文件,纯后端 + 测试,无迁移):
+  - `app/services/permission_service.py`:
+    - `DEFAULT_OWNER_PERMS` 加 `bookings:read/create/update/delete`;`DEFAULT_ADMIN_PERMS` 加 `bookings:read/create/update`(no delete —— admin 不能 cancel,复刻 customer/device 约定);`DEFAULT_MEMBER_PERMS` 加 `bookings:read`(read-only)。
+    - `DEFAULT_MENU_PERMS["owner"|"admin"|"member"]` 各加 `"bookings"`(对应 `menu:bookings` nav 入口)。
+    - `OBJ_CN` / `MENU_CN` 加 `"bookings" → "预约"`(catalogue 中文标签,`test_menu_cn_covers_all_seeded_menu_codes` 自动校验覆盖)。
+    - 新增 `backfill_bookings_perms_for_existing_tenants(db)` 函数:结构完全复刻 `backfill_devices_perms_for_existing_tenants`,scope guardrail 只动 `(obj="bookings", *)` + `("menu","bookings")`。三层幂等(catalogue upsert / grant no-op / casbin rebuild from SCD2)。
+  - `scripts/backfill_bookings_perms.py`:独立一次性脚本(async main + `AsyncSessionLocal` + `--dry-run` + 调上述函数 + 打印每租户 `+N new grants`)。CI 不跑,部署 slice 02 代码后手动执行一次。
+  - `tests/test_bookings_api.py` 新增 K 章节(3 测试):
+    - `_seed_backfill_target_tenant`(K1):造无 bookings 策略的新租户 + 三系统角色 + 预置 `customers:read`(三角色)+ `devices:read`(owner)作 K6 对照。
+    - `test_k_backfill_grants_bookings_perms_correctly`(K2+K3+K4):owner 拿 4 api + menu = 5;admin 3+1=4;member 1+1=2(stats 计数校验)+ owner 全 bookings + menu:bookings 通过 `permission_service.check` + member 明确**拒绝** `bookings:create`(anti-overgrant)。
+    - `test_k_backfill_idempotent`(K5):再跑 backfill → stats[tenant]==0 + RolePermission 行 id 集合不变(无重复 grant)。
+    - `test_k_backfill_preserves_other_perms`(K6):backfill 前后 `customers:read`/`devices:read` 仍通过 check,且 `bookings:read` 开始工作。
+  - `tests/test_permission_service.py`:3 个 catalogue 完整性 pinning 测试同步更新期望集(加 bookings):
+    - `test_default_owner_perms_cover_full_catalogue`:owner 期望集加 bookings 4 个 CRUD。
+    - `_ALL_BUSINESS_MENUS` 常量(owner/admin 共用)加 `"bookings"`。
+    - `test_default_menu_perms_member_only_sees_business_menus`:member menu 期望集加 `"bookings"`。
+    - 这 3 个测试是硬编码 `set(...) ==` 断言,加 perm 必须同步(非 scope creep,复刻 devices slice 02 当时的处理)。
+- **验证**:
+  - `ruff check` clean(app/ + tests/ + scripts/ 全绿)。
+  - `pytest` 全量 **638 passed, 0 failed**。
+  - `./init.sh` ✅ 基础验证通过(ruff + pytest 全绿)。
+  - 无迁移(纯权限数据 seed + backfill,alembic 链不变,head 仍 `8423ee2df128`)。
+- **/code-review 双轴结果**:
+  - **Spec axis ✅**:5 条 acceptance criteria 全满足,忠实复刻 devices 基线,无 scope creep,OBJ_CN/MENU_CN 更新属必需。
+  - **Standards axis**:全部为判断性/复刻范式,非 blocker。最有价值发现 = menu-perm loop 的 `add_policy` 在 SCD2 grant 之前(与「宪法」SCD2→casbin→audit 顺序相反)+ 冗余(后接 `sync_role_permissions_to_casbin` 全量重建)。但这是**完全复刻已合并的 devices 切片 02 代码**(PR #92),若单独改 bookings 版本会引入 Divergent Change(两 backfill fn 不一致),应在未来统一重构 devices+bookings 两版(超 WIP=1 范围)。其他发现(`select(Tenant)` 越层 / 无 audit / Duplicated Code / dry-run 弱化)均复刻 devices 范式。
+- **已知风险**: 无功能风险。menu-perm casbin 累积重复 policy 行的潜在问题(若 adapter 不去重)与 devices 既存代码同源,K5 测试验证 DB 层幂等性通过。统一重构待未来健康度巡检。
+- **文档影响评估**: 见下方。
+- **下一步最佳动作**: device-booking 切片 03(HQ 全景视图 + 排期聚合端点后端)—— `BookingHqRead` schema + `selectinload` 防 N+1 + `GET /` `GET /{id}` 改端点体内分流(移除切片 01 临时 router-level `require_permission`) + `GET /devices/{id}/schedule` 排期聚合。走 `/implement`。
+
+### Session 132 文档影响评估(每任务必给)
+
+| 文档 | 是否需更新 | 本 Session 动作 |
+|---|---|---|
+| `项目指南/02-后端架构/06-权限模型RBAC.md`(DEFAULT_*_PERMS 表) | ⚠️ 需更新(但属收尾切片统一做) | 本切片**不动**(与 devices slice 02 当时处理一致:权限表文档在 feature 收官切片 07 统一回填,避免每切片改文档)。bookings perm 已在 `permission_service.py` 代码注释自描述 |
+| `harness/docs/plan-device-booking.md` | ✅ 需更新 | 已勾选切片 02 五条 acceptance checklist + 标题追加 ✅ PR #107 |
+| `progress.md` | ✅ 需更新 | 顶部「最高优先级」改为切片 02 已合并 + 切片 03 待做;追加本 Session 132 记录 |
+| `feature_list.json` | ✅ 需更新 | evidence 追加切片 02 实测记录(EP3 切片级进度,status 仍 `in_progress` —— feature 未收官) |
+| `项目指南/02-后端架构/03-数据库与ORM.md` | ❌ 无影响 | 无表/迁移变更(纯权限 seed + backfill 数据层) |
+
+> 判断依据:本切片只动权限 seed + backfill(无 schema/migration/API 契约变更),权限矩阵文档(06)本可在收尾切片 07 统一回填(对齐 devices slice 02 当时不单独改文档的处理)。
+
 ---
 
