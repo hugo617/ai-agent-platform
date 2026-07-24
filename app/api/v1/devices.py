@@ -25,13 +25,23 @@ returns **200, not 201**: the device resource already exists, bind is an
 assignment; ``DeviceBindResponse.already_bound`` distinguishes "newly bound"
 from "idempotent repeat". unbind returns **204 even when no binding exists**
 (DELETE idempotency — no 404 for the already-unbound case).
+
+Schedule (``GET /{device_id}/schedule``, device-booking slice 03) is the
+day-grouped booking grid for one device. It lives on the *devices* router
+because the URL is a device sub-resource, but the data is bookings — so the
+endpoint delegates to ``BookingService.get_device_schedule``. Guarded by
+``require_permission("bookings", "read")`` (it's a bookings read view).
+Returns ``dict[date, list[BookingRead]]``; a foreign tenant's device → 404.
 """
 
-from fastapi import APIRouter, Depends, status
+from datetime import UTC, date, datetime, timedelta
+
+from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import CurrentUser, get_current_user, require_permission
 from app.core.database import get_db
+from app.schemas.booking import BookingRead
 from app.schemas.device import (
     DeviceBindRequest,
     DeviceBindResponse,
@@ -40,6 +50,7 @@ from app.schemas.device import (
     DeviceRead,
     DeviceUpdate,
 )
+from app.services.booking_service import BookingService
 from app.services.device_service import DeviceService
 
 router = APIRouter(prefix="/devices", tags=["devices"])
@@ -147,6 +158,63 @@ async def delete_device(
         user.user_id,
         user.tenant_id,
         device_id,
+        platform_role=user.platform_role,
+    )
+
+
+# ------------------------------------------------------ schedule (booking slice 03)
+#
+# ``GET /devices/{device_id}/schedule`` returns the day-grouped booking grid
+# for one device — ``{ "2030-01-01": [booking, ...], ... }``. Lives on the
+# devices router (device sub-resource URL) but serves bookings data, so it
+# delegates to ``BookingService.get_device_schedule``. Guarded by
+# ``bookings:read`` (the schedule IS a bookings read view). The service
+# enforces that ``device_id`` is a *live* device in the caller's tenant — a
+# foreign / missing device collapses to 404 (read-side enumeration defence,
+# same as GET /devices/{id}).
+#
+# ``response_model=dict[date, list[BookingRead]]`` serialises ``date`` keys to
+# ISO strings (``"2030-01-01"``) — exactly what the frontend slot-box grid
+# indexes on. Only days with ≥1 booking appear; empty days are omitted.
+
+
+@router.get(
+    "/{device_id}/schedule",
+    response_model=dict[date, list[BookingRead]],
+    dependencies=[Depends(require_permission("bookings", "read"))],
+)
+async def get_device_schedule(
+    device_id: str,
+    # Default window: today ±7 days (plan). Computed at request time so the
+    # "current week" grid is always live. ``start`` inclusive, ``end``
+    # exclusive on the date axis (the service applies a half-open range on
+    # ``scheduled_start_at``).
+    start: datetime | None = Query(
+        default=None,
+        description="Range start (inclusive). Defaults to today-7d 00:00 UTC.",
+    ),
+    end: datetime | None = Query(
+        default=None,
+        description="Range end (exclusive). Defaults to today+7d 00:00 UTC.",
+    ),
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict[date, list[BookingRead]]:
+    """Day-grouped bookings for one device in ``[start, end)``.
+
+    Returns ``{date: [booking, ...]}`` — only days with ≥1 booking appear.
+    A foreign tenant's device → 404 (no enumeration leak). Default window is
+    today ±7 days.
+    """
+    today = datetime.now(UTC).date()
+    range_start = start or datetime.combine(today - timedelta(days=7), datetime.min.time(), tzinfo=UTC)
+    range_end = end or datetime.combine(today + timedelta(days=7), datetime.min.time(), tzinfo=UTC)
+    return await BookingService(db).get_device_schedule(
+        user.user_id,
+        user.tenant_id,
+        device_id,
+        range_start,
+        range_end,
         platform_role=user.platform_role,
     )
 

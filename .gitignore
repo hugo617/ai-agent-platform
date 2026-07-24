@@ -22,6 +22,11 @@ wheels/
 .installed.cfg
 *.egg
 
+# Lockfile: requirements.txt is the single source of truth (CI installs via
+# pip). uv.lock is a local-only artifact some developers generate; never
+# commit it — it would create a second, drift-prone source of truth.
+uv.lock
+
 # Virtual environments
 .venv/
 venv/

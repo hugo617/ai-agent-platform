@@ -1,10 +1,10 @@
-"""Booking service — tenant-scoped CRUD over device-usage reservations (slice 01).
+"""Booking service — tenant-scoped CRUD over device-usage reservations.
 
-This slice delivers the within-store path only: owner / admin can
-create / read / update / cancel bookings for their store's devices; member is
-read-only; cross-tenant operations collapse to 404 (no enumeration leak —
-same defence as DeviceService). HQ panorama, schedule-grid, and the customer
-own endpoint land in slices 03 / 04.
+Within-store path (slice 01): owner / admin can create / read / update /
+cancel bookings for their store's devices; member is read-only; cross-tenant
+operations collapse to 404 (no enumeration leak — same defence as
+DeviceService). HQ panorama, schedule-grid, and the customer own endpoint land
+in slices 03 / 04.
 
 Three integrity guards worth calling out (see plan-device-booking.md §4.5):
 
@@ -32,10 +32,32 @@ cannot be "rescheduled" back to life (and ``device_id`` is immutable on
 update — change-device = cancel + recreate).
 
 Permission guards use ``permission_service.require`` (owner / admin write,
-member read). Slice 03 will replace the router-level read guard with the
-endpoint-body HQ branch; slice 01 keeps read behind ``require_permission(
-"bookings", "read")`` at the router.
+member read). Slice 03 replaces the router-level read guard with the
+endpoint-body HQ branch: cross-tenant viewers (super_admin / hq_staff) skip
+the per-tenant ``require`` and instead get the panorama via
+``list_all_with_meta`` / ``get_all_with_meta`` → ``BookingHqRead``.
+
+Slice 03 also adds ``get_device_schedule`` — the per-device windowed read
+backing the schedule-grid endpoint, aggregated by day into
+``dict[date, list[BookingRead]]``. Day aggregation is done in Python
+(``itertools.groupby``) rather than SQL ``GROUP BY DATE(...)`` so SQLite
+tests and real Postgres behave identically (``DATE()`` semantics drift on
+tz-aware datetimes across the two).
 """
+
+# ``from __future__ import annotations`` makes every annotation a lazily-
+# evaluated string. Required here because this class defines a method named
+# ``list`` (slice 01), which would otherwise shadow the builtin ``list``
+# *inside the class body* — and ``get_device_schedule``'s return annotation
+# ``dict[date, list[BookingRead]]`` (defined later in the body) would then
+# subscript the method, not the builtin, raising
+# ``TypeError: 'function' object is not subscriptable`` at class-definition
+# time. String annotations defer that lookup to call sites (module scope),
+# where ``list`` is still the builtin.
+from __future__ import annotations
+
+from datetime import date, datetime
+from itertools import groupby
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -45,11 +67,12 @@ from app.repositories.customer import CustomerProfileRepository
 from app.repositories.device import DeviceRepository
 from app.schemas.booking import (
     BookingCreate,
+    BookingHqRead,
     BookingRead,
     BookingUpdate,
 )
 from app.services.errors import BizError, NotFoundError
-from app.services.permission_service import permission_service
+from app.services.permission_service import is_cross_tenant_viewer, permission_service
 
 # Bookings that may be rescheduled via PUT. Only ``pending`` is mutable
 # (D10): once a booking has moved past pending (cancelled / in_service /
@@ -73,6 +96,33 @@ class BookingService:
     async def _to_read(self, booking: Booking) -> BookingRead:
         data = {c.name: getattr(booking, c.name) for c in booking.__table__.columns}
         return BookingRead.model_validate(data)
+
+    async def _to_hq_read(self, booking: Booking) -> BookingHqRead:
+        """Build the HQ panorama DTO from a booking whose tenant/device/customer
+        relationships are already loaded (by ``list_all_with_meta`` /
+        ``get_all_with_meta``). Reading ``booking.tenant.name`` here is safe
+        because the repository ``selectinload``-ed them — no lazy load, no
+        ``MissingGreenlet``.
+
+        ``*_name`` fall back to None if the relationship is unloaded or the
+        related row is gone — a walk-in booking has no ``customer``, and a
+        booking whose device was hard-deleted (FK SET NULL) has no ``device``;
+        the HQ view still shows the booking.
+
+        Note: ``device_name`` is sourced from ``Device.serial_number`` —
+        devices have no ``name`` column (``serial_number`` IS their business
+        identifier). The field is named ``device_name`` for frontend symmetry
+        with ``tenant_name`` / ``customer_name``.
+        """
+        data = {c.name: getattr(booking, c.name) for c in booking.__table__.columns}
+        tenant = getattr(booking, "tenant", None)
+        device = getattr(booking, "device", None)
+        customer = getattr(booking, "customer", None)
+        data["tenant_name"] = getattr(tenant, "name", None)
+        # Device's display identifier is its serial number.
+        data["device_name"] = getattr(device, "serial_number", None)
+        data["customer_name"] = getattr(customer, "name", None)
+        return BookingHqRead.model_validate(data)
 
     async def _get_live_booking(
         self, booking_id: str, tenant_id: str
@@ -177,11 +227,23 @@ class BookingService:
         actor_id: str,
         tenant_id: str,
         platform_role: str | None = None,
-    ) -> list[BookingRead]:
-        """All bookings in the caller's tenant (slice 01 — within-store only).
+    ) -> list[BookingRead] | list[BookingHqRead]:
+        """Bookings for the caller.
 
-        Slice 03 will add the HQ panorama branch (cross-tenant viewers).
+        Cross-tenant viewers (super_admin / hq_staff) get the HQ panorama —
+        every tenant's bookings as ``BookingHqRead`` with tenant/device/
+        customer names. No per-tenant ``require`` runs for them: hq_staff has
+        no tenant role, and the read bypass lives in
+        ``permission_service.check`` (``hq_staff`` + ``read`` short-circuit;
+        ``super_admin`` bypass).
+
+        Tenant roles (owner / admin / member) get their own tenant's bookings
+        as ``BookingRead`` after ``require("bookings", "read")`` (member
+        passes because the default perms grant ``bookings:read``).
         """
+        if is_cross_tenant_viewer(platform_role):
+            bookings = await self.repo.list_all_with_meta()
+            return [await self._to_hq_read(b) for b in bookings]
         await permission_service.require(
             actor_id,
             tenant_id,
@@ -198,9 +260,22 @@ class BookingService:
         tenant_id: str,
         booking_id: str,
         platform_role: str | None = None,
-    ) -> BookingRead:
-        """One booking for the caller. A foreign tenant's id collapses to
-        NotFoundError (404) — no enumeration leak."""
+    ) -> BookingRead | BookingHqRead:
+        """One booking for the caller.
+
+        Cross-tenant viewers (super_admin / hq_staff) read any tenant's
+        booking via ``get_all_with_meta`` → ``BookingHqRead``; a missing id
+        collapses to NotFoundError (404), same surface as the within-store
+        path (no enumeration leak).
+
+        Tenant roles go through ``require("bookings", "read")`` +
+        ``_get_live_booking`` (tenant-scoped, so a foreign booking is 404).
+        """
+        if is_cross_tenant_viewer(platform_role):
+            booking = await self.repo.get_all_with_meta(booking_id)
+            if booking is None:
+                raise NotFoundError(f"预约不存在: {booking_id}")
+            return await self._to_hq_read(booking)
         await permission_service.require(
             actor_id,
             tenant_id,
@@ -210,6 +285,61 @@ class BookingService:
         )
         booking = await self._get_live_booking(booking_id, tenant_id)
         return await self._to_read(booking)
+
+    async def get_device_schedule(
+        self,
+        actor_id: str,
+        tenant_id: str,
+        device_id: str,
+        range_start: datetime,
+        range_end: datetime,
+        platform_role: str | None = None,
+    ) -> dict[date, list[BookingRead]]:
+        """The day-grouped booking schedule for one device, in
+        ``[range_start, range_end)``.
+
+        Returns ``{date: [booking, ...]}`` — only days with at least one
+        booking appear (empty days are omitted, not keyed to ``[]``; the
+        frontend iterates ``Object.keys``). Within each day the bookings are
+        ordered by ``scheduled_start_at`` ascending (the repo's order).
+
+        Guard: the device must be a *live* device in the caller's tenant
+        (``DeviceRepository.get_for_tenant`` filters ``is_deleted``). A
+        foreign tenant's device or a nonexistent id collapses to
+        NotFoundError (404) — this is the read-side enumeration defence the
+        plan specifies for the schedule endpoint (NOT BizError 400 like the
+        write-path device check; reads use 404 so probing "does this device
+        exist in another tenant" gets no signal).
+
+        Day aggregation is in Python (``groupby``) not SQL: the repo already
+        returns bookings ordered by ``scheduled_start_at`` asc, and
+        ``.date()`` on a tz-aware datetime is deterministic across SQLite and
+        Postgres (unlike ``func.date()`` / ``DATE()``, whose tz handling
+        differs between the two backends).
+        """
+        await permission_service.require(
+            actor_id,
+            tenant_id,
+            self.OBJECT,
+            "read",
+            platform_role=platform_role,
+        )
+        # Tenant-scoped device existence check → 404 on foreign / missing
+        # (read-path enumeration defence; mirrors GET /devices/{id}).
+        device = await self.devices.get_for_tenant(device_id, tenant_id)
+        if device is None:
+            raise NotFoundError(f"设备不存在: {device_id}")
+        bookings = await self.repo.list_for_device_schedule(
+            tenant_id, device_id, range_start, range_end
+        )
+        schedule: dict[date, list[BookingRead]] = {}
+        # groupby needs sorted input; the repo already returns ascending by
+        # scheduled_start_at, so grouping by its .date() is stable.
+        for day, group in groupby(
+            bookings, key=lambda b: b.scheduled_start_at.date()
+        ):
+            schedule[day] = [await self._to_read(b) for b in group]
+        return schedule
 
     # ---------------------------------------------------------------- write
 

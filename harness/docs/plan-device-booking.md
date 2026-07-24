@@ -247,18 +247,18 @@
 
 ---
 
-### 切片 03 — HQ 全景视图 + 排期聚合端点(后端)
+### 切片 03 — HQ 全景视图 + 排期聚合端点(后端) ✅ PR #108
 
 **Blocked by:** 01(共用 BookingService 骨架)
 
 **What it delivers:** super_admin 和 hq_staff 能看到跨所有租户的预约全景(带 tenant_name/device_name/customer_name);门店员工能查某设备的排期网格(按天聚合,某天有哪些 booking)。hq_staff 写端点返 403。
 
 **Acceptance criteria:**
-- [ ] `app/schemas/booking.py` 加 `BookingHqRead`(全景字段:tenant_name/device_name/customer_name,nullable)
-- [ ] `app/repositories/booking.py` 加 `list_all_with_meta()` / `get_all_with_meta(booking_id)`:`selectinload(Booking.tenant)` / `selectinload(Booking.device)` / `selectinload(Booking.customer)`(防 N+1 + MissingGreenlet,复刻 device 范式)+ `list_for_device_schedule` 实现按天聚合(`GROUP BY DATE(scheduled_start_at)` 或 Python 端聚合,见实施时定 —— SQLite/PG 的 DATE() 行为差异需测)
-- [ ] `app/services/booking_service.py`:`list(actor_id, tenant_id, platform_role)` / `get(...)` 接 `platform_role` 参数,用 `is_cross_tenant_viewer` 分叉返 `BookingHqRead` vs `BookingRead`;新增 `get_device_schedule(tenant_id, device_id, range_start, range_end)` 返 `dict[date, list[BookingRead]]`
-- [ ] `app/api/v1/bookings.py`:`GET /` 和 `GET /{id}` **改为端点函数体内分流**(复刻 devices.py 范式,移除切片 01 临时 router-level `require_permission("bookings","read")` 依赖);新增 `GET /api/v1/devices/{device_id}/schedule?start=&end=`(range 默认今日±7 天,要求本租户设备,跨租户 → 404)
-- [ ] `tests/test_bookings_api.py` HQ 章节:super_admin 拿全景字段且能读跨租户 booking、hq_staff 拿全景字段 + 写端点(create/update/cancel)返 403;排期章节:某设备某天 2 条 booking → 返正确聚合;无 booking 的天 → 不出现或空数组(实施时定);跨租户设备 schedule → 404
+- [x] `app/schemas/booking.py` 加 `BookingHqRead`(全景字段:tenant_name/device_name/customer_name,nullable)
+- [x] `app/repositories/booking.py` 加 `list_all_with_meta()` / `get_all_with_meta(booking_id)`:`selectinload(Booking.tenant)` / `selectinload(Booking.device)` / `selectinload(Booking.customer)`(防 N+1 + MissingGreenlet,复刻 device 范式)+ `list_for_device_schedule` 实现按天聚合(Python 端 `itertools.groupby` 聚合 —— SQLite/PG `DATE()` 在 tz-aware datetime 上语义漂移,Python `.date()` 跨库确定;实测 SCH-1/SCH-2 覆盖)
+- [x] `app/services/booking_service.py`:`list(actor_id, tenant_id, platform_role)` / `get(...)` 接 `platform_role` 参数,用 `is_cross_tenant_viewer` 分叉返 `BookingHqRead` vs `BookingRead`;新增 `get_device_schedule(tenant_id, device_id, range_start, range_end)` 返 `dict[date, list[BookingRead]]`(加 `from __future__ import annotations` 修 `list` 方法遮蔽 builtin 的注解求值 bug)
+- [x] `app/api/v1/bookings.py`:`GET /` 和 `GET /{id}` **改为端点函数体内分流**(复刻 devices.py 范式,移除切片 01 临时 router-level `require_permission("bookings","read")` 依赖);新增 `GET /api/v1/devices/{device_id}/schedule?start=&end=`(挂 devices router,range 默认今日±7 天,要求本租户设备,跨租户/不存在 → 404)
+- [x] `tests/test_bookings_api.py` HQ 章节(HQ-1~4:super_admin 全景 + 跨租户读、hq_staff 全景 + 写端点 403)+ 排期章节(SCH-1 同天聚合、SCH-2 空天省略、SCH-3 跨租户设备 404、SCH-4 不存在设备 404)
 
 ---
 
