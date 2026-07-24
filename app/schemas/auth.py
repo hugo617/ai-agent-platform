@@ -18,6 +18,12 @@ class MeResponse(BaseModel):
     # role sets. super_admin gets an empty list here and the frontend bypasses
     # (platform_role === "super_admin" short-circuits every check).
     permissions: list[str] = []
+    # Customer identity the token is bound to (slice 07). None for store-staff
+    # tokens — the frontend branches /bookings to a customer "my bookings" view
+    # when this is non-null (hasCustomerIdentity helper). Mirrors CurrentUser's
+    # customer_id (resolved from a JWT claim in deps.py); surfaced here so the
+    # SPA can drive its three-way view fork without a second round-trip.
+    customer_id: str | None = None
     # Self-service profile fields (priority 49): exposed so the profile page can
     # pre-fill display_name/real_name/phone/avatar rather than starting blank.
     # CurrentUser (from the token) carries none of these, so _build_me_response

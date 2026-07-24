@@ -45,6 +45,7 @@ can exercise the CRUD path today; production DEFAULT_*_PERMS gets them in
 slice 02.
 """
 
+import uuid
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
@@ -1760,3 +1761,43 @@ async def test_m4_endpoint_ignores_supplied_customer_id_param(
     # the param naming it.
     assert returned_ids == set(seeded["own_booking_ids"])
     assert seeded["other_booking_id"] not in returned_ids
+
+
+# ============================================================================
+# N. MeResponse.customer_id exposure (slice 07).
+#
+# The SPA's /bookings three-way fork keys off ``me.customer_id``: a customer
+# principal lands on the read-only "my bookings" view, while store staff (no
+# customer binding) stay on the store CRUD view. That requires the
+# ``GET /auth/me`` response to actually carry the token's ``customer_id`` —
+# CurrentUser has had it since slice 04, but MeResponse (the API contract) did
+# not expose it. Slice 07 surfaces it.
+#
+# Two cases: a customer-bound token sees its own customer_id in the response;
+# a store-staff token sees null (no claim). ``app_client`` is a staff principal
+# with no customer claim.
+# ============================================================================
+
+
+async def test_n1_me_response_exposes_customer_id_for_customer_principal(
+    customer_client_factory,
+):
+    """N1: a customer-bound token's GET /auth/me returns its ``customer_id`` in
+    the response body. The frontend reads this to route to MyBookingsView."""
+    own_id = f"c-{uuid.uuid4().hex}"
+    client = await customer_client_factory(customer_id=own_id)
+
+    resp = await client.get("/api/v1/auth/me", headers=AUTH)
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["customer_id"] == own_id
+
+
+async def test_n2_me_response_customer_id_null_for_store_staff(app_client):
+    """N2: a store-staff token (no customer claim) returns ``customer_id: null``
+    so the frontend's hasCustomerIdentity(me) helper correctly falls through to
+    the store CRUD view. ``app_client`` is the tenant owner — no customer_id."""
+    resp = await app_client.get("/api/v1/auth/me", headers=AUTH)
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["customer_id"] is None
