@@ -28,3 +28,25 @@ class ScopeError(BizError):
     dedicated status makes it easy for the frontend to surface a precise toast
     ("请扩大 scope 范围或联系授予者") instead of a generic 400.
     """
+
+
+class InvalidTransition(BizError):
+    """400 — a booking state-machine transition was refused.
+
+    Raised by ``booking_state.transition`` when the ``(current_state, action)``
+    pair is not one of the 6 legal edges (plan-device-poweron §0 D1/D2/D3).
+    Subclasses :class:`BizError` purely for semantic clarity — the default
+    ``BizError`` handler in ``app.main`` already maps subclasses to 400, so no
+    new global handler is needed and the status code is unchanged (this is NOT
+    the ``ScopeError`` pattern of registering a dedicated handler to override
+    the status code). Subclassing lets unit tests ``pytest.raises(InvalidTransition)``
+    for precise matching while every ``except BizError`` / ``except ValueError``
+    caller keeps working.
+    """
+
+    def __init__(self, current: str, action: str) -> None:
+        self.current = current
+        self.action = action
+        super().__init__(
+            f"非法状态跳转:当前状态「{current}」不能执行动作「{action}」"
+        )

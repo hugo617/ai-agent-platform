@@ -34,6 +34,7 @@ from app.api.deps import CurrentUser, get_current_user, require_permission
 from app.core.database import get_db
 from app.schemas.booking import (
     BookingCreate,
+    BookingEndPayload,
     BookingHqRead,
     BookingRead,
     BookingUpdate,
@@ -166,6 +167,93 @@ async def cancel_booking(
     other non-pending state → 400 (those states are owned by device-poweron's
     action endpoints)."""
     await BookingService(db).cancel(
+        user.user_id,
+        user.tenant_id,
+        booking_id,
+        platform_role=user.platform_role,
+    )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+# ------------------------------------------------------ lifecycle actions
+#
+# device-poweron slice 01: ``start`` / ``end`` / ``no-show`` advance a booking
+# through its active lifecycle. All three deliberately carry **NO**
+# router-level ``require_permission`` dependency (plan §0 B1/D7/D8) — unlike
+# ``create`` / ``update`` / ``cancel`` above, authorization is decided inside
+# the function body. ``start`` is the reason: it serves BOTH a customer
+# principal (who may carry no tenant role at all in production) and a store
+# principal, and a router-level ``require_permission("bookings", "update")``
+# would 403 the customer before the body could branch on
+# ``user.customer_id``. ``end`` / ``no-show`` only serve store principals but
+# follow the same shape for consistency (and so P-section permission tests
+# mock the same way).
+#
+# Returns: ``start`` / ``end`` → 200 + ``BookingRead`` (the client reads back
+# ``started_at`` / ``ended_at`` to refresh the UI); ``no-show`` → 204 no body
+# (a pure status flip, mirroring ``/cancel``).
+
+
+@router.post("/{booking_id}/start", response_model=BookingRead)
+async def start_booking(
+    booking_id: str,
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> BookingRead:
+    """Start a booking (pending / confirmed → in_service), recording
+    ``started_at``.
+
+    Authorization is branched in the service on ``user.customer_id``:
+    a customer principal (``customer_id`` set) must own the booking and may
+    NOT start walk-in bookings; a store principal (``customer_id`` None)
+    needs ``bookings:update`` (owner / admin, not member). See
+    ``BookingService.start`` for the full matrix.
+    """
+    return await BookingService(db).start(
+        user.user_id,
+        user.tenant_id,
+        booking_id,
+        platform_role=user.platform_role,
+        customer_id=user.customer_id,
+    )
+
+
+@router.post("/{booking_id}/end", response_model=BookingRead)
+async def end_booking(
+    booking_id: str,
+    payload: BookingEndPayload | None = None,
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> BookingRead:
+    """End a booking (in_service → done), recording ``ended_at`` and optional
+    ``feedback``.
+
+    Authorization: store owner only (``bookings:delete``) — admin / member /
+    customer / hq_staff → 403. ``payload`` is optional; omitting it or
+    sending ``feedback: null`` ends the booking without a service note.
+    """
+    return await BookingService(db).end(
+        user.user_id,
+        user.tenant_id,
+        booking_id,
+        platform_role=user.platform_role,
+        payload=payload,
+    )
+
+
+@router.post(
+    "/{booking_id}/no-show",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def no_show_booking(
+    booking_id: str,
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> Response:
+    """Mark a booking as no-show (pending / confirmed / in_service →
+    no_show). Pure status flip — no timestamp recorded. Authorization: store
+    owner only (``bookings:delete``). Returns 204 (mirrors ``/cancel``)."""
+    await BookingService(db).no_show(
         user.user_id,
         user.tenant_id,
         booking_id,

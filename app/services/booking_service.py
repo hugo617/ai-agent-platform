@@ -56,7 +56,7 @@ tz-aware datetimes across the two).
 # where ``list`` is still the builtin.
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from itertools import groupby
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -67,10 +67,12 @@ from app.repositories.customer import CustomerProfileRepository
 from app.repositories.device import DeviceRepository
 from app.schemas.booking import (
     BookingCreate,
+    BookingEndPayload,
     BookingHqRead,
     BookingRead,
     BookingUpdate,
 )
+from app.services.booking_state import transition as booking_transition
 from app.services.errors import BizError, NotFoundError
 from app.services.permission_service import is_cross_tenant_viewer, permission_service
 
@@ -509,3 +511,171 @@ class BookingService:
         await self.db.flush()
         await self.db.commit()
         return False
+
+    # ------------------------------------------------- lifecycle actions
+    #
+    # device-poweron slice 01: ``start`` / ``end`` / ``no_show`` drive the
+    # booking through its active lifecycle. Each method is a thin orchestration
+    # over :func:`booking_state.transition` — the state graph lives in exactly
+    # one place, the Service only adds persistence + permission/ownership
+    # checks. All three share the same shape:
+    #
+    #   1. resolve the tenant-scoped booking (cross-tenant → NotFoundError 404)
+    #   2. enforce the caller-specific authorization (see each method's note)
+    #   3. run the state machine; illegal edge → InvalidTransition → 400
+    #   4. write the side-effect column(s) the action owns
+    #
+    # The ``start`` method is the only one that branches on caller kind
+    # (customer vs store-staff); ``end`` / ``no_show`` are store-staff-only and
+    # share a single authorization path (plan §0 D5/D6/D7).
+
+    async def start(
+        self,
+        actor_id: str,
+        tenant_id: str,
+        booking_id: str,
+        *,
+        platform_role: str | None = None,
+        customer_id: str | None = None,
+    ) -> BookingRead:
+        """Transition a booking to ``in_service`` (pending / confirmed →
+        in_service), recording ``started_at``.
+
+        Authorization (plan §0 D5/D7, B1): this endpoint serves TWO caller
+        kinds and the split lives here in the body (NOT on a router-level
+        ``require_permission`` — that would 403 the customer principal before
+        it reached this branch, since a customer may carry no tenant role at
+        all in production):
+
+        - **Customer principal** (``customer_id is not None``): does NOT call
+          ``permission_service.require``. Instead a two-step ownership check
+          keyed off the principal's own ``customer_id`` (never request input,
+          anti-override): first refuse walk-in bookings
+          (``booking.customer_id is None`` → 403, "walk-in 预约仅门店员工可开机"),
+          then require ``booking.customer_id == customer_id`` (else 403,
+          "无权操作他人预约"). This mirrors the ``/me/bookings`` anti-override
+          defence — the identity comes from the token, not the URL/body.
+        - **Store principal** (``customer_id is None``): calls
+          ``permission_service.require(..., "bookings", "update")``. The
+          ``:update`` perm is on owner AND admin (so both can start non-walk-in
+          bookings), but NOT member → member gets 403. A store principal can
+          start a walk-in booking (``booking.customer_id is None``) — that's
+          the walk-in flow's whole point (D5).
+
+        Time source: ``datetime.now(UTC)`` (tz-aware, plan §0 D4 v2),
+        matching the ``DateTime(timezone=True)`` column definition — not naive
+        ``utcnow()``.
+        """
+        booking = await self._get_live_booking(booking_id, tenant_id)
+
+        if customer_id is not None:
+            # Customer principal — ownership check, no casbin require.
+            if booking.customer_id is None:
+                raise PermissionError("walk-in 预约仅门店员工可开机")
+            if booking.customer_id != customer_id:
+                raise PermissionError("无权操作他人预约")
+        else:
+            # Store principal — casbin require on bookings:update.
+            await permission_service.require(
+                actor_id,
+                tenant_id,
+                self.OBJECT,
+                "update",
+                platform_role=platform_role,
+            )
+
+        booking.status = booking_transition(booking.status, "start")
+        booking.started_at = datetime.now(UTC)
+        await self.db.flush()
+        await self.db.commit()
+        fresh = await self.repo.get_for_tenant(booking_id, tenant_id)
+        assert fresh is not None
+        return await self._to_read(fresh)
+
+    async def end(
+        self,
+        actor_id: str,
+        tenant_id: str,
+        booking_id: str,
+        *,
+        platform_role: str | None = None,
+        payload: BookingEndPayload | None = None,
+    ) -> BookingRead:
+        """Transition a booking to ``done`` (in_service → done), recording
+        ``ended_at`` and optionally ``feedback``.
+
+        Authorization (plan §0 D6, B2): **store owner only** —
+        ``permission_service.require(..., "bookings", "delete")``. The
+        ``:delete`` perm is on owner but NOT admin (``DEFAULT_ADMIN_PERMS``
+        omits it by convention — admin can't delete business records, same rule
+        that makes admin unable to cancel). So admin / member / customer /
+        hq_staff all → 403; only owner passes. This is stricter than ``start``
+        on purpose: ending a service finalizes the billable record.
+
+        ``payload.feedback`` (if non-None) overwrites ``bookings.feedback``;
+        ``None`` leaves the column untouched (the caller may end without a
+        service note). The column is a SQLAlchemy ``JSON`` (not JSONB), so the
+        dict round-trips identically on SQLite and Postgres.
+
+        Ordering (plan §4.5, mirrors ``start``): the tenant-scoped fetch runs
+        BEFORE ``require`` so a cross-tenant caller — owner or not — collapses
+        to NotFoundError 404 (no enumeration leak, same defence as the start
+        path). A within-tenant non-owner still hits ``require`` and gets 403,
+        which is fine: they can already see the booking id via their own
+        tenant's list, so the 403 leaks nothing. (``cancel`` in
+        device-booking uses the opposite order; this slice does NOT change it
+        — narrow-scope, leave cancel alone.)
+        """
+        booking = await self._get_live_booking(booking_id, tenant_id)
+        await permission_service.require(
+            actor_id,
+            tenant_id,
+            self.OBJECT,
+            "delete",
+            platform_role=platform_role,
+        )
+        booking.status = booking_transition(booking.status, "end")
+        booking.ended_at = datetime.now(UTC)
+        if payload is not None and payload.feedback is not None:
+            booking.feedback = payload.feedback
+        await self.db.flush()
+        await self.db.commit()
+        fresh = await self.repo.get_for_tenant(booking_id, tenant_id)
+        assert fresh is not None
+        return await self._to_read(fresh)
+
+    async def no_show(
+        self,
+        actor_id: str,
+        tenant_id: str,
+        booking_id: str,
+        *,
+        platform_role: str | None = None,
+    ) -> None:
+        """Transition a booking to ``no_show`` (pending / confirmed /
+        in_service → no_show). Pure status flip — no timestamp is written
+        (plan §0 D4: ``started_at`` / ``ended_at`` are owned by start / end;
+        a no-show records nothing about when the absence was judged).
+
+        Authorization is identical to ``end`` (plan §0 D6): owner only via
+        ``bookings:delete``. Admin / member / customer / hq_staff → 403.
+
+        Ordering mirrors ``end`` / ``start``: tenant-scoped fetch first, so a
+        cross-tenant caller gets 404 (not 403) regardless of role — no
+        enumeration leak. See ``end`` for the rationale.
+
+        Returns ``None`` — the endpoint maps this to 204 (no body), mirroring
+        ``/cancel`` (a state flip carries nothing the client needs to read
+        back, unlike ``start`` / ``end`` whose timestamps refresh the UI).
+        """
+        booking = await self._get_live_booking(booking_id, tenant_id)
+        await permission_service.require(
+            actor_id,
+            tenant_id,
+            self.OBJECT,
+            "delete",
+            platform_role=platform_role,
+        )
+        booking.status = booking_transition(booking.status, "no_show")
+        await self.db.flush()
+        await self.db.commit()

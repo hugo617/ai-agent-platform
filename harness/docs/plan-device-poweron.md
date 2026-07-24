@@ -223,21 +223,21 @@
 >
 > 实施节奏:一次一个切片,用 `/implement` 推进,切片间清 context。WIP=1 仍然适用 —— 同一时刻只在一个切片上 in_progress,该切片全绿才进下一个。**前置条件**:`device-booking` 全 passing ✅(已满足,`bookings` schema + 6 态 CHECK + 三列已就位)。
 
-### 切片 01 — 后端地基:6 态状态机 + 三个动作端点 + customer/walk-in 授权
+### 切片 01 — 后端地基:6 态状态机 + 三个动作端点 + customer/walk-in 授权 ✅(PR 待回填)
 
 **Blocked by:** 无 —— 可立即开工(`device-booking` 已 passing,`bookings` schema 就位)
 
 **What it delivers:** 一个 tenant 内的 customer 能「确认开机」把自己的 pending/confirmed 预约推进到 in_service(写 started_at);owner 能「结束」(in_service→done,写 ended_at + 可选 feedback)、「爽约」(pending/confirmed/in_service→no_show);admin 能 start(含 walk-in)但不能 end/no-show(无 `:delete`)。member/hq_staff/customer-越权/walk-in-customer 全部被拦。非法跳转 → 400。状态机是纯函数,独立 unit 测覆盖全边。
 
 **Acceptance criteria:**
-- [ ] `app/services/booking_state.py`:`transition(current: str, action: str) -> str` 纯函数,内部 6 条合法跳转边表(D2);非法组合 raise `InvalidTransition(current, action)`(子类化 `BizError`);导出 `ACTIONS = {"start","end","no_show"}` 常量
-- [ ] `app/services/errors.py`:`InvalidTransition(BizError)` 子类(若不已有),无新全局 handler(走 BizError 默认 400,v2:不改状态码)
-- [ ] `app/services/booking_service.py`:新增 `start(actor_id, tenant_id, booking_id, *, platform_role, customer_id)` / `end(..., feedback=None)` / `no_show(...)` 三方法 —— 各自调 `booking_state.transition` + 写对应时间戳/feedback(用 `datetime.now(timezone.utc)`,v2)+ customer own / walk-in 校验(D5/D6/D7,walk-in guard 先于 own 校验);`end` 写 `feedback`(可选 dict);`no_show` 不写时间戳
-- [ ] `app/schemas/booking.py`:新增 `BookingEndPayload{feedback: dict | None = None}`(`start`/`no-show` 无 body,端点不带 payload 参数);`BookingRead` 已含 `started_at`/`ended_at`/`feedback`(device-booking 已建,本 feature 只读引用,**无需改**)
-- [ ] `app/api/v1/bookings.py`:新增 `POST /{id}/start`(200 + BookingRead)/ `POST /{id}/end`(200 + BookingRead,body=BookingEndPayload)/ `POST /{id}/no-show`(204 无 body);**三端点均不挂 router-level `require_permission` 依赖**(B1 修正)—— `start` 函数体内按 `current_user.customer_id is not None` 分叉(customer 走双校验 D7;store 调 `permission_service.require(...,"bookings","update")`);`end`/`no-show` 函数体内调 `permission_service.require(...,"bookings","delete")`
-- [ ] `tests/test_booking_state.py`:6 合法边各断言新态 + 全部非法组合各 `pytest.raises(InvalidTransition)`
-- [ ] `tests/test_bookings_api.py` P 章节(非 pending 态 booking 用 `db_session.add(Booking(...,status=...))` 直接 DB 写入造,v2):P-1(6 合法跳转 + 时间戳/feedback 断言)+ P-2(非法跳转 400)+ P-3(start 权限矩阵:customer own 200 / customer 他人 403 / customer walk-in 403 / owner 200 / admin 200 / member 403 / hq_staff 403 / unauth 401)+ P-4(end/no-show 权限矩阵:**owner 200/204、admin 403**、customer 403、member 403、hq_staff 403,v2 修正 B2)+ P-5(跨租户 start/end/no-show → 404,含 customer 路径)+ P-6(副作用落库:started_at/ended_at/feedback)
-- [ ] 本地 `./init.sh` 全绿(ruff + pytest,含 P 章节 + test_booking_state)
+- [x] `app/services/booking_state.py`:`transition(current: str, action: str) -> str` 纯函数,内部 6 条合法跳转边表(D2);非法组合 raise `InvalidTransition(current, action)`(子类化 `BizError`);导出 `ACTIONS = {"start","end","no_show"}` 常量
+- [x] `app/services/errors.py`:`InvalidTransition(BizError)` 子类(若不已有),无新全局 handler(走 BizError 默认 400,v2:不改状态码)
+- [x] `app/services/booking_service.py`:新增 `start(actor_id, tenant_id, booking_id, *, platform_role, customer_id)` / `end(..., feedback=None)` / `no_show(...)` 三方法 —— 各自调 `booking_state.transition` + 写对应时间戳/feedback(用 `datetime.now(timezone.utc)`,v2)+ customer own / walk-in 校验(D5/D6/D7,walk-in guard 先于 own 校验);`end` 写 `feedback`(可选 dict);`no_show` 不写时间戳
+- [x] `app/schemas/booking.py`:新增 `BookingEndPayload{feedback: dict | None = None}`(`start`/`no-show` 无 body,端点不带 payload 参数);`BookingRead` 已含 `started_at`/`ended_at`/`feedback`(device-booking 已建,本 feature 只读引用,**无需改**)
+- [x] `app/api/v1/bookings.py`:新增 `POST /{id}/start`(200 + BookingRead)/ `POST /{id}/end`(200 + BookingRead,body=BookingEndPayload)/ `POST /{id}/no-show`(204 无 body);**三端点均不挂 router-level `require_permission` 依赖**(B1 修正)—— `start` 函数体内按 `current_user.customer_id is not None` 分叉(customer 走双校验 D7;store 调 `permission_service.require(...,"bookings","update")`);`end`/`no-show` 函数体内调 `permission_service.require(...,"bookings","delete")`
+- [x] `tests/test_booking_state.py`:6 合法边各断言新态 + 全部非法组合各 `pytest.raises(InvalidTransition)`
+- [x] `tests/test_bookings_api.py` P 章节(非 pending 态 booking 用 `db_session.add(Booking(...,status=...))` 直接 DB 写入造,v2):P-1(6 合法跳转 + 时间戳/feedback 断言)+ P-2(非法跳转 400)+ P-3(start 权限矩阵:customer own 200 / customer 他人 403 / customer walk-in 403 / owner 200 / admin 200 / member 403 / hq_staff 403 / unauth 401)+ P-4(end/no-show 权限矩阵:**owner 200/204、admin 403**、customer 403、member 403、hq_staff 403,v2 修正 B2)+ P-5(跨租户 start/end/no-show → 404,含 customer 路径)+ P-6(副作用落库:started_at/ended_at/feedback)
+- [x] 本地 `./init.sh` 全绿(ruff + pytest,含 P 章节 + test_booking_state)
 
 ---
 

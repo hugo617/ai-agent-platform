@@ -93,6 +93,25 @@ class BookingUpdate(BaseModel):
     notes: str | None = Field(default=None, max_length=2000)
 
 
+class BookingEndPayload(BaseModel):
+    """POST /bookings/{id}/end body (device-poweron, plan §0 D10).
+
+    ``feedback`` is an optional free-form dict — the caller may attach any
+    service record (operator notes, rating, completion checklist, …). It is
+    persisted verbatim into ``bookings.feedback`` (a SQLAlchemy ``JSON`` column
+    built by device-booking, NOT PG-only ``JSONB`` — so SQLite tests and
+    Postgres production behave identically). Omitting the field or sending
+    ``null`` leaves the column untouched (the endpoint passes ``None`` through
+    and the Service skips the write).
+
+    Only the ``/end`` action carries a body; ``/start`` and ``/no-show`` are
+    body-less POSTs (their effect is a pure status flip + optional timestamp),
+    so they take no payload parameter at the endpoint.
+    """
+
+    feedback: dict | None = None
+
+
 class BookingRead(BaseModel):
     """Within-store read shape (slice 01). ``tenant_id`` is the caller's own
     tenant — exposing it is harmless and keeps the DTO self-describing for the
@@ -149,6 +168,7 @@ class BookingHqRead(BookingRead):
 # Re-export for callers that need it.
 __all__ = [
     "BookingCreate",
+    "BookingEndPayload",
     "BookingHqRead",
     "BookingRead",
     "BookingStatus",
