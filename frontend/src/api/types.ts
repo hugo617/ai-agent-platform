@@ -676,6 +676,100 @@ export interface DeviceModelPublic {
   specs: Record<string, unknown>;
 }
 
+// ============= bookings (设备预约订单, device-booking 系列 3/4) =============
+//
+// Aligns with app/schemas/booking.py. Mirrors the devices read-shape split:
+// ``Booking`` for within-store CRUD, ``BookingHqRead`` for the HQ panorama
+// (super_admin / hq_staff cross-tenant view) — the latter extends the base
+// with three display fields (tenant/device/customer name) so the HQ table
+// renders without N client-side lookups. Exactly the convention
+// ``DeviceHqRead`` uses.
+//
+// State-guard: ``BookingCreate`` / ``BookingUpdate`` deliberately carry NO
+// ``status`` / ``started_at`` / ``ended_at`` / ``feedback`` — those are owned
+// by the booking's lifecycle action endpoints (POST /cancel here; /start,
+// /end, /no-show in the downstream device-poweron feature). The types mirror
+// that: a client literally cannot express a status on create/update.
+
+/** 6-state booking lifecycle (CHECK-constrained on the backend). Only
+ * ``pending`` → ``cancelled`` is reachable in this feature (POST /cancel);
+ * ``confirmed`` is a forward-compat placeholder value (no /confirm endpoint
+ * yet); ``in_service`` / ``done`` / ``no_show`` are reached by device-poweron. */
+export type BookingStatus =
+  | "pending"
+  | "confirmed"
+  | "in_service"
+  | "done"
+  | "cancelled"
+  | "no_show";
+
+/** Within-store booking read shape (GET /bookings/ for tenant roles). Mirrors
+ * backend BookingRead. ``device_id`` is nullable for forward-compat with the
+ * SET-NULL FK, but under the current soft-delete-only device path a booking
+ * always resolves its device. */
+export interface Booking {
+  id: string;
+  tenant_id: string;
+  device_id: string | null;
+  customer_id: string | null;
+  created_by: string | null;
+  status: BookingStatus;
+  scheduled_start_at: string;
+  scheduled_end_at: string;
+  // Lifecycle fields owned by device-poweron action endpoints; nullable here
+  // and always null for bookings created in this feature.
+  started_at: string | null;
+  ended_at: string | null;
+  feedback: Record<string, unknown> | null;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/** POST /bookings/ body. NO status / started_at / ended_at / feedback (the
+ * state-guard rule — Pydantic drops them on the backend; the type makes them
+ * unexpressible on the client). ``customer_id`` optional = walk-in booking. */
+export interface BookingCreate {
+  device_id: string;
+  customer_id?: string | null;
+  scheduled_start_at: string;
+  scheduled_end_at: string;
+  notes?: string | null;
+}
+
+/** PUT /bookings/{id} body. ``device_id`` is intentionally absent (D10 —
+ * change-device = cancel + recreate). Only ``pending`` bookings are mutable;
+ * ``scheduled_*`` / ``customer_id`` / ``notes`` are the mutable fields. Like
+ * the create shape, NO status / lifecycle fields. */
+export interface BookingUpdate {
+  customer_id?: string | null;
+  scheduled_start_at?: string;
+  scheduled_end_at?: string;
+  notes?: string | null;
+}
+
+/** HQ panorama booking (GET /bookings/ for super_admin / hq_staff). Extends
+ * Booking with three display names — nullable because the related row may be
+ * gone (soft-deleted tenant / walk-in booking with no customer). Note
+ * ``device_name`` is sourced from ``Device.serial_number`` on the backend
+ * (devices have no ``name`` column) but is named ``device_name`` for symmetry. */
+export interface BookingHqRead extends Booking {
+  tenant_name: string | null;
+  device_name: string | null;
+  customer_name: string | null;
+}
+
+/**
+ * Day-grouped schedule for one device (GET /devices/{id}/schedule). Keys are
+ * ISO date strings ("2030-01-01") — the backend serialises ``date`` keys to
+ * ISO strings. Only days with ≥1 booking appear; empty days are omitted (not
+ * keyed to ``[]``), so iterate ``Object.keys``. Within each day, bookings are
+ * ordered by ``scheduled_start_at`` ascending.
+ */
+export interface DeviceSchedule {
+  [date: string]: Booking[];
+}
+
 // ============= billing (Token 费用管理系列 4/4) =============
 //
 // Aligns with app/schemas/billing.py. The wallet carries the live balance +

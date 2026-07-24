@@ -14,10 +14,12 @@ import {
   attachTenant,
   batchDeleteConversations,
   bindDeviceCustomer,
+  cancelBooking,
   changePassword,
   changeUserStatus,
   createAgent,
   createApiToken,
+  createBooking,
   createCustomerProfile,
   createDevice,
   createGroup,
@@ -45,8 +47,11 @@ import {
   fetchCustomers,
   fetchCustomerStatistics,
   fetchCustomerUsage,
+  fetchBooking,
+  fetchBookings,
   fetchDeviceModels,
   fetchDevices,
+  fetchDeviceSchedule,
   fetchDashboardOverview,
   fetchDashboardTrends,
   fetchEffectiveModels,
@@ -59,6 +64,7 @@ import {
   fetchLogs,
   fetchMembers,
   fetchMessages,
+  fetchMyBookings,
   fetchPermissionCatalogue,
   fetchPermissionMatrix,
   fetchPlatformLlmConfig,
@@ -86,6 +92,7 @@ import {
   setConversationStarred,
   unbindDeviceCustomer,
   updateAgent,
+  updateBooking,
   updateCustomerProfile,
   updateDevice,
   updateGroup,
@@ -113,6 +120,8 @@ import type {
   AgentCreate,
   AgentUpdate,
   ApiTokenCreate,
+  BookingCreate,
+  BookingUpdate,
   ConversationFilters,
   CustomerProfileCreate,
   CustomerProfileUpdate,
@@ -193,6 +202,17 @@ export const qk = {
   // device-models: platform-level catalogue dropdown source. Read is open to
   // any authenticated user; the picker only needs {id, name, specs}.
   deviceModels: ["device-models"] as const,
+  // bookings (device-booking 系列 3/4). Single read key covers both store
+  // (Booking) and HQ (BookingHqRead) views — the endpoint branches on
+  // platform_role, but cache invalidation is the same either way. deviceSchedule
+  // is keyed by device + range so each device's grid caches independently — a
+  // dedicated top-level family ("device-schedule") so every device's grid
+  // invalidates with one prefix invalidate after a reschedule/cancel;
+  // myBookings is the customer-principal own view (GET /me/bookings).
+  bookings: ["bookings"] as const,
+  deviceSchedule: (deviceId: string, start?: string, end?: string) =>
+    ["device-schedule", deviceId, start ?? null, end ?? null] as const,
+  myBookings: ["me", "bookings"] as const,
   // Token 费用管理系列 4/4 — wallet / ledger / usage / pricing.
   wallet: ["billing", "wallet"] as const,
   walletByTenant: (tenantId: string) =>
@@ -443,6 +463,85 @@ export function useDeviceModels(enabled = true) {
     queryFn: fetchDeviceModels,
     enabled,
   });
+}
+
+// ---------- bookings (设备预约订单, device-booking 系列 3/4) ----------
+//
+// useBookings drives the /bookings page list for both store view (Booking[])
+// and HQ panorama (BookingHqRead[]) — the endpoint branches on platform_role,
+// but the cache key is the same. Writes invalidate qk.bookings so the list
+// refreshes; they also invalidate the device-schedule family (a
+// reschedule/cancel moves a booking between days, so any open device grid is
+// stale — ["device-schedule"] prefixes every device's grid) and qk.myBookings
+// (a customer's own view would otherwise lag behind).
+//
+// useDeviceSchedule is keyed by device + range so each device's grid caches
+// independently; pass start/end as ISO strings (backend defaults to today ±7d
+// when both are omitted). useMyBookings is the customer-principal own view
+// (GET /me/bookings) — a store-staff token 403s there, so callers gate it on
+// the caller having a customer identity (slice 07 wires that gate).
+//
+// BOOKING_WRITE_KEYS is the shared invalidate set for the three write hooks;
+// see useDeleteConversation for the same literal-prefix-family convention.
+const BOOKING_WRITE_KEYS: QueryKey[] = [
+  qk.bookings,
+  ["device-schedule"],
+  qk.myBookings,
+];
+
+export function useBookings() {
+  return useQuery({ queryKey: qk.bookings, queryFn: fetchBookings });
+}
+
+/** One booking (GET /bookings/{id}). Branches on platform_role like the list:
+ * Booking for tenant roles, BookingHqRead for super_admin / hq_staff. Gated on
+ * a non-empty id so the detail dialog doesn't fire before a row is selected. */
+export function useBooking(id: string | null | undefined) {
+  return useQuery({
+    queryKey: [...qk.bookings, id ?? ""],
+    queryFn: () => fetchBooking(id as string),
+    enabled: !!id,
+  });
+}
+
+export function useCreateBooking() {
+  return useApiMutation(
+    (payload: BookingCreate) => createBooking(payload),
+    BOOKING_WRITE_KEYS,
+  );
+}
+
+export function useUpdateBooking() {
+  return useApiMutation(
+    ({ id, payload }: { id: string; payload: BookingUpdate }) =>
+      updateBooking(id, payload),
+    BOOKING_WRITE_KEYS,
+  );
+}
+
+export function useCancelBooking() {
+  return useApiMutation((id: string) => cancelBooking(id), BOOKING_WRITE_KEYS);
+}
+
+/** Day-grouped booking grid for one device in [start, end). ``enabled`` gates
+ * the fetch (callers suppress it until a device is selected). */
+export function useDeviceSchedule(
+  deviceId: string | null | undefined,
+  start?: string,
+  end?: string,
+) {
+  return useQuery({
+    queryKey: qk.deviceSchedule(deviceId ?? "", start, end),
+    queryFn: () => fetchDeviceSchedule(deviceId as string, start, end),
+    enabled: !!deviceId,
+  });
+}
+
+/** The calling customer-principal's own bookings (GET /me/bookings). Store-
+ * staff principals 403 here; callers gate on the caller having a customer
+ * identity (slice 07). */
+export function useMyBookings() {
+  return useQuery({ queryKey: qk.myBookings, queryFn: fetchMyBookings });
 }
 
 // ---------- agents ----------

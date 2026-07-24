@@ -8,6 +8,10 @@ import type {
   ApiToken,
   ApiTokenCreate,
   ApiTokenCreated,
+  Booking,
+  BookingCreate,
+  BookingHqRead,
+  BookingUpdate,
   Conversation,
   ConversationStatistics,
   CustomerProfileCreate,
@@ -22,6 +26,7 @@ import type {
   DeviceCreate,
   DeviceHqRead,
   DeviceModelPublic,
+  DeviceSchedule,
   DeviceUpdate,
   DashboardOverview,
   DashboardTrends,
@@ -382,6 +387,75 @@ export async function unbindDeviceCustomer(id: string): Promise<void> {
 // that only render the dropdown can treat the result as DeviceModelPublic[].
 export async function fetchDeviceModels(): Promise<DeviceModelPublic[]> {
   const { data } = await api.get<DeviceModelPublic[]>("/device-models/");
+  return data;
+}
+
+// ---------- bookings (设备预约订单, device-booking 系列 3/4) ----------
+//
+// Reads branch on the caller's platform role on the backend, mirroring
+// devices:
+// - tenant roles (owner/admin/member) → Booking[] scoped to this tenant
+// - super_admin / hq_staff            → BookingHqRead[] cross-tenant panorama
+// The endpoint returns one shape or the other; the union return type
+// reflects that. Writes (create/update/cancel) are tenant-scoped and return
+// Booking.
+//
+// Cancel is POST /bookings/{id}/cancel (NOT DELETE — D8: bookings are
+// cancelled, not deleted; the row stays as the audit trail). Returns 204 and
+// is idempotent (re-cancelling an already-cancelled booking is a no-op that
+// still returns 204), so the client needs no response body.
+//
+// The schedule + my-bookings reads live on different routers but both serve
+// bookings data: GET /devices/{id}/schedule (device sub-resource URL, day-
+// grouped grid — ``{ "2030-01-01": [booking, ...] }``, only days with ≥1
+// booking; ``start`` / ``end`` are ISO datetimes, both optional, backend
+// defaults to today ±7 days; a foreign / missing device → 404) and
+// GET /me/bookings (customer-principal own view — ``customer_id`` is read off
+// the resolved principal, never from request input, so store-staff principals
+// get 403; returns plain Booking[], no HQ panorama fields).
+export async function fetchBookings(): Promise<Booking[] | BookingHqRead[]> {
+  const { data } = await api.get<Booking[] | BookingHqRead[]>("/bookings/");
+  return data;
+}
+
+export async function fetchBooking(
+  id: string,
+): Promise<Booking | BookingHqRead> {
+  const { data } = await api.get<Booking | BookingHqRead>(`/bookings/${id}`);
+  return data;
+}
+
+export async function createBooking(payload: BookingCreate): Promise<Booking> {
+  const { data } = await api.post<Booking>("/bookings/", payload);
+  return data;
+}
+
+export async function updateBooking(
+  id: string,
+  payload: BookingUpdate,
+): Promise<Booking> {
+  const { data } = await api.put<Booking>(`/bookings/${id}`, payload);
+  return data;
+}
+
+export async function cancelBooking(id: string): Promise<void> {
+  await api.post(`/bookings/${id}/cancel`);
+}
+
+export async function fetchDeviceSchedule(
+  deviceId: string,
+  start?: string,
+  end?: string,
+): Promise<DeviceSchedule> {
+  const { data } = await api.get<DeviceSchedule>(
+    `/devices/${deviceId}/schedule`,
+    { params: { start, end } },
+  );
+  return data;
+}
+
+export async function fetchMyBookings(): Promise<Booking[]> {
+  const { data } = await api.get<Booking[]>("/me/bookings");
   return data;
 }
 
