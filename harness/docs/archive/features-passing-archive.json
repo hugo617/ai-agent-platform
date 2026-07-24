@@ -1,7 +1,7 @@
 {
   "project": "ai-agent-platform",
   "description": "已 passing feature 的历史归档(完整字段保留,审计用)",
-  "count": 57,
+  "count": 58,
   "features": [
     {
       "id": "data-export",
@@ -1415,6 +1415,34 @@
         "🔴 真实环境闭环验证(Session 113,2026-07-17):把 RAG 从「mock-only passing」升级为「真实环境 passing」。本地 Ollama + BAAI/bge-m3(1024 维)替代 OpenAI text-embedding-3-small(用户无 OpenAI key)。① 维度迁移:新迁移 c5d6e7f8a9b0 ALTER document_chunks.embedding VECTOR(1536)→VECTOR(1024) + DELETE 旧 chunks(都是占位符),document.py 加 EMBEDDING_DIMENSION=1024 模块常量(单点真相源);② 兼容性修复:OpenAIEmbeddings 默认用 tiktoken 预编码 token ID,ollama 不接受 → EmbeddingService 加 check_embedding_ctx_length=False(项目已有 RecursiveCharacterTextSplitter 分块,langchain 二次分块多余);③ alembic upgrade head 真 PG 成功 + alembic check 无 drift;④ seed_demo --reset 真实灌入:3 文档 indexed,3 chunks × vector_dims=1024 验证;⑤ API 端到端检索(真实 owner token + 真实 cosine SQL):「颈椎不舒服」→ 颈椎理疗规范 相似度 0.773、「针灸禁忌」(海淀)→ 中药与针灸禁忌 0.690、多租户隔离正常(朝阳只见颈椎,海淀只见针灸);⑥ ./init.sh 全绿 539 passed 无回归"
       ],
       "notes": "第三梯队 V2 大投入。现状:pgvector 声明了(requirements.txt:19 + docker-compose)但从没用过,无 embedding/分块/检索。这是让 AI 真正有用的核心能力。成本高(embedding管线+向量存储+检索调优+知识库UI)。详细 plan 执行到时写。依赖 file-upload(56,文档上传)。"
+    },
+    {
+      "id": "multi-agent-orchestration",
+      "priority": 58,
+      "area": "AI 内核",
+      "title": "多 Agent 编排(LangGraph 多节点图,Agent 协作/转交)",
+      "user_visible_behavior": "复杂场景下多个 Agent 协作:客服 Agent 遇专业问题转交专家 Agent;编排 Agent 分派子任务给子 Agent。从单 agent 升级到智能体协作",
+      "status": "passing",
+      "plan": "harness/docs/plan-multi-agent-orchestration.md",
+      "verification": [
+        "LangGraph 多节点图:orchestrator agent 路由/分派 + 多个 specialist agent + 状态传递",
+        "Agent 转交能力:Agent A 可调用 Agent B(handoff 模式),保留对话上下文",
+        "Agent 配置:agent 可声明可调用的子 agent 列表 + 转交条件",
+        "前端:Agent 编辑页加「可转交 Agent」配置 + 对话中显示当前服务 agent 切换",
+        "pytest 覆盖转交/上下文保留/多轮协作 + ./init.sh 全绿",
+        "npm run build 通过"
+      ],
+      "evidence": [
+        "实现范围:Supervisor 编排器模式(StateGraph + Command 路由,非 Swarm)+ 新建 agent_specialists M2M 关联表(照 GroupTenant 范式:无软删除 + UniqueConstraint + CASCADE)+ Agent 加 is_orchestrator/specialty 字段 + specialist attach/detach CRUD + 前端 Switch 首次启用 + chat-page 编排器提示。",
+        "MVP 决策:单轮路由(specialist 回答后直接 END,不做 supervisor 回收循环,避免 token 爆炸);降级三重保险(orchestrator 无 specialist→普通 agent / 路由 LLM 失败→第一个 specialist / specialist 是 orchestrator→attach 拒绝);事件冒泡靠 child callback(create_react_agent 作图节点,on_chat_model_stream 冒泡到外层 astream_events,usage 契约保留)。",
+        "./init.sh 全绿:ruff + pytest 533 passed(基线 514 + 新增 19 测 test_multi_agent.py)。",
+        "cd frontend && npm run build:0 类型错误。",
+        "cd frontend && npx oxlint src/:0 warnings 0 errors。",
+        "alembic upgrade head:f2b3c4d5e6f7 → a3b4c5d6e7f8 迁移成功(agents 加 2 列 + 建 agent_specialists 表 + UniqueConstraint + Index + CASCADE FK)。",
+        "真实 DeepSeek key 端到端验证(4 测全过):(1) 创建 2 specialist(健康顾问 specialty=理疗针灸/预约专员 specialty=预约排班)+ 1 orchestrator,attach 2 specialists,GET /agents/{orch}/specialists 返回正确 hydration;(2) 预约问题「我想预约下周三下午的理疗」→ orchestrator 路由到预约专员(回复含「预约信息」);(3) 健康问题「肩膀酸痛想做针灸」→ 路由到健康顾问(回复含「针灸治疗肩膀酸痛」);(4) 无 specialist 的 orchestrator 降级为普通 agent(回复「你好!有什么可以帮你的吗」);(5) 普通 agent 直接对话不受影响(向后兼容)。",
+        "后端无报错:uvicorn log 全程 200 OK,无 exception/traceback。"
+      ],
+      "notes": "第三梯队 V2 大投入。现状:单 ReAct agent(create_react_agent),一个 agent 调不了另一个,无工作流编排。差异化卖点(复杂业务智能体协作)。成本高(重写编排层+多agent状态管理+调试)。详细 plan 执行到时写。独立模块。实际实现:Supervisor 模式 MVP(单轮路由),Swarm 模式/supervisor 回收循环/handoff 二级转交/实时 specialist 来源显示 留作增强(详见 plan §不做的事)。"
     }
   ]
 }

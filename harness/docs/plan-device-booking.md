@@ -313,23 +313,25 @@
 
 ---
 
-### 切片 07 — 前端 HqView + customer 视图 + 整体验证收尾
+### 切片 07 — 前端 HqView + customer 视图 + 整体验证收尾 ✅ PR #113
 
 **Blocked by:** 06
 
 **What it delivers:** super_admin 和 hq_staff 在 `/bookings` 看到跨租户只读全景表格;customer 身份看到「我的预约」只读列表;整 feature 走完 `./init.sh` 全绿 + feature_list.json/progress.md 更新 + 文档影响评估。
 
 **Acceptance criteria:**
-- [ ] `bookings-page.tsx` 顶层三叉:`isSuperAdmin(me) || isHQStaff(me) ? <HqView/> : hasCustomerIdentity(me) ? <MyBookingsView/> : <StoreView/>`
-- [ ] HqView:跨租户表格(列:tenant_name / 设备名 / 客户名 / 预约时段 / 状态 Badge),只读,无写按钮
-- [ ] MyBookingsView:customer 身份只读列表(调 `useMyBookings()`),无写按钮(创建预约是门店员工职责)
-- [ ] `hasCustomerIdentity(me)` helper 判断 `me.customer_id` 非空(新建于 `frontend/src/lib/permission.ts`,参照 isHQStaff 范式)
-- [ ] `./init.sh` 全绿(ruff + pytest 全章节 A-M + frontend build + oxlint)
-- [ ] `alembic upgrade head && alembic check` 本地通过(若本地 docker 起不来,依赖 CI 通过)
-- [ ] `feature_list.json`:`device-booking` status=`passing` + evidence 字段写实测结果 + **修正 verification 第 3/4 条笔误**(409→400、DELETE→POST /cancel)
-- [ ] `./scripts/sync-active-features.sh` 刷新 active 视图
-- [ ] `progress.md` 加 Session 记录 + 更新「当前最高优先级未完成功能」指向 device-poweron
-- [ ] 文档影响评估(4 行格式)
+- [x] `bookings-page.tsx` 顶层三叉:`isSuperAdmin(me) || isHQStaff(me) ? <HqView/> : hasCustomerIdentity(me) ? <MyBookingsView/> : <StoreView/>`
+- [x] HqView:跨租户表格(列:tenant_name / 设备名 / 客户名 / 预约时段 / 状态 Badge),只读,无写按钮
+- [x] MyBookingsView:customer 身份只读列表(调 `useMyBookings()`),无写按钮(创建预约是门店员工职责)
+- [x] `hasCustomerIdentity(me)` helper 判断 `me.customer_id` 非空(新建于 `frontend/src/lib/permission.ts`,参照 isHQStaff 范式)
+- [x] `./init.sh` 全绿(ruff + pytest 全章节 A-N + frontend build + oxlint)(653 passed,基线 651 + N1/N2 新 2)
+- [x] `alembic upgrade head && alembic check` 本地通过(若本地 docker 起不来,依赖 CI 通过)(本切片无新迁移,迁移链 head 不变,依赖 CI)
+- [x] `feature_list.json`:`device-booking` status=`passing` + evidence 字段写实测结果 + **修正 verification 第 3/4 条笔误**(409→400、DELETE→POST /cancel)
+- [x] `./scripts/sync-active-features.sh` 刷新 active 视图
+- [x] `progress.md` 加 Session 记录 + 更新「当前最高优先级未完成功能」指向 device-poweron
+- [x] 文档影响评估(4 行格式)
+
+**Blocker 修复(超出原 plan 字面,但为 plan 要求的 `me.customer_id` 判断的前置条件):** plan 要求前端用 `me.customer_id` 判断 customer 身份,但 `MeResponse` API 契约不含 `customer_id`(切片 04 只在后端内部 `CurrentUser` 加了)。本切片补 `MeResponse.customer_id` 字段(`app/schemas/auth.py` schema + `app/api/v1/auth.py` `_build_me_response` 透传 + frontend `types.ts` 对齐)+ N1/N2 测试覆盖。窄范围契约对齐,无新迁移无表结构改动。详见 progress.md Session 137。
 
 ---
 

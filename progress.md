@@ -8,9 +8,10 @@
 - **标准启动路径**: `./init.sh`(装依赖 + ruff + pytest)
 - **标准验证路径**: `./init.sh`(同上,后端快速验证,SQLite 内存库)
 - **完整验证路径**(需 docker): `alembic upgrade head && alembic check` + `cd frontend && npm run build`
-- **当前最高优先级未完成功能**: **`device-booking`(priority 63,设备预约订单 CRUD + 排期,系列 3/4,status=`in_progress`,EP3 进行中)**。设备功能系列进度:61(device-models-crud)✅ → 62(devices-crud-ui)✅ 全 passing → **63(device-booking `in_progress`,plan-device-booking.md 含 7 切片 + 12 决策)** → 64(device-poweron)。切片级状态真相源 = `harness/docs/plan-device-booking.md` 的 acceptance criteria checklist。切片进度:**切片 01(后端地基)✅ 已合并 PR #106 commit f2bfc93** → **切片 02(权限 seed + backfill)✅ 已合并 PR #107** → **切片 03(HQ 全景 + 排期聚合后端)✅ 已合并 PR #108 commit 2a69176** → **切片 04(customer own 端点 GET /me/bookings)✅ 已合并 PR #110 commit 24685a4(代码全绿 651 passed + ruff 0 + /code-review 0 阻塞)** → **切片 05(前端地基 types/endpoints/queries + 路由 + nav)✅ 已合并 PR #111 commit 70a60eb(纯地基无 UI,代码全绿 651 passed + build + oxlint 0 + /code-review 0 阻塞)** → **切片 06(前端门店端 StoreView)✅ 已合并 PR #112 commit 354f528(代码全绿 651 passed + build ✓ 1.93s + oxlint 0 + /code-review 双轴:Standards 0 硬违规/Spec 10 项全勾 + CI 4/4 全绿)** → 切片 07(HqView + customer 视图 + 收尾)待做(frontier)。**下一步**:device-booking 切片 07(bookings-page.tsx 顶层三叉 `isSuperAdmin||isHQStaff ? HqView : hasCustomerIdentity ? MyBookingsView : StoreView` + HqView 跨租户只读表 + MyBookingsView customer 只读调 useMyBookings + hasCustomerIdentity helper 新建于 lib/permission.ts 参照 isHQStaff + feature 收尾:feature_list.json status→passing + evidence + 修正 verification 第 3 条 409→400 笔误 + 第 4 条 DELETE→POST /cancel 笔误 + sync-active + 文档影响评估 + ./init.sh 全绿),走 `/implement`(EP3,从 frontier 切片接)。切片 06 已铺好 StoreView 全部实现 + Badge dot-muted 变体 + datetime-local helper,切片 07 只需加两个只读视图 + 三叉分支(可复刻 devices-page.tsx 的 HqView 范式 + customers-page.tsx 的双视角分叉范式)。
+- **当前最高优先级未完成功能**: **`device-poweron`(priority 64,设备开机/结束/爽约状态机动作,系列 4/4,status=`not_started`,依赖 device-booking 已解锁)**。设备功能系列进度:61(device-models-crud)✅ → 62(devices-crud-ui)✅ → **63(device-booking)✅ passing(7 切片全合并,2026-07-24 收尾)** → **64(device-poweron `not_started`,frontier,依赖已解锁待启动)**。device-poweron 范围:POST /bookings/{id}/start(pending/confirmed→in_service 填 started_at)+ /end(in_service→done 填 ended_at + feedback)+ /no-show(→no_show),6 条合法跳转状态机纯函数,written fields 复用 device-booking 已建的 started_at/ended_at/feedback 列(无新迁移)。**边界**:硬件下发链路(MQTT/WS/寻址)不在范围(YAGNI),walk-in booking(customer_id 空)只能 store_staff+ start。**下一步**:走 `/grill-with-docs → /to-spec → /to-tickets` EP2 回环拆切片(无 plan 文档,EP2 起点);或用户决定暂不开则在下方记「依赖已解锁待启动」。
+- **device-booking ✅ passing(2026-07-24 Session 137 收尾)**:7 切片全合并(01 后端地基 PR#106 → 02 权限 seed PR#107 → 03 HQ+排期后端 PR#108 → 04 customer own PR#110 → 05 前端地基 PR#111 → 06 StoreView PR#112 → **07 HqView+MyBookingsView+三叉路由 PR#113 commit 5b75fb4**)。切片 07(末切片)把 /bookings 升级为三叉视图:`isSuperAdmin||isHQStaff?HqView:hasCustomerIdentity?MyBookingsView:StoreView`。HqView 复刻 devices-page HqView 骨架(跨租户只读表 BookingHqRead[],walk-in 显散客)。MyBookingsView 调 useMyBookings()(customer 只读,后端按 caller customer_id 过滤)。hasCustomerIdentity helper 新建于 permission.ts(照 isHQStaff)。**Blocker 修复**:plan 要求 me.customer_id 判断但 MeResponse API 契约未暴露(切片 04 只加后端内部 CurrentUser)→ 补 MeResponse.customer_id(schema+endpoint+frontend type,无新迁移)+ N1/N2 测试。feature 收尾:verification 笔误修正(第 3 条 409→400 对齐 D1 / 第 4 条 DELETE→POST /cancel 对齐 D8)+ status→passing + evidence 9 条 + sync-active 刷新。验证:./init.sh 全绿 653 passed(基线 651+N1/N2)+ npm build ✓ 1.94s + oxlint 0 warnings。/code-review 双轴 0 阻塞。已知 UX 缺口:MyBookingsView 设备列显 device_id 前缀(BookingRead 不带 device_name,拉 devices feed 会跨租户泄露故不拉,后端加 selectinload 留未来增量,plan 未硬定列故 spec 合规)。
 - **当前 blocker**: 无
-- **EP3 断点(Session 136)**:device-booking 切片 06 已合并(PR #112 commit 354f528,CI 4/4 全绿)。切片 06 是首个真正展示 UI 的切片,复刻 devices-page 骨架把 /bookings 从占位变成完整门店端预约管理界面:StoreView(列表 Table 设备/客户/时段/状态Badge/创建时间/操作DropdownMenu + filter chips 全部/今日/明日/本周/待确认/爽约 + 排期网格 7天×slot-box 三态色 + 创建Dialog 设备Select活设备+客户Select含散客+datetime-local+备注 + 改约Dialog pending-only/device灰显 + 取消确认Dialog + 时段冲突400 toast apiErrorMessage)+ hasPermission 隐藏写按钮。支撑:badge.tsx 加 dot-muted 变体,lib/format.ts 加 toDatetimeLocalValue/fromDatetimeLocalValue。feature_list.json evidence 已追加切片 06(7 条)+ sync-active 已刷新。切片 07 待做(最后一个切片,含 feature 收尾 → status passing):HqView + MyBookingsView + 三叉分支 + hasCustomerIdentity helper + 修正 verification 笔误。
+- **EP3 断点(Session 137)**:device-booking 全 7 切片合并完成,feature 收尾仪式 8 步全做完(status→passing / verification 笔误修正 / evidence 回填 / sync-active / progress.md / 文档影响评估 / init.sh 全绿 / 依赖解锁扫描)。device-poweron 依赖已解锁(priority 64,depends_on device-booking ✅),按 three-tier §5 可置 in_progress —— **待用户决定是否立即启动 device-poweron(若无指示,下一个 frontier 就是它)**。
 
 ## 后续任务规划
 
@@ -3131,3 +3132,42 @@ devices-crud-ui 全 passing(7 切片全合并 main,迁移 head = `a0eaec7aab7c`)
 
 ---
 
+### Session 137 — 2026-07-24(device-booking EP3 末切片 07:HqView + customer 视图 + feature 收官,系列 3/4 全 passing)
+
+> **EP3 末切片 = feature 收尾仪式**(three-tier-workflow §4 第 1-8 步)。device-booking 7 个切片全部完成,feature 从 `in_progress` → `passing`。下一个 frontier = `device-poweron`(priority 64,依赖已解锁)。
+
+**切片 07 实测结果:**
+- BookingsPage 顶层三叉路由:`isSuperAdmin(me) || isHQStaff(me) ? <HqView/> : hasCustomerIdentity(me) ? <MyBookingsView/> : <StoreView/>`(复刻 devices-page 二叉 + 加 customer 第三叉,HQ 优先于 customer 身份)。
+- HqView:跨租户只读全景表格,复刻 devices-page HqView 骨架(PageHeader + Card + Table + ListState + EmptyState),换数据源 `useBookings() → BookingHqRead[]` narrowing cast,列 tenant_name/device_name/customer_name/scheduled_*/status Badge/created_at,walk-in 显「散客(walk-in)」,无写按钮。
+- MyBookingsView:customer 只读列表,调 `useMyBookings()`(后端 /me/bookings 已按 caller customer_id 过滤),无写按钮(创建预约是门店员工职责)。
+- `hasCustomerIdentity(me)` helper 新建于 `permission.ts`(照 isHQStaff 范式,判断 `me.customer_id` 非空)。
+- **Blocker 修复**:plan 要求 `me.customer_id` 判断,但 MeResponse API 契约未暴露 customer_id(切片 04 只加在后端内部 CurrentUser)→ 补 `MeResponse.customer_id` 字段(`app/schemas/auth.py` schema + `app/api/v1/auth.py` `_build_me_response` 透传 `user.customer_id` + frontend `types.ts` 对齐),窄范围契约对齐,无新迁移无表结构改动。
+- 测试 N 章节 2 个:N1(customer 身份 GET /auth/me 返回 own customer_id)+ N2(store-staff 返回 null)。
+- 验证:./init.sh 全绿 653 passed(基线 651 + N1/N2 新 2)+ ruff 0 error + cd frontend && npm run build ✓ 1.94s + npx oxlint 0 warnings/errors(75 files)。
+- /code-review 双轴:Standards 0 硬违规(4 判断级 smell 均为复刻 devices-page 约定或可接受:Repeated Switches 三叉字面量 / `as BookingHqRead[]` 强转 / HqView·MyBookingsView 同文件骨架 / hasCustomerIdentity Middle Man),Spec 代码实现全勾(MeResponse.customer_id 契约对齐判定 in-scope 非越界)。
+- 已知 UX 缺口:MyBookingsView 设备列显 `device_id` 前缀(BookingRead 不带 device_name,拉 devices feed 会跨租户泄露故不拉,后端 /me/bookings 加 selectinload device_name 留给未来增量,plan §3 line 55 未硬定列故 spec 合规)。
+
+**feature 收尾仪式 8 步(three-tier §4):**
+1. ✅ verification 笔误修正:第 3 条「时段冲突...拒绝 409」→ 400(plan §0 D1 已定 400,409 是原笔误);第 4 条「POST/GET/PUT/DELETE /api/v1/bookings」→ DELETE 改为 POST /cancel(D8 决策 bookings 不软删,无 DELETE 端点)。
+2. ✅ `feature_list.json` device-booking.status: in_progress → passing。
+3. ✅ evidence 追加切片 07 + feature 收尾总结(共 9 条:EP2 + 切片 01-07 + 收尾)。
+4. ✅ `./scripts/sync-active-features.sh` 刷新 active 视图(1 活跃 = device-poweron,device-booking 进 passing 归档)。
+5. ✅ progress.md 顶部更新:device-booking ✅ passing,frontier 推进到 device-poweron(priority 64)。
+6. ✅ 文档影响评估(见下方表格)。
+7. ✅ ./init.sh 全绿(ruff + pytest 653)+ cd frontend && npm run build + npx oxlint。
+8. ✅ 依赖解锁扫描:device-poweron(priority 64,depends_on device-booking)依赖已解锁,按 three-tier §5 可置 in_progress —— 待用户决定是否立即启动(若无指示,下一个 frontier 就是它)。
+
+### Session 137 文档影响评估(每任务必给)
+
+| 文档 | 是否需更新 | 本 Session 动作 |
+|---|---|---|
+| `项目指南/02-后端架构/06-权限模型RBAC.md`(DEFAULT_*_PERMS 表) | ❌ 无影响 | bookings perm 已在切片 02 处理,本切片不动权限 seed |
+| `项目指南/02-后端架构/*`(auth/me 契约) | ❌ 无影响 | MeResponse 加 customer_id 是既有契约的窄字段扩展(范式不变,仍是「token claim → CurrentUser → MeResponse 透传」既定模式),不改架构约定。后端架构文档描述的是范式层级,本次是范式内的实例 |
+| `项目指南/04-前端架构/*`(bookings-page 三叉路由) | ❌ 无影响 | 三叉路由是 devices-page 二叉范式 + customers-page 双视角范式的组合实例,不改变前端架构约定。hasCustomerIdentity helper 与 isHQStaff/isSuperAdmin 同范式 |
+| `harness/docs/plan-device-booking.md` | ✅ 已更新 | 勾选切片 07 acceptance checklist 10 项 + 标题追加 ✅ PR #113 |
+| `progress.md` | ✅ 已更新 | 顶部「最高优先级」从 device-booking 改指 device-poweron;追加 Session 137 记录 |
+| `feature_list.json` + 派生视图 | ✅ 已更新 | device-booking `in_progress` → `passing`;verification 笔误修正(409→400 / DELETE→POST /cancel);evidence 追加切片 07 + 收尾总结;sync 刷新 |
+
+> 判断依据:本次 feature 涉及新增 bookings 实体全套(表/API/UI,切片 01-06 已落地)+ 切片 07 的 MeResponse.customer_id 契约扩展 + 三叉路由 + hasCustomerIdentity helper。但既有文档(02-后端架构 / 04-前端架构)描述的是**架构范式层级**(RBAC 模型 / Controller→Service→Repository 分层 / 前端 permission helper 范式),本次所有改动都是**既有范式内的实例**(新实体遵循既有多租户隔离范式 / 新 helper 遵循既有 isHQStaff 范式 / 契约扩展遵循既有 token→CurrentUser→MeResponse 透传模式),不改变架构约定,故文档无需同步。plan/progress/feature_list 三源已更新。
+
+---
