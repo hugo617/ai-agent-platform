@@ -36,7 +36,10 @@ import {
   CalendarX,
   MoreHorizontal,
   Pencil,
+  Play,
   Plus,
+  Square,
+  UserX,
   XCircle,
 } from "lucide-react";
 
@@ -101,6 +104,7 @@ import {
 import type {
   Booking,
   BookingCreate,
+  BookingEndPayload,
   BookingHqRead,
   BookingStatus,
   BookingUpdate,
@@ -113,7 +117,9 @@ import {
   useCustomerProfiles,
   useDeviceSchedule,
   useDevices,
+  useEndBooking,
   useMyBookings,
+  useNoShowBooking,
   useStartBooking,
   useUpdateBooking,
 } from "@/hooks/queries";
@@ -154,6 +160,20 @@ const NONE = "_none";
 // (it would be cancelled via a future /confirm + /cancel flow, not here).
 const MUTABLE_STATUS: ReadonlySet<BookingStatus> = new Set(["pending"]);
 
+// device-poweron (切片 03):the status set that still has a state-machine action
+// available. Reschedule / cancel stay gated on ``MUTABLE_STATUS`` (pending only)
+// — those are bookings edits, not lifecycle actions. ``ACTIONABLE_STATUS`` gates
+// the lifecycle menu (start / end / no-show): pending / confirmed / in_service
+// each have ≥1 action; the terminal states (done / cancelled / no_show) have
+// none and hide the menu entirely. ``confirmed`` is included defensively — the
+// state machine allows start/no-show from it, but device-booking never writes
+// ``confirmed`` so the branch is unreachable at runtime (code comment only).
+const ACTIONABLE_STATUS: ReadonlySet<BookingStatus> = new Set([
+  "pending",
+  "confirmed",
+  "in_service",
+]);
+
 export function BookingsPage() {
   const { me } = useAuth();
 
@@ -168,7 +188,9 @@ export function BookingsPage() {
 }
 
 // ============================================================ store view
-function StoreView() {
+// Exported for component tests (vitest, slice 03 store-view.test.tsx). Not
+// consumed anywhere else — the top-level ``BookingsPage`` is the public entry.
+export function StoreView() {
   const toast = useToast();
   const { me } = useAuth();
 
@@ -182,6 +204,13 @@ function StoreView() {
   const createMut = useCreateBooking();
   const updateMut = useUpdateBooking();
   const cancelMut = useCancelBooking();
+  // device-poweron (切片 03):three lifecycle mutations. ``start`` reuses the
+  // same hook as the customer view (store path needs ``:update``); ``end`` /
+  // ``no-show`` are owner-only (``:delete``). Each invalidates the same
+  // BOOKING_WRITE_KEYS set on success (see queries.ts).
+  const startMut = useStartBooking();
+  const endMut = useEndBooking();
+  const noShowMut = useNoShowBooking();
 
   // ---------- filter chips ----------
   // Mutually-exclusive list filter. Five presets, plus "all". Matches the
@@ -211,6 +240,14 @@ function StoreView() {
   const [editNotes, setEditNotes] = useState("");
   // Cancel confirm dialog
   const [cancelTarget, setCancelTarget] = useState<Booking | null>(null);
+  // device-poweron (切片 03):end-service dialog (target booking + free-text
+  // feedback). The dialog collects the optional service note in a textarea
+  // (raw JSON string parsed at submit — matches the customers-page "标签 JSON"
+  // convention; we don't ship a richer form here, the feedback dict is a free-
+  // form audit trail). no-show has no body so it just needs a confirm dialog.
+  const [endTarget, setEndTarget] = useState<Booking | null>(null);
+  const [endFeedback, setEndFeedback] = useState("");
+  const [noShowTarget, setNoShowTarget] = useState<Booking | null>(null);
 
   // device_id → serial_number, for resolving the list's "设备名" column from
   // the booking's device_id (BookingRead carries only device_id, no name —
@@ -334,6 +371,59 @@ function StoreView() {
     }
   };
 
+  // ---------- device-poweron lifecycle actions ----------
+  // ``start`` (pending/confirmed → in_service, walk-in OK). The same hook the
+  // customer view uses; the store path is authorized by ``bookings:update``
+  // server-side (owner/admin — member 403, button hidden via canUpdate).
+  const submitStart = async (b: Booking) => {
+    try {
+      await startMut.mutateAsync(b.id);
+      toast.success("已开机");
+    } catch (err) {
+      toast.error("开机失败", apiErrorMessage(err));
+    }
+  };
+
+  // ``end`` (in_service → done). Parses the feedback textarea as JSON; a blank
+  // or non-JSON input is treated as "no feedback" (the column stays null) — the
+  // textarea is explicitly optional, mirroring the customers-page tags-JSON
+  // convention. We do NOT block submit on parse failure (free-form audit note,
+  // not structured data): the backend stores whatever dict we send verbatim.
+  const submitEnd = async () => {
+    if (!endTarget) return;
+    const trimmed = endFeedback.trim();
+    let payload: BookingEndPayload | undefined;
+    if (trimmed) {
+      try {
+        payload = { feedback: JSON.parse(trimmed) as Record<string, unknown> };
+      } catch {
+        // Fall back to wrapping the raw note so the audit trail isn't lost —
+        // the operator clearly typed something, treat it as a text note.
+        payload = { feedback: { note: trimmed } };
+      }
+    }
+    try {
+      await endMut.mutateAsync({ id: endTarget.id, payload });
+      toast.success("已结束服务");
+      setEndTarget(null);
+      setEndFeedback("");
+    } catch (err) {
+      toast.error("结束失败", apiErrorMessage(err));
+    }
+  };
+
+  // ``no-show`` (pending/confirmed/in_service → no_show). Pure status flip.
+  const submitNoShow = async () => {
+    if (!noShowTarget) return;
+    try {
+      await noShowMut.mutateAsync(noShowTarget.id);
+      toast.success("已标记爽约");
+      setNoShowTarget(null);
+    } catch (err) {
+      toast.error("标记爽约失败", apiErrorMessage(err));
+    }
+  };
+
   return (
     <div className="space-y-6">
       <PageHeader
@@ -395,6 +485,25 @@ function StoreView() {
               <TableBody>
                 {filtered.map((b) => {
                   const mutable = MUTABLE_STATUS.has(b.status);
+                  // device-poweron (切片 03):the menu trigger is shown whenever
+                  // the row still has ≥1 lifecycle / edit / cancel action
+                  // available AND the principal holds a write perm. Terminal
+                  // rows (done/cancelled/no_show) hide the menu entirely.
+                  const actionable = ACTIONABLE_STATUS.has(b.status);
+                  // Per-state action visibility (B3/B4):start guards on
+                  // ``canUpdate`` (:update, owner/admin);end/no-show guard on
+                  // ``canCancel`` (:delete, owner only — admin has no such perm
+                  // per B2, the buttons stay hidden client-side).
+                  const canStart =
+                    actionable &&
+                    (b.status === "pending" || b.status === "confirmed") &&
+                    canUpdate;
+                  const canEnd = b.status === "in_service" && canCancel;
+                  const canMarkNoShow = actionable && canCancel;
+                  const showMenu =
+                    (canUpdate || canCancel) &&
+                    actionable &&
+                    (mutable || canStart || canEnd || canMarkNoShow);
                   return (
                     <TableRow key={b.id}>
                       <TableCell className="font-medium">
@@ -416,10 +525,7 @@ function StoreView() {
                       </TableCell>
                       {(canUpdate || canCancel) && (
                         <TableCell className="text-right">
-                          {/* Non-pending bookings have nothing to mutate in
-                              this feature (start/end/no-show land in device-
-                              poweron), so hide the menu entirely. */}
-                          {mutable && (
+                          {showMenu && (
                             <DropdownMenu>
                               <DropdownMenuTrigger asChild>
                                 <Button variant="ghost" size="icon">
@@ -427,12 +533,54 @@ function StoreView() {
                                 </Button>
                               </DropdownMenuTrigger>
                               <DropdownMenuContent align="end">
-                                {canUpdate && (
+                                {/* 改约 + 取消预约 stay pending-only
+                                    (MUTABLE_STATUS) — they are booking edits,
+                                    not lifecycle actions. */}
+                                {mutable && canUpdate && (
                                   <DropdownMenuItem onClick={() => openEdit(b)}>
                                     <Pencil className="mr-2 h-4 w-4" /> 改约
                                   </DropdownMenuItem>
                                 )}
-                                {canCancel && (
+                                {/* 确认开机 (device-poweron):walk-in 散客
+                                    预约也走这条 (B4)。``confirmed`` 行的按钮是
+                                    防御性渲染 —— 状态机允许 pending/confirmed
+                                    → in_service,但 device-booking 永不写
+                                    confirmed,故运行期不可达。 */}
+                                {canStart && (
+                                  <DropdownMenuItem
+                                    onClick={() => submitStart(b)}
+                                  >
+                                    <Play className="mr-2 h-4 w-4" /> 确认开机
+                                  </DropdownMenuItem>
+                                )}
+                                {/* 结束服务 (device-poweron):弹 feedback
+                                    dialog。owner only (canDelete). */}
+                                {canEnd && (
+                                  <DropdownMenuItem
+                                    onClick={() => {
+                                      setEndTarget(b);
+                                      setEndFeedback("");
+                                    }}
+                                  >
+                                    <Square className="mr-2 h-4 w-4" /> 结束服务
+                                  </DropdownMenuItem>
+                                )}
+                                {/* 爽约 (device-poweron):确认 dialog →
+                                    noShowBooking. owner only. */}
+                                {canMarkNoShow && (
+                                  <>
+                                    <DropdownMenuSeparator />
+                                    <DropdownMenuItem
+                                      className="text-destructive focus:text-destructive"
+                                      onClick={() => setNoShowTarget(b)}
+                                    >
+                                      <UserX className="mr-2 h-4 w-4" /> 标记爽约
+                                    </DropdownMenuItem>
+                                  </>
+                                )}
+                                {/* 取消预约 (device-booking,保留):pending
+                                    only,owner only. */}
+                                {mutable && canCancel && (
                                   <>
                                     <DropdownMenuSeparator />
                                     <DropdownMenuItem
@@ -642,6 +790,90 @@ function StoreView() {
               disabled={cancelMut.isPending}
             >
               <XCircle className="mr-2 h-4 w-4" /> 取消预约
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ---------------- end-service dialog (device-poweron 切片 03) ------------- */}
+      {/* Owner only (``:delete``). The textarea is optional — a blank submit
+          ends the booking with no service note. ``submitEnd`` accepts raw JSON
+          (parsed into ``feedback``) or free text (wrapped as
+          ``{ note: <text> }`` so the operator's typed note is never silently
+          dropped on a JSON.parse failure). This fallback is a slice-03 UX
+          decision (spec D10 only requires an optional free-form ``feedback``
+          dict); it diverges from customers-page's "标签 JSON" textarea, which
+          rejects non-JSON. */}
+      <Dialog
+        open={!!endTarget}
+        onOpenChange={(o) => {
+          if (!o) {
+            setEndTarget(null);
+            setEndFeedback("");
+          }
+        }}
+      >
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>结束服务</DialogTitle>
+            <DialogDescription>
+              标记该预约为「已完成」并记录结束时间。可填写服务反馈(JSON 或纯文本,
+              可选)。结束操作不可撤销。
+            </DialogDescription>
+          </DialogHeader>
+          <Field
+            label="服务反馈(可选)"
+            hint='如 {"rating": 5, "note": "满意"} 或纯文本,留空则不记录'
+          >
+            <textarea
+              value={endFeedback}
+              onChange={(e) => setEndFeedback(e.target.value)}
+              placeholder='{"rating": 5, "note": "客户反馈"}'
+              className="flex w-full rounded-md border border-input bg-transparent px-3 py-2 font-mono text-xs shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              rows={3}
+            />
+          </Field>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setEndTarget(null);
+                setEndFeedback("");
+              }}
+            >
+              取消
+            </Button>
+            <Button onClick={submitEnd} disabled={endMut.isPending}>
+              <Square className="mr-2 h-4 w-4" /> 结束服务
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ---------------- no-show confirm dialog (device-poweron 切片 03) --------- */}
+      {/* Owner only (``:delete``). Pure status flip — no body, no extra input.
+          Mirrors the cancel-confirm dialog shape. */}
+      <Dialog
+        open={!!noShowTarget}
+        onOpenChange={(o) => !o && setNoShowTarget(null)}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>确认标记爽约</DialogTitle>
+            <DialogDescription>
+              确定将该预约标记为「爽约」?爽约记录会影响排期释放与统计,操作不可撤销。
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setNoShowTarget(null)}>
+              返回
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={submitNoShow}
+              disabled={noShowMut.isPending}
+            >
+              <UserX className="mr-2 h-4 w-4" /> 标记爽约
             </Button>
           </DialogFooter>
         </DialogContent>

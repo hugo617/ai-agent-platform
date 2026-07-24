@@ -1597,17 +1597,26 @@
       "area": "业务实体",
       "title": "设备开机/结束/爽约状态机动作(不含硬件下发)",
       "user_visible_behavior": "客户/店员点击「开机」按钮 → 设备订单从 pending 流转到 in_service,记录开始时间;点击「结束」→ 流转到 done,记录结束时间 + 可填反馈;爽约按钮 → 流转到 no_show。⚠️ 当前只到状态机层,「点击开机 → 设备真开启」的硬件下发链路(MQTT/WS/寻址)留空,归于未来 backlog",
-      "status": "in_progress",
+      "status": "passing",
       "verification": [
-        "后端:POST /bookings/{id}/start(pending/confirmed→in_service,填 started_at)、POST /bookings/{id}/end(in_service→done,填 ended_at + 写 feedback JSONB)、POST /bookings/{id}/no-show(→no_show);状态机纯函数(参考 StorePilot booking_state.py,6 条合法跳转)+ ConflictError → HTTP 409",
-        "权限:start 可由 customer(自己的 booking 且 customer_id 非空)或 store_staff+ 触发;walk-in booking(customer_id 为空)必须由 store_staff+ start,customer 端无权;end/no-show 仅 store_staff+;所有端点强制 tenant_id + customer_id(如适用)校验防越权",
-        "前端:customer 端 BookView「确认开机」按钮真调 API(StorePilot 仅 Toast 是已知占位,本项目必须补真调用);门店端预约列表的「结束」「爽约」操作按钮",
-        "pytest:覆盖 6 条合法跳转 + 非法跳转 409 + 权限矩阵 + customer own 校验 + **walk-in booking(customer_id 为空)customer start 应 403,store_staff start 应 200** + started_at/ended_at 自动填充 + feedback 落库 + alembic check 无 drift",
-        "cd frontend && npm run build 通过 + oxlint 0 warnings"
+        "后端:POST /bookings/{id}/start(pending/confirmed→in_service,填 started_at)、POST /bookings/{id}/end(in_service→done,填 ended_at + 写 feedback JSON,device-booking 建为通用 JSON 非 JSONB,SQLite/PG 双库兼容)、POST /bookings/{id}/no-show(→no_show);状态机纯函数 app/services/booking_state.py(6 条合法跳转,内部 {state,action}→new_state 表)+ 非法跳转 raise InvalidTransition(BizError 子类)→ HTTP 400(全仓库无 409 概念,D1 定调)",
+        "权限:start 可由 customer(自己的 booking 且 customer_id 非空)或 store_staff+ 触发;walk-in booking(customer_id 为空)必须由 store_staff+ start,customer 端无权;end/no-show 仅 store owner(`bookings:delete`,admin 无此码 → 403,B2);所有端点强制 tenant_id + customer_id(如适用)校验防越权",
+        "前端:customer 端 MyBookingsView「确认开机」按钮真调 API(StorePilot 仅 Toast 是已知占位,本项目补真调用,切片 02);门店端 StoreView 预约列表的「确认开机(walk-in)」「结束服务」「标记爽约」操作按钮(切片 03,DropdownMenu + ACTIONABLE_STATUS 松绑 + end/no-show Dialog)",
+        "pytest:覆盖 6 条合法跳转 + 非法跳转 400 + 权限矩阵(start: owner/admin 200、member 403;end/no-show: owner 200/204、admin/member/customer/hq_staff 403)+ customer own 校验 + **walk-in booking(customer_id 为空)customer start 应 403,store_staff start 应 200** + started_at/ended_at 自动填充 + feedback 落库 + alembic check 无 drift(本 feature 无新迁移,迁移链 head 不变)",
+        "vitest 前端组件测(首个前端单测基建):MyBookingsView(切片 02,6 tests)+ StoreView(切片 03,6 tests)按钮的渲染/调用/禁用/toast/Dialog 覆盖",
+        "cd frontend && npm run build 通过 + oxlint 0 warnings + vitest 全绿"
       ],
       "notes": "设备功能系列 4/4 收官。**重要边界:硬件下发链路不在范围** —— 与 StorePilot slice-30-d3-iot-static.md 阶段 1 妥协一致(MQTT broker/WebSocket 实时流/设备寻址下发均推迟)。devices 表本次不加 mqtt_topic/hw_address 字段(YAGNI,等真上 IoT 时一次迁移补)。devices.serial_number 已有,未来硬件寻址可复用。开机动作不加 StorePilot 的 risk_ack/血压采集前置(那是医疗设备特定业务,本项目作为通用 SaaS 脚手架不该假设客户业务有此合规要求)。**walk-in booking 边界:customer_id 为空的预约只能由 store_staff+ start,customer 端无权触发(避免匿名预约被冒认)**。本 feature 写入的 started_at/ended_at/feedback 字段由 device-booking feature 先建好 schema(见其 notes),本 feature 不需要再加迁移列。未来要落地真实硬件下发时,新开 feature(预计 priority 65+,area=基础设施或 IoT)。依赖:[device-booking]。",
       "plan": "harness/docs/plan-device-poweron.md",
-      "depends_on": "device-booking"
+      "depends_on": "device-booking",
+      "evidence": [
+        "切片 01 合并 PR #114(commit 6e74073):booking_state.py 纯函数 6 合法边 + BookingService.start/end/no_show 三方法 + 三端点(函数体内 require,B1)+ tests/test_booking_state.py(6 合法 + 全非法组合 InvalidTransition)+ tests/test_bookings_api.py P 章节(P-1 6 合法跳转 / P-2 非法 400 / P-3 start 权限矩阵 customer own+walkin+owner+admin+member+hq+unauth / P-4 end/no-show 权限矩阵 owner 200/204 + admin/member/customer/hq 403 / P-5 跨租户 404 含 customer / P-6 副作用落库 started_at/ended_at/feedback)",
+        "切片 02 合并 PR #115(commit 1621c99):frontend vitest 基建(vitest.config + setup.ts + test-utils.tsx + tsconfig.app.json types)+ startBooking/useStartBooking + MyBookingsView 确认开机按钮 + my-bookings-view.test.tsx(6 tests)",
+        "切片 03 合并 PR #116(本会话):endBooking/noShowBooking endpoints + useEndBooking/useNoShowBooking hooks + StoreView DropdownMenu 三动作(确认开机/结束服务/标记爽约)+ ACTIONABLE_STATUS 松绑(pending/confirmed/in_service)+ end feedback Dialog + no-show 确认 Dialog + store-view.test.tsx(6 tests:walk-in start / in_service end+feedback Dialog / pending no-show 确认 / 终态无按钮 / member 无写按钮 / pending 行四菜单项共存)",
+        "./init.sh 全绿 714 passed(ruff + pytest,SQLite 内存库,含 test_booking_state + test_bookings_api A–P 全章节)",
+        "cd frontend && npm run build ✓ 1.53s + npx oxlint 0 warnings 0 errors(80 files 102 rules)+ npx vitest run ✓ 12/12(2 files:my-bookings-view 6 + store-view 6)",
+        "/code-review 双轴(Standards + Spec)通过:0 阻断;修 1 注释误导(submitEnd fallback 不再归因 customers-page '标签 JSON' 范式);ACTIONABLE_STATUS 含 confirmed 经核实是 plan §0a B4 / §8 L276-278 显式要求的防御性渲染,非 speculative generality"
+      ]
     }
   ]
 }

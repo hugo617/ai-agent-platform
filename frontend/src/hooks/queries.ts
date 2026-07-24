@@ -37,6 +37,7 @@ import {
   deleteUser,
   detachSpecialist,
   detachTenant,
+  endBooking,
   fetchAgents,
   fetchAgentStatistics,
   fetchOrchestratorSpecialists,
@@ -81,6 +82,7 @@ import {
   fetchUsers,
   fetchWallet,
   grantRolePermission,
+  noShowBooking,
   recharge,
   removeConversationTag,
   removeMember,
@@ -122,6 +124,7 @@ import type {
   AgentUpdate,
   ApiTokenCreate,
   BookingCreate,
+  BookingEndPayload,
   BookingUpdate,
   ConversationFilters,
   CustomerProfileCreate,
@@ -537,6 +540,29 @@ export function useStartBooking() {
     (id: string) => startBooking(id),
     BOOKING_WRITE_KEYS,
   );
+}
+
+/** End a booking (POST /bookings/{id}/end, device-poweron 切片 03) —
+ * in_service → done, backend fills ``ended_at`` + persists optional
+ * ``feedback``. Authorization: store owner only (``bookings:delete``).
+ *
+ * The mutation accepts ``{ id, payload? }`` so callers can pass the optional
+ * feedback dict gathered from the store「结束服务」dialog; omitting payload ends
+ * the booking with no service note. Invalidates the same ``BOOKING_WRITE_KEYS``
+ * set as the other writes so the store list / device grids all refresh. */
+export function useEndBooking() {
+  return useApiMutation(
+    ({ id, payload }: { id: string; payload?: BookingEndPayload }) =>
+      endBooking(id, payload),
+    BOOKING_WRITE_KEYS,
+  );
+}
+
+/** Mark a booking as no-show (POST /bookings/{id}/no-show, device-poweron 切片 03)
+ * — pending / confirmed / in_service → no_show. Pure status flip (no body, 204
+ * like ``/cancel``). Authorization: store owner only. */
+export function useNoShowBooking() {
+  return useApiMutation((id: string) => noShowBooking(id), BOOKING_WRITE_KEYS);
 }
 
 /** Day-grouped booking grid for one device in [start, end). ``enabled`` gates
