@@ -241,7 +241,7 @@
 
 ---
 
-### 切片 02 — 前端基建:vitest + customer「确认开机」按钮 + 组件测
+### 切片 02 — 前端基建:vitest + customer「确认开机」按钮 + 组件测 ✅(PR #115,commit 1621c99)
 
 **Blocked by:** 01(`/start` 端点形状 + `BookingRead` 带 started_at 定型)
 
