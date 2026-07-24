@@ -681,6 +681,53 @@ export interface DeviceModelPublic {
   specs: Record<string, unknown>;
 }
 
+/**
+ * Full device-model shape for super_admin / hq_staff (device-models-admin-ui
+ * slice 01). Mirrors backend DeviceModelRead. ``unit_cost`` is a string because
+ * the backend ``Numeric(12,2)`` Decimal serializes through FastAPI's JSON
+ * encoder as a string like "299.00" (not a number) — the admin page formats it
+ * inline ``¥${Number(m.unit_cost).toFixed(2)}`` in slice 02. ``specs`` mirrors
+ * backend ``dict[str, Any]`` as a free-form record; the KeySpecRows editor
+ * (slice 02) handles string/number/boolean serialization.
+ *
+ * Coexists with DeviceModelPublic above — both shapes are returned by the same
+ * GET /device-models/ endpoint depending on platform_role; the admin page
+ * (super_admin) consumes this fuller shape, the store device-picker consumes
+ * the minimal one.
+ */
+export interface DeviceModelRead {
+  id: string;
+  name: string;
+  brand: string | null;
+  supplier: string | null;
+  unit_cost: string; // Numeric(12,2) Decimal → JSON string ("299.00")
+  specs: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+}
+
+/** POST /device-models/ body. Mirrors backend DeviceModelCreate. unit_cost is
+ * a string-formatted Decimal; the form validates ``/^\d+(\.\d{1,2})?$/`` >= 0
+ * before sending (slice 02). specs defaults to {} when omitted. */
+export interface DeviceModelCreate {
+  name: string; // 1-200 chars (backend-enforced)
+  brand?: string | null; // max 200 chars
+  supplier?: string | null; // max 200 chars
+  unit_cost: string;
+  specs?: Record<string, unknown>;
+}
+
+/** PUT /device-models/{id} body. Mirrors backend DeviceModelUpdate: all fields
+ * optional (partial update). specs is whole-replace semantics (not a merge) —
+ * the form always sends the full specs dict reconstructed by KeySpecRows. */
+export interface DeviceModelUpdate {
+  name?: string;
+  brand?: string | null;
+  supplier?: string | null;
+  unit_cost?: string;
+  specs?: Record<string, unknown>;
+}
+
 // ============= bookings (设备预约订单, device-booking 系列 3/4) =============
 //
 // Aligns with app/schemas/booking.py. Mirrors the devices read-shape split:

@@ -22,6 +22,7 @@ import {
   createBooking,
   createCustomerProfile,
   createDevice,
+  createDeviceModel,
   createGroup,
   createPricing,
   createRole,
@@ -31,6 +32,7 @@ import {
   deleteConversation,
   deleteCustomerProfile,
   deleteDevice,
+  deleteDeviceModel,
   deleteGroup,
   deletePricing,
   deleteRole,
@@ -51,6 +53,7 @@ import {
   fetchBooking,
   fetchBookings,
   fetchDeviceModels,
+  fetchDeviceModelsAdmin,
   fetchDevices,
   fetchDeviceSchedule,
   fetchDashboardOverview,
@@ -98,6 +101,7 @@ import {
   updateBooking,
   updateCustomerProfile,
   updateDevice,
+  updateDeviceModel,
   updateGroup,
   updateMe,
   updateMember,
@@ -130,6 +134,8 @@ import type {
   CustomerProfileCreate,
   CustomerProfileUpdate,
   DeviceCreate,
+  DeviceModelCreate,
+  DeviceModelUpdate,
   DeviceUpdate,
   EmbeddingConfigUpdate,
   GroupCreate,
@@ -467,6 +473,49 @@ export function useDeviceModels(enabled = true) {
     queryFn: fetchDeviceModels,
     enabled,
   });
+}
+
+// ---------- device-models admin (device-models-admin-ui, super_admin CRUD) ----------
+//
+// useDeviceModelsAdmin pulls the full DeviceModelRead shape (incl. unit_cost +
+// complete specs) for the super_admin management page. It reuses qk.deviceModels
+// (same URL/data as the store picker) deliberately: an admin adding/removing a
+// model should refresh every store's device-picker dropdown — the same-key-
+// different-type risk is low (the picker only reads id/name/specs and is
+// unaffected by the extra fields; see plan §9). The type narrowing happens at
+// the caller, not the cache.
+//
+// The three write hooks (create/update/delete) are super_admin-only on the
+// backend (require_super_admin); the frontend RequireSuperAdmin guard is the UX
+// layer. All invalidate qk.deviceModels so both the admin list and every store
+// picker refetch after a change.
+export function useDeviceModelsAdmin() {
+  return useQuery({
+    queryKey: qk.deviceModels,
+    queryFn: fetchDeviceModelsAdmin,
+  });
+}
+
+export function useCreateDeviceModel() {
+  return useApiMutation(
+    (payload: DeviceModelCreate) => createDeviceModel(payload),
+    [qk.deviceModels],
+  );
+}
+
+export function useUpdateDeviceModel() {
+  return useApiMutation(
+    ({ id, payload }: { id: string; payload: DeviceModelUpdate }) =>
+      updateDeviceModel(id, payload),
+    [qk.deviceModels],
+  );
+}
+
+export function useDeleteDeviceModel() {
+  return useApiMutation(
+    (id: string) => deleteDeviceModel(id),
+    [qk.deviceModels],
+  );
 }
 
 // ---------- bookings (设备预约订单, device-booking 系列 3/4) ----------
