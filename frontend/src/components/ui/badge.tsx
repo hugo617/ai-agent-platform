@@ -20,6 +20,14 @@ const badgeVariants = cva(
          *  dot is drawn via ::before so it travels with the badge and stays a
          *  fixed size. Pair with a short status word (not a long label). */
         dot: "border-transparent bg-muted text-muted-foreground [&::before]:mr-1.5 [&::before]:h-1.5 [&::before]:w-1.5 [&::before]:rounded-full [&::before]:bg-current",
+        /** Dot variant tinted muted (grey dot). Use for "settled/neutral" —
+         *  ``done`` / ``cancelled`` / ``confirmed`` bookings where the state is
+         *  informational rather than warning/danger. Distinct from ``dot`` only
+         *  in name (both render the same grey) — the dedicated variant exists so
+         *  a status mapping can spell out its intent (``dot-muted``) instead of
+         *  collapsing to the generic ``dot`` and losing the semantic. */
+        "dot-muted":
+          "border-transparent bg-muted text-muted-foreground [&::before]:mr-1.5 [&::before]:h-1.5 [&::before]:w-1.5 [&::before]:rounded-full [&::before]:bg-current",
         /** Dot variant tinted success (green dot). Use for "active/running". */
         "dot-success":
           "border-transparent bg-muted text-muted-foreground [&::before]:mr-1.5 [&::before]:h-1.5 [&::before]:w-1.5 [&::before]:rounded-full [&::before]:bg-emerald-500",
