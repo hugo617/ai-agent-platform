@@ -262,7 +262,7 @@
 
 ---
 
-### 切片 04 — customer own 端点(GET /me/bookings,防越权) ✅ PR #109
+### 切片 04 — customer own 端点(GET /me/bookings,防越权) ✅ PR #110
 
 **Blocked by:** 01(共用 BookingService 骨架)
 
