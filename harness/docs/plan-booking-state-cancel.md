@@ -153,7 +153,7 @@ async def cancel(self, actor_id, tenant_id, booking_id, platform_role=None) -> b
 
 ## 6. 切片规划(单切片,tracer-bullet)
 
-### 切片 01 — cancel 边并入 booking 状态机 ✅ PR #127(分支 feat/booking-state-cancel-slice01,2026-07-25)
+### 切片 01 — cancel 边并入 booking 状态机 ✅ PR #127 commit a6baa6f(分支 feat/booking-state-cancel-slice01,2026-07-25)
 
 - **What it delivers**:cancel 动作的状态跳转从 `booking_service.cancel()` 内联判断搬到 `booking_state._TRANSITIONS` 表。改后:① `booking_state.py` 的 ACTIONS 加 `"cancel"`,_TRANSITIONS 加 `("pending","cancel"):"cancelled"` 一条边;② `booking_service.cancel()` 中间 5 行 if/elif/else 塌缩为「1 行 idempotent 早退 + 1 行 `transition()` 调用」;③ `test_booking_state.py` 同步:合法边 6→7、非法对 12→17、加命名测试 `test_cancel_only_from_pending`、加双层语义注释。行为零变更(cancel 已 cancelled → 204 早退保留;非 pending 非 cancelled → 400,异常类从 BizError 升级为 InvalidTransition,消息文字变化但状态码不变)。
 - **Blocked by**: 无(frontier,首片可立即开工)
