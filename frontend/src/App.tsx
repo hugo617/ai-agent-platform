@@ -69,6 +69,11 @@ const BillingPage = lazy(() =>
 const BillingAdminPage = lazy(() =>
   import("@/pages/billing-admin-page").then((m) => ({ default: m.BillingAdminPage })),
 );
+const DeviceModelsPage = lazy(() =>
+  import("@/pages/device-models-page").then((m) => ({
+    default: m.DeviceModelsAdminPage,
+  })),
+);
 const LogsPage = lazy(() =>
   import("@/pages/logs-page").then((m) => ({ default: m.LogsPage })),
 );
@@ -162,6 +167,10 @@ export default function App() {
                 <Route element={<RequireSuperAdmin />}>
                   <Route path="/tenants" element={<TenantsPage />} />
                   <Route path="/billing/admin" element={<BillingAdminPage />} />
+                  {/* 设备型号目录管理(device-models-admin-ui)— 平台级主数据,
+                      super_admin 维护型号供门店入库下拉用。后端 POST/PUT/DELETE
+                      已 require_super_admin(),此守卫是 UX 层(对齐 /tenants)。 */}
+                  <Route path="/device-models" element={<DeviceModelsPage />} />
                 </Route>
 
                 {/* User-management routes also require authorization: a plain

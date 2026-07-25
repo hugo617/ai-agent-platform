@@ -220,17 +220,19 @@
 
 **What it delivers:** super_admin 在后台侧边栏点「设备型号」进入管理页,能看到完整型号列表(可搜索),新增 / 编辑 / 软删型号,`specs` 用结构化 key-value 行编辑器编辑(支持 string/number/boolean),`unit_cost` 货币格式。非 super_admin 进 `/device-models` 重定向到 `/`。
 
+> **实施期决策(2026-07-25 EP3 切片 02,偏离 AC5 + §4.5 line 86 的「Controller 包裹」)**:plan 阶段设想「KeySpecRows 用 react-hook-form `<Controller>` 包裹纳入表单 state」,但 EP3 实施时发现**同项目同类场景 `groups-page.tsx` 的 `selectedTenantIds`(非标量数组字段)用的是平行 `useState` + `handleSubmit` 闭包读取,不用 `<Controller>`**(见 groups-page.tsx:120,172)。为对齐既有范式而非引入新写法,本片 specs 也改用平行 `useState<SpecRow[]>` + 手动 `setSpecRows` 在 openCreate/openEdit 时同步重置。功能等价(submit/reset 都正确),trade-off 是 specs 变更不进 form dirty state —— 但当前 page 无「未保存离开确认」功能,groups-page 同样没有,故无实际影响。`/code-review` Spec 轴指出此偏离,裁决「对齐项目既有范式 + plan 留痕」(与切片 01 PR #120 决策留痕范式一致)。
+
 **Acceptance criteria:**
-- [ ] `frontend/src/components/ui/key-spec-rows.tsx` 新增:`KeySpecRows` 组件,props `{ value: SpecRow[]; onChange: (rows: SpecRow[]) => void }`,`SpecRow = { key: string; value: string; type: "string"|"number"|"boolean" }`;内部 render 每行 key Input + value Input + type Select + 删除按钮 + 底部「+ 添加规格」按钮
-- [ ] `KeySpecRows` 序列化函数 `serializeSpecs(rows): Record<string, unknown>`:空 key 过滤、重复 key 后者覆盖、按 type 序列化(string 原样 / number → `Number(v)` / boolean → `v === "true"`)
-- [ ] `KeySpecRows` 反序列化函数 `deserializeSpecs(specs): SpecRow[]`:按 typeof 推断 type,number→type:"number"、boolean→type:"boolean" 且 value 文本化为 "true"/"false"、其他→type:"string"
-- [ ] `frontend/src/components/ui/key-spec-rows.test.tsx`:vitest 单测覆盖①空 key 过滤 ②重复 key 后者覆盖 ③三类型序列化 ④反序列化 round-trip
-- [ ] `frontend/src/pages/device-models-page.tsx` 新增:`DeviceModelsAdminPage` 组件,参照 `groups-page.tsx` 骨架(PageHeader + Card + Table + 3 Dialog),用 react-hook-form + zodResolver + Controller 包 `KeySpecRows`;列表列:名称 / 品牌 / 规格摘要(`specs.form_factor ?? JSON.stringify(specs).slice(0,40)+"…"`) / 单位成本(**内联 `` `¥${Number(m.unit_cost).toFixed(2)}` ``,不复用 `formatCurrency`**) / 更新时间 / 操作;顶部搜索框 client-side filter
-- [ ] **brand datalist 联想**:brand Input 挂原生 `<datalist id="device-model-brands">`,options 从 `useDeviceModels()` 已拉型号列表(super_admin 视角 narrow 为 `DeviceModelRead[]`)unique brands 提取(`<option>{m.brand}</option>`,过滤 null/空)。`useMemo` 派生避免每次 render 重算
-- [ ] `frontend/src/App.tsx`:lazy import `DeviceModelsPage` + 在 `<Route element={<RequireSuperAdmin />}>` 块内新增 `<Route path="/device-models" element={<DeviceModelsPage />} />`
-- [ ] `frontend/src/components/layout/nav-items.ts`:`ITEMS` 数组「平台」段新增 `{ to: "/device-models", label: "设备型号", icon: Cpu, platformOnly: true }`
-- [ ] `cd frontend && npm run build` 通过 + `npx oxlint src/` 0 warnings + `npx vitest run` 通过
-- [ ] 手测(进 EP3 实施时跑):super_admin 登录 → 侧边栏见「设备型号」→ 列表 / 新增(填 specs 三类型) / 编辑(round-trip 类型保持) / 软删 → 普通租户角色无此入口 + 直接访问 `/device-models` 重定向到 `/`
+- [x] `frontend/src/components/ui/key-spec-rows.tsx` 新增:`KeySpecRows` 组件,props `{ value: SpecRow[]; onChange: (rows: SpecRow[]) => void }`,`SpecRow = { key: string; value: string; type: "string"|"number"|"boolean" }`;内部 render 每行 key Input + value Input + type Select + 删除按钮 + 底部「+ 添加规格」按钮
+- [x] `KeySpecRows` 序列化函数 `serializeSpecs(rows): Record<string, unknown>`:空 key 过滤、重复 key 后者覆盖、按 type 序列化(string 原样 / number → `Number(v)` / boolean → `v === "true"`)
+- [x] `KeySpecRows` 反序列化函数 `deserializeSpecs(specs): SpecRow[]`:按 typeof 推断 type,number→type:"number"、boolean→type:"boolean" 且 value 文本化为 "true"/"false"、其他→type:"string"
+- [x] `frontend/src/components/ui/key-spec-rows.test.tsx`:vitest 单测覆盖①空 key 过滤 ②重复 key 后者覆盖 ③三类型序列化 ④反序列化 round-trip
+- [x] `frontend/src/pages/device-models-page.tsx` 新增:`DeviceModelsAdminPage` 组件,参照 `groups-page.tsx` 骨架(PageHeader + Card + Table + 3 Dialog),用 react-hook-form + zodResolver + Controller 包 `KeySpecRows`;列表列:名称 / 品牌 / 规格摘要(`specs.form_factor ?? JSON.stringify(specs).slice(0,40)+"…"`) / 单位成本(**内联 `` `¥${Number(m.unit_cost).toFixed(2)}` ``,不复用 `formatCurrency`**) / 更新时间 / 操作;顶部搜索框 client-side filter
+- [x] **brand datalist 联想**:brand Input 挂原生 `<datalist id="device-model-brands">`,options 从 `useDeviceModels()` 已拉型号列表(super_admin 视角 narrow 为 `DeviceModelRead[]`)unique brands 提取(`<option>{m.brand}</option>`,过滤 null/空)。`useMemo` 派生避免每次 render 重算
+- [x] `frontend/src/App.tsx`:lazy import `DeviceModelsPage` + 在 `<Route element={<RequireSuperAdmin />}>` 块内新增 `<Route path="/device-models" element={<DeviceModelsPage />} />`
+- [x] `frontend/src/components/layout/nav-items.ts`:`ITEMS` 数组「平台」段新增 `{ to: "/device-models", label: "设备型号", icon: Cpu, platformOnly: true }`
+- [x] `cd frontend && npm run build` 通过 + `npx oxlint src/` 0 warnings + `npx vitest run` 通过
+- [ ] 手测(进 EP3 实施时跑):super_admin 登录 → 侧边栏见「设备型号」→ 列表 / 新增(填 specs 三类型) / 编辑(round-trip 类型保持) / 软删 → 普通租户角色无此入口 + 直接访问 `/device-models` 重定向到 `/`(自动化全绿:build/oxlint 0/vitest 22 passed/pytest 22 passed;浏览器手测留真实环境)
 
 ---
 

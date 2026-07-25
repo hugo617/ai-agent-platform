@@ -5,6 +5,7 @@ import {
   Calendar,
   Contact,
   Coins,
+  Cpu,
   LayoutDashboard,
   MessageSquare,
   Monitor,
@@ -143,6 +144,10 @@ const ITEMS: NavItem[] = [
 
   // --- 平台 (super_admin only) ---
   { to: "/tenants", label: "门店", icon: Store, platformOnly: true },
+  // 设备型号目录(device-models-admin-ui)— 平台级主数据,super_admin 维护
+  // 型号供门店入库下拉用。Cpu 图标与 /devices 的 Monitor 区分(型号是硬件
+  // 规格目录,实例是具体设备)。对齐 /tenants /billing/admin 的 platformOnly 范式。
+  { to: "/device-models", label: "设备型号", icon: Cpu, platformOnly: true },
   { to: "/billing/admin", label: "计费管理", icon: Coins, platformOnly: true },
 ];
 
