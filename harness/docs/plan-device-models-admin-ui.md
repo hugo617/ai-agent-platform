@@ -214,7 +214,7 @@
 
 ---
 
-### 切片 02 — UI 层:page + 路由 + nav + KeySpecRows 组件(blocked by 01)
+### 切片 02 — UI 层:page + 路由 + nav + KeySpecRows 组件(blocked by 01) ✅(PR #122)
 
 **Blocked by:** 01(消费其 types/endpoints/hooks)
 
