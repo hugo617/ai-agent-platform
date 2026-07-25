@@ -194,6 +194,36 @@ describe("HqView — cross-tenant panorama smoke (regression)", () => {
     expect(getByText("跨全部门店暂无设备预约")).toBeTruthy();
   });
 
+  // 回归测试(bugfix:TDZ ReferenceError)。真实运行时 useDevices() 返回非空
+  // DeviceHqRead[](平台角色跨店 feed),targetDevices 的 .filter() 回调会真的
+  // 执行。若 targetDevices 的计算被放在 const targetTenantId 声明之前(JS 的
+  // const 不 hoist 初始值),filter 回调访问 targetTenantId 会抛
+  // "Cannot access 'targetTenantId' before initialization" → HqView 崩 → 白屏。
+  // 历史背景:本测试加入前,所有 smoke 用例都 mock useDevices→{data:[]},空数组
+  // 让 .filter 回调一次都不执行,TDZ 永不触发 → bug 漏网 8 个测试全绿但生产白屏。
+  it("useDevices 返回非空数组时不抛 TDZ ReferenceError(回归 bugfix)", () => {
+    mocks.useBookings.mockReturnValue({
+      data: [makeHqBooking({ id: "b-1", tenant_id: "t-1" })],
+      isLoading: false,
+    });
+    mocks.useAllTenants.mockReturnValue({
+      data: [makeTenant({ id: "t-1", name: "上海徐汇店" })],
+    });
+    // 关键:非空 devices 数组,触发 .filter 回调执行
+    mocks.useDevices.mockReturnValue({
+      data: [
+        { id: "d-1", tenant_id: "t-1", status: "active", name: "DEV-1" },
+        { id: "d-2", tenant_id: "t-2", status: "active", name: "DEV-2" },
+        { id: "d-3", tenant_id: "t-1", status: "inactive", name: "DEV-3" },
+      ],
+    });
+    stubWriteMutations();
+
+    // 渲染不应抛 ReferenceError。修复前:const targetDevices 在 targetTenantId
+    // 之前 → TDZ 抛错;修复后:顺序调换 → 正常渲染。
+    expect(() => renderWithProviders(<HqView />)).not.toThrow();
+  });
+
   it("null fallback:tenant_name/device_name/customer_name 缺失时显示兜底文案", () => {
     mocks.useBookings.mockReturnValue({
       data: [
