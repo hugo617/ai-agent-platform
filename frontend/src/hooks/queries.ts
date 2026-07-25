@@ -434,6 +434,10 @@ export function useDevices() {
 }
 
 export function useCreateDevice() {
+  // DeviceCreate.tenant_id (optional) carries the cross-store target for
+  // platform writers; store principals omit it. No signature change — the
+  // caller just includes ``tenant_id`` in the payload (platform-cross-tenant-
+  // write plan §4.5.4a 补丁 1).
   return useApiMutation(
     (payload: DeviceCreate) => createDevice(payload),
     [qk.devices],
@@ -441,6 +445,7 @@ export function useCreateDevice() {
 }
 
 export function useUpdateDevice() {
+  // DeviceUpdate.tenant_id carries the platform-writer target like create.
   return useApiMutation(
     ({ id, payload }: { id: string; payload: DeviceUpdate }) =>
       updateDevice(id, payload),
@@ -448,21 +453,34 @@ export function useUpdateDevice() {
   );
 }
 
-export function useDeleteDevice() {
-  return useApiMutation((id: string) => deleteDevice(id), [qk.devices]);
-}
-
-export function useBindDeviceCustomer() {
+// ``tenantId`` is the platform-writer cross-store target. We pass it through
+// the hook closure rather than per-call so the store call site stays
+// ``deleteMut.mutateAsync(id)`` (zero behaviour change for store callers +
+// their tests). Platform callers (devices HqView) construct the hook with the
+// selected target and the same ``mutateAsync(id)`` call transparently carries
+// the target. ``tenantId`` undefined (store path) → no query param sent →
+// backend uses ``user.tenant_id`` (plan §4.5.4a 补丁 1).
+export function useDeleteDevice(tenantId?: string) {
   return useApiMutation(
-    ({ deviceId, customerId }: { deviceId: string; customerId: string }) =>
-      bindDeviceCustomer(deviceId, customerId),
+    (id: string) => deleteDevice(id, tenantId),
     [qk.devices],
   );
 }
 
-export function useUnbindDeviceCustomer() {
+export function useBindDeviceCustomer(tenantId?: string) {
+  // Same closure pattern as useDeleteDevice. ``tenantId`` → body field
+  // ``tenant_id`` (POST has a body); undefined (store path) omits the field.
   return useApiMutation(
-    (deviceId: string) => unbindDeviceCustomer(deviceId),
+    ({ deviceId, customerId }: { deviceId: string; customerId: string }) =>
+      bindDeviceCustomer(deviceId, customerId, tenantId),
+    [qk.devices],
+  );
+}
+
+export function useUnbindDeviceCustomer(tenantId?: string) {
+  // Same closure pattern as useDeleteDevice (query param on DELETE).
+  return useApiMutation(
+    (deviceId: string) => unbindDeviceCustomer(deviceId, tenantId),
     [qk.devices],
   );
 }
@@ -547,6 +565,8 @@ export function useBooking(id: string | null | undefined) {
 }
 
 export function useCreateBooking() {
+  // BookingCreate.tenant_id carries the platform-writer target like
+  // DeviceCreate; store callers omit the field. No signature change.
   return useApiMutation(
     (payload: BookingCreate) => createBooking(payload),
     BOOKING_WRITE_KEYS,
@@ -554,6 +574,7 @@ export function useCreateBooking() {
 }
 
 export function useUpdateBooking() {
+  // BookingUpdate.tenant_id carries the platform-writer target like create.
   return useApiMutation(
     ({ id, payload }: { id: string; payload: BookingUpdate }) =>
       updateBooking(id, payload),
@@ -561,8 +582,17 @@ export function useUpdateBooking() {
   );
 }
 
-export function useCancelBooking() {
-  return useApiMutation((id: string) => cancelBooking(id), BOOKING_WRITE_KEYS);
+// ``tenantId`` is the platform-writer cross-store target (→ ?tenant_id= query,
+// plan §4.5.4a 补丁 5). Closure pattern — store call site stays
+// ``cancelMut.mutateAsync(id)``. Platform HqView constructs the hook with the
+// selected target so the same ``mutateAsync(id)`` call transparently carries
+// it. ``tenantId`` undefined (store path) → no query param → backend uses
+// ``user.tenant_id``.
+export function useCancelBooking(tenantId?: string) {
+  return useApiMutation(
+    (id: string) => cancelBooking(id, tenantId),
+    BOOKING_WRITE_KEYS,
+  );
 }
 
 /** Start a booking (POST /bookings/{id}/start, device-poweron 切片 02) —
@@ -572,10 +602,14 @@ export function useCancelBooking() {
  *
  * Slice 02 wires only this one; ``useEndBooking`` / ``useNoShowBooking`` land
  * in slice 03 alongside the store「结束」/「爽约」buttons (no pre-built empty
- * scaffolding, 铁律6). */
-export function useStartBooking() {
+ * scaffolding, 铁律6).
+ *
+ * ``tenantId`` (platform-cross-tenant-write plan §4.5.4a 补丁 5) is the
+ * platform-writer cross-store target; closure pattern — store callers omit it
+ * (zero behaviour change). */
+export function useStartBooking(tenantId?: string) {
   return useApiMutation(
-    (id: string) => startBooking(id),
+    (id: string) => startBooking(id, tenantId),
     BOOKING_WRITE_KEYS,
   );
 }
@@ -587,20 +621,30 @@ export function useStartBooking() {
  * The mutation accepts ``{ id, payload? }`` so callers can pass the optional
  * feedback dict gathered from the store「结束服务」dialog; omitting payload ends
  * the booking with no service note. Invalidates the same ``BOOKING_WRITE_KEYS``
- * set as the other writes so the store list / device grids all refresh. */
-export function useEndBooking() {
+ * set as the other writes so the store list / device grids all refresh.
+ *
+ * ``tenantId`` (platform-cross-tenant-write plan §4.5.4a 补丁 5) is the
+ * platform-writer cross-store target (orthogonal to the feedback body);
+ * closure pattern — store callers omit it (zero behaviour change). */
+export function useEndBooking(tenantId?: string) {
   return useApiMutation(
     ({ id, payload }: { id: string; payload?: BookingEndPayload }) =>
-      endBooking(id, payload),
+      endBooking(id, payload, tenantId),
     BOOKING_WRITE_KEYS,
   );
 }
 
 /** Mark a booking as no-show (POST /bookings/{id}/no-show, device-poweron 切片 03)
  * — pending / confirmed / in_service → no_show. Pure status flip (no body, 204
- * like ``/cancel``). Authorization: store owner only. */
-export function useNoShowBooking() {
-  return useApiMutation((id: string) => noShowBooking(id), BOOKING_WRITE_KEYS);
+ * like ``/cancel``). Authorization: store owner only.
+ *
+ * ``tenantId`` (platform-cross-tenant-write plan §4.5.4a 补丁 5) is the
+ * platform-writer cross-store target; closure pattern — store callers omit it. */
+export function useNoShowBooking(tenantId?: string) {
+  return useApiMutation(
+    (id: string) => noShowBooking(id, tenantId),
+    BOOKING_WRITE_KEYS,
+  );
 }
 
 /** Day-grouped booking grid for one device in [start, end). ``enabled`` gates

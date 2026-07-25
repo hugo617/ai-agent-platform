@@ -626,23 +626,33 @@ export interface Device {
   updated_at: string;
 }
 
-/** POST /devices/ body. customer_id is an optional create-time hint. */
+/** POST /devices/ body. customer_id is an optional create-time hint.
+ *
+ * ``tenant_id`` (platform-cross-tenant-write, plan §4.5.4a 补丁 1) is the
+ * cross-store target for platform writers (super_admin / hq_staff). Store
+ * principals MUST NOT send it — the backend 400s on a forged target. Omitting
+ * it = "act on my own tenant" (store path, behaviour unchanged). */
 export interface DeviceCreate {
   model_id: string;
   serial_number: string;
   status?: DeviceStatus;
   customer_id?: string | null;
+  tenant_id?: string;
 }
 
 /**
  * PUT /devices/{id} body. customer_id is intentionally absent — bind/unbind
  * have their own dedicated endpoints (/devices/{id}/bind) so the audit trail
  * stays clean.
+ *
+ * ``tenant_id`` mirrors DeviceCreate: platform-writer target only (store path
+ * omits → backend uses ``user.tenant_id``, behaviour unchanged).
  */
 export interface DeviceUpdate {
   model_id?: string;
   serial_number?: string;
   status?: DeviceStatus;
+  tenant_id?: string;
 }
 
 /** HQ panorama device (GET /devices/ for super_admin / hq_staff). */
@@ -654,9 +664,12 @@ export interface DeviceHqRead extends Device {
   customer_name: string | null;
 }
 
-/** Body of POST /devices/{id}/bind. */
+/** Body of POST /devices/{id}/bind. ``tenant_id`` is the platform-writer
+ * cross-store target (store principals omit it; backend uses ``user.tenant_id``
+ * — plan §4.5.4a 补丁 1). */
 export interface DeviceBindRequest {
   customer_id: string;
+  tenant_id?: string;
 }
 
 /** 200 response of POST /devices/{id}/bind. ``already_bound`` is the
@@ -780,24 +793,34 @@ export interface Booking {
 
 /** POST /bookings/ body. NO status / started_at / ended_at / feedback (the
  * state-guard rule — Pydantic drops them on the backend; the type makes them
- * unexpressible on the client). ``customer_id`` optional = walk-in booking. */
+ * unexpressible on the client). ``customer_id`` optional = walk-in booking.
+ *
+ * ``tenant_id`` (platform-cross-tenant-write, plan §4.5.4a 补丁 5) is the
+ * cross-store target for platform writers (super_admin / hq_staff). Store
+ * principals MUST NOT send it (backend 400s on a forged target). Omitting it
+ * = "act on my own tenant" (store path, behaviour unchanged). */
 export interface BookingCreate {
   device_id: string;
   customer_id?: string | null;
   scheduled_start_at: string;
   scheduled_end_at: string;
   notes?: string | null;
+  tenant_id?: string;
 }
 
 /** PUT /bookings/{id} body. ``device_id`` is intentionally absent (D10 —
  * change-device = cancel + recreate). Only ``pending`` bookings are mutable;
  * ``scheduled_*`` / ``customer_id`` / ``notes`` are the mutable fields. Like
- * the create shape, NO status / lifecycle fields. */
+ * the create shape, NO status / lifecycle fields.
+ *
+ * ``tenant_id`` mirrors BookingCreate (platform-writer cross-store target;
+ * store path omits → backend uses ``user.tenant_id``). */
 export interface BookingUpdate {
   customer_id?: string | null;
   scheduled_start_at?: string;
   scheduled_end_at?: string;
   notes?: string | null;
+  tenant_id?: string;
 }
 
 /** POST /bookings/{id}/end body (device-poweron, plan §0 D10 + AC6). Mirrors
