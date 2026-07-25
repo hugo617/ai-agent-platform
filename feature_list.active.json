@@ -1,7 +1,7 @@
 {
   "project": "ai-agent-platform",
   "description": "多租户 AI 智能体 SaaS 平台脚手架(FastAPI + React + pycasbin + LangGraph)",
-  "last_updated": "2026-07-24",
+  "last_updated": "2026-07-25",
   "harness_version": "stage1-clean-state",
   "rules": {
     "single_active_feature": true,
@@ -12,6 +12,26 @@
     "standard_start_command": "RUN_START_COMMAND=1 ./init.sh"
   },
   "features": [
+    {
+      "id": "booking-state-cancel",
+      "priority": 67,
+      "area": "工程化",
+      "title": "cancel 动作并入 booking 状态机(巡检候选 2,后端 deep module 收尾债)",
+      "user_visible_behavior": "无用户可见行为变化(纯后端代码重构)。booking_state.transition() 状态机当前管 start/end/no_show 三动作 6 条边,但 cancel 的状态判断独立内联在 booking_service.cancel()(if status==cancelled idempotent / elif status!=pending raise 400 / else flip),状态图被劈两半。本任务把 cancel 的状态跳转并入 _TRANSITIONS 表(加 (pending,cancel):cancelled 一条边),service 层塌缩为 1 行 idempotent 早退 + 1 行 transition() 调用。行为零变更:已 cancelled→204 idempotent no-op 保留;非 pending 非 cancelled→400(异常类从 BizError 升级为更精确的 InvalidTransition 子类,与 start/end/no_show 统一错误语言,状态码不变);cancel 的 require/get_live_booking 顺序不对齐(守零行为变更,顺序对齐债留独立 feature)。",
+      "status": "in_progress",
+      "verification": [
+        "后端 app/services/booking_state.py:ACTIONS frozenset 加 'cancel'(4 元素)+ _TRANSITIONS 加 ('pending','cancel'):'cancelled'(7 条边)+ transition() 函数体不变(仍是 try/except KeyError→InvalidTransition,加边不动函数)+ docstring 同步(动作 3→4 / 边 6→7)",
+        "后端 app/services/booking_service.py:cancel() 中间 5 行 if/elif/else + raise BizError + 直接赋值 → 塌缩为 2 行(if booking.status=='cancelled': return True 早退 + booking.status = transition(booking.status,'cancel'));保留 require→_get_live_booking 顺序(D3 不对齐);保留 idempotent 早退(D1/D2);confirmed/in_service/done/no_show 态自动走 transition() → InvalidTransition→400(D4 消息变化,状态码不变)",
+        "测试 tests/test_booking_state.py:_LEGAL_EDGES 加 ('pending','cancel'):'cancelled'(7 条)+ test_legal_edges_count 断言 6→7 + test_illegal_pairs_count 断言 12→17(6×4−7)+ 新增 test_cancel_only_from_pending 命名测试(parametrize done/cancelled/no_show/in_service/confirmed × cancel → InvalidTransition)+ 双层语义注释(cancelled×cancel 纯函数层 illegal vs service 层早退 204)",
+        "回归 tests/test_bookings_api.py 零行为变更:E1 pending→cancel→204 + GET shows cancelled / E2 cancelled→PUT→400(D10 terminal)/ E3 cancelled→cancel again→204(idempotent no-op)+ B 跨租户 cancel 404 + A-admin admin cancel 403 + F member cancel 403 全绿",
+        "pytest ./init.sh 全绿(ruff + test_booking_state + test_bookings_api A–F + E1–E3 全章节,SQLite 内存库)",
+        "无新 TODO/FIXME,无 schema/迁移/API 契约变化(POST /bookings/{id}/cancel 返回值 204/状态码/idempotency 全保留)"
+      ],
+      "notes": "巡检产出([codebase-health-log.md] 2026-07-25 候选 2,Strong,后端 deep module 收尾债)。**溯源**:cancel 在 device-booking feature 时期建立,早于 device-poweron 切片 01 的状态机抽象;切片 01 建状态机时 narrow-scope 故意没并 cancel(其 end 方法注释明确 leave cancel alone),本任务就是这个债的收尾。**EP2 回环已完成(2026-07-25 Session 143)**:plan 文档 harness/docs/plan-booking-state-cancel.md 落地,含 PRD 主体 + grill 6 决策(D1 形态 B 只 pending 边进表+service 早退 / D2 早退位置 require+get_live_booking 后 / D3 不对齐顺序守零行为变更 / D4 接受消息变化 BizError→InvalidTransition 状态码不变 / D5 测试增量改3数字+2函数名+1命名测试+注释 / D6 单切片)+ 1 个实施切片(cancel 边并入状态机,Blocked by 无,frontier)。plan 自检 4 项全过(无环/16 条 AC/首片可开工/决策无悬空)。**硬约束**:零行为变更(cancel 契约保留 / update 守 pending D10 不碰 / API 契约不变 / 纯后端)。**Out of Scope**:不对齐 cancel 顺序(留 booking-action-order-unify 独立 feature)/ 不碰 update / 不补 service idempotency 单测(E3 API 层已覆盖)。",
+      "plan": "harness/docs/plan-booking-state-cancel.md",
+      "depends_on": "device-poweron",
+      "evidence": []
+    },
     {
       "id": "device-models-admin-ui",
       "priority": 66,

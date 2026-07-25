@@ -1,7 +1,7 @@
 {
   "project": "ai-agent-platform",
   "description": "多租户 AI 智能体 SaaS 平台脚手架(FastAPI + React + pycasbin + LangGraph)",
-  "last_updated": "2026-07-24",
+  "last_updated": "2026-07-25",
   "harness_version": "stage1-clean-state",
   "rules": {
     "single_active_feature": true,
@@ -1669,6 +1669,26 @@
       ],
       "notes": "设备功能系列补遗(61 device-models-crud 的范围漂移修复)。**缺口溯源**:feature 61 的 verification 字段明确写了「前端:后台型号管理页(路由 /device-models,RequireSuperAdmin 守卫)」,但 evidence 最后一条范围决策把它剥离给了 62;62(devices-crud-ui)实际只做了门店「设备入库」下拉,从未交付 super_admin 管理页。导致缺口:device_models 表无任何 seed,无任何 UI 可建型号,门店入库下拉永远为空,链路从源头断掉。**本 feature 仅做前端**(后端 CRUD 全齐,2026-07-25 Session 已实测端到端:super_admin token 建型号 → 门店 owner 建设备 → 列表回读全通)。**不做的事**(避免越界):不补 seed 脚本(种子数据是 dev 体验问题,非产品能力,留给用户按需 curl 或独立 seed feature);不进权限矩阵 UI(device_models 不走 casbin,对齐 groups 平台级资源范式);不重构现有 devices-page 的型号下拉(已正常工作)。依赖:[device-models-crud](passing)。**EP2 回环已完成(2026-07-25 Session 140)**:plan 文档 `harness/docs/plan-device-models-admin-ui.md` 落地,含 PRD 主体 + 2 个实施切片(切片 01 前端地基 types/endpoints/hooks,切片 02 UI 层 page/route/nav + 新组件 KeySpecRows + vitest)。grill 决策:specs 用结构化 key-value 行编辑器(全量版多类型 string/number/boolean)、unit_cost 货币格式、brand datalist 联想、列表加名称/品牌搜索框、nav 挂平台分组 platformOnly。**EP3 全切片完成(2026-07-25 Session 142)**:切片 01 PR #119+#120(union 修正)、切片 02 PR #122(末切片,CI 4/4 绿,合并 dd7c1b0)。status `in_progress → passing`(设备功能系列补遗收官:61 device-models-crud → 62 devices-crud-ui → 63 device-booking → 64 device-poweron → 66 device-models-admin-ui 全链路 passing)。",
       "depends_on": "device-models-crud"
+    },
+    {
+      "id": "booking-state-cancel",
+      "priority": 67,
+      "area": "工程化",
+      "title": "cancel 动作并入 booking 状态机(巡检候选 2,后端 deep module 收尾债)",
+      "user_visible_behavior": "无用户可见行为变化(纯后端代码重构)。booking_state.transition() 状态机当前管 start/end/no_show 三动作 6 条边,但 cancel 的状态判断独立内联在 booking_service.cancel()(if status==cancelled idempotent / elif status!=pending raise 400 / else flip),状态图被劈两半。本任务把 cancel 的状态跳转并入 _TRANSITIONS 表(加 (pending,cancel):cancelled 一条边),service 层塌缩为 1 行 idempotent 早退 + 1 行 transition() 调用。行为零变更:已 cancelled→204 idempotent no-op 保留;非 pending 非 cancelled→400(异常类从 BizError 升级为更精确的 InvalidTransition 子类,与 start/end/no_show 统一错误语言,状态码不变);cancel 的 require/get_live_booking 顺序不对齐(守零行为变更,顺序对齐债留独立 feature)。",
+      "status": "in_progress",
+      "verification": [
+        "后端 app/services/booking_state.py:ACTIONS frozenset 加 'cancel'(4 元素)+ _TRANSITIONS 加 ('pending','cancel'):'cancelled'(7 条边)+ transition() 函数体不变(仍是 try/except KeyError→InvalidTransition,加边不动函数)+ docstring 同步(动作 3→4 / 边 6→7)",
+        "后端 app/services/booking_service.py:cancel() 中间 5 行 if/elif/else + raise BizError + 直接赋值 → 塌缩为 2 行(if booking.status=='cancelled': return True 早退 + booking.status = transition(booking.status,'cancel'));保留 require→_get_live_booking 顺序(D3 不对齐);保留 idempotent 早退(D1/D2);confirmed/in_service/done/no_show 态自动走 transition() → InvalidTransition→400(D4 消息变化,状态码不变)",
+        "测试 tests/test_booking_state.py:_LEGAL_EDGES 加 ('pending','cancel'):'cancelled'(7 条)+ test_legal_edges_count 断言 6→7 + test_illegal_pairs_count 断言 12→17(6×4−7)+ 新增 test_cancel_only_from_pending 命名测试(parametrize done/cancelled/no_show/in_service/confirmed × cancel → InvalidTransition)+ 双层语义注释(cancelled×cancel 纯函数层 illegal vs service 层早退 204)",
+        "回归 tests/test_bookings_api.py 零行为变更:E1 pending→cancel→204 + GET shows cancelled / E2 cancelled→PUT→400(D10 terminal)/ E3 cancelled→cancel again→204(idempotent no-op)+ B 跨租户 cancel 404 + A-admin admin cancel 403 + F member cancel 403 全绿",
+        "pytest ./init.sh 全绿(ruff + test_booking_state + test_bookings_api A–F + E1–E3 全章节,SQLite 内存库)",
+        "无新 TODO/FIXME,无 schema/迁移/API 契约变化(POST /bookings/{id}/cancel 返回值 204/状态码/idempotency 全保留)"
+      ],
+      "notes": "巡检产出([codebase-health-log.md] 2026-07-25 候选 2,Strong,后端 deep module 收尾债)。**溯源**:cancel 在 device-booking feature 时期建立,早于 device-poweron 切片 01 的状态机抽象;切片 01 建状态机时 narrow-scope 故意没并 cancel(其 end 方法注释明确 leave cancel alone),本任务就是这个债的收尾。**EP2 回环已完成(2026-07-25 Session 143)**:plan 文档 harness/docs/plan-booking-state-cancel.md 落地,含 PRD 主体 + grill 6 决策(D1 形态 B 只 pending 边进表+service 早退 / D2 早退位置 require+get_live_booking 后 / D3 不对齐顺序守零行为变更 / D4 接受消息变化 BizError→InvalidTransition 状态码不变 / D5 测试增量改3数字+2函数名+1命名测试+注释 / D6 单切片)+ 1 个实施切片(cancel 边并入状态机,Blocked by 无,frontier)。plan 自检 4 项全过(无环/16 条 AC/首片可开工/决策无悬空)。**硬约束**:零行为变更(cancel 契约保留 / update 守 pending D10 不碰 / API 契约不变 / 纯后端)。**Out of Scope**:不对齐 cancel 顺序(留 booking-action-order-unify 独立 feature)/ 不碰 update / 不补 service idempotency 单测(E3 API 层已覆盖)。",
+      "plan": "harness/docs/plan-booking-state-cancel.md",
+      "depends_on": "device-poweron",
+      "evidence": []
     }
   ]
 }
