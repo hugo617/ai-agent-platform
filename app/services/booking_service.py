@@ -517,11 +517,14 @@ class BookingService:
 
         Idempotency (D9 + acceptance criterion E): re-cancelling an already-
         cancelled booking is a no-op that still returns 204, mirroring the
-        DELETE-is-idempotent convention used by device unbind. Cancelling a
-        booking in any *other* non-pending state (in_service / done / no_show
-        / confirmed-placeholder) is refused with BizError 400 — those states
-        are owned by device-poweron's action endpoints and must not be
-        reachable from here.
+        DELETE-is-idempotent convention used by device unbind. The state flip
+        itself goes through :func:`booking_state.transition` — the only legal
+        ``cancel`` edge is ``pending → cancelled`` (plan-booking-state-cancel
+        §4.0 D1); any other non-pending state (in_service / done / no_show /
+        confirmed-placeholder) is refused by the state table with
+        ``InvalidTransition`` → 400, unifying the error vocabulary with
+        ``start`` / ``end`` / ``no_show`` (D4 — previously this raised a plain
+        ``BizError``; status code unchanged).
 
         Platform writers target ``target_tenant_id`` (cancel is a POST action
         with no body, so the tenant_id rides as a query param at the router);
@@ -546,11 +549,7 @@ class BookingService:
         booking = await self._get_live_booking(booking_id, effective_tenant)
         if booking.status == "cancelled":
             return True
-        if booking.status != "pending":
-            raise BizError(
-                f"仅 pending 状态的预约可取消,当前状态: {booking.status}"
-            )
-        booking.status = "cancelled"
+        booking.status = booking_transition(booking.status, "cancel")
         await self.db.flush()
         await self.db.commit()
         return False

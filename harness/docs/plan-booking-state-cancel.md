@@ -1,7 +1,7 @@
 # 计划:cancel 动作并入 booking 状态机
 
 > **id**: booking-state-cancel
-> **状态**: draft v1(EP2 回环产出,待 EP3 实施)
+> **状态**: passing(EP3 切片 01 已合并,2026-07-25)
 > **优先级**: 68(原 67,2026-07-25 Session 144 因新任务 platform-cross-tenant-write 优先级更高而让位到 68,「工程化」area,巡检候选 2 收尾债)
 > **创建日期**: 2026-07-25
 > **来源**: [codebase-health-log.md](./codebase-health-log.md) 2026-07-25 巡检 · 候选 2(Strong,后端 deep module 收尾债)
@@ -153,7 +153,7 @@ async def cancel(self, actor_id, tenant_id, booking_id, platform_role=None) -> b
 
 ## 6. 切片规划(单切片,tracer-bullet)
 
-### 切片 01 — cancel 边并入 booking 状态机
+### 切片 01 — cancel 边并入 booking 状态机 ✅ PR #127 commit a6baa6f(分支 feat/booking-state-cancel-slice01,2026-07-25)
 
 - **What it delivers**:cancel 动作的状态跳转从 `booking_service.cancel()` 内联判断搬到 `booking_state._TRANSITIONS` 表。改后:① `booking_state.py` 的 ACTIONS 加 `"cancel"`,_TRANSITIONS 加 `("pending","cancel"):"cancelled"` 一条边;② `booking_service.cancel()` 中间 5 行 if/elif/else 塌缩为「1 行 idempotent 早退 + 1 行 `transition()` 调用」;③ `test_booking_state.py` 同步:合法边 6→7、非法对 12→17、加命名测试 `test_cancel_only_from_pending`、加双层语义注释。行为零变更(cancel 已 cancelled → 204 早退保留;非 pending 非 cancelled → 400,异常类从 BizError 升级为 InvalidTransition,消息文字变化但状态码不变)。
 - **Blocked by**: 无(frontier,首片可立即开工)
@@ -162,22 +162,22 @@ async def cancel(self, actor_id, tenant_id, booking_id, platform_role=None) -> b
   - `app/services/booking_service.py`(-5/+2 行:cancel 中间段塌缩)
   - `tests/test_booking_state.py`(+~20 行:改 3 常量 + 改 2 函数名 + 加 1 命名测试 + 注释)
 - **Acceptance criteria**:
-  - [ ] `ACTIONS` frozenset 含 `"cancel"`(4 元素)
-  - [ ] `_TRANSITIONS` 含 `("pending","cancel"):"cancelled"`(7 条边)
-  - [ ] `transition("pending","cancel")` 返回 `"cancelled"`
-  - [ ] `transition()` 函数体未改(仍是 try/except KeyError → InvalidTransition)
-  - [ ] `BookingService.cancel()` 中间段无 `if booking.status != "pending"` 内联判断,改为 `booking.status = transition(booking.status, "cancel")`
-  - [ ] `BookingService.cancel()` 保留 `if booking.status == "cancelled": return True` idempotent 早退(D1/D2)
-  - [ ] `BookingService.cancel()` 的 `require` → `_get_live_booking` 顺序未变(D3 不对齐)
-  - [ ] `test_booking_state.py`:`_LEGAL_EDGES` 含 `("pending","cancel"):"cancelled"`
-  - [ ] `test_booking_state.py`:`test_legal_edges_count_*` 断言 == 7(原 6)
-  - [ ] `test_booking_state.py`:`test_illegal_pairs_count_*` 断言 == 17(原 12,6×4−7)
-  - [ ] `test_booking_state.py`:新增 `test_cancel_only_from_pending` parametrize(done/cancelled/no_show/in_service/confirmed × cancel → InvalidTransition)
-  - [ ] `test_booking_state.py`:顶部或新增测试旁有注释说明 `(cancelled,cancel)` 纯函数层 illegal vs service 层早退 204 的双层语义
-  - [ ] `test_bookings_api.py` E1/E2/E3 原样绿(零行为变更)
-  - [ ] `test_bookings_api.py` B(跨租户 cancel 404)/ A-admin(admin cancel 403)/ F(member cancel 403)原样绿
-  - [ ] `./init.sh` 全绿(ruff + pytest,含 test_booking_state + test_bookings_api)
-  - [ ] 无新 TODO/FIXME,无 schema/迁移/API 契约变化
+  - [x] `ACTIONS` frozenset 含 `"cancel"`(4 元素)
+  - [x] `_TRANSITIONS` 含 `("pending","cancel"):"cancelled"`(7 条边)
+  - [x] `transition("pending","cancel")` 返回 `"cancelled"`
+  - [x] `transition()` 函数体未改(仍是 try/except KeyError → InvalidTransition)
+  - [x] `BookingService.cancel()` 中间段无 `if booking.status != "pending"` 内联判断,改为 `booking.status = transition(booking.status, "cancel")`
+  - [x] `BookingService.cancel()` 保留 `if booking.status == "cancelled": return True` idempotent 早退(D1/D2)
+  - [x] `BookingService.cancel()` 的 `require` → `_get_live_booking` 顺序未变(D3 不对齐)
+  - [x] `test_booking_state.py`:`_LEGAL_EDGES` 含 `("pending","cancel"):"cancelled"`
+  - [x] `test_booking_state.py`:`test_legal_edges_count_*` 断言 == 7(原 6)
+  - [x] `test_booking_state.py`:`test_illegal_pairs_count_*` 断言 == 17(原 12,6×4−7)
+  - [x] `test_booking_state.py`:新增 `test_cancel_only_from_pending` parametrize(done/cancelled/no_show/in_service/confirmed × cancel → InvalidTransition)
+  - [x] `test_booking_state.py`:顶部或新增测试旁有注释说明 `(cancelled,cancel)` 纯函数层 illegal vs service 层早退 204 的双层语义
+  - [x] `test_bookings_api.py` E1/E2/E3 原样绿(零行为变更)
+  - [x] `test_bookings_api.py` B(跨租户 cancel 404)/ A-admin(admin cancel 403)/ F(member cancel 403)原样绿
+  - [x] `./init.sh` 全绿(ruff + pytest,含 test_booking_state + test_bookings_api)
+  - [x] 无新 TODO/FIXME,无 schema/迁移/API 契约变化
 - **验证命令**:`./init.sh`(ruff + pytest 全绿,含 test_booking_state.py 17 非法 + 7 合法 + 命名测试 + test_bookings_api.py A-F + E1/E2/E3 回归)
 
 ---
