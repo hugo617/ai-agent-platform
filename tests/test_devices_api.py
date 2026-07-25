@@ -1,15 +1,16 @@
 """Device API tests — slice 01 (within-store CRUD + integrity guards) + slice 02
 permission backfill (K chapter) + slice 03 HQ panorama (E chapter) + slice 04
-bind/unbind (F chapter).
+bind/unbind (F chapter) + platform-cross-tenant-write slice 01 (P chapter).
 
-Chapter layout (matches plan-devices-crud-ui.md §8 + §10 + slice 03/04):
+Chapter layout (matches plan-devices-crud-ui.md §8 + §10 + slice 03/04 +
+plan-platform-cross-tenant-write.md §6 切片 01):
 - A. owner/admin CRUD — create + list + get + update + delete, full-field assertions
 - B. cross-tenant isolation — devices in tnt-iso-2 invisible; GET/PUT/DELETE → 404
 - C. (tenant_id, serial_number) uniqueness — duplicate 400, reusable after soft delete
 - D. permission matrix — member read-only (write → 403); unauth → 401
 - E. HQ panorama (slice 03) — super_admin + hq_staff cross-tenant read with the
   ``DeviceHqRead`` panorama fields (tenant_name / model_name / customer_name);
-  hq_staff writes (create/update/delete) → 403.
+  hq_staff writes without tenant_id → 400 (was 403 before platform-cross-tenant-write).
 - F. bind/unbind (slice 04):
   - F1 bind success → 200 + already_bound:false
   - F2 bind same customer again → 200 + already_bound:true (idempotent, no write)
@@ -33,6 +34,23 @@ Chapter layout (matches plan-devices-crud-ui.md §8 + §10 + slice 03/04):
   - K4 member gets devices:read + menu:devices but NOT devices:create
   - K5 idempotent: re-run backfill, no error, no duplicate grants
   - K6 other existing perms (customers:read) untouched
+- P. platform-cross-tenant-write slice 01 — super_admin + hq_staff cross-tenant
+  writes on devices (POST/PUT/DELETE/bind/unbind), with payload.tenant_id =
+  target store. Plus reverse anti-forgery guards (store roles carrying
+  tenant_id → 400) and the helper contract (``is_platform_writer``,
+  ``resolve_target_tenant``).
+  - P0 helper contract: ``is_platform_writer`` + ``resolve_target_tenant`` unit
+  - P1 super_admin / hq_staff POST {tenant_id} → 201 (cross-tenant create)
+  - P2 super_admin / hq_staff PUT {tenant_id} on target-store device → 200
+  - P3 super_admin / hq_staff DELETE ?tenant_id on target-store device → 204
+  - P4 super_admin / hq_staff bind {tenant_id, customer_id} on target → 200
+  - P5 super_admin / hq_staff unbind ?tenant_id on target-store device → 204
+  - P6 platform writer POST without tenant_id → 400 (D1 必填)
+  - P7 store role POST with tenant_id: owner/admin → 400 (D1-2 anti-forgery);
+    member/customer → 403 (router casbin refuses before service body — a forged
+    tenant_id does NOT unlock writes for roles lacking them)
+  - P8 platform writer POST {tenant_id, customer_id=<目标店 customer>} → 201 (D2-ii)
+  - P9 platform writer POST {tenant_id, customer_id=<不存在>} → 400 (guard fires)
 
 Test-organization note (matches test_device_models_api.py): each test uses ONE
 client fixture. Mixing super_admin_client with app_client/member_client in the
@@ -535,14 +553,19 @@ async def test_hq_staff_list_returns_hq_panorama(
 
 
 @pytest.mark.asyncio
-async def test_hq_staff_writes_are_403(hq_staff_client, db_session, test_env):
-    """hq_staff is read-only: create/update/delete all 403.
+async def test_hq_staff_write_without_tenant_id_400(hq_staff_client, db_session, test_env):
+    """hq_staff is a platform writer on devices: writes are allowed through
+    ``check`` (plan-platform-cross-tenant-write §4.5.4 — the bypass lives in
+    ``check``, not the router dependency), but the service body's
+    ``resolve_target_tenant`` REQUIRES ``payload.tenant_id`` for platform
+    writers → 400 when it's missing (D1 必填守卫).
 
-    The hq_staff fixture binds the user to the ``member`` tenant role (no
-    devices:create/update/delete in casbin), and ``permission_service.check``
-    only short-circuits hq_staff for ``act == "read"`` — writes fall through
-    to casbin and are denied. This is the WIP=1 boundary: the HQ viewer can
-    SEE everything but touch nothing."""
+    This test was ``test_hq_staff_writes_are_403`` before slice 01; the old
+    403 came from ``check`` falling through to casbin (hq_staff had no
+    devices:create). Slice 01 lifts hq_staff to a platform writer on devices,
+    so the failure mode shifts from 403 (casbin deny) to 400 (missing target
+    tenant). The 200/201 success path is covered by the P chapter below.
+    """
     model = await _seed_model(db_session, name="HQ-Write-Model")
     device = await _seed_device(
         db_session,
@@ -555,17 +578,17 @@ async def test_hq_staff_writes_are_403(hq_staff_client, db_session, test_env):
         json={"model_id": model.id, "serial_number": "HQ-NEW"},
         headers=AUTH,
     )
-    assert resp.status_code == 403
+    assert resp.status_code == 400
     resp = await hq_staff_client.put(
         f"/api/v1/devices/{device.id}",
         json={"status": "retired"},
         headers=AUTH,
     )
-    assert resp.status_code == 403
+    assert resp.status_code == 400
     resp = await hq_staff_client.delete(
         f"/api/v1/devices/{device.id}", headers=AUTH
     )
-    assert resp.status_code == 403
+    assert resp.status_code == 400
 
 
 @pytest.mark.asyncio
@@ -1184,3 +1207,476 @@ async def test_k_backfill_preserves_other_perms(db_session, test_env):
         # And a devices perm does work (backfill actually did something).
         ok = await permission_service.check("owner", tenant_id, "devices", "read")
         assert ok, "owner should have devices:read after backfill"
+
+
+# ----------------------------------------- P. platform-cross-tenant-write slice 01
+#
+# Platform writers (super_admin + hq_staff) unlock cross-tenant WRITES on
+# devices: POST/PUT/DELETE/bind/unbind carrying ``payload.tenant_id`` (= the
+# target store). The casbin ``require`` in the service body is skipped (hq_staff
+# has no tenant role); ``resolve_target_tenant`` enforces two guards:
+#   * platform writer missing tenant_id → 400 (D1 必填)
+#   * store role carrying tenant_id → 400 (D1-2 防伪造)
+#
+# Plan patch (recorded in plan §4.5.4): for hq_staff writes to actually reach
+# the service body, ``permission_service.check`` must bypass casbin for
+# platform writers on devices/bookings — otherwise the router-level
+# ``require_permission`` dependency 403's hq_staff before the service runs
+# (hq_staff's casbin role "member" lacks devices:create/update/delete). The
+# bypass is scoped to (``is_platform_writer`` AND obj in {devices, bookings});
+# customers/groups/users stay read-only for hq_staff (Out of Scope).
+#
+# DELETE has no body, so ``tenant_id`` rides as a query param on delete/unbind
+# (``?tenant_id=<target>``); POST/PUT/bind carry it in the body. Store roles
+# omit it entirely (anti-forgery).
+#
+# Each P test seeds its own target tenant + model + (sometimes) device, so it
+# does not depend on which second tenant a platform fixture happened to create.
+# Platform-writer tests use ``super_admin_client`` OR ``hq_staff_client``; the
+# reverse anti-forgery tests (P7) use the store-role fixtures (one per role).
+
+
+async def _seed_target_tenant_with_model(db_session, *, name="P Target"):
+    """Fresh tenant + a model row visible to it (models are platform-level, so
+    one model serves every tenant). Returns ``(target_tenant_id, model)``.
+
+    Tenant id stays ≤32 chars (the DB column width) — ``tnt-p-`` + 24 hex."""
+    import uuid
+
+    from app.models.tenant import Tenant
+
+    target_tenant_id = f"tnt-p-{uuid.uuid4().hex[:24]}"
+    db_session.add(Tenant(id=target_tenant_id, name=name))
+    await db_session.commit()
+    model = await _seed_model(db_session, name=f"P-Model-{target_tenant_id[-8:]}")
+    return target_tenant_id, model
+
+
+@pytest.mark.asyncio
+async def test_p0_helper_contract():
+    """P0: ``is_platform_writer`` boundary = {super_admin, hq_staff};
+    ``resolve_target_tenant`` resolves correctly for all 4 input combos.
+
+    Pure-function contract test (no DB) — mirrors how ``is_cross_tenant_viewer``
+    is tested in test_hq_platform_role.py.
+    """
+    from app.services._tenant_target import resolve_target_tenant
+    from app.services.errors import BizError
+    from app.services.permission_service import is_platform_writer
+
+    # Boundary: super_admin + hq_staff are writers; everything else is not.
+    assert is_platform_writer("super_admin") is True
+    assert is_platform_writer("hq_staff") is True
+    assert is_platform_writer(None) is False
+    assert is_platform_writer("owner") is False
+    assert is_platform_writer("customer") is False
+
+    # Platform writer + tenant_id → that tenant.
+    assert (
+        resolve_target_tenant("user-tnt", "payload-tnt", "super_admin")
+        == "payload-tnt"
+    )
+    assert (
+        resolve_target_tenant("user-tnt", "payload-tnt", "hq_staff")
+        == "payload-tnt"
+    )
+    # Platform writer without tenant_id → 400 (D1 必填).
+    with pytest.raises(BizError):
+        resolve_target_tenant("user-tnt", None, "super_admin")
+    with pytest.raises(BizError):
+        resolve_target_tenant("user-tnt", None, "hq_staff")
+    # Store role without tenant_id → user.tenant_id.
+    assert resolve_target_tenant("user-tnt", None, None) == "user-tnt"
+    assert resolve_target_tenant("user-tnt", None, "owner") == "user-tnt"
+    # Store role carrying tenant_id → 400 (D1-2 防伪造).
+    with pytest.raises(BizError):
+        resolve_target_tenant("user-tnt", "payload-tnt", None)
+    with pytest.raises(BizError):
+        resolve_target_tenant("user-tnt", "payload-tnt", "owner")
+
+
+@pytest.mark.asyncio
+async def test_p1_platform_writer_create_cross_tenant(
+    super_admin_client, hq_staff_client, db_session, test_env
+):
+    """P1: super_admin + hq_staff POST /devices/ with ``tenant_id`` → 201,
+    creating a device in the TARGET store (not their own). Verifies the device
+    physically lands in the target tenant via a direct DB read."""
+    target_tenant_id, model = await _seed_target_tenant_with_model(db_session)
+
+    # super_admin creates in target store.
+    resp = await super_admin_client.post(
+        "/api/v1/devices/",
+        json={
+            "model_id": model.id,
+            "serial_number": "P1-SA",
+            "tenant_id": target_tenant_id,
+        },
+        headers=AUTH,
+    )
+    assert resp.status_code == 201, resp.text
+    sa_body = resp.json()
+    assert sa_body["tenant_id"] == target_tenant_id
+
+    # hq_staff creates in target store (a different serial — uniqueness guard
+    # is per-tenant, but keep serials distinct to avoid confusion).
+    resp = await hq_staff_client.post(
+        "/api/v1/devices/",
+        json={
+            "model_id": model.id,
+            "serial_number": "P1-HQ",
+            "tenant_id": target_tenant_id,
+        },
+        headers=AUTH,
+    )
+    assert resp.status_code == 201, resp.text
+    hq_body = resp.json()
+    assert hq_body["tenant_id"] == target_tenant_id
+
+    # Physically verify both devices landed in the target tenant.
+    from app.models.device import Device
+
+    rows = (
+        await db_session.execute(
+            Device.__table__.select().where(
+                Device.__table__.c.tenant_id == target_tenant_id
+            )
+        )
+    ).mappings().all()
+    serials = {r["serial_number"] for r in rows}
+    assert {"P1-SA", "P1-HQ"} <= serials, serials
+
+
+@pytest.mark.asyncio
+async def test_p2_platform_writer_update_cross_tenant(
+    super_admin_client, hq_staff_client, db_session, test_env
+):
+    """P2: super_admin + hq_staff PUT /devices/{id} with ``tenant_id`` → 200,
+    mutating a device that lives in the target store."""
+    target_tenant_id, model = await _seed_target_tenant_with_model(db_session)
+    # Seed a device in the target store (the platform writer will mutate it).
+    sa_device = await _seed_device(
+        db_session,
+        tenant_id=target_tenant_id,
+        model_id=model.id,
+        serial="P2-SA-SEED",
+    )
+    hq_device = await _seed_device(
+        db_session,
+        tenant_id=target_tenant_id,
+        model_id=model.id,
+        serial="P2-HQ-SEED",
+    )
+
+    resp = await super_admin_client.put(
+        f"/api/v1/devices/{sa_device.id}",
+        json={"tenant_id": target_tenant_id, "status": "retired"},
+        headers=AUTH,
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["status"] == "retired"
+
+    resp = await hq_staff_client.put(
+        f"/api/v1/devices/{hq_device.id}",
+        json={"tenant_id": target_tenant_id, "status": "maintenance"},
+        headers=AUTH,
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["status"] == "maintenance"
+
+
+@pytest.mark.asyncio
+async def test_p3_platform_writer_delete_cross_tenant(
+    super_admin_client, hq_staff_client, db_session, test_env
+):
+    """P3: super_admin + hq_staff DELETE /devices/{id}?tenant_id=<target> → 204,
+    soft-deleting a device in the target store. DELETE has no body, so tenant_id
+    rides as a query param (plan §4.5.4 patch note)."""
+    target_tenant_id, model = await _seed_target_tenant_with_model(db_session)
+    sa_device = await _seed_device(
+        db_session,
+        tenant_id=target_tenant_id,
+        model_id=model.id,
+        serial="P3-SA-SEED",
+    )
+    hq_device = await _seed_device(
+        db_session,
+        tenant_id=target_tenant_id,
+        model_id=model.id,
+        serial="P3-HQ-SEED",
+    )
+
+    resp = await super_admin_client.delete(
+        f"/api/v1/devices/{sa_device.id}?tenant_id={target_tenant_id}",
+        headers=AUTH,
+    )
+    assert resp.status_code == 204, resp.text
+
+    resp = await hq_staff_client.delete(
+        f"/api/v1/devices/{hq_device.id}?tenant_id={target_tenant_id}",
+        headers=AUTH,
+    )
+    assert resp.status_code == 204, resp.text
+
+    # Both devices are now soft-deleted → a follow-up GET by the platform
+    # writer returns 404 (the panorama excludes soft-deleted rows, mirroring
+    # the within-store _get_live_device path). Verified via the client rather
+    # than ``db_session.get`` because the test session's identity map caches
+    # the pre-delete state.
+    for did in (sa_device.id, hq_device.id):
+        resp = await super_admin_client.get(
+            f"/api/v1/devices/{did}", headers=AUTH
+        )
+        assert resp.status_code == 404, resp.text
+
+
+@pytest.mark.asyncio
+async def test_p4_platform_writer_bind_cross_tenant(
+    super_admin_client, hq_staff_client, db_session, test_env
+):
+    """P4: super_admin + hq_staff POST /devices/{id}/bind with
+    ``{customer_id, tenant_id}`` → 200, binding a device in the target store
+    to a customer who has a live profile in that target store."""
+    target_tenant_id, model = await _seed_target_tenant_with_model(db_session)
+    sa_device = await _seed_device(
+        db_session,
+        tenant_id=target_tenant_id,
+        model_id=model.id,
+        serial="P4-SA-SEED",
+    )
+    hq_device = await _seed_device(
+        db_session,
+        tenant_id=target_tenant_id,
+        model_id=model.id,
+        serial="P4-HQ-SEED",
+    )
+    # Customer with a live profile in the TARGET tenant (bind validates this).
+    sa_customer, _ = await _seed_customer_with_profile(
+        db_session, tenant_id=target_tenant_id, name="P4-SA-客户"
+    )
+    hq_customer, _ = await _seed_customer_with_profile(
+        db_session, tenant_id=target_tenant_id, name="P4-HQ-客户"
+    )
+
+    resp = await super_admin_client.post(
+        f"/api/v1/devices/{sa_device.id}/bind",
+        json={"customer_id": sa_customer.id, "tenant_id": target_tenant_id},
+        headers=AUTH,
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["already_bound"] is False
+
+    resp = await hq_staff_client.post(
+        f"/api/v1/devices/{hq_device.id}/bind",
+        json={"customer_id": hq_customer.id, "tenant_id": target_tenant_id},
+        headers=AUTH,
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["already_bound"] is False
+
+
+@pytest.mark.asyncio
+async def test_p5_platform_writer_unbind_cross_tenant(
+    super_admin_client, hq_staff_client, db_session, test_env
+):
+    """P5: super_admin + hq_staff DELETE /devices/{id}/bind?tenant_id=<target>
+    → 204, unbinding a device in the target store. unbind is DELETE → query
+    param for tenant_id."""
+    target_tenant_id, model = await _seed_target_tenant_with_model(db_session)
+    # Seed two devices, each pre-bound to a customer in the target tenant.
+    sa_customer, _ = await _seed_customer_with_profile(
+        db_session, tenant_id=target_tenant_id, name="P5-SA-客户"
+    )
+    hq_customer, _ = await _seed_customer_with_profile(
+        db_session, tenant_id=target_tenant_id, name="P5-HQ-客户"
+    )
+    sa_device = await _seed_device(
+        db_session,
+        tenant_id=target_tenant_id,
+        model_id=model.id,
+        serial="P5-SA-SEED",
+        customer_id=sa_customer.id,
+    )
+    hq_device = await _seed_device(
+        db_session,
+        tenant_id=target_tenant_id,
+        model_id=model.id,
+        serial="P5-HQ-SEED",
+        customer_id=hq_customer.id,
+    )
+
+    resp = await super_admin_client.delete(
+        f"/api/v1/devices/{sa_device.id}/bind?tenant_id={target_tenant_id}",
+        headers=AUTH,
+    )
+    assert resp.status_code == 204, resp.text
+
+    resp = await hq_staff_client.delete(
+        f"/api/v1/devices/{hq_device.id}/bind?tenant_id={target_tenant_id}",
+        headers=AUTH,
+    )
+    assert resp.status_code == 204, resp.text
+
+    # Both devices now have no customer binding → verified via the client's
+    # own GET (the test session's identity map would otherwise serve stale
+    # pre-unbind state). The panorama DeviceHqRead still carries customer_id
+    # as null.
+    for did in (sa_device.id, hq_device.id):
+        resp = await super_admin_client.get(
+            f"/api/v1/devices/{did}", headers=AUTH
+        )
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["customer_id"] is None
+
+
+@pytest.mark.asyncio
+async def test_p6_platform_writer_create_without_tenant_id_400(
+    super_admin_client, hq_staff_client, db_session
+):
+    """P6: platform writers POST /devices/ WITHOUT tenant_id → 400 (D1 必填).
+    Both super_admin and hq_staff must name the target store; the bypass in
+    ``check`` does NOT excuse them from naming where to write."""
+    model = await _seed_model(db_session, name="P6-Model")
+
+    resp = await super_admin_client.post(
+        "/api/v1/devices/",
+        json={"model_id": model.id, "serial_number": "P6-SA"},
+        headers=AUTH,
+    )
+    assert resp.status_code == 400, resp.text
+
+    resp = await hq_staff_client.post(
+        "/api/v1/devices/",
+        json={"model_id": model.id, "serial_number": "P6-HQ"},
+        headers=AUTH,
+    )
+    assert resp.status_code == 400, resp.text
+
+
+@pytest.mark.asyncio
+async def test_p7_owner_create_with_tenant_id_400(app_client, db_session):
+    """P7 (owner): store role carrying tenant_id → 400 (D1-2 防伪造). The owner
+    is forbidden from forging a target tenant to write cross-store."""
+    model = await _seed_model(db_session, name="P7-Owner-Model")
+    resp = await app_client.post(
+        "/api/v1/devices/",
+        json={
+            "model_id": model.id,
+            "serial_number": "P7-OWNER",
+            "tenant_id": "tnt-forged-by-owner",
+        },
+        headers=AUTH,
+    )
+    assert resp.status_code == 400, resp.text
+
+
+@pytest.mark.asyncio
+async def test_p7_admin_create_with_tenant_id_400(tenant_admin_client, db_session):
+    """P7 (admin): same anti-forgery guard for the tenant admin role."""
+    model = await _seed_model(db_session, name="P7-Admin-Model")
+    resp = await tenant_admin_client.post(
+        "/api/v1/devices/",
+        json={
+            "model_id": model.id,
+            "serial_number": "P7-ADMIN",
+            "tenant_id": "tnt-forged-by-admin",
+        },
+        headers=AUTH,
+    )
+    assert resp.status_code == 400, resp.text
+
+
+@pytest.mark.asyncio
+async def test_p7_member_create_with_tenant_id_403(member_client, db_session):
+    """P7 (member): member has no ``devices:create`` in casbin, so the router-
+    level ``require_permission`` dependency refuses the request (403) BEFORE
+    the service body runs — regardless of whether member carries a forged
+    ``tenant_id``. This is the correct behaviour: a forged tenant_id MUST NOT
+    unlock create for a role that lacks it (plan D1-2 anti-forgery is about
+    owner/admin who DO have create; member is already refused upstream).
+    Documented here as the negative complement to P7-owner/admin → 400."""
+    model = await _seed_model(db_session, name="P7-Member-Model")
+    resp = await member_client.post(
+        "/api/v1/devices/",
+        json={
+            "model_id": model.id,
+            "serial_number": "P7-MEMBER",
+            "tenant_id": "tnt-forged-by-member",
+        },
+        headers=AUTH,
+    )
+    assert resp.status_code == 403, resp.text
+
+
+@pytest.mark.asyncio
+async def test_p7_customer_create_with_tenant_id_403(
+    customer_client_factory, db_session
+):
+    """P7 (customer): customer principal has no ``devices:create`` at all →
+    the router-level ``require_permission`` dependency refuses (403) before
+    the service body. Same rationale as member: a forged tenant_id does not
+    unlock writes for a role that lacks them."""
+    model = await _seed_model(db_session, name="P7-Customer-Model")
+    client = await customer_client_factory(customer_id="cust-p7")
+    resp = await client.post(
+        "/api/v1/devices/",
+        json={
+            "model_id": model.id,
+            "serial_number": "P7-CUSTOMER",
+            "tenant_id": "tnt-forged-by-customer",
+        },
+        headers=AUTH,
+    )
+    assert resp.status_code == 403, resp.text
+
+
+@pytest.mark.asyncio
+async def test_p8_platform_writer_create_with_target_customer_201(
+    super_admin_client, db_session
+):
+    """P8 (D2-ii): platform writer POST /devices/ with tenant_id + customer_id
+    pointing at a customer who has a live profile in the TARGET store → 201.
+    The ``_assert_customer_in_tenant`` guard uses effective_tenant_id, so a
+    target-store customer passes; a customer from another store would fail
+    (P9 covers the negative)."""
+    target_tenant_id, model = await _seed_target_tenant_with_model(db_session)
+    customer, _ = await _seed_customer_with_profile(
+        db_session, tenant_id=target_tenant_id, name="P8-目标店客户"
+    )
+
+    resp = await super_admin_client.post(
+        "/api/v1/devices/",
+        json={
+            "model_id": model.id,
+            "serial_number": "P8-WITH-CUST",
+            "tenant_id": target_tenant_id,
+            "customer_id": customer.id,
+        },
+        headers=AUTH,
+    )
+    assert resp.status_code == 201, resp.text
+    body = resp.json()
+    assert body["tenant_id"] == target_tenant_id
+    assert body["customer_id"] == customer.id
+
+
+@pytest.mark.asyncio
+async def test_p9_platform_writer_create_with_nonexistent_customer_400(
+    super_admin_client, db_session
+):
+    """P9: platform writer POST /devices/ with tenant_id + customer_id that
+    has NO live profile in the target store → 400. The guard correctly refuses
+    a cross-store or nonexistent customer (D2-ii negative)."""
+    target_tenant_id, model = await _seed_target_tenant_with_model(db_session)
+
+    resp = await super_admin_client.post(
+        "/api/v1/devices/",
+        json={
+            "model_id": model.id,
+            "serial_number": "P9-BAD-CUST",
+            "tenant_id": target_tenant_id,
+            "customer_id": "cust-does-not-exist",
+        },
+        headers=AUTH,
+    )
+    assert resp.status_code == 400, resp.text

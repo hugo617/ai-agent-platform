@@ -209,6 +209,29 @@ async def start(self, actor_id, user_tenant_id, booking_id, *,
 
 `payload.tenant_id` 已在 body 里,router 现状已把整个 `payload` 透传给 service(见 `bookings.py:112` `DeviceService(db).create(..., payload, ...)`),service 自己读 `payload.tenant_id`。**router 签名/路径/方法/dependencies 全不变** —— `require_permission("devices"/"bookings", <act>)` 不动(super_admin 在 `check` 内 bypass,hq_staff 由 service body 放行),`@router.post("/"){...}` 路由声明不动。**这是 §4.1 影响面清单把 router 排除(0 文件改动)的依据。**
 
+##### 4.5.4a 实施期补丁(切片 01 落地发现的 plan 盲点,2026-07-25)
+
+切片 01 实施时发现 §4.5.4 与现状代码有 3 处脱节,以下补丁记录实际落地的形态(切片 02-05 沿用):
+
+**补丁 1 — DELETE/unbind 用 query 参数(非 body)透传 tenant_id**
+- **盲点**:plan §4.5.4 假设所有写动作都透传 `payload.tenant_id`,但 **DELETE 请求无 body**(REST 规范),`unbind`(DELETE /devices/{id}/bind)和 `delete`(DELETE /devices/{id})无法用 body 传 tenant_id。
+- **落地**:这两个 endpoint 加 `tenant_id: str | None = Query(default=None)` 查询参数,service 接受 `target_tenant_id: str | None = None` keyword 参数。**路径/方法/dependencies/响应 schema 全不变**(只加 query 参数,符合 §4.5.4 字面「URL 前缀/方法不变」)。
+- **影响面清单更新**:§4.1 「router 文件改动 0」→ **「router 文件改动 1」**(`app/api/v1/devices.py` delete/unbind 加 query + bind body 已含 tenant_id)。§11 不越界声明同步松绑。
+
+**补丁 2 — `permission_service.check` 加 platform_writer bypass for devices**
+- **盲点**:plan §4.5.4 说「hq_staff 由 service body 放行」,但现状 `check` 只对 `hq_staff + read` short-circuit,**写动作 fall through 到 casbin**(hq_staff 的 member 角色)→ 403,根本到不了 service body。router 的 `require_permission` dependency 在 endpoint 之前跑,直接调 `check`。
+- **落地**:`check` 加 `if is_platform_writer(platform_role) and obj == "devices": return True`(切片 01 只对 devices;切片 02/03 再扩展到 bookings)。**这不违反 §4.3「不动 require_permission caller」** —— caller 列表不变,改的是 `check` 内部 bypass 逻辑(与现有 `super_admin` / `hq_staff + read` bypass 同范式)。也不违反 §4.3「不动 DEFAULT_*_PERMS / casbin policy」—— 那些真没动。
+- **影响面清单更新**:§4.1 新增「`permission_service.check` 内部 +4 行 bypass」(文件已在清单内,改的是 check 函数体)。
+
+**补丁 3 — D6-2「门店四角色带 tenant_id → 400」对 member/customer 实际是 403**
+- **盲点**:plan §5 测试矩阵说「门店 owner/admin/member/customer 各一次带 tenant_id → 400」(D1-2 防伪造)。但 **member/customer 在 router `require_permission` dependency 就被 casbin 403**(他们没有 devices:create),根本到不了 service body 的 anti-forgery 400 守卫。
+- **落地**:test_p7 拆成两组 —— owner/admin → **400**(service body anti-forgery 守卫生效,他们有 devices:create)+ member/customer → **403**(router casbin 拒,与 tenant_id 无关)。**这反而更安全**:伪造 tenant_id **不能**给 member/customer 解锁 create(router casbin 是第一道闸)。
+- **AC 更新**:切片 01 AC「门店 owner/admin/member/customer 各一次 POST 带 tenant_id → 400」→ **「owner/admin → 400;member/customer → 403(router casbin 拒,与 tenant_id 无关)」**。
+
+**补丁 4(切片 01 必要) — E 章 `test_hq_staff_writes_are_403` 改写**
+- **盲点**:plan D6-2 说「旧断言改写在切片 05」。但补丁 2 让 hq_staff 写 devices 不再 403(变成 400 必填守卫),**切片 01 init.sh 必须绿**,所以这个测试必须在切片 01 改,不能推到切片 05。
+- **落地**:E 章 `test_hq_staff_writes_are_403` → `test_hq_staff_write_without_tenant_id_400`,断言从 403 改为 400(hq_staff 不带 tenant_id → D1 必填守卫)。测试语义保留(「hq_staff 不能在没 target 的情况下写」),只是失败码从 casbin-deny 变成 missing-target-tenant。
+
 #### 4.5.5 写动作范围(11 个,含 bind/unbind)
 
 本任务解锁写的动作**共 11 个**:
@@ -279,7 +302,7 @@ bind/unbind 是 device 的 customer 子资源绑定(状态机外的写动作),�
 
 > 切片策略:鉴权敏感任务 + 改动 >10 文件 + 跨多模块,按「后端 devices → 后端 bookings CRUD → 后端 bookings 状态机 → 前端 → 联调」5 片切。每片垂直可独立验证(后端片有 API 测试护栏,前端片有 vitest 护栏)。依赖图线性无环。
 
-### 切片 01 — 后端 devices 跨店写 + tenant_id 守卫 + 共享 helper + 测试
+### 切片 01 — 后端 devices 跨店写 + tenant_id 守卫 + 共享 helper + 测试 ✅ PR 待提交(分支 feat/platform-cross-tenant-write-slice01,2026-07-25)
 
 - **What it delivers**:平台角色(super_admin + hq_staff)可跨店 POST/PUT/DELETE/bind/unbind 设备;引入 `is_platform_writer` helper + **新文件 `_tenant_target.py`(共享 `resolve_target_tenant` 函数)**;`DeviceCreate/Update.tenant_id` 加 optional 字段;门店角色带 tenant_id → 400(防伪造);平台角色不带 → 400(必填)。bind/unbind 也走同套 effective_tenant_id 解析。
 - **Blocked by**: 无(frontier,首片可立即开工)
@@ -288,27 +311,28 @@ bind/unbind 是 device 的 customer 子资源绑定(状态机外的写动作),�
   - `app/schemas/device.py`(+~2 行:`DeviceCreate.tenant_id: str | None = None`,`DeviceUpdate` 同)
   - `app/services/_tenant_target.py`(**新文件**,~25 行:`resolve_target_tenant` 共享纯函数,§4.5.2)
   - `app/services/device_service.py`(+~30 行:`from app.services._tenant_target import resolve_target_tenant`;create/update/delete/bind/unbind 开头调一次解析 + 加 `elif is_platform_writer` 分支)
-  - `tests/test_devices_api.py`(+~100 行:新章节「平台角色跨店写」含 bind/unbind + 反向伪造拒)
-  - **router 文件零改动**(`app/api/v1/devices.py` 现状已透传 payload,§4.5.4)
+  - `app/services/permission_service.py`(+~10 行:`PLATFORM_WRITER_ROLES` + `is_platform_writer` helper + `check` 内 platform_writer bypass for devices,见补丁 2)
+  - `tests/test_devices_api.py`(+~520 行:新章节「平台角色跨店写」P0-P9 含 bind/unbind + 反向伪造拒 + E 章 hq_staff 旧断言改写 403→400)
+  - `app/api/v1/devices.py`(+~10 行:delete/unbind 加 query 参数 `tenant_id: str | None = Query(default=None)`;bind body 已含 tenant_id 透传,见补丁 1)
 - **Acceptance criteria**:
-  - [ ] `is_platform_writer("super_admin")` / `is_platform_writer("hq_staff")` → True;其他 → False(契约测试)
-  - [ ] `app/services/_tenant_target.py` 新文件存在,导出 `resolve_target_tenant(user_tenant_id, payload_tenant_id, platform_role)` 纯函数(无 self)
-  - [ ] `resolve_target_tenant`:平台角色带 tenant_id → 返回该 id;不带 → BizError 400;门店角色带 → BizError 400;门店角色不带 → 返回 user.tenant_id
-  - [ ] `DeviceCreate` / `DeviceUpdate` schema 有 optional `tenant_id` 字段
-  - [ ] `DeviceService.create/update/delete/bind/unbind` 调用 `resolve_target_tenant(...)` 得到 `effective_tenant_id`,替代直接用 `user.tenant_id`
-  - [ ] 平台角色 create/update/delete/bind/unbind 路径:skip `require(...)`,直接走业务守卫(model_live / serial_unique / customer_in_tenant,均用 effective_tenant_id)
-  - [ ] super_admin POST /devices/ {tenant_id, model_id, serial_number} → 201
-  - [ ] hq_staff POST /devices/ {tenant_id, model_id, serial_number} → 201
-  - [ ] super_admin PUT /devices/{id}(目标店设备)→ 200
-  - [ ] super_admin DELETE /devices/{id}(目标店设备)→ 204
-  - [ ] super_admin/hq_staff POST /devices/{id}/customer(bind 目标店设备 + customer_id 目标店全局 ID)→ 200
-  - [ ] super_admin/hq_staff DELETE /devices/{id}/customer(unbind 目标店设备)→ 204
-  - [ ] 平台角色 POST /devices/ {tenant_id, customer_id=<目标店 customer 全局 ID>} → 201(D2-ii:customer_in_tenant 守卫用 effective_tenant_id 通过)
-  - [ ] 平台角色 POST /devices/ {tenant_id, customer_id=<不存在>} → 400(守卫正确拒)
-  - [ ] 平台角色 POST 不带 tenant_id → 400(D1 必填守卫)
-  - [ ] 门店 owner/admin/member/customer 各一次 POST 带 tenant_id(他店)→ 400(D1-2 防伪造,4 用例)
-  - [ ] test_devices_api.py A-F 章(门店角色)原样绿
-  - [ ] `./init.sh` 全绿(ruff + pytest)
+  - [x] `is_platform_writer("super_admin")` / `is_platform_writer("hq_staff")` → True;其他 → False(契约测试)— `test_p0_helper_contract`
+  - [x] `app/services/_tenant_target.py` 新文件存在,导出 `resolve_target_tenant(user_tenant_id, payload_tenant_id, platform_role)` 纯函数(无 self)
+  - [x] `resolve_target_tenant`:平台角色带 tenant_id → 返回该 id;不带 → BizError 400;门店角色带 → BizError 400;门店角色不带 → 返回 user.tenant_id — `test_p0_helper_contract` 4 组合全覆盖
+  - [x] `DeviceCreate` / `DeviceUpdate` schema 有 optional `tenant_id` 字段(`DeviceBindRequest` 同步加,见补丁 1)
+  - [x] `DeviceService.create/update/delete/bind/unbind` 调用 `resolve_target_tenant(...)` 得到 `effective_tenant_id`,替代直接用 `user.tenant_id`
+  - [x] 平台角色 create/update/delete/bind/unbind 路径:skip `require(...)`,直接走业务守卫(model_live / serial_unique / customer_in_tenant,均用 effective_tenant_id)
+  - [x] super_admin POST /devices/ {tenant_id, model_id, serial_number} → 201 — `test_p1_platform_writer_create_cross_tenant`
+  - [x] hq_staff POST /devices/ {tenant_id, model_id, serial_number} → 201 — `test_p1_platform_writer_create_cross_tenant`
+  - [x] super_admin PUT /devices/{id}(目标店设备)→ 200 — `test_p2_platform_writer_update_cross_tenant`
+  - [x] super_admin DELETE /devices/{id}(目标店设备)→ 204 — `test_p3_platform_writer_delete_cross_tenant`(DELETE 用 query 透传 tenant_id,见补丁 1)
+  - [x] super_admin/hq_staff POST /devices/{id}/customer(bind 目标店设备 + customer_id 目标店全局 ID)→ 200 — `test_p4_platform_writer_bind_cross_tenant`
+  - [x] super_admin/hq_staff DELETE /devices/{id}/customer(unbind 目标店设备)→ 204 — `test_p5_platform_writer_unbind_cross_tenant`(DELETE 用 query 透传,见补丁 1)
+  - [x] 平台角色 POST /devices/ {tenant_id, customer_id=<目标店 customer 全局 ID>} → 201(D2-ii:customer_in_tenant 守卫用 effective_tenant_id 通过)— `test_p8_platform_writer_create_with_target_customer_201`
+  - [x] 平台角色 POST /devices/ {tenant_id, customer_id=<不存在>} → 400(守卫正确拒)— `test_p9_platform_writer_create_with_nonexistent_customer_400`
+  - [x] 平台角色 POST 不带 tenant_id → 400(D1 必填守卫)— `test_p6_platform_writer_create_without_tenant_id_400` + E 章 `test_hq_staff_write_without_tenant_id_400`(旧 `test_hq_staff_writes_are_403` 改写,见补丁 4)
+  - [x] 门店 owner/admin 带 tenant_id → 400(D1-2 防伪造,service body 守卫)— `test_p7_owner_create_with_tenant_id_400` / `test_p7_admin_create_with_tenant_id_400`;**member/customer 带 tenant_id → 403**(router casbin 拒,与 tenant_id 无关,见补丁 3)— `test_p7_member_create_with_tenant_id_403` / `test_p7_customer_create_with_tenant_id_403`
+  - [x] test_devices_api.py A-F 章(门店角色)原样绿 — 43 passed(30 原 + 13 新 P 章节)
+  - [x] `./init.sh` 全绿(ruff + pytest)— 727 passed(基线 714 + 13 P 章节,bookings/hq_platform_role 零回归)
 - **验证命令**:`./init.sh`(ruff + pytest 全绿,含新平台角色章节 + A-F 回归)
 
 ### 切片 02 — 后端 bookings CRUD 跨店写 + 测试
@@ -475,7 +499,7 @@ bind/unbind 是 device 的 customer 子资源绑定(状态机外的写动作),�
 - customers / groups / device_models /其他业务模块
 - 状态机 `booking_state.py` 的 `_TRANSITIONS` / ACTIONS / `transition()` 函数体
 - 权限基础设施(DEFAULT_*_PERMS / Role.data_scope / casbin policy / `require_permission` caller)
-- **router 文件**(`app/api/v1/devices.py` + `bookings.py` 签名/路径/方法/dependencies 全不变,§4.5.4)
+- **router 文件**(`app/api/v1/devices.py` + `bookings.py` **路径/方法/dependencies/响应 schema 全不变**;DELETE/unbind 加 `tenant_id` query 参数是切片 01 必要补丁,见 §4.5.4a 补丁 1 —— DELETE 无 body,query 是唯一 RESTful 透传方式。OpenAPI 路径契约不变,只是加可选 query 参数)
 - router URL 前缀 / OpenAPI 路径契约
 - 数据库 schema / 迁移链
 - API token scope gate 逻辑(restricted token 仍按 scopes 限流,平台角色 bypass 在 scope gate 之后,§4.3)
