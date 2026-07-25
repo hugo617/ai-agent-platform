@@ -60,13 +60,11 @@ class PermissionService:
 
         Platform super admins bypass all permission checks. ``hq_staff``(总部
         业务员)is a cross-tenant viewer: any ``read`` is allowed, and writes on
-        ``devices`` are also allowed (platform-cross-tenant-write slice 01 — the
-        service body then enforces the cross-tenant contract via
-        ``resolve_target_tenant``). Writes on ``bookings`` will be lifted in
-        slice 02/03; until then hq_staff booking writes still fall through to
-        casbin → 403. Writes on other objects (customers / groups / users / …)
-        always fall through (hq_staff has no tenant role), so hq_staff stays
-        read-only outside devices.
+        ``devices`` / ``bookings`` are also allowed (platform-cross-tenant-write
+        — the service body then enforces the cross-tenant contract via
+        ``resolve_target_tenant``). Writes on other objects (customers / groups /
+        users / …) fall through to casbin → 403 (hq_staff has no tenant role),
+        so hq_staff stays read-only outside devices/bookings.
 
         API token scope gate (api-token-fine-grained-scopes): when the request
         is authenticated by an ``ahp_`` token in ``restricted`` mode, the token
@@ -107,19 +105,20 @@ class PermissionService:
         if platform_role == "hq_staff" and act == "read":
             return True
         # Platform writers (super_admin handled above; hq_staff reaches here for
-        # writes) bypass the casbin check on devices so the request can reach
-        # the service body, where ``resolve_target_tenant`` +
-        # ``is_platform_writer`` enforce the cross-tenant write contract (target
-        # tenant_id required, store-role anti-forgery). Scoped to devices only
-        # in slice 01; bookings is lifted in slice 02/03 — keeping the bypass
-        # narrow per-slice avoids ripple-breaking the existing
-        # ``test_*_hq_staff_writes_are_403`` assertions in test_bookings_api
-        # before booking_service is updated. customers/groups/etc stay
-        # read-only for hq_staff (plan-platform-cross-tenant-write §4.5.4
-        # implicit: "hq_staff 由 service body 放行"; the literal
-        # "require_permission 不动" holds because the bypass lives in
-        # ``check``, not in the router dependency).
-        if is_platform_writer(platform_role) and obj == "devices":
+        # writes) bypass the casbin check on devices/bookings so the request
+        # can reach the service body, where ``resolve_target_tenant`` +
+        # ``is_platform_writer`` enforce the cross-tenant write contract
+        # (target tenant_id required, store-role anti-forgery). Scoped to
+        # devices/bookings only — customers/groups/etc stay read-only for
+        # hq_staff (plan-platform-cross-tenant-write §4.5.4 implicit: "hq_staff
+        # 由 service body 放行"; the literal "require_permission 不动" holds
+        # because the bypass lives in ``check``, not in the router dependency).
+        # NB: the bypass is scoped by ``obj``, not by ``act`` — bookings'
+        # start/end/no_show actions share the ``update``/``delete`` acts with
+        # CRUD's update/cancel, so an act whitelist cannot split them. Slice 02
+        # therefore lands all 6 booking write actions together (see plan §4.5.4a
+        # patch 5 — slice 02+03 merge rationale).
+        if is_platform_writer(platform_role) and obj in ("devices", "bookings"):
             return True
 
         def _do() -> bool:

@@ -209,9 +209,9 @@ async def start(self, actor_id, user_tenant_id, booking_id, *,
 
 `payload.tenant_id` 已在 body 里,router 现状已把整个 `payload` 透传给 service(见 `bookings.py:112` `DeviceService(db).create(..., payload, ...)`),service 自己读 `payload.tenant_id`。**router 签名/路径/方法/dependencies 全不变** —— `require_permission("devices"/"bookings", <act>)` 不动(super_admin 在 `check` 内 bypass,hq_staff 由 service body 放行),`@router.post("/"){...}` 路由声明不动。**这是 §4.1 影响面清单把 router 排除(0 文件改动)的依据。**
 
-##### 4.5.4a 实施期补丁(切片 01 落地发现的 plan 盲点,2026-07-25)
+##### 4.5.4a 实施期补丁(切片 01/02 落地发现的 plan 盲点,2026-07-25)
 
-切片 01 实施时发现 §4.5.4 与现状代码有 3 处脱节,以下补丁记录实际落地的形态(切片 02-05 沿用):
+切片 01/02 实施时发现 §4.5.4 与现状代码有 5 处脱节,以下补丁记录实际落地的形态(切片 04-05 沿用):
 
 **补丁 1 — DELETE/unbind 用 query 参数(非 body)透传 tenant_id**
 - **盲点**:plan §4.5.4 假设所有写动作都透传 `payload.tenant_id`,但 **DELETE 请求无 body**(REST 规范),`unbind`(DELETE /devices/{id}/bind)和 `delete`(DELETE /devices/{id})无法用 body 传 tenant_id。
@@ -231,6 +231,20 @@ async def start(self, actor_id, user_tenant_id, booking_id, *,
 **补丁 4(切片 01 必要) — E 章 `test_hq_staff_writes_are_403` 改写**
 - **盲点**:plan D6-2 说「旧断言改写在切片 05」。但补丁 2 让 hq_staff 写 devices 不再 403(变成 400 必填守卫),**切片 01 init.sh 必须绿**,所以这个测试必须在切片 01 改,不能推到切片 05。
 - **落地**:E 章 `test_hq_staff_writes_are_403` → `test_hq_staff_write_without_tenant_id_400`,断言从 403 改为 400(hq_staff 不带 tenant_id → D1 必填守卫)。测试语义保留(「hq_staff 不能在没 target 的情况下写」),只是失败码从 casbin-deny 变成 missing-target-tenant。
+
+**补丁 5(切片 02 必要) — 切片 02+03 合并(check bypass 原子性)**
+- **盲点**:plan §6 把 bookings 改动切成 02(CRUD:create/update/cancel)+ 03(状态机:start/end/no_show),假设 check bypass 可以只对 CRUD 生效。但补丁 2 的 check bypass 是**按 obj 作用域**(不能按 act):
+  - create 用 `bookings:create`(CRUD 独占)
+  - **update 用 `bookings:update`** —— CRUD 的 update **和状态机的 start 共用**
+  - **delete 用 `bookings:delete`** —— cancel **和 end/no_show 共用**
+  - 所以 `check` bypass 对 `obj=="bookings"` 放行后,无法用 act 白名单只放行 CRUD 而拦状态机(act 重叠)。
+- **更深问题**:若切片 02 只改 CRUD service body 不改状态机,hq_staff 带 `?tenant_id=` 调 start/end/no_show 会进 service body(check 放行)→ 现状 service 用 `user.tenant_id`(忽略 query 的 target_tenant_id)→ **静默写错店**(平台角色以为写目标店,实际写了自己的 user.tenant_id)。这是数据正确性 bug,不可接受。
+- **落地**:**切片 02 一次性改 6 个写动作**(create/update/cancel/start/end/no_show)的 service body + check bypass 扩展到 `obj in ("devices","bookings")`。切片 03 实质并入切片 02(service body 部分),切片 03 原计划的「状态机测试」由 Q4-Q8 覆盖(walk-in start 边界 + InvalidTransition 守卫 + 6 写动作矩阵)。
+- **切片 03 状态**:**已合并入切片 02**(标记为 deprecated,见 §6 切片 03 标题)。
+- **bookings 端点 tenant_id 透传**:
+  - create / update:body 字段(BookingCreate/Update.tenant_id)
+  - cancel / start / end / no-show:**query 参数**(`?tenant_id=<target>`),因为 cancel/start/no-show 是 POST 无 body;end 的 body 是 BookingEndPayload(只含 feedback),tenant_id 走 query 与之正交。**路径/方法/dependencies/响应 schema 全不变**。
+- **影响面清单更新**:§4.1 「router 文件改动」进一步含 `app/api/v1/bookings.py`(cancel/start/end/no-show 加 query + import Query)。§11 不越界声明同步松绑(devices/bookings router 同范式)。
 
 #### 4.5.5 写动作范围(11 个,含 bind/unbind)
 
@@ -335,46 +349,48 @@ bind/unbind 是 device 的 customer 子资源绑定(状态机外的写动作),�
   - [x] `./init.sh` 全绿(ruff + pytest)— 727 passed(基线 714 + 13 P 章节,bookings/hq_platform_role 零回归)
 - **验证命令**:`./init.sh`(ruff + pytest 全绿,含新平台角色章节 + A-F 回归)
 
-### 切片 02 — 后端 bookings CRUD 跨店写 + 测试
+### 切片 02 — 后端 bookings CRUD 跨店写 + 测试 ✅(合并切片 03,PR 待提交 feat/platform-cross-tenant-write-slice02,2026-07-25)
 
 - **What it delivers**:平台角色可跨店 POST 创建 / PUT 更新 / POST cancel 预约;`BookingCreate/Update.tenant_id` 加 optional;复用切片 01 的 `_resolve_target_tenant` + `is_platform_writer`(BookingService 引入同款 helper,或抽到共享模块)。
 - **Blocked by**: 切片 01(复用 `is_platform_writer` + `_resolve_target_tenant` 范式)
-- **文件清单**:
-  - `app/schemas/booking.py`(+~2 行:`BookingCreate/Update.tenant_id: str | None = None`)
-  - `app/services/booking_service.py`(+~25 行:`from app.services._tenant_target import resolve_target_tenant`;create/update/cancel 开头调一次解析 + 加 `elif is_platform_writer` 分支)
-  - `tests/test_bookings_api.py`(+~60 行:新章节「平台角色 CRUD 跨店写」)
+- **文件清单**(合并切片 03 service body):
+  - `app/schemas/booking.py`(+~6 行:`BookingCreate/Update.tenant_id: str | None = None`)
+  - `app/services/permission_service.py`(+~6 行:`check` 的 platform_writer bypass 扩展到 `obj in ("devices","bookings")`)
+  - `app/services/booking_service.py`(+~100 行:`from app/services/_tenant_target import resolve_target_tenant` + `is_platform_writer` import;**全 6 写动作**(create/update/cancel/start/end/no_show)加 platform_writer 分支 + effective_tenant 贯穿业务守卫)
+  - `app/api/v1/bookings.py`(+~12 行:cancel/start/end/no-show 加 query 参数 `tenant_id: str | None = Query(default=None)`;import Query)
+  - `tests/test_bookings_api.py`(+~470 行:新 Q 章节 10 用例 + 改 4 个 hq_staff 旧测试断言 403→400)
 - **Acceptance criteria**:
-  - [ ] `BookingCreate` / `BookingUpdate` schema 有 optional `tenant_id` 字段
-  - [ ] `BookingService.create/update/cancel` 调用 `resolve_target_tenant(...)`(复用切片 01 的共享 helper,不重复定义)
-  - [ ] create:平台角色带 tenant_id + device_id(目标店设备)→ 201;`_assert_device_in_tenant` / `_assert_customer_in_tenant` / `_assert_no_overlap` 用 effective_tenant_id(**create 不调 `_get_live_booking`**,新建无实体)
-  - [ ] update:平台角色改目标店预约 → 200;**仅 pending 状态可修改的 BizError 守卫保留**(原 plan-bookings-page-split §D10,与状态机 D3-4 无关,本任务不碰)
-  - [ ] cancel:平台角色取消目标店预约 → 204;idempotent 早退(已 cancelled)保留;非 pending → 400 保留
-  - [ ] **cancel 现有 require/get_live_booking 顺序不动**(现状「先 require 后 get」,见 booking_service.py:496-503;本切片只夹 elif 分支让平台角色 bypass require,**不借机对齐** start/end/no_show 的「先 get 后 require」顺序 —— 对齐是 `booking-action-order-unify` 独立 feature 的事,见 §8 Out of Scope)
-  - [ ] super_admin/hq_staff × create/update/cancel 全绿(6 用例)
-  - [ ] 平台角色 POST 不带 tenant_id → 400;门店角色带 → 400
-  - [ ] test_bookings_api.py A-F + E1-E3 章原样绿
-  - [ ] `./init.sh` 全绿
+  - [x] `BookingCreate` / `BookingUpdate` schema 有 optional `tenant_id` 字段
+  - [x] `BookingService.create/update/cancel` 调用 `resolve_target_tenant(...)`(复用切片 01 的共享 helper,不重复定义)— start/end/no_show 也同步加(补丁 5 合并)
+  - [x] create:平台角色带 tenant_id + device_id(目标店设备)→ 201;`_assert_device_in_tenant` / `_assert_customer_in_tenant` / `_assert_no_overlap` 用 effective_tenant_id(**create 不调 `_get_live_booking`**,新建无实体)— `test_q1_platform_writer_create_cross_tenant`
+  - [x] update:平台角色改目标店预约 → 200;**仅 pending 状态可修改的 BizError 守卫保留**(原 plan-bookings-page-split §D10,与状态机 D3-4 无关,本任务不碰)— `test_q2_platform_writer_update_cross_tenant`
+  - [x] cancel:平台角色取消目标店预约 → 204;idempotent 早退(已 cancelled)保留;非 pending → 400 保留 — `test_q3_platform_writer_cancel_cross_tenant`
+  - [x] **cancel 现有 require/get_live_booking 顺序不动**(现状「先 require 后 get」;本切片只夹 elif 分支让平台角色 bypass require,**不借机对齐** start/end/no_show 的「先 get 后 require」顺序 —— 对齐是 `booking-action-order-unify` 独立 feature 的事,见 §8 Out of Scope)— 代码核对 cancel 仍是 resolve→require→get 顺序
+  - [x] super_admin/hq_staff × create/update/cancel 全绿(6 用例)— `test_q1`/`q2`/`q3` 各含 super_admin + hq_staff
+  - [x] 平台角色 POST 不带 tenant_id → 400;门店角色带 → 400 — F/HQ4 改写 + `test_q9_owner_create_with_tenant_id_400`;member 在状态动作上是 400(无 router dep,anti-forgery 先触发,`test_q9_member_state_action_with_tenant_id_400`)
+  - [x] test_bookings_api.py A-F + E1-E3 章原样绿 — 90 passed(76 原 + 10 Q 章节 + 4 个 hq_staff 旧测试改写)
+  - [x] `./init.sh` 全绿 — 737 passed(基线 727 + 10 Q 章节)
 - **验证命令**:`./init.sh`
 
-### 切片 03 — 后端 bookings 状态机 3 守卫(start/end/no_show)重写 + 测试
+### 切片 03 — 后端 bookings 状态机 3 守卫(start/end/no_show)重写 + 测试 ✅ **已并入切片 02**(见 §4.5.4a 补丁 5:check bypass 按 obj 作用域,update/delete act 被 CRUD 与状态机共用,无法用 act 白名单拆分;且若只改 CRUD 不改状态机会导致 hq_staff 带 tenant_id 调 start/end/no_show 静默写错店。切片 02 一次性改 6 写动作 + Q4-Q8 覆盖状态机测试)
 
 - **What it delivers**:start/end/no_show 3 个状态机动作加 platform_writer 分支(cancel 已在切片 02 落地);start 平台角色 = 增强 store principal(可开 walk-in);end/no_show 平台角色 bypass owner-only require。**状态机 `_TRANSITIONS` 表不动**(D3-4)。
 - **Blocked by**: 切片 02(复用切片 02 落地的 `resolve_target_tenant` import + `is_platform_writer`)
 - **文件清单**:
   - `app/services/booking_service.py`(+~25 行:start/end/no_show 加 `elif is_platform_writer` 分支)
   - `tests/test_bookings_api.py`(+~70 行:新章节「平台角色状态机 3 守卫」+ walk-in start 边界)
-- **Acceptance criteria**:
-  - [ ] `booking_state._TRANSITIONS` / `ACTIONS` / `transition()` 函数体零改动(D3-4)
-  - [ ] `start`:平台角色走 elif 分支,skip require,可开 walk-in(booking.customer_id None 不报错);不进 customer ownership 分支
-  - [ ] `end`:平台角色 bypass `require("bookings","delete")`(owner-only);走状态机 `in_service→done`
-  - [ ] `no_show`:同 end;走 `pending|confirmed|in_service→no_show`
-  - [ ] `cancel`:平台角色 bypass require(切片 02 已加);状态机契约保留(已 cancelled→204,非 pending→400)
-  - [ ] super_admin/hq_staff × start/end/no_show 全绿(6 用例 + cancel 在切片 02)
-  - [ ] 平台角色 start walk-in 预约 → 200(D3-2 边界)
-  - [ ] 平台角色 start 已 done 预约 → 400 InvalidTransition(状态机守卫不动)
-  - [ ] 平台角色 end 非 in_service 预约 → 400 InvalidTransition
-  - [ ] test_bookings_api.py A-F + E1-E3 章原样绿
-  - [ ] `./init.sh` 全绿
+- **Acceptance criteria**(全部由切片 02 落地,见 §4.5.4a 补丁 5):
+  - [x] `booking_state._TRANSITIONS` / `ACTIONS` / `transition()` 函数体零改动(D3-4)— 切片 02 未碰 booking_state.py
+  - [x] `start`:平台角色走 elif 分支,skip require,可开 walk-in(booking.customer_id None 不报错);不进 customer ownership 分支 — `test_q4_platform_writer_start_cross_tenant` + `test_q5_platform_writer_start_walkin_cross_tenant`
+  - [x] `end`:平台角色 bypass `require("bookings","delete")`(owner-only);走状态机 `in_service→done` — `test_q6_platform_writer_end_cross_tenant`
+  - [x] `no_show`:同 end;走 `pending|confirmed|in_service→no_show` — `test_q7_platform_writer_no_show_cross_tenant`
+  - [x] `cancel`:平台角色 bypass require(切片 02 已加);状态机契约保留(已 cancelled→204,非 pending→400)— `test_q3`
+  - [x] super_admin/hq_staff × start/end/no_show 全绿(6 用例 + cancel 在切片 02)— `test_q4`/`q6`/`q7` 各含 super_admin + hq_staff
+  - [x] 平台角色 start walk-in 预约 → 200(D3-2 边界)— `test_q5_platform_writer_start_walkin_cross_tenant`
+  - [x] 平台角色 start 已 done 预约 → 400 InvalidTransition(状态机守卫不动)— `test_q8_platform_writer_state_machine_guards_preserved`
+  - [x] 平台角色 end 非 in_service 预约 → 400 InvalidTransition — `test_q8`
+  - [x] test_bookings_api.py A-F + E1-E3 章原样绿 — 90 passed
+  - [x] `./init.sh` 全绿 — 737 passed
 - **验证命令**:`./init.sh`
 
 ### 切片 04 — 前端 HqView target tenant 下拉 + 写按钮 + 复用 Dialog
