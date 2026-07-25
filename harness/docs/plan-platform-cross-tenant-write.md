@@ -420,7 +420,7 @@ bind/unbind 是 device 的 customer 子资源绑定(状态机外的写动作),�
   - [x] `cd frontend && npm run build` 通过 — tsc -b + vite build 全绿(bookings-page 22.55 kB / devices-page 15.06 kB,oxlint 0 warnings)
 - **验证命令**:`cd frontend && npm test && npm run build` ✅ 全绿
 
-### 切片 05 — 端到端联调 + 旧断言改写 + 收尾 ✅ PR 待提交(分支 feat/platform-cross-tenant-write-slice05,2026-07-25)
+### 切片 05 — 端到端联调 + 旧断言改写 + 收尾 ✅ PR #126 commit eb46520(分支 feat/platform-cross-tenant-write-slice05,2026-07-25)
 
 - **What it delivers**:`test_hq_platform_role.py` 旧断言改写(hq_staff 写 customers 仍 403,但写 devices/bookings 带 tenant_id → 201/200);端到端联调跑 `./init.sh` 全绿;feature_list.json status → passing(本任务 EP3 实施完成后由 EP3 收尾,本 EP2 回环只产 plan,不实施)。
 - **Blocked by**: 切片 01+02+03+04
