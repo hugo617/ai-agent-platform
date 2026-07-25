@@ -22,6 +22,7 @@ import {
   createBooking,
   createCustomerProfile,
   createDevice,
+  createDeviceModel,
   createGroup,
   createPricing,
   createRole,
@@ -31,6 +32,7 @@ import {
   deleteConversation,
   deleteCustomerProfile,
   deleteDevice,
+  deleteDeviceModel,
   deleteGroup,
   deletePricing,
   deleteRole,
@@ -98,6 +100,7 @@ import {
   updateBooking,
   updateCustomerProfile,
   updateDevice,
+  updateDeviceModel,
   updateGroup,
   updateMe,
   updateMember,
@@ -130,6 +133,8 @@ import type {
   CustomerProfileCreate,
   CustomerProfileUpdate,
   DeviceCreate,
+  DeviceModelCreate,
+  DeviceModelUpdate,
   DeviceUpdate,
   EmbeddingConfigUpdate,
   GroupCreate,
@@ -419,10 +424,11 @@ export function useCustomerStatistics() {
 // the cache key is the same. Writes invalidate qk.devices so the list refreshes;
 // bind/unbind also invalidate (they mutate customer_id, which the list shows).
 //
-// useDeviceModels feeds the create/edit dialog's model dropdown. The picker is
-// only rendered on writable contexts (store owner/admin), so `enabled` defaults
-// to true — callers that want to suppress the fetch (e.g. HQ read-only view)
-// pass `enabled=false`, mirroring useAllTenants.
+// useDeviceModels feeds both the store create/edit dialog's model dropdown
+// (tenant users get DeviceModelPublic) and the super_admin catalogue page
+// (DeviceModelRead). The endpoint branches on platform_role; callers narrow the
+// union at render. `enabled` defaults to true — callers that want to suppress
+// the fetch (e.g. HQ read-only view) pass `enabled=false`, mirroring useAllTenants.
 export function useDevices() {
   return useQuery({ queryKey: qk.devices, queryFn: fetchDevices });
 }
@@ -467,6 +473,38 @@ export function useDeviceModels(enabled = true) {
     queryFn: fetchDeviceModels,
     enabled,
   });
+}
+
+// ---------- device-models admin writes (device-models-admin-ui,
+//           super_admin catalogue management) ----------
+//
+// Reads reuse useDeviceModels above — the endpoint branches on platform_role,
+// super_admin / hq_staff get DeviceModelRead (full fields), tenant users get
+// DeviceModelPublic (dropdown view). The admin page (RequireSuperAdmin route)
+// narrows the union to DeviceModelRead[] at render. These three mutations are
+// super_admin-only writes (require_super_admin on the backend; RequireSuperAdmin
+// route guard is the UX layer) that invalidate qk.deviceModels so every consumer
+// (store dropdown + admin list) refreshes.
+export function useCreateDeviceModel() {
+  return useApiMutation(
+    (payload: DeviceModelCreate) => createDeviceModel(payload),
+    [qk.deviceModels],
+  );
+}
+
+export function useUpdateDeviceModel() {
+  return useApiMutation(
+    ({ id, payload }: { id: string; payload: DeviceModelUpdate }) =>
+      updateDeviceModel(id, payload),
+    [qk.deviceModels],
+  );
+}
+
+export function useDeleteDeviceModel() {
+  return useApiMutation(
+    (id: string) => deleteDeviceModel(id),
+    [qk.deviceModels],
+  );
 }
 
 // ---------- bookings (设备预约订单, device-booking 系列 3/4) ----------

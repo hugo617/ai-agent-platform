@@ -89,7 +89,7 @@
 | **写按钮守卫** | 页内不再加 `canManage` 判断(整页只 super_admin 能进,守卫已在路由层) | 与 groups-page 不同:groups 允许租户 owner 只读,本页非 super_admin 直接重定向,故无只读分支 |
 | **缓存失效** | mutation 失效 `qk.deviceModels`(已有 key,与门店下拉共用) | create/update/delete 都会让门店入库下拉同步刷新(型号增减),共用 key 是正确语义 |
 | **`unit_cost` 列表呈现** | **内联** `` `¥${Number(m.unit_cost).toFixed(2)}` ``,**不复用** `formatCurrency` | `formatCurrency`(`lib/format.ts:65`)实现是 `toFixed(4)`(为 token/wallet cost 设计的 4 位小数),`unit_cost` 是 `Numeric(12,2)` 货币(2 位小数),复用会渲染 `¥299.5000`。改既有 helper 有副作用(其他调用方依赖 4 位),故本 feature 内联 2 位小数渲染。表单 Input 用 raw string 不格式化,只有列表展示格式化 |
-| **GET 列表 hook 命名** | 新增 `useDeviceModelsAdmin()`(返回 `DeviceModelRead[]`,完整字段),**不**改既有 `useDeviceModels()`(仍返 `DeviceModelPublic[]` 供门店下拉) | 两个 hook 拉同一端点但 type 不同:super_admin 拿完整字段(含 unit_cost)、门店下拉只需 {id,name,specs}。cache key 共用 `qk.deviceModels`,因为同一 URL 数据;type 区别仅在 caller 端 narrow |
+| **GET 列表 hook 命名** | 复用既有 `useDeviceModels()`,返回类型改 union `DeviceModelPublic[] \| DeviceModelRead[]`(对齐 `fetchDevices(): Promise<Device[] \| DeviceHqRead[]>` 范式)。**不**新增独立 admin 读 hook | **EP3 切片 01 实施期决策(2026-07-25,PR #120 修正 PR #119)**:原 plan / PR #119 写「新增 `useDeviceModelsAdmin()` 独立 hook」,`/code-review` Standards 轴指出违反 `endpoints.ts` 既有 union 单函数约定 + 类型不诚实 + 同 queryKey 不同读形状缓存碰撞。用户裁决「修 Standards 偏离 spec」:union 单函数,hooks 在 caller 端按 `platform_role` narrow。详见切片 01 决策注记 |
 
 ### 4.6 已查证事实(避免 EP3 返工)
 
@@ -128,10 +128,10 @@
 >
 > 本节是**简表概览**,完整 acceptance criteria checklist 见文末「[实施切片](#实施切片2-个-tracer-bullet-垂直切片每个切片一个-context-window-完成)」段(EP3 实施时以文末详表为准勾选)。
 
-### 切片 01 — 前端地基:types + endpoints + hooks
-- **What to build**:补齐前端 API 层完整字段契约 —— 新增 `DeviceModelRead/Create/Update` 类型 + admin 版 fetch/create/update/delete 函数与 hooks
+### 切片 01 — 前端地基:types + endpoints + hooks ✅(PR #119 初版 + PR #120 Standards 修正)
+- **What to build**:补齐前端 API 层完整字段契约 —— 新增 `DeviceModelRead/Create/Update` 类型 + admin 写 create/update/delete 函数与 hooks;读侧复用 `fetchDeviceModels`/`useDeviceModels`(union 返回,PR #120 修正)
 - **Blocked by**:无(frontier)
-- **验证**:`tsc` 通过 + 切片 02 的依赖就绪
+- **验证**:`tsc` 通过 + 切片 02 的依赖就绪 ✅(tsc exit 0 + oxlint 0 warnings + build 通过 + pytest 714 passed 回归)
 
 ### 切片 02 — UI 层:page + 路由 + nav + `KeySpecRows` 组件
 - **What to build**:落地可见的管理页 + 守卫 + 入口;`KeySpecRows` 是本 feature 新组件
@@ -178,7 +178,7 @@
 1. **前端路由 + 守卫**:新增 `/device-models` 路由 + `DeviceModelsAdminPage`,挂 `RequireSuperAdmin`(非 super_admin 重定向到 `/`)
 2. **页面 CRUD**:列表(名称 / 品牌 / 规格摘要 / 单位成本 / 更新时间 / 操作)+ 新增 Dialog + 编辑 Dialog + 软删确认 Dialog
 3. **前端导航**:平台分组下挂「设备型号」菜单项(`platformOnly: true`);普通租户角色看不到
-4. **前端 hooks/endpoints**:`useDeviceModelsAdmin`(拉完整字段)+ `useCreateDeviceModel` / `useUpdateDeviceModel` / `useDeleteDeviceModel`(对应 POST/PUT/DELETE `/api/v1/device-models`,需 super_admin token)
+4. **前端 hooks/endpoints**:复用 `useDeviceModels`(union 返回,super_admin 端 narrow 为 `DeviceModelRead[]`)+ `useCreateDeviceModel` / `useUpdateDeviceModel` / `useDeleteDeviceModel`(对应 POST/PUT/DELETE `/api/v1/device-models`,需 super_admin token)。**注**:原写 `useDeviceModelsAdmin` 独立 hook,EP3 切片 01 PR #120 改 union 单函数(见切片 01 决策注记)
 5. **`KeySpecRows` 组件**:支持 string/number/boolean 三类型,空 key 过滤,重复 key 后者覆盖,vitest 单测全绿
 6. **构建验证**:`cd frontend && npm run build` 通过 + `npx oxlint src/` 0 warnings + vitest 通过
 7. **后端回归**:`tests/test_device_models_api.py` 仍全绿(本 feature 不改后端,预期无影响)
@@ -197,18 +197,20 @@
 >
 > 实施节奏:一次一个切片,用 `/implement` 推进,切片间清 context。本 feature 仅前端 + 后端齐备,故切片粒度比 devices-crud-ui(7 片全栈)轻得多。
 
-### 切片 01 — 前端地基:types + endpoints + hooks(无 blocker,frontier)
+### 切片 01 — 前端地基:types + endpoints + hooks(无 blocker,frontier) ✅(PR #119 初版 + PR #120 Standards 修正)
 
 **Blocked by:** 无 —— 可立即开工
 
-**What it delivers:** 前端 API 层完整字段契约就位 —— `DeviceModelRead/Create/Update` 类型、admin 版 CRUD endpoints、四个 hooks(useDeviceModelsAdmin + useCreate/Update/DeleteDeviceModel)。本片**不含**任何 UI,产物是「切片 02 的 page 能直接 import 这些符号编译通过」。
+**What it delivers:** 前端 API 层完整字段契约就位 —— `DeviceModelRead/Create/Update` 类型、admin 写 CRUD endpoints(`create/update/deleteDeviceModel`)、三个写 hooks(`useCreate/Update/DeleteDeviceModel`)。读侧复用既有 `fetchDeviceModels` / `useDeviceModels`(改 union 返回类型,对齐 `fetchDevices` 范式)。本片**不含**任何 UI,产物是「切片 02 的 page 能直接 import 这些符号编译通过」。
+
+> **实施期决策(2026-07-25 EP3 切片 01,偏离原 AC2/AC3,PR #120 修正 PR #119)**:PR #119 初版按原 AC 实现「新增 `fetchDeviceModelsAdmin()` 独立函数 + `useDeviceModelsAdmin()` 独立 hook,与门店下拉共用 `qk.deviceModels` cache」。`/code-review` Standards 轴发现这违反 `endpoints.ts` 既有约定(`fetchDevices(): Promise<Device[] | DeviceHqRead[]>` 同 URL role-branching 用 union 单函数)+ 类型不诚实(super_admin 调 `fetchDeviceModels` 实际收到 `DeviceModelRead` 但签名承诺 `DeviceModelPublic[]`)+ 同 queryKey 不同读形状缓存碰撞。用户裁决「修 Standards 偏离 spec」:PR #120 改为 `fetchDeviceModels(): Promise<DeviceModelPublic[] | DeviceModelRead[]>` union 单函数,删独立 admin 读函数/hook,保留三个写 mutation(spec 无冲突部分)。切片 02 的 page 在 RequireSuperAdmin 守卫下断言收窄 union 为 `DeviceModelRead[]`。
 
 **Acceptance criteria:**
-- [ ] `frontend/src/api/types.ts`:新增 `DeviceModelRead` / `DeviceModelCreate` / `DeviceModelUpdate` 三 interface,与后端 `app/schemas/device_model.py` 字段对齐(`unit_cost: string` 因 Decimal 序列化、`specs: Record<string, unknown>`);**保留**既有 `DeviceModelPublic`(门店下拉用,不动)
-- [ ] `frontend/src/api/endpoints.ts`:新增 `fetchDeviceModelsAdmin(): Promise<DeviceModelRead[]>` + `createDeviceModel(payload: DeviceModelCreate)` + `updateDeviceModel(id, payload: DeviceModelUpdate)` + `deleteDeviceModel(id): Promise<void>`,路径 `/device-models/` 与 `/device-models/{id}`
-- [ ] `frontend/src/hooks/queries.ts`:新增 `useDeviceModelsAdmin()`(queryKey 复用 `qk.deviceModels`,与门店下拉共用 cache);新增 `useCreateDeviceModel` / `useUpdateDeviceModel` / `useDeleteDeviceModel` 三个 `useApiMutation`,失效 `qk.deviceModels`
-- [ ] `cd frontend && npx tsc --noEmit` 通过(无类型错;此时 page 还没建,hooks 暂未被消费但导出即可)
-- [ ] `npx oxlint src/` 0 warnings
+- [x] `frontend/src/api/types.ts`:新增 `DeviceModelRead` / `DeviceModelCreate` / `DeviceModelUpdate` 三 interface,与后端 `app/schemas/device_model.py` 字段对齐(`unit_cost: string` 因 Decimal 序列化、`specs: Record<string, unknown>`);**保留**既有 `DeviceModelPublic`(门店下拉用,不动)
+- [x] `frontend/src/api/endpoints.ts`:`fetchDeviceModels` 改 union 返回 `Promise<DeviceModelPublic[] | DeviceModelRead[]>`(对齐 `fetchDevices` 范式,**PR #120 偏离原 AC2 的独立 `fetchDeviceModelsAdmin`**);新增 `createDeviceModel(payload: DeviceModelCreate)` + `updateDeviceModel(id, payload: DeviceModelUpdate)` + `deleteDeviceModel(id): Promise<void>`,路径 `/device-models/` 与 `/device-models/{id}`
+- [x] `frontend/src/hooks/queries.ts`:`useDeviceModels` 复用既有(返回 union,**PR #120 偏离原 AC3 的独立 `useDeviceModelsAdmin`**);新增 `useCreateDeviceModel` / `useUpdateDeviceModel` / `useDeleteDeviceModel` 三个 `useApiMutation`,失效 `qk.deviceModels`
+- [x] `cd frontend && npx tsc --noEmit` 通过(无类型错;此时 page 还没建,hooks 暂未被消费但导出即可)
+- [x] `npx oxlint src/` 0 warnings
 
 ---
 
@@ -224,7 +226,7 @@
 - [ ] `KeySpecRows` 反序列化函数 `deserializeSpecs(specs): SpecRow[]`:按 typeof 推断 type,number→type:"number"、boolean→type:"boolean" 且 value 文本化为 "true"/"false"、其他→type:"string"
 - [ ] `frontend/src/components/ui/key-spec-rows.test.tsx`:vitest 单测覆盖①空 key 过滤 ②重复 key 后者覆盖 ③三类型序列化 ④反序列化 round-trip
 - [ ] `frontend/src/pages/device-models-page.tsx` 新增:`DeviceModelsAdminPage` 组件,参照 `groups-page.tsx` 骨架(PageHeader + Card + Table + 3 Dialog),用 react-hook-form + zodResolver + Controller 包 `KeySpecRows`;列表列:名称 / 品牌 / 规格摘要(`specs.form_factor ?? JSON.stringify(specs).slice(0,40)+"…"`) / 单位成本(**内联 `` `¥${Number(m.unit_cost).toFixed(2)}` ``,不复用 `formatCurrency`**) / 更新时间 / 操作;顶部搜索框 client-side filter
-- [ ] **brand datalist 联想**:brand Input 挂原生 `<datalist id="device-model-brands">`,options 从 `useDeviceModelsAdmin()` 已拉型号列表 unique brands 提取(`<option>{m.brand}</option>`,过滤 null/空)。`useMemo` 派生避免每次 render 重算
+- [ ] **brand datalist 联想**:brand Input 挂原生 `<datalist id="device-model-brands">`,options 从 `useDeviceModels()` 已拉型号列表(super_admin 视角 narrow 为 `DeviceModelRead[]`)unique brands 提取(`<option>{m.brand}</option>`,过滤 null/空)。`useMemo` 派生避免每次 render 重算
 - [ ] `frontend/src/App.tsx`:lazy import `DeviceModelsPage` + 在 `<Route element={<RequireSuperAdmin />}>` 块内新增 `<Route path="/device-models" element={<DeviceModelsPage />} />`
 - [ ] `frontend/src/components/layout/nav-items.ts`:`ITEMS` 数组「平台」段新增 `{ to: "/device-models", label: "设备型号", icon: Cpu, platformOnly: true }`
 - [ ] `cd frontend && npm run build` 通过 + `npx oxlint src/` 0 warnings + `npx vitest run` 通过
