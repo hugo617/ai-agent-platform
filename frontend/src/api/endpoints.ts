@@ -383,35 +383,35 @@ export async function unbindDeviceCustomer(id: string): Promise<void> {
   await api.delete(`/devices/${id}/bind`);
 }
 
-// ---------- device-models (平台级设备型号目录, device-models-crud) ----------
+// ---------- device-models (平台级设备型号目录, device-models-crud +
+//           device-models-admin-ui) ----------
 //
-// GET /device-models/ returns DeviceModelPublicRead {id, name, specs} for
-// tenant users (the device-picker dropdown) and the fuller DeviceModelRead for
-// super_admin / hq_staff. Slice 05 only consumes the dropdown view — callers
-// that only render the dropdown can treat the result as DeviceModelPublic[].
-export async function fetchDeviceModels(): Promise<DeviceModelPublic[]> {
-  const { data } = await api.get<DeviceModelPublic[]>("/device-models/");
+// GET /device-models/ branches on platform_role server-side: tenant users get
+// DeviceModelPublic {id, name, specs.form_factor} (device-picker dropdown),
+// super_admin / hq_staff get DeviceModelRead (full fields incl. unit_cost +
+// complete specs). Mirrors the devices/bookings role-branching pattern: one
+// endpoint, union return type — the caller narrows by platform_role at render
+// time (see devices-page StoreView vs HqView). Same cache key either way, since
+// a write should refresh every consumer regardless of view shape.
+export async function fetchDeviceModels(): Promise<
+  DeviceModelPublic[] | DeviceModelRead[]
+> {
+  const { data } = await api.get<DeviceModelPublic[] | DeviceModelRead[]>(
+    "/device-models/",
+  );
   return data;
 }
 
-// ---------- device-models admin (device-models-admin-ui, super_admin CRUD) ----------
+// ---------- device-models admin writes (super_admin catalogue management,
+//           device-models-admin-ui) ----------
 //
-// These hit the same /device-models/ router as fetchDeviceModels above but
-// return the fuller DeviceModelRead shape (the backend branches on
-// platform_role: super_admin / hq_staff get full fields incl. unit_cost; tenant
-// roles get DeviceModelPublicRead). Writes (create/update/delete) require
-// super_admin — the backend guards POST/PUT/DELETE with require_super_admin();
-// the frontend RequireSuperAdmin route guard is the UX layer on top.
-//
-// Cache key is shared with fetchDeviceModels (qk.deviceModels) so the store
-// device-picker dropdown refreshes when an admin adds/removes a model — see
-// plan §9 risk table (same-key-different-type is low-risk: the dropdown only
-// reads id/name/specs and won't break on the extra fields).
-export async function fetchDeviceModelsAdmin(): Promise<DeviceModelRead[]> {
-  const { data } = await api.get<DeviceModelRead[]>("/device-models/");
-  return data;
-}
-
+// Writes (POST/PUT/DELETE) require super_admin — the backend guards them with
+// require_super_admin(); the frontend RequireSuperAdmin route guard is the UX
+// layer on top. The auth interceptor attaches the token; no extra header.
+// PUT is whole-replace on specs (backend DeviceModelUpdate semantics); the form
+// always sends the full specs dict reconstructed by KeySpecRows. DELETE is
+// soft-delete (is_deleted=true; the row stays as the audit trail and the name
+// becomes reusable). Returns 204 — no body to consume.
 export async function createDeviceModel(
   payload: DeviceModelCreate,
 ): Promise<DeviceModelRead> {
@@ -419,21 +419,14 @@ export async function createDeviceModel(
   return data;
 }
 
-// PUT is whole-replace on specs (backend DeviceModelUpdate semantics); the form
-// always sends the full specs dict reconstructed by KeySpecRows.
 export async function updateDeviceModel(
   id: string,
   payload: DeviceModelUpdate,
 ): Promise<DeviceModelRead> {
-  const { data } = await api.put<DeviceModelRead>(
-    `/device-models/${id}`,
-    payload,
-  );
+  const { data } = await api.put<DeviceModelRead>(`/device-models/${id}`, payload);
   return data;
 }
 
-// Soft-delete (sets is_deleted=true; the row stays as the audit trail and the
-// name becomes reusable). Returns 204 — no body to consume.
 export async function deleteDeviceModel(id: string): Promise<void> {
   await api.delete(`/device-models/${id}`);
 }
