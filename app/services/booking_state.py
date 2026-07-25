@@ -1,23 +1,36 @@
-"""Booking lifecycle state machine (device-poweron, slice 01).
+"""Booking lifecycle state machine (device-poweron, slice 01; cancel merged
+in plan-booking-state-cancel slice 01).
 
 A pure function over ``(current_status, action)`` pairs — the single source
 of truth for which status transitions are legal. ``BookingService.start`` /
-``end`` / ``no_show`` each call :func:`transition` first, then write the
-corresponding timestamp / feedback column; the Service layer never inlines
-``if status == ...`` checks, so the state graph lives in exactly one place.
+``end`` / ``no_show`` / ``cancel`` each call :func:`transition` first (cancel
+keeps a service-layer idempotent early-return for the already-cancelled
+case), then write the corresponding timestamp / feedback column; the Service
+layer never inlines ``if status == ...`` checks, so the state graph lives in
+exactly one place.
 
-Design (plan-device-poweron §0 D2/D3, §4.5):
-- 6 legal edges, encoded as a ``{(state, action): new_state}`` table:
+Design (plan-device-poweron §0 D2/D3, §4.5; cancel edge per
+plan-booking-state-cancel §4.0 D1/D4):
+- 7 legal edges, encoded as a ``{(state, action): new_state}`` table:
   ``start``      : {pending, confirmed} → in_service   (2)
   ``end``        : {in_service}         → done          (1)
   ``no_show``    : {pending, confirmed, in_service} → no_show (3)
+  ``cancel``     : {pending}            → cancelled     (1)
 - Any other ``(state, action)`` combination raises :class:`InvalidTransition`
   (a :class:`BizError` subclass → HTTP 400, NOT 409 — plan §0 D1; the repo
   has no 409 concept, and the existing ``BookingService.cancel`` refuses
   non-pending states with the same BizError → 400 pattern).
 - Terminal states (``done`` / ``cancelled`` / ``no_show``) reject every
   action — the only way out of them is a fresh booking. ``cancelled`` is
-  owned by ``/cancel`` (device-booking); the other two are owned here.
+  reached only via ``cancel`` from ``pending``; once there it is terminal.
+
+Two-layer semantics for ``(cancelled, cancel)`` (plan-booking-state-cancel
+§4.5): at the pure-function layer this pair raises ``InvalidTransition``
+(cancelled is terminal, like every other terminal-state action); at the
+service layer ``BookingService.cancel`` early-returns 204 *before* calling
+``transition`` when it sees ``status == "cancelled"``, so the illegal pair
+is never actually exercised — the function's symmetry (terminals reject
+all) is preserved and HTTP idempotency lives solely in the service.
 
 The function is deliberately DB-free and side-effect-free so it can be unit-
 tested in milliseconds and reused by any caller (Service, CLI, future IoT
@@ -28,13 +41,15 @@ from __future__ import annotations
 
 from app.services.errors import InvalidTransition
 
-# The three lifecycle actions exposed by device-poweron's endpoints. Kept as
-# a frozenset (not an Enum) so the action strings match the URL path segments
-# (``/start``, ``/end``, ``/no-show``) and the state-machine table keys
-# without an extra mapping layer. ``no_show`` uses an underscore here and the
-# endpoint translates the hyphenated URL; keeping the internal name consistent
-# with the DB ``status`` CHECK constraint values avoids a second vocabulary.
-ACTIONS: frozenset[str] = frozenset({"start", "end", "no_show"})
+# The four lifecycle actions exposed by the booking endpoints. Kept as a
+# frozenset (not an Enum) so the action strings match the URL path segments
+# (``/start``, ``/end``, ``/no-show``, ``/cancel``) and the state-machine
+# table keys without an extra mapping layer. ``no_show`` uses an underscore
+# here and the endpoint translates the hyphenated URL; keeping the internal
+# name consistent with the DB ``status`` CHECK constraint values avoids a
+# second vocabulary. ``cancel`` was folded in by plan-booking-state-cancel
+# (slice 01); before that it was inlined in ``BookingService.cancel``.
+ACTIONS: frozenset[str] = frozenset({"start", "end", "no_show", "cancel"})
 
 # The legal transition table — the state graph. Adding a new edge is the only
 # change needed to extend the lifecycle; both ``transition`` and the unit
@@ -52,6 +67,13 @@ _TRANSITIONS: dict[tuple[str, str], str] = {
     ("pending", "no_show"): "no_show",
     ("confirmed", "no_show"): "no_show",
     ("in_service", "no_show"): "no_show",
+    # cancel: a pending booking is abandoned before service. Idempotency
+    # (already-cancelled → 204 no-op) is a SERVICE-layer contract, NOT a
+    # state-machine edge — transition("cancelled","cancel") still raises
+    # InvalidTransition like every other terminal-state action; the service
+    # early-returns before calling transition() when it sees status ==
+    # "cancelled". See the module docstring's two-layer-semantics note.
+    ("pending", "cancel"): "cancelled",
 }
 
 
@@ -59,10 +81,11 @@ def transition(current: str, action: str) -> str:
     """Return the new status after applying ``action`` to ``current``.
 
     Raises :class:`InvalidTransition` (→ BizError 400) if the pair is not one
-    of the 6 legal edges. Callers (``BookingService.start`` / ``end`` /
-    ``no_show``) pass the booking's persisted ``status`` and the endpoint's
-    action; on success they write the returned status back plus any side-effect
-    column (``started_at`` / ``ended_at`` / ``feedback``).
+    of the 7 legal edges. Callers (``BookingService.start`` / ``end`` /
+    ``no_show`` / ``cancel``) pass the booking's persisted ``status`` and the
+    endpoint's action; on success they write the returned status back plus
+    any side-effect column (``started_at`` / ``ended_at`` / ``feedback`` —
+    ``cancel`` writes no side-effect column, just the status flip).
     """
     try:
         return _TRANSITIONS[(current, action)]
