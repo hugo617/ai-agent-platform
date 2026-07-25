@@ -53,7 +53,6 @@ import {
   fetchBooking,
   fetchBookings,
   fetchDeviceModels,
-  fetchDeviceModelsAdmin,
   fetchDevices,
   fetchDeviceSchedule,
   fetchDashboardOverview,
@@ -425,10 +424,11 @@ export function useCustomerStatistics() {
 // the cache key is the same. Writes invalidate qk.devices so the list refreshes;
 // bind/unbind also invalidate (they mutate customer_id, which the list shows).
 //
-// useDeviceModels feeds the create/edit dialog's model dropdown. The picker is
-// only rendered on writable contexts (store owner/admin), so `enabled` defaults
-// to true — callers that want to suppress the fetch (e.g. HQ read-only view)
-// pass `enabled=false`, mirroring useAllTenants.
+// useDeviceModels feeds both the store create/edit dialog's model dropdown
+// (tenant users get DeviceModelPublic) and the super_admin catalogue page
+// (DeviceModelRead). The endpoint branches on platform_role; callers narrow the
+// union at render. `enabled` defaults to true — callers that want to suppress
+// the fetch (e.g. HQ read-only view) pass `enabled=false`, mirroring useAllTenants.
 export function useDevices() {
   return useQuery({ queryKey: qk.devices, queryFn: fetchDevices });
 }
@@ -475,27 +475,16 @@ export function useDeviceModels(enabled = true) {
   });
 }
 
-// ---------- device-models admin (device-models-admin-ui, super_admin CRUD) ----------
+// ---------- device-models admin writes (device-models-admin-ui,
+//           super_admin catalogue management) ----------
 //
-// useDeviceModelsAdmin pulls the full DeviceModelRead shape (incl. unit_cost +
-// complete specs) for the super_admin management page. It reuses qk.deviceModels
-// (same URL/data as the store picker) deliberately: an admin adding/removing a
-// model should refresh every store's device-picker dropdown — the same-key-
-// different-type risk is low (the picker only reads id/name/specs and is
-// unaffected by the extra fields; see plan §9). The type narrowing happens at
-// the caller, not the cache.
-//
-// The three write hooks (create/update/delete) are super_admin-only on the
-// backend (require_super_admin); the frontend RequireSuperAdmin guard is the UX
-// layer. All invalidate qk.deviceModels so both the admin list and every store
-// picker refetch after a change.
-export function useDeviceModelsAdmin() {
-  return useQuery({
-    queryKey: qk.deviceModels,
-    queryFn: fetchDeviceModelsAdmin,
-  });
-}
-
+// Reads reuse useDeviceModels above — the endpoint branches on platform_role,
+// super_admin / hq_staff get DeviceModelRead (full fields), tenant users get
+// DeviceModelPublic (dropdown view). The admin page (RequireSuperAdmin route)
+// narrows the union to DeviceModelRead[] at render. These three mutations are
+// super_admin-only writes (require_super_admin on the backend; RequireSuperAdmin
+// route guard is the UX layer) that invalidate qk.deviceModels so every consumer
+// (store dropdown + admin list) refreshes.
 export function useCreateDeviceModel() {
   return useApiMutation(
     (payload: DeviceModelCreate) => createDeviceModel(payload),
