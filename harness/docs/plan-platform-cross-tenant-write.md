@@ -420,21 +420,21 @@ bind/unbind 是 device 的 customer 子资源绑定(状态机外的写动作),�
   - [x] `cd frontend && npm run build` 通过 — tsc -b + vite build 全绿(bookings-page 22.55 kB / devices-page 15.06 kB,oxlint 0 warnings)
 - **验证命令**:`cd frontend && npm test && npm run build` ✅ 全绿
 
-### 切片 05 — 端到端联调 + 旧断言改写 + 收尾
+### 切片 05 — 端到端联调 + 旧断言改写 + 收尾 ✅ PR #126 commit eb46520(分支 feat/platform-cross-tenant-write-slice05,2026-07-25)
 
 - **What it delivers**:`test_hq_platform_role.py` 旧断言改写(hq_staff 写 customers 仍 403,但写 devices/bookings 带 tenant_id → 201/200);端到端联调跑 `./init.sh` 全绿;feature_list.json status → passing(本任务 EP3 实施完成后由 EP3 收尾,本 EP2 回环只产 plan,不实施)。
 - **Blocked by**: 切片 01+02+03+04
 - **文件清单**:
-  - `tests/test_hq_platform_role.py`(+~40 行:hq_staff devices/bookings 写正向 + 保留 customers 写 403)
+  - `tests/test_hq_platform_role.py`(+~110 行:模块 docstring 重写反映 hq_staff 从只读 → 平台 writer;新增「hq_staff cross-tenant WRITES」章节 2 正向写测 + 本地 `_seed_target_tenant` helper + customers/groups 403 保留章节标题微调)
   - (无新源码,纯联调 + 测试补全)
 - **Acceptance criteria**:
-  - [ ] `test_hq_platform_role.py`:hq_staff POST /devices/ {tenant_id} → 201(新)
-  - [ ] `test_hq_platform_role.py`:hq_staff POST /bookings/ {tenant_id} → 201(新)
-  - [ ] `test_hq_platform_role.py`:hq_staff POST /customers/profiles/ → 403(保留,customers 不在范围)
-  - [ ] `test_hq_platform_role.py`:hq_staff POST /groups/ → 403(保留,require_super_admin 不动)
-  - [ ] `./init.sh` 全绿(ruff + pytest 全量)
-  - [ ] `cd frontend && npm test && npm run build` 全绿
-  - [ ] **文档影响评估**完成(具体清单,非悬空):① `feature_list.json` status → passing + evidence 填验证证据 + sync-active 刷新;② `progress.md` 顶部「最高优先级未完成功能」更新;③ 若新增了 `is_platform_writer` helper,检查 `项目指南/02-后端架构/06-权限模型RBAC.md` 是否需补「平台角色写权限」说明(本任务预期**不需要** —— helper 与 `is_cross_tenant_viewer` 同范式,文档已有覆盖);④ `harness/docs/plan-platform-cross-tenant-write.md` 状态从 draft v1 → passing。**不动 README**(平台角色写权限是内部鉴权细节,非用户文档范畴)
+  - [x] `test_hq_platform_role.py`:hq_staff POST /devices/ {tenant_id} → 201(新)— `test_hq_staff_writes_device_cross_tenant`,含 DB 物理验证行落目标租户
+  - [x] `test_hq_platform_role.py`:hq_staff POST /bookings/ {tenant_id} → 201(新)— `test_hq_staff_writes_booking_cross_tenant`,含 DB 物理验证行落目标租户(/code-review Spec 轴要求补,镜像 device 测 + Q1)
+  - [x] `test_hq_platform_role.py`:hq_staff POST /customers/profiles/ → 403(保留,customers 不在范围)— `test_hq_staff_cannot_create_customer_profile` 原样保留
+  - [x] `test_hq_platform_role.py`:hq_staff POST /groups/ → 403(保留,require_super_admin 不动)— `test_hq_staff_cannot_create_group` 原样保留
+  - [x] `./init.sh` 全绿(ruff + pytest 全量)— 739 passed(基线 737 + 新增 2),ruff All checks passed
+  - [x] `cd frontend && npm test && npm run build` 全绿 — vitest 27 passed(4 files)+ build 1.72s 成功
+  - [x] **文档影响评估**完成(具体清单,非悬空):① `feature_list.json` status → passing + evidence 填验证证据 + sync-active 刷新;② `progress.md` 顶部「最高优先级未完成功能」更新;③ 若新增了 `is_platform_writer` helper,检查 `项目指南/02-后端架构/06-权限模型RBAC.md` 是否需补「平台角色写权限」说明(本任务预期**不需要** —— helper 与 `is_cross_tenant_viewer` 同范式,文档已有覆盖);④ `harness/docs/plan-platform-cross-tenant-write.md` 状态从 draft v1 → passing。**不动 README**(平台角色写权限是内部鉴权细节,非用户文档范畴)
 - **验证命令**:`./init.sh && cd frontend && npm test && npm run build`
 
 ---

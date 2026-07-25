@@ -1,7 +1,7 @@
 {
   "project": "ai-agent-platform",
   "description": "已 passing feature 的历史归档(完整字段保留,审计用)",
-  "count": 61,
+  "count": 62,
   "features": [
     {
       "id": "data-export",
@@ -1517,6 +1517,33 @@
         "范围决策:本 feature 只做后端地基,前端管理页(/device-models)和下拉 hook 留到 feature 62(devices-crud-ui)一起做,避免空管理页没人用(YAGNI)"
       ],
       "notes": "设备功能系列 1/4(地基)。平台级表(无 tenant_id,对齐 Group 平台级业务组织范式,不是 Customer 全局身份范式)。**权限模式对齐 groups.py**:写用 app/api/deps.require_super_admin() 依赖守卫;读用 get_current_user + service 层按 platform_role 分流(super_admin/hq_staff 看全量字段含 cost,门店用户只看下拉必需的 id/name/specs.form_factor)。**不走 casbin device_models:act 权限项,不进权限矩阵 UI**(平台级资源都不进)。不照搬 StorePilot admin_devices + webhook 双服务设计——本项目是单体 FastAPI,直接 BaseRepository + FK 关联即可。specs JSONB 替代 StorePilot 的 kind 枚举(避免硬编码 chamber/ring,物理形态由 specs.form_factor 表达,符合 AGENTS.md 不过度设计铁律);**specs 更新策略:整体替换(PUT 语义),不做 jsonb_set 增量**(前端拉最新→改→全量回传,避免并发覆盖单字段)。**unit_cost Numeric(12,2) Decimal**(对齐本项目 usage_event.cost / model_pricing.* 金额惯例,不用 StorePilot 的 cents INTEGER)。**specs 若需按字段查询,加 GIN 索引**(CREATE INDEX ... USING GIN(specs),开工时按实际查询决定是否加)。依赖:无。开工时写详细 plan。"
+    },
+    {
+      "id": "devices-crud-ui",
+      "priority": 62,
+      "area": "业务实体",
+      "title": "门店设备实例 CRUD + 绑定客户(租户隔离)",
+      "user_visible_behavior": "门店管理员能在门店端管理本店设备实例:入库(选型号 + 填序列号)、编辑状态(active/maintenance/retired)、绑定/解绑客户、软删。设备归属本租户,跨租户不可见。序列号在同租户内唯一",
+      "status": "passing",
+      "verification": [
+        "后端:POST/GET/PUT/DELETE /api/v1/devices + POST /devices/{id}/bind(绑定/解绑客户);TenantScopedRepository 强制 tenant_id 过滤;部分唯一索引 (tenant_id, serial_number WHERE is_deleted=False)",
+        "权限:门店 owner/admin 写,member 只读,super_admin 跨租户只读;device.customer_id FK→customers SET NULL(设备软删或客户删时保留历史)",
+        "前端:门店端设备管理页(路由 /devices,member 可读),列表 + 入库 Dialog(型号下拉从 /device-models 拉) + 状态切换 + 绑定客户 Dialog",
+        "pytest:覆盖 CRUD + 租户隔离(跨租户 404)+ 权限矩阵 + (tenant_id, serial_number) 唯一约束 + 软删 + 绑定/解绑 + alembic check 无 drift",
+        "cd frontend && npm run build 通过 + oxlint 0 warnings"
+      ],
+      "notes": "设备功能系列 2/4。租户级表(devices.tenant_id FK→tenants CASCADE)。status 用简化业务态 active/maintenance/retired(不用 StorePilot 混合 online/offline/low_battery/maintenance —— 在没有 IoT 上报链路的当下,在线状态会变成永远 stale 的脏数据,硬件细节归 device_metrics 后续 backlog 采集)。**重要语义:devices.status 是设备管理态(active/maintenance/retired),「设备是否正被占用」由 bookings 派生(WHERE device_id=? AND status='in_service'),不是 devices.status 的职责**——未来 GET /devices/available 排期查询要 join bookings 排除正在 in_service 的设备,不能只看 devices.status=active,否则会撞车。无 kind 字段(物理形态由 model.specs 表达)。model_id FK→device_models RESTRICT(型号被引用时禁硬删)。依赖:[device-models-crud]。",
+      "depends_on": "device-models-crud",
+      "plan": "harness/docs/plan-devices-crud-ui.md",
+      "evidence": [
+        "切片 01 后端地基(Device 表 + 软删租户隔离 CRUD + model_id 完整性)✅ PR #90 commit fbbee29(Session 124,已合并 main)",
+        "切片 02 权限 seed + 老租户 backfill(三档默认 perms + 菜单项 + 一次性 backfill)✅ PR #92 commit 2043dec(Session 125,已合并 main)",
+        "切片 03 HQ 全景视图后端(DeviceHqRead + selectinload + platform_role 分叉 + 端点内分流)✅ PR #93 commit 9ac9ac4(Session 126,已合并 main)",
+        "切片 04 客户绑定端点 bind/unbind(幂等语义 + already_bound 标记 + 跨租户/不存在 customer 400)✅ PR #94 commit 125ad2b(Session 127,已合并 main)",
+        "切片 05 前端地基(7 类型 + 8 endpoints + 7 hooks/qk + isHQStaff + /devices 路由 + nav 项 + stub 页;build 3.28s 通过 + oxlint 0 warnings)✅ PR #96 commit 1fa192b(Session 128,已合并 main)",
+        "切片 06 前端 StoreView(设备列表 6 列 + 状态 Badge 三态 + 入库/编辑/绑定/删除 4 Dialog + hasPermission 写按钮守卫 + 软删型号只读;build 通过 + oxlint 0 warnings)✅ PR #99 commit ad9a4f7(Session 129,已合并 main)",
+        "切片 07 前端 HqView + feature 收尾(顶层 isSuperAdmin||isHQStaff 分叉 + HqView 跨租户只读全景表格 6 列:所属门店/序列号/型号名/状态/绑定客户/创建时间,DeviceHqRead 服务端预展开,无写控件;不修 customers-page hq_staff 不可见既存 bug(WIP=1 留给后续 customer feature)+ ./init.sh 全绿 ruff clean + pytest 613 passed + frontend build 2.16s + oxlint 0 warnings 0 errors+ alembic 无新迁移本切片不触及,依赖 CI 通过)✅ PR #101 commit 6105ae0(Session 131,已合并 main)"
+      ]
     }
   ]
 }

@@ -1,21 +1,34 @@
-"""Tests for the ``hq_staff`` platform role — HQ read-only cross-tenant viewer.
+"""Tests for the ``hq_staff`` platform role — HQ cross-tenant viewer + writer.
 
-Background (feature ``hq-platform-role``): the platform splits HQ users into
-two roles via ``User.platform_role``:
+Background: the platform splits HQ users into two roles via
+``User.platform_role``:
 
 - ``super_admin`` — full power (unchanged, regression-guarded here)
-- ``hq_staff`` — 总部业务员:cross-tenant **read** of every store's customers
-  + groups (a HQ panorama), but writes fall through to casbin (no store role
-  → 403). Group writes stay behind ``require_super_admin()`` so hq_staff can
-  never reshape the org tree.
+- ``hq_staff`` — 总部业务员. Originally a cross-tenant **read-only** viewer;
+  feature ``platform-cross-tenant-write`` lifts hq_staff to a **platform
+  writer** on ``devices`` + ``bookings``: writes carrying ``payload.tenant_id``
+  (= the target store) reach the service body (``check`` bypasses casbin for
+  ``is_platform_writer`` on those two objects, mirroring the read bypass) and
+  ``resolve_target_tenant`` enforces D1 (platform writer must name the target)
+  + D1-2 (store roles must not carry tenant_id — anti-forgery). State machine
+  ``_TRANSITIONS`` is unchanged (D3-4): hq_staff only gains an auth path, not
+  new edges. customers / groups / users stay read-only for hq_staff (Out of
+  Scope), and group writes stay behind ``require_super_admin()`` so hq_staff
+  can never reshape the org tree.
 
 Test dimensions:
 1. hq_staff reads across tenants (customers store list / HQ aggregate / groups)
-2. hq_staff cannot write customers (POST/PUT/DELETE → 403)
-3. hq_staff cannot mutate groups (POST → 403, require_super_admin)
-4. hq_staff reads other in-store resources (GET /agents → 200, check() bypass)
-5. super_admin behaviour does not regress
-6. plain tenant users (owner/member) are still denied the HQ endpoints
+2. hq_staff **writes** devices + bookings cross-tenant (POST → 201 with tenant_id)
+3. hq_staff cannot write customers (POST/PUT/DELETE → 403, customers Out of Scope)
+4. hq_staff cannot mutate groups (POST → 403, require_super_admin)
+5. hq_staff reads other in-store resources (GET /agents → 200, check() bypass)
+6. super_admin behaviour does not regress
+7. plain tenant users (owner/member) are still denied the HQ endpoints
+
+Full platform-writer matrices (PUT/DELETE/bind/unbind + state-machine actions +
+anti-forgery 400s) live in test_devices_api.py (P chapter) and
+test_bookings_api.py (Q chapter). This file is the **hq_staff role contract** —
+it pins the role's read vs write boundaries at a glance.
 """
 
 import pytest
@@ -127,7 +140,140 @@ async def test_hq_staff_read_agent(hq_staff_client):
 
 
 # =============================================================
-# hq_staff writes — must be denied (read-only HQ viewer).
+# hq_staff cross-tenant WRITES on devices + bookings (platform writer).
+# =============================================================
+#
+# feature ``platform-cross-tenant-write`` lifts hq_staff from a read-only HQ
+# viewer to a platform writer on devices + bookings: POST carrying
+# ``tenant_id`` (= the target store) reaches the service body (``check``
+# bypasses casbin for ``is_platform_writer`` on those two objects, mirroring
+# the read short-circuit), and ``resolve_target_tenant`` enforces the D1
+# 必填 guard (platform writer must name the target → else 400). The full
+# super_admin + hq_staff matrices (PUT/DELETE/bind/unbind + state-machine
+# actions + walk-in start + anti-forgery 400s) live in test_devices_api.py
+# (P chapter) and test_bookings_api.py (Q chapter). This section mirrors the
+# hq_staff half here as the **role contract** — hq_staff can now write
+# devices + bookings across tenants, while customers / groups stay locked.
+
+
+async def _seed_target_tenant(db_session, *, name="HQW Target"):
+    """Fresh tenant row for a platform-writer write target. Returns its id.
+
+    Tenant id stays ≤32 chars (the DB column width) — ``tnt-hqw-`` + 24 hex.
+    Mirrors the ``_seed_target_tenant_with_model`` helper in test_devices_api
+    but kept local to this file (this module owns no shared seed helpers)."""
+    import uuid
+
+    from app.models.tenant import Tenant
+
+    target_tenant_id = f"tnt-hqw-{uuid.uuid4().hex[:24]}"
+    db_session.add(Tenant(id=target_tenant_id, name=name))
+    await db_session.commit()
+    return target_tenant_id
+
+
+@pytest.mark.asyncio
+async def test_hq_staff_writes_device_cross_tenant(
+    hq_staff_client, db_session
+):
+    """hq_staff POST /devices/ with ``tenant_id`` → 201, landing the device in
+    the TARGET store (not hq_staff's own tenant). Confirms hq_staff is a
+    platform writer on devices (was 403 before platform-cross-tenant-write)."""
+    from app.models.device import Device
+    from app.models.device_model import DeviceModel
+
+    target_tenant_id = await _seed_target_tenant(db_session)
+    # DeviceModel is platform-level (visible to every tenant), so one row
+    # serves the cross-tenant POST.
+    model = DeviceModel(
+        name="HQW-Model", unit_cost="1234.56", specs={"form_factor": "chamber"}
+    )
+    db_session.add(model)
+    await db_session.commit()
+
+    resp = await hq_staff_client.post(
+        "/api/v1/devices/",
+        json={
+            "model_id": model.id,
+            "serial_number": "HQW-DEV-1",
+            "tenant_id": target_tenant_id,
+        },
+        headers=AUTH,
+    )
+    assert resp.status_code == 201, resp.text
+    assert resp.json()["tenant_id"] == target_tenant_id
+
+    # Physically verify the device row landed in the target tenant (the
+    # service used ``effective_tenant_id``, not hq_staff's user.tenant_id).
+    rows = (
+        await db_session.execute(
+            Device.__table__.select().where(
+                Device.__table__.c.tenant_id == target_tenant_id
+            )
+        )
+    ).mappings().all()
+    serials = {r["serial_number"] for r in rows}
+    assert "HQW-DEV-1" in serials, serials
+
+
+@pytest.mark.asyncio
+async def test_hq_staff_writes_booking_cross_tenant(
+    hq_staff_client, db_session
+):
+    """hq_staff POST /bookings/ with ``tenant_id`` → 201, landing the booking
+    in the TARGET store against that store's device. Confirms hq_staff is a
+    platform writer on bookings (was 403 before platform-cross-tenant-write)."""
+    from datetime import UTC, datetime, timedelta
+
+    from app.models.device import Device
+    from app.models.device_model import DeviceModel
+
+    target_tenant_id = await _seed_target_tenant(db_session)
+    model = DeviceModel(
+        name="HQW-B-Model", unit_cost="1234.56", specs={"form_factor": "chamber"}
+    )
+    db_session.add(model)
+    await db_session.commit()
+    device = Device(tenant_id=target_tenant_id, model_id=model.id, serial_number="HQW-B-DEV")
+    db_session.add(device)
+    await db_session.commit()
+
+    # Future window (booking create rejects past / overlapping windows).
+    base = datetime.now(UTC).replace(microsecond=0)
+    start = base + timedelta(hours=1)
+    end = start + timedelta(hours=1)
+
+    resp = await hq_staff_client.post(
+        "/api/v1/bookings/",
+        json={
+            "device_id": device.id,
+            "scheduled_start_at": start.isoformat(),
+            "scheduled_end_at": end.isoformat(),
+            "tenant_id": target_tenant_id,
+        },
+        headers=AUTH,
+    )
+    assert resp.status_code == 201, resp.text
+    assert resp.json()["tenant_id"] == target_tenant_id
+
+    # Physically verify the booking row landed in the target tenant (the
+    # service used ``effective_tenant_id``, not hq_staff's user.tenant_id).
+    # Mirrors the device test above + test_q1 in test_bookings_api.py.
+    from app.models.booking import Booking
+
+    booking_id = resp.json()["id"]
+    row = (
+        await db_session.execute(
+            Booking.__table__.select().where(Booking.__table__.c.id == booking_id)
+        )
+    ).mappings().first()
+    assert row is not None
+    assert row["tenant_id"] == target_tenant_id, row["tenant_id"]
+    assert row["device_id"] == device.id
+
+
+# =============================================================
+# hq_staff writes outside the platform-writer scope — still denied.
 # =============================================================
 
 
