@@ -27,7 +27,7 @@ an already-cancelled booking is a no-op that still returns 204 (mirrors the
 DELETE-idempotency convention device unbind uses).
 """
 
-from fastapi import APIRouter, Depends, Response, status
+from fastapi import APIRouter, Depends, Query, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import CurrentUser, get_current_user, require_permission
@@ -159,17 +159,22 @@ async def update_booking(
 )
 async def cancel_booking(
     booking_id: str,
+    # Cross-tenant target for platform writers (POST action with no body —
+    # query param; absent for store roles). Mirrors device delete/unbind.
+    tenant_id: str | None = Query(default=None),
     user: CurrentUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> Response:
     """Cancel a booking (pending → cancelled). Idempotent: an already-
     cancelled booking returns 204 with no write. Cancelling a booking in any
     other non-pending state → 400 (those states are owned by device-poweron's
-    action endpoints)."""
+    action endpoints). Platform writers pass ``?tenant_id=<target>`` to cancel
+    a cross-tenant booking."""
     await BookingService(db).cancel(
         user.user_id,
         user.tenant_id,
         booking_id,
+        target_tenant_id=tenant_id,
         platform_role=user.platform_role,
     )
     return Response(status_code=status.HTTP_204_NO_CONTENT)
@@ -197,17 +202,22 @@ async def cancel_booking(
 @router.post("/{booking_id}/start", response_model=BookingRead)
 async def start_booking(
     booking_id: str,
+    # Cross-tenant target for platform writers (POST action with no body —
+    # query param; absent for store roles and customer principals).
+    tenant_id: str | None = Query(default=None),
     user: CurrentUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> BookingRead:
     """Start a booking (pending / confirmed → in_service), recording
     ``started_at``.
 
-    Authorization is branched in the service on ``user.customer_id``:
-    a customer principal (``customer_id`` set) must own the booking and may
-    NOT start walk-in bookings; a store principal (``customer_id`` None)
-    needs ``bookings:update`` (owner / admin, not member). See
-    ``BookingService.start`` for the full matrix.
+    Authorization is branched in the service on ``user.customer_id`` /
+    ``platform_role``: a customer principal (``customer_id`` set) must own the
+    booking and may NOT start walk-in bookings; a platform writer
+    (super_admin / hq_staff) bypasses casbin and may start walk-ins on a
+    target store (``?tenant_id=<target>``); a store principal
+    (``customer_id`` None) needs ``bookings:update`` (owner / admin, not
+    member). See ``BookingService.start`` for the full matrix.
     """
     return await BookingService(db).start(
         user.user_id,
@@ -215,6 +225,7 @@ async def start_booking(
         booking_id,
         platform_role=user.platform_role,
         customer_id=user.customer_id,
+        target_tenant_id=tenant_id,
     )
 
 
@@ -222,6 +233,9 @@ async def start_booking(
 async def end_booking(
     booking_id: str,
     payload: BookingEndPayload | None = None,
+    # Cross-tenant target for platform writers (query param; absent for store
+    # roles). ``payload`` stays the request body; tenant_id is orthogonal.
+    tenant_id: str | None = Query(default=None),
     user: CurrentUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> BookingRead:
@@ -229,8 +243,9 @@ async def end_booking(
     ``feedback``.
 
     Authorization: store owner only (``bookings:delete``) — admin / member /
-    customer / hq_staff → 403. ``payload`` is optional; omitting it or
-    sending ``feedback: null`` ends the booking without a service note.
+    customer → 403. Platform writers bypass and pass ``?tenant_id=<target>``.
+    ``payload`` is optional; omitting it or sending ``feedback: null`` ends
+    the booking without a service note.
     """
     return await BookingService(db).end(
         user.user_id,
@@ -238,6 +253,7 @@ async def end_booking(
         booking_id,
         platform_role=user.platform_role,
         payload=payload,
+        target_tenant_id=tenant_id,
     )
 
 
@@ -247,16 +263,21 @@ async def end_booking(
 )
 async def no_show_booking(
     booking_id: str,
+    # Cross-tenant target for platform writers (query param; absent for store
+    # roles).
+    tenant_id: str | None = Query(default=None),
     user: CurrentUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> Response:
     """Mark a booking as no-show (pending / confirmed / in_service →
     no_show). Pure status flip — no timestamp recorded. Authorization: store
-    owner only (``bookings:delete``). Returns 204 (mirrors ``/cancel``)."""
+    owner only (``bookings:delete``); platform writers bypass and pass
+    ``?tenant_id=<target>``. Returns 204 (mirrors ``/cancel``)."""
     await BookingService(db).no_show(
         user.user_id,
         user.tenant_id,
         booking_id,
         platform_role=user.platform_role,
+        target_tenant_id=tenant_id,
     )
     return Response(status_code=status.HTTP_204_NO_CONTENT)

@@ -151,6 +151,10 @@ async def update_device(
 )
 async def delete_device(
     device_id: str,
+    # Cross-tenant target for platform writers (DELETE has no body, so the
+    # tenant_id rides as a query param; absent for store roles). See plan
+    # §4.5.4 patch note — the alternative (a body on DELETE) is non-RESTful.
+    tenant_id: str | None = Query(default=None),
     user: CurrentUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> None:
@@ -158,6 +162,7 @@ async def delete_device(
         user.user_id,
         user.tenant_id,
         device_id,
+        target_tenant_id=tenant_id,
         platform_role=user.platform_role,
     )
 
@@ -246,12 +251,15 @@ async def bind_device_customer(
     - ``customer_id`` must have a live ``CustomerProfile`` in the caller's
       tenant, else 400 (nonexistent + cross-tenant both collapse to the same
       400 — no enumeration leak).
+    - Platform writers (super_admin / hq_staff) carry ``payload.tenant_id`` to
+      bind on a target store's device; store roles MUST omit it (anti-forgery).
     """
     _device, already_bound = await DeviceService(db).bind(
         device_id,
         user.tenant_id,
         payload.customer_id,
         user.user_id,
+        target_tenant_id=payload.tenant_id,
         platform_role=user.platform_role,
     )
     return DeviceBindResponse(
@@ -270,14 +278,19 @@ async def bind_device_customer(
 )
 async def unbind_device_customer(
     device_id: str,
+    # Cross-tenant target for platform writers (DELETE has no body — query
+    # param; absent for store roles). Mirrors ``delete_device``.
+    tenant_id: str | None = Query(default=None),
     user: CurrentUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> None:
     """Unbind a device's customer. Idempotent — a device with no binding is a
-    no-op, still 204."""
+    no-op, still 204. Platform writers pass ``?tenant_id=<target>`` to unbind a
+    cross-tenant device."""
     await DeviceService(db).unbind(
         device_id,
         user.tenant_id,
         user.user_id,
+        target_tenant_id=tenant_id,
         platform_role=user.platform_role,
     )

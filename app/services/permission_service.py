@@ -59,10 +59,12 @@ class PermissionService:
         """Return True if ``user_id`` may perform ``act`` on ``obj`` in ``tenant_id`.
 
         Platform super admins bypass all permission checks. ``hq_staff``(总部
-        业务员)is a cross-tenant read-only viewer: any ``read`` action is allowed,
-        while writes fall through to the normal casbin path (no tenant-scoped
-        policy → 403), so hq_staff is effectively read-only unless a store
-        explicitly granted it a role.
+        业务员)is a cross-tenant viewer: any ``read`` is allowed, and writes on
+        ``devices`` / ``bookings`` are also allowed (platform-cross-tenant-write
+        — the service body then enforces the cross-tenant contract via
+        ``resolve_target_tenant``). Writes on other objects (customers / groups /
+        users / …) fall through to casbin → 403 (hq_staff has no tenant role),
+        so hq_staff stays read-only outside devices/bookings.
 
         API token scope gate (api-token-fine-grained-scopes): when the request
         is authenticated by an ``ahp_`` token in ``restricted`` mode, the token
@@ -101,6 +103,22 @@ class PermissionService:
         if platform_role == "super_admin":
             return True
         if platform_role == "hq_staff" and act == "read":
+            return True
+        # Platform writers (super_admin handled above; hq_staff reaches here for
+        # writes) bypass the casbin check on devices/bookings so the request
+        # can reach the service body, where ``resolve_target_tenant`` +
+        # ``is_platform_writer`` enforce the cross-tenant write contract
+        # (target tenant_id required, store-role anti-forgery). Scoped to
+        # devices/bookings only — customers/groups/etc stay read-only for
+        # hq_staff (plan-platform-cross-tenant-write §4.5.4 implicit: "hq_staff
+        # 由 service body 放行"; the literal "require_permission 不动" holds
+        # because the bypass lives in ``check``, not in the router dependency).
+        # NB: the bypass is scoped by ``obj``, not by ``act`` — bookings'
+        # start/end/no_show actions share the ``update``/``delete`` acts with
+        # CRUD's update/cancel, so an act whitelist cannot split them. Slice 02
+        # therefore lands all 6 booking write actions together (see plan §4.5.4a
+        # patch 5 — slice 02+03 merge rationale).
+        if is_platform_writer(platform_role) and obj in ("devices", "bookings"):
             return True
 
         def _do() -> bool:
@@ -646,14 +664,28 @@ permission_service = PermissionService()
 
 # Platform roles that can read across tenants (HQ viewers). Service layers use
 # this to pick the cross-tenant query branch instead of hardcoding ``== "super_admin"``.
-# Writes for hq_staff still fall through to casbin (→ 403 without a store role),
-# so this helper is about *read* scope only.
 CROSS_TENANT_VIEWER_ROLES: tuple[str, ...] = ("super_admin", "hq_staff")
 
 
 def is_cross_tenant_viewer(platform_role: str | None) -> bool:
     """True if the role grants cross-tenant read access (super_admin or hq_staff)."""
     return platform_role in CROSS_TENANT_VIEWER_ROLES
+
+
+# Platform roles that can WRITE across tenants (HQ operators). Same boundary as
+# ``CROSS_TENANT_VIEWER_ROLES`` — both super_admin and hq_staff unlock cross-tenant
+# writes on devices/bookings. Service bodies branch on this to skip the casbin
+# ``require`` (hq_staff has no tenant role) and resolve the target tenant from
+# ``payload.tenant_id`` instead of ``user.tenant_id`` (see ``_tenant_target``).
+# Kept as a separate constant from ``CROSS_TENANT_VIEWER_ROLES`` for readability:
+# read paths ask "viewer?", write paths ask "writer?". If they ever diverge
+# (e.g. hq_staff read-only, super_admin writes), only this constant changes.
+PLATFORM_WRITER_ROLES: tuple[str, ...] = ("super_admin", "hq_staff")
+
+
+def is_platform_writer(platform_role: str | None) -> bool:
+    """True if the role grants cross-tenant WRITE access on devices/bookings."""
+    return platform_role in PLATFORM_WRITER_ROLES
 
 
 # ---------------------------------------------------------------------------

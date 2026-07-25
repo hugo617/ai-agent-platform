@@ -31,6 +31,12 @@ class DeviceCreate(DeviceBase):
     # Optional initial customer binding — slice 04 will use the dedicated
     # bind endpoint, but a create-time hint is convenient for tests/seed.
     customer_id: str | None = Field(default=None, max_length=32)
+    # Target tenant for cross-tenant writes (platform-cross-tenant-write slice 01).
+    # Required when the caller is a platform writer (super_admin / hq_staff); MUST
+    # be absent for store roles (anti-forgery → 400, enforced in the service via
+    # ``resolve_target_tenant``). Not persisted — it's a request-scoped routing
+    # field, not a new column (the device's own ``tenant_id`` is set from it).
+    tenant_id: str | None = Field(default=None, max_length=32)
 
 
 class DeviceUpdate(BaseModel):
@@ -40,6 +46,11 @@ class DeviceUpdate(BaseModel):
     # customer_id via this endpoint is intentionally NOT supported — bind /
     # unbind have their own dedicated endpoints (slice 04) so the audit trail
     # stays clean.
+    # ``tenant_id`` mirrors DeviceCreate: cross-tenant target for platform writers,
+    # anti-forgery guard for store roles. Resolved in the service via
+    # ``resolve_target_tenant`` (NOT applied as a field update — it identifies
+    # WHICH tenant's device to mutate, not a new value to write).
+    tenant_id: str | None = Field(default=None, max_length=32)
 
 
 class DeviceRead(BaseModel):
@@ -98,9 +109,14 @@ class DeviceBindRequest(BaseModel):
     get_by_customer_tenant``. A nonexistent customer and a customer that
     exists only in another tenant both collapse to the same 400 (no
     enumeration leak, mirroring the device cross-tenant → 404 defence).
+
+    ``tenant_id`` is the cross-tenant target for platform writers (mirrors
+    ``DeviceCreate.tenant_id``); absent for store roles (anti-forgery, enforced
+    in the service via ``resolve_target_tenant``).
     """
 
     customer_id: str = Field(..., min_length=1, max_length=32)
+    tenant_id: str | None = Field(default=None, max_length=32)
 
 
 class DeviceBindResponse(BaseModel):

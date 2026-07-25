@@ -72,9 +72,14 @@ from app.schemas.booking import (
     BookingRead,
     BookingUpdate,
 )
+from app.services._tenant_target import resolve_target_tenant
 from app.services.booking_state import transition as booking_transition
 from app.services.errors import BizError, NotFoundError
-from app.services.permission_service import is_cross_tenant_viewer, permission_service
+from app.services.permission_service import (
+    is_cross_tenant_viewer,
+    is_platform_writer,
+    permission_service,
+)
 
 # Bookings that may be rescheduled via PUT. Only ``pending`` is mutable
 # (D10): once a booking has moved past pending (cancelled / in_service /
@@ -382,25 +387,36 @@ class BookingService:
         """Create a booking. New bookings always start ``pending`` — the
         ``status`` / ``started_at`` / ``ended_at`` / ``feedback`` fields are
         not on ``BookingCreate`` (status-guard rule), so a client sending
-        them has those keys dropped by Pydantic."""
-        await permission_service.require(
-            actor_id,
-            tenant_id,
-            self.OBJECT,
-            "create",
-            platform_role=platform_role,
+        them has those keys dropped by Pydantic.
+
+        Platform writers (super_admin / hq_staff) skip the casbin require and
+        target the store named by ``payload.tenant_id`` (required); store roles
+        omit it (anti-forgery, see ``resolve_target_tenant``).
+        """
+        effective_tenant = resolve_target_tenant(
+            tenant_id, payload.tenant_id, platform_role
         )
-        await self._assert_device_in_tenant(tenant_id, payload.device_id)
-        await self._assert_customer_in_tenant(tenant_id, payload.customer_id)
+        if not is_platform_writer(platform_role):
+            await permission_service.require(
+                actor_id,
+                effective_tenant,
+                self.OBJECT,
+                "create",
+                platform_role=platform_role,
+            )
+        await self._assert_device_in_tenant(effective_tenant, payload.device_id)
+        await self._assert_customer_in_tenant(
+            effective_tenant, payload.customer_id
+        )
         self._assert_window_valid(
             payload.scheduled_start_at, payload.scheduled_end_at
         )
         await self._assert_no_overlap(
-            tenant_id, payload.device_id, payload.scheduled_start_at,
+            effective_tenant, payload.device_id, payload.scheduled_start_at,
             payload.scheduled_end_at,
         )
         booking = Booking(
-            tenant_id=tenant_id,
+            tenant_id=effective_tenant,
             device_id=payload.device_id,
             customer_id=payload.customer_id,
             created_by=actor_id,
@@ -415,7 +431,7 @@ class BookingService:
         # Re-fetch so server defaults (created_at/updated_at/status) are loaded
         # — commit expires the ORM object and reading attributes directly
         # would trigger a lazy async load (MissingGreenlet).
-        fresh = await self.repo.get_for_tenant(booking.id, tenant_id)
+        fresh = await self.repo.get_for_tenant(booking.id, effective_tenant)
         assert fresh is not None  # just created, must exist
         return await self._to_read(fresh)
 
@@ -429,21 +445,33 @@ class BookingService:
     ) -> BookingRead:
         """Reschedule / re-note a booking. Only ``pending`` bookings are
         mutable (D10); ``device_id`` is immutable (change-device = cancel +
-        recreate). Time changes re-run the overlap check excluding self."""
-        await permission_service.require(
-            actor_id,
-            tenant_id,
-            self.OBJECT,
-            "update",
-            platform_role=platform_role,
+        recreate). Time changes re-run the overlap check excluding self.
+
+        Platform writers target the store named by ``payload.tenant_id``;
+        store roles omit it (anti-forgery).
+        """
+        effective_tenant = resolve_target_tenant(
+            tenant_id, payload.tenant_id, platform_role
         )
-        booking = await self._get_live_booking(booking_id, tenant_id)
+        if not is_platform_writer(platform_role):
+            await permission_service.require(
+                actor_id,
+                effective_tenant,
+                self.OBJECT,
+                "update",
+                platform_role=platform_role,
+            )
+        booking = await self._get_live_booking(booking_id, effective_tenant)
         if booking.status not in _MUTABLE_STATUSES:
             raise BizError(
                 f"仅 pending 状态的预约可修改,当前状态: {booking.status}"
             )
 
         data = payload.model_dump(exclude_unset=True)
+        # ``tenant_id`` is a request-scoped routing field (which store to write
+        # into), NOT an updatable column — drop it before setattr loop. The
+        # booking's tenant is already locked by ``_get_live_booking`` above.
+        data.pop("tenant_id", None)
 
         # Resolve the effective window (mix of current + patched values) so
         # the overlap check sees the post-update slot, not the pre-update one.
@@ -456,10 +484,10 @@ class BookingService:
 
         if "customer_id" in data:
             await self._assert_customer_in_tenant(
-                tenant_id, data["customer_id"]
+                effective_tenant, data["customer_id"]
             )
         await self._assert_no_overlap(
-            tenant_id,
+            effective_tenant,
             booking.device_id,
             new_start,
             new_end,
@@ -470,7 +498,7 @@ class BookingService:
             setattr(booking, key, value)
         await self.db.flush()
         await self.db.commit()
-        fresh = await self.repo.get_for_tenant(booking_id, tenant_id)
+        fresh = await self.repo.get_for_tenant(booking_id, effective_tenant)
         assert fresh is not None
         return await self._to_read(fresh)
 
@@ -479,6 +507,8 @@ class BookingService:
         actor_id: str,
         tenant_id: str,
         booking_id: str,
+        *,
+        target_tenant_id: str | None = None,
         platform_role: str | None = None,
     ) -> bool:
         """Transition a booking to ``cancelled``. Returns ``already_cancelled``
@@ -492,15 +522,28 @@ class BookingService:
         / confirmed-placeholder) is refused with BizError 400 — those states
         are owned by device-poweron's action endpoints and must not be
         reachable from here.
+
+        Platform writers target ``target_tenant_id`` (cancel is a POST action
+        with no body, so the tenant_id rides as a query param at the router);
+        store roles omit it (anti-forgery).
+
+        Ordering NOTE (plan §8 Out of Scope): cancel keeps the original
+        ``require`` → ``_get_live_booking`` order (NOT the ``get → require``
+        order start/end/no_show use). Aligning is left to the separate
+        ``booking-action-order-unify`` feature.
         """
-        await permission_service.require(
-            actor_id,
-            tenant_id,
-            self.OBJECT,
-            "delete",
-            platform_role=platform_role,
+        effective_tenant = resolve_target_tenant(
+            tenant_id, target_tenant_id, platform_role
         )
-        booking = await self._get_live_booking(booking_id, tenant_id)
+        if not is_platform_writer(platform_role):
+            await permission_service.require(
+                actor_id,
+                effective_tenant,
+                self.OBJECT,
+                "delete",
+                platform_role=platform_role,
+            )
+        booking = await self._get_live_booking(booking_id, effective_tenant)
         if booking.status == "cancelled":
             return True
         if booking.status != "pending":
@@ -537,11 +580,12 @@ class BookingService:
         *,
         platform_role: str | None = None,
         customer_id: str | None = None,
+        target_tenant_id: str | None = None,
     ) -> BookingRead:
         """Transition a booking to ``in_service`` (pending / confirmed →
         in_service), recording ``started_at``.
 
-        Authorization (plan §0 D5/D7, B1): this endpoint serves TWO caller
+        Authorization (plan §0 D5/D7, B1): this endpoint serves THREE caller
         kinds and the split lives here in the body (NOT on a router-level
         ``require_permission`` — that would 403 the customer principal before
         it reached this branch, since a customer may carry no tenant role at
@@ -555,7 +599,11 @@ class BookingService:
           then require ``booking.customer_id == customer_id`` (else 403,
           "无权操作他人预约"). This mirrors the ``/me/bookings`` anti-override
           defence — the identity comes from the token, not the URL/body.
-        - **Store principal** (``customer_id is None``): calls
+        - **Platform writer** (``is_platform_writer(platform_role)``): skip
+          casbin require, treat as enhanced store principal — CAN start a
+          walk-in booking (``booking.customer_id is None``). Targets the store
+          named by ``target_tenant_id`` (required). Plan §4.5.3 D3-2.
+        - **Store principal** (otherwise): calls
           ``permission_service.require(..., "bookings", "update")``. The
           ``:update`` perm is on owner AND admin (so both can start non-walk-in
           bookings), but NOT member → member gets 403. A store principal can
@@ -566,7 +614,10 @@ class BookingService:
         matching the ``DateTime(timezone=True)`` column definition — not naive
         ``utcnow()``.
         """
-        booking = await self._get_live_booking(booking_id, tenant_id)
+        effective_tenant = resolve_target_tenant(
+            tenant_id, target_tenant_id, platform_role
+        )
+        booking = await self._get_live_booking(booking_id, effective_tenant)
 
         if customer_id is not None:
             # Customer principal — ownership check, no casbin require.
@@ -574,11 +625,15 @@ class BookingService:
                 raise PermissionError("walk-in 预约仅门店员工可开机")
             if booking.customer_id != customer_id:
                 raise PermissionError("无权操作他人预约")
+        elif is_platform_writer(platform_role):
+            # Platform writer — skip require, treat as enhanced store principal.
+            # CAN start a walk-in (booking.customer_id None) — D3-2.
+            pass
         else:
             # Store principal — casbin require on bookings:update.
             await permission_service.require(
                 actor_id,
-                tenant_id,
+                effective_tenant,
                 self.OBJECT,
                 "update",
                 platform_role=platform_role,
@@ -588,7 +643,7 @@ class BookingService:
         booking.started_at = datetime.now(UTC)
         await self.db.flush()
         await self.db.commit()
-        fresh = await self.repo.get_for_tenant(booking_id, tenant_id)
+        fresh = await self.repo.get_for_tenant(booking_id, effective_tenant)
         assert fresh is not None
         return await self._to_read(fresh)
 
@@ -600,6 +655,7 @@ class BookingService:
         *,
         platform_role: str | None = None,
         payload: BookingEndPayload | None = None,
+        target_tenant_id: str | None = None,
     ) -> BookingRead:
         """Transition a booking to ``done`` (in_service → done), recording
         ``ended_at`` and optionally ``feedback``.
@@ -608,9 +664,13 @@ class BookingService:
         ``permission_service.require(..., "bookings", "delete")``. The
         ``:delete`` perm is on owner but NOT admin (``DEFAULT_ADMIN_PERMS``
         omits it by convention — admin can't delete business records, same rule
-        that makes admin unable to cancel). So admin / member / customer /
-        hq_staff all → 403; only owner passes. This is stricter than ``start``
-        on purpose: ending a service finalizes the billable record.
+        that makes admin unable to cancel). So admin / member / customer all →
+        403; only owner passes. This is stricter than ``start`` on purpose:
+        ending a service finalizes the billable record.
+
+        Platform writers (super_admin / hq_staff) bypass the owner-only
+        require and target ``target_tenant_id`` (required); they can end any
+        store's in_service booking. Store roles omit it (anti-forgery).
 
         ``payload.feedback`` (if non-None) overwrites ``bookings.feedback``;
         ``None`` leaves the column untouched (the caller may end without a
@@ -626,21 +686,25 @@ class BookingService:
         device-booking uses the opposite order; this slice does NOT change it
         — narrow-scope, leave cancel alone.)
         """
-        booking = await self._get_live_booking(booking_id, tenant_id)
-        await permission_service.require(
-            actor_id,
-            tenant_id,
-            self.OBJECT,
-            "delete",
-            platform_role=platform_role,
+        effective_tenant = resolve_target_tenant(
+            tenant_id, target_tenant_id, platform_role
         )
+        booking = await self._get_live_booking(booking_id, effective_tenant)
+        if not is_platform_writer(platform_role):
+            await permission_service.require(
+                actor_id,
+                effective_tenant,
+                self.OBJECT,
+                "delete",
+                platform_role=platform_role,
+            )
         booking.status = booking_transition(booking.status, "end")
         booking.ended_at = datetime.now(UTC)
         if payload is not None and payload.feedback is not None:
             booking.feedback = payload.feedback
         await self.db.flush()
         await self.db.commit()
-        fresh = await self.repo.get_for_tenant(booking_id, tenant_id)
+        fresh = await self.repo.get_for_tenant(booking_id, effective_tenant)
         assert fresh is not None
         return await self._to_read(fresh)
 
@@ -651,6 +715,7 @@ class BookingService:
         booking_id: str,
         *,
         platform_role: str | None = None,
+        target_tenant_id: str | None = None,
     ) -> None:
         """Transition a booking to ``no_show`` (pending / confirmed /
         in_service → no_show). Pure status flip — no timestamp is written
@@ -658,7 +723,8 @@ class BookingService:
         a no-show records nothing about when the absence was judged).
 
         Authorization is identical to ``end`` (plan §0 D6): owner only via
-        ``bookings:delete``. Admin / member / customer / hq_staff → 403.
+        ``bookings:delete``. Admin / member / customer → 403. Platform writers
+        bypass and target ``target_tenant_id`` (required).
 
         Ordering mirrors ``end`` / ``start``: tenant-scoped fetch first, so a
         cross-tenant caller gets 404 (not 403) regardless of role — no
@@ -668,14 +734,18 @@ class BookingService:
         ``/cancel`` (a state flip carries nothing the client needs to read
         back, unlike ``start`` / ``end`` whose timestamps refresh the UI).
         """
-        booking = await self._get_live_booking(booking_id, tenant_id)
-        await permission_service.require(
-            actor_id,
-            tenant_id,
-            self.OBJECT,
-            "delete",
-            platform_role=platform_role,
+        effective_tenant = resolve_target_tenant(
+            tenant_id, target_tenant_id, platform_role
         )
+        booking = await self._get_live_booking(booking_id, effective_tenant)
+        if not is_platform_writer(platform_role):
+            await permission_service.require(
+                actor_id,
+                effective_tenant,
+                self.OBJECT,
+                "delete",
+                platform_role=platform_role,
+            )
         booking.status = booking_transition(booking.status, "no_show")
         await self.db.flush()
         await self.db.commit()

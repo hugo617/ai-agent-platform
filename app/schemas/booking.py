@@ -68,7 +68,15 @@ class BookingCreate(BookingBase):
     native ``pattern``). Cross-field ordering can't be a native constraint,
     so the check lives in the service (``BookingService.create`` /
     ``update``) as a ``BizError`` → 400, which serializes cleanly.
+
+    ``tenant_id`` is the cross-tenant target for platform writers
+    (platform-cross-tenant-write slice 02). Required for super_admin /
+    hq_staff; MUST be absent for store roles (anti-forgery → 400, enforced
+    in the service via ``resolve_target_tenant``). Not persisted — it's a
+    request-scoped routing field.
     """
+
+    tenant_id: str | None = Field(default=None, max_length=32)
 
 
 class BookingUpdate(BaseModel):
@@ -82,15 +90,20 @@ class BookingUpdate(BaseModel):
     different device's slot set.
 
     Like ``BookingCreate``, this carries NO ``status`` / ``started_at`` /
-    ``ended_at`` / ``feedback``. The end>start invariant is enforced in the
-    service (see ``BookingCreate`` docstring) because it depends on the
+    ``ended_at`` / ``feedback``. The end>start invariant is enforced in
+    the service (see ``BookingCreate`` docstring) because it depends on the
     stored values when only one side is patched.
+
+    ``tenant_id`` mirrors ``BookingCreate``: cross-tenant target for platform
+    writers, anti-forgery guard for store roles. NOT applied as a field
+    update — it identifies WHICH tenant's booking to mutate.
     """
 
     customer_id: str | None = Field(default=None, max_length=32)
     scheduled_start_at: datetime | None = None
     scheduled_end_at: datetime | None = None
     notes: str | None = Field(default=None, max_length=2000)
+    tenant_id: str | None = Field(default=None, max_length=32)
 
 
 class BookingEndPayload(BaseModel):

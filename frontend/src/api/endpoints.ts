@@ -364,23 +364,43 @@ export async function updateDevice(
   return data;
 }
 
-export async function deleteDevice(id: string): Promise<void> {
-  await api.delete(`/devices/${id}`);
+// DELETE has no body (REST convention), so the cross-store target rides a
+// ``tenant_id`` query param (platform-cross-tenant-write plan §4.5.4a 补丁 1).
+// ``tenantId`` is optional — store principals omit it (backend uses
+// ``user.tenant_id``, behaviour unchanged); platform writers MUST pass it.
+export async function deleteDevice(
+  id: string,
+  tenantId?: string,
+): Promise<void> {
+  await api.delete(`/devices/${id}`, {
+    params: tenantId ? { tenant_id: tenantId } : undefined,
+  });
 }
 
 export async function bindDeviceCustomer(
   id: string,
   customerId: string,
+  tenantId?: string,
 ): Promise<DeviceBindResponse> {
   const { data } = await api.post<DeviceBindResponse>(
     `/devices/${id}/bind`,
-    { customer_id: customerId } satisfies DeviceBindRequest,
+    {
+      customer_id: customerId,
+      ...(tenantId ? { tenant_id: tenantId } : {}),
+    } satisfies DeviceBindRequest,
   );
   return data;
 }
 
-export async function unbindDeviceCustomer(id: string): Promise<void> {
-  await api.delete(`/devices/${id}/bind`);
+// DELETE /devices/{id}/bind — same query-param convention as deleteDevice
+// (plan §4.5.4a 补丁 1).
+export async function unbindDeviceCustomer(
+  id: string,
+  tenantId?: string,
+): Promise<void> {
+  await api.delete(`/devices/${id}/bind`, {
+    params: tenantId ? { tenant_id: tenantId } : undefined,
+  });
 }
 
 // ---------- device-models (平台级设备型号目录, device-models-crud +
@@ -479,14 +499,29 @@ export async function updateBooking(
   return data;
 }
 
-export async function cancelBooking(id: string): Promise<void> {
-  await api.post(`/bookings/${id}/cancel`);
+// POST /bookings/{id}/cancel — body-less (idempotent 204). The cross-store
+// target rides a ``tenant_id`` query param for platform writers
+// (platform-cross-tenant-write plan §4.5.4a 补丁 5); store principals omit it.
+export async function cancelBooking(
+  id: string,
+  tenantId?: string,
+): Promise<void> {
+  await api.post(`/bookings/${id}/cancel`, undefined, {
+    params: tenantId ? { tenant_id: tenantId } : undefined,
+  });
 }
 
 // POST /bookings/{id}/start (device-poweron 切片 02) — pending → in_service,
 // backend fills ``started_at``. Body-less POST (pure status flip).
-export async function startBooking(id: string): Promise<Booking> {
-  const { data } = await api.post<Booking>(`/bookings/${id}/start`);
+// ``tenantId`` query param = platform-writer cross-store target (plan §4.5.4a
+// 补丁 5).
+export async function startBooking(
+  id: string,
+  tenantId?: string,
+): Promise<Booking> {
+  const { data } = await api.post<Booking>(`/bookings/${id}/start`, undefined, {
+    params: tenantId ? { tenant_id: tenantId } : undefined,
+  });
   return data;
 }
 
@@ -497,19 +532,31 @@ export async function startBooking(id: string): Promise<Booking> {
 //
 // Authorization is store owner only (``bookings:delete``) — admin has no such
 // perm (per B2), so the「结束」button is hidden for admin client-side.
+// ``tenantId`` query param = platform-writer cross-store target (plan §4.5.4a
+// 补丁 5); orthogonal to the body's feedback dict.
 export async function endBooking(
   id: string,
   payload?: BookingEndPayload,
+  tenantId?: string,
 ): Promise<Booking> {
-  const { data } = await api.post<Booking>(`/bookings/${id}/end`, payload);
+  const { data } = await api.post<Booking>(`/bookings/${id}/end`, payload, {
+    params: tenantId ? { tenant_id: tenantId } : undefined,
+  });
   return data;
 }
 
 // POST /bookings/{id}/no-show (device-poweron 切片 03) — pending / confirmed /
 // in_service → no_show. Pure status flip (no timestamp); returns 204 like
 // ``/cancel`` so there's no body to consume. Authorization: store owner only.
-export async function noShowBooking(id: string): Promise<void> {
-  await api.post(`/bookings/${id}/no-show`);
+// ``tenantId`` query param = platform-writer cross-store target (plan §4.5.4a
+// 补丁 5).
+export async function noShowBooking(
+  id: string,
+  tenantId?: string,
+): Promise<void> {
+  await api.post(`/bookings/${id}/no-show`, undefined, {
+    params: tenantId ? { tenant_id: tenantId } : undefined,
+  });
 }
 
 export async function fetchDeviceSchedule(

@@ -11,14 +11,17 @@ Reads branch on the caller's platform role:
   Returns ``DeviceHqRead`` across every tenant with tenant/model/customer
   names pre-loaded (selectinload, see ``DeviceRepository.list_all_with_meta``).
 
-Writes (create / update / delete) are unchanged from slice 01: they always
-require ``devices:<act>`` in the caller's tenant, so hq_staff (no tenant
-role) is 403 — the HQ viewer is read-only by construction. Bind / unbind
-(slice 04) follow the same guard (``devices:update``): assigning a device's
-customer is a within-store business action, not a platform-level one, so it
-uses ``require("devices", "update")`` — NOT the ``require_super_admin`` that
-group attach/detach uses (group is a platform-level resource with no
-``tenant_id``).
+Writes (create / update / delete / bind / unbind) branch on the caller's
+platform role (platform-cross-tenant-write slice 01):
+- **Within-store** (owner / admin / member): ``require_permission("devices",
+  "<act>")`` in the caller's tenant. ``effective_tenant_id = user.tenant_id``.
+- **Platform writer** (super_admin / hq_staff): skip the casbin ``require``
+  (hq_staff has no tenant role) and resolve the target from
+  ``payload.tenant_id`` via ``resolve_target_tenant``. Store roles that carry
+  ``payload.tenant_id`` are refused with 400 (anti-forgery, see
+  ``_tenant_target``). Bind / unbind use the same branch — they're within-store
+  business actions that platform writers may perform on a target store's
+  device. The HQ viewer is no longer read-only by construction.
 
 Three integrity guards worth calling out (see plan-devices-crud-ui.md §3
 关键边界 #1):
@@ -56,8 +59,13 @@ from app.schemas.device import (
     DeviceRead,
     DeviceUpdate,
 )
+from app.services._tenant_target import resolve_target_tenant
 from app.services.errors import BizError, NotFoundError
-from app.services.permission_service import is_cross_tenant_viewer, permission_service
+from app.services.permission_service import (
+    is_cross_tenant_viewer,
+    is_platform_writer,
+    permission_service,
+)
 
 
 class DeviceService:
@@ -226,17 +234,33 @@ class DeviceService:
         payload: DeviceCreate,
         platform_role: str | None = None,
     ) -> DeviceRead:
-        await permission_service.require(
-            actor_id,
-            tenant_id,
-            self.OBJECT,
-            "create",
-            platform_role=platform_role,
+        effective_tenant = resolve_target_tenant(
+            tenant_id, payload.tenant_id, platform_role
         )
+        if not is_platform_writer(platform_role):
+            await permission_service.require(
+                actor_id,
+                effective_tenant,
+                self.OBJECT,
+                "create",
+                platform_role=platform_role,
+            )
         await self._assert_model_live(payload.model_id)
-        await self._assert_serial_unique(tenant_id, payload.serial_number)
+        await self._assert_serial_unique(effective_tenant, payload.serial_number)
+        # Platform writers cross-tenant bind at create time must point at a
+        # customer that has a live profile in the *target* tenant (D2-ii).
+        # Store roles historically treat ``customer_id`` as an unchecked create-
+        # time hint (the real guard is the bind endpoint) — keep that path
+        # unchanged to avoid a within-store behaviour shift outside this slice.
+        if (
+            is_platform_writer(platform_role)
+            and payload.customer_id is not None
+        ):
+            await self._assert_customer_in_tenant(
+                effective_tenant, payload.customer_id
+            )
         device = Device(
-            tenant_id=tenant_id,
+            tenant_id=effective_tenant,
             model_id=payload.model_id,
             serial_number=payload.serial_number,
             status=payload.status,
@@ -248,7 +272,7 @@ class DeviceService:
         # Re-fetch so server defaults (created_at/updated_at) are loaded —
         # commit expires the ORM object and reading attributes directly
         # would trigger a lazy async load (MissingGreenlet).
-        fresh = await self.repo.get_for_tenant(device.id, tenant_id)
+        fresh = await self.repo.get_for_tenant(device.id, effective_tenant)
         assert fresh is not None  # just created, must exist
         return await self._to_read(fresh)
 
@@ -260,20 +284,28 @@ class DeviceService:
         payload: DeviceUpdate,
         platform_role: str | None = None,
     ) -> DeviceRead:
-        await permission_service.require(
-            actor_id,
-            tenant_id,
-            self.OBJECT,
-            "update",
-            platform_role=platform_role,
+        effective_tenant = resolve_target_tenant(
+            tenant_id, payload.tenant_id, platform_role
         )
-        device = await self._get_live_device(device_id, tenant_id)
+        if not is_platform_writer(platform_role):
+            await permission_service.require(
+                actor_id,
+                effective_tenant,
+                self.OBJECT,
+                "update",
+                platform_role=platform_role,
+            )
+        device = await self._get_live_device(device_id, effective_tenant)
         data = payload.model_dump(exclude_unset=True)
+        # ``tenant_id`` is a request-scoped routing field (which store to write
+        # into), NOT an updatable column — drop it before setattr loop. The
+        # device's tenant is already locked by ``_get_live_device`` above.
+        data.pop("tenant_id", None)
         if "model_id" in data:
             await self._assert_model_live(data["model_id"])
         if "serial_number" in data:
             await self._assert_serial_unique(
-                tenant_id, data["serial_number"], exclude_id=device_id
+                effective_tenant, data["serial_number"], exclude_id=device_id
             )
         # ``status`` Literal + DB CHECK constraint both enforce the 3-state
         # invariant; setattr is safe because schema rejected anything else.
@@ -281,7 +313,7 @@ class DeviceService:
             setattr(device, key, value)
         await self.db.flush()
         await self.db.commit()
-        fresh = await self.repo.get_for_tenant(device_id, tenant_id)
+        fresh = await self.repo.get_for_tenant(device_id, effective_tenant)
         assert fresh is not None
         return await self._to_read(fresh)
 
@@ -290,19 +322,25 @@ class DeviceService:
         actor_id: str,
         tenant_id: str,
         device_id: str,
+        *,
+        target_tenant_id: str | None = None,
         platform_role: str | None = None,
     ) -> None:
         """Soft-delete. The row stays so historical references (bookings,
         audits) remain resolvable; the serial becomes reusable via the
         partial unique index."""
-        await permission_service.require(
-            actor_id,
-            tenant_id,
-            self.OBJECT,
-            "delete",
-            platform_role=platform_role,
+        effective_tenant = resolve_target_tenant(
+            tenant_id, target_tenant_id, platform_role
         )
-        device = await self._get_live_device(device_id, tenant_id)
+        if not is_platform_writer(platform_role):
+            await permission_service.require(
+                actor_id,
+                effective_tenant,
+                self.OBJECT,
+                "delete",
+                platform_role=platform_role,
+            )
+        device = await self._get_live_device(device_id, effective_tenant)
         device.is_deleted = True
         device.deleted_at = datetime.now(UTC)
         await self.db.flush()
@@ -316,6 +354,8 @@ class DeviceService:
         tenant_id: str,
         customer_id: str,
         actor_id: str,
+        *,
+        target_tenant_id: str | None = None,
         platform_role: str | None = None,
     ) -> tuple[Device, bool]:
         """Assign ``customer_id`` to a device. Returns ``(device, already_bound)``.
@@ -332,16 +372,24 @@ class DeviceService:
         customer is a within-store business action. group attach/detach uses
         ``require_super_admin`` only because group is platform-level (no
         ``tenant_id``) — do not conflate the two.
+
+        Platform writers (super_admin / hq_staff) skip the casbin require and
+        operate on ``target_tenant_id``; store roles are anti-forgery guarded
+        against carrying it (see ``resolve_target_tenant``).
         """
-        await permission_service.require(
-            actor_id,
-            tenant_id,
-            self.OBJECT,
-            "update",
-            platform_role=platform_role,
+        effective_tenant = resolve_target_tenant(
+            tenant_id, target_tenant_id, platform_role
         )
-        await self._assert_customer_in_tenant(tenant_id, customer_id)
-        device = await self._get_live_device(device_id, tenant_id)
+        if not is_platform_writer(platform_role):
+            await permission_service.require(
+                actor_id,
+                effective_tenant,
+                self.OBJECT,
+                "update",
+                platform_role=platform_role,
+            )
+        await self._assert_customer_in_tenant(effective_tenant, customer_id)
+        device = await self._get_live_device(device_id, effective_tenant)
         if device.customer_id == customer_id:
             return device, True
         device.customer_id = customer_id
@@ -354,19 +402,29 @@ class DeviceService:
         device_id: str,
         tenant_id: str,
         actor_id: str,
+        *,
+        target_tenant_id: str | None = None,
         platform_role: str | None = None,
     ) -> None:
         """Clear a device's ``customer_id``. Idempotent: a device with no
         binding is a no-op, NOT an error (DELETE is idempotent by REST
-        convention — saves the client a GET-then-DELETE round-trip)."""
-        await permission_service.require(
-            actor_id,
-            tenant_id,
-            self.OBJECT,
-            "update",
-            platform_role=platform_role,
+        convention — saves the client a GET-then-DELETE round-trip).
+
+        Platform writers pass ``target_tenant_id`` (the store whose device to
+        unbind); store roles omit it (anti-forgery).
+        """
+        effective_tenant = resolve_target_tenant(
+            tenant_id, target_tenant_id, platform_role
         )
-        device = await self._get_live_device(device_id, tenant_id)
+        if not is_platform_writer(platform_role):
+            await permission_service.require(
+                actor_id,
+                effective_tenant,
+                self.OBJECT,
+                "update",
+                platform_role=platform_role,
+            )
+        device = await self._get_live_device(device_id, effective_tenant)
         if device.customer_id is None:
             return
         device.customer_id = None

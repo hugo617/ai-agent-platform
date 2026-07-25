@@ -698,16 +698,24 @@ async def test_f_member_read_only_end_to_end(member_client, db_session, test_env
 
 
 @pytest.mark.asyncio
-async def test_f_hq_staff_writes_are_403(hq_staff_client, db_session, test_env):
-    """hq_staff is the HQ read-only viewer — writes (create/update/cancel) all
-    403. The hq_staff fixture binds the user to the ``member`` tenant role (no
-    bookings:create/update/delete in casbin), and ``permission_service.check``
-    only short-circuits hq_staff for ``act == "read"`` — writes fall through to
-    casbin and are denied. Acceptance F lists hq_staff write → 403 explicitly.
+async def test_f_hq_staff_writes_without_tenant_id_400(hq_staff_client, db_session, test_env):
+    """hq_staff is a platform writer on bookings (platform-cross-tenant-write
+    slice 02): writes are allowed through ``check`` (the bypass lives in
+    ``check``, not the router dependency), but the service body's
+    ``resolve_target_tenant`` REQUIRES ``payload.tenant_id`` (or
+    ``?tenant_id=`` query for the no-body actions) → 400 when missing (D1
+    必填守卫).
+
+    This test was ``test_f_hq_staff_writes_are_403`` before slice 02; the old
+    403 came from ``check`` falling through to casbin (hq_staff's member role
+    lacks bookings:create/update/delete). Slice 02 lifts hq_staff to a
+    platform writer on bookings, so the failure mode shifts from 403 (casbin
+    deny) to 400 (missing target tenant). The 200/201/204 success path is
+    covered by the Q chapter below.
 
     NOTE: slice 01 keeps reads behind a router-level ``require_permission(
     "bookings", "read")``; the member role grants bookings:read so hq_staff
-    (bound to member) CAN read here. Slice 03 moves the read guard into the
+    (bound to member) CAN read here. Slice 03 moved the read guard into the
     endpoint body so the HQ panorama branch serves hq_staff without a tenant
     role — that refactor is where the hq_staff read test belongs."""
     model = await _seed_model(db_session, name="F-HQ-Model")
@@ -715,7 +723,7 @@ async def test_f_hq_staff_writes_are_403(hq_staff_client, db_session, test_env):
         db_session, tenant_id=test_env.tenant_id, model_id=model.id, serial="F-HQ-DEV"
     )
     s, e = _window(0, 1)
-    # hq_staff cannot create.
+    # hq_staff cannot create without naming the target store.
     resp = await hq_staff_client.post(
         "/api/v1/bookings/",
         json={
@@ -725,7 +733,7 @@ async def test_f_hq_staff_writes_are_403(hq_staff_client, db_session, test_env):
         },
         headers=AUTH,
     )
-    assert resp.status_code == 403
+    assert resp.status_code == 400
     # Seed a booking via db_session so we have an id to update/cancel.
     from app.models.booking import Booking
 
@@ -737,19 +745,19 @@ async def test_f_hq_staff_writes_are_403(hq_staff_client, db_session, test_env):
     )
     db_session.add(booking)
     await db_session.commit()
-    # hq_staff cannot update.
+    # hq_staff cannot update without tenant_id.
     ns, ne = _window(120, 1)
     resp = await hq_staff_client.put(
         f"/api/v1/bookings/{booking.id}",
         json={"scheduled_start_at": _iso(ns), "scheduled_end_at": _iso(ne)},
         headers=AUTH,
     )
-    assert resp.status_code == 403
-    # hq_staff cannot cancel.
+    assert resp.status_code == 400
+    # hq_staff cannot cancel without tenant_id.
     resp = await hq_staff_client.post(
         f"/api/v1/bookings/{booking.id}/cancel", headers=AUTH
     )
-    assert resp.status_code == 403
+    assert resp.status_code == 400
 
 
 @pytest.mark.asyncio
@@ -1378,14 +1386,15 @@ async def test_hq3_hq_staff_list_returns_panorama(
 
 
 @pytest.mark.asyncio
-async def test_hq4_hq_staff_writes_are_403(hq_staff_client, db_session, test_env):
-    """HQ-4: hq_staff is read-only — create / update / cancel all 403.
+async def test_hq4_hq_staff_writes_without_tenant_id_400(hq_staff_client, db_session, test_env):
+    """HQ-4: hq_staff is a platform writer on bookings — create / update /
+    cancel without ``tenant_id`` all → 400 (D1 必填守卫).
 
-    The hq_staff fixture binds the user to the ``member`` tenant role (no
-    bookings:create/update/delete in casbin), and ``permission_service.check``
-    only short-circuits hq_staff for ``act == "read"`` — writes fall through
-    to casbin and are denied. The HQ viewer can SEE everything but touch
-    nothing (WIP=1 boundary)."""
+    The hq_staff fixture binds the user to the ``member`` tenant role, but
+    slice 02's ``check`` bypass lets platform writers reach the service body
+    on bookings. The service body's ``resolve_target_tenant`` then refuses
+    them with 400 unless they name the target store. The success path is
+    covered by the Q chapter below."""
     model = await _seed_model(db_session, name="HQ-Write-Model")
     device = await _seed_device(
         db_session,
@@ -1394,7 +1403,7 @@ async def test_hq4_hq_staff_writes_are_403(hq_staff_client, db_session, test_env
         serial="HQ-WRITE",
     )
     s, e = _window(0, 1)
-    # create → 403 (router-level require_permission("bookings","create"))
+    # create → 400 (resolve_target_tenant refuses platform writer without tenant_id)
     resp = await hq_staff_client.post(
         "/api/v1/bookings/",
         json={
@@ -1404,9 +1413,10 @@ async def test_hq4_hq_staff_writes_are_403(hq_staff_client, db_session, test_env
         },
         headers=AUTH,
     )
-    assert resp.status_code == 403
+    assert resp.status_code == 400
 
-    # Seed a booking directly (hq_staff can't create one) to exercise update/cancel.
+    # Seed a booking directly (hq_staff can't create one without tenant_id) to
+    # exercise update/cancel.
     from app.models.booking import Booking
 
     booking = Booking(
@@ -1427,11 +1437,11 @@ async def test_hq4_hq_staff_writes_are_403(hq_staff_client, db_session, test_env
         },
         headers=AUTH,
     )
-    assert resp.status_code == 403
+    assert resp.status_code == 400
     resp = await hq_staff_client.post(
         f"/api/v1/bookings/{booking.id}/cancel", headers=AUTH
     )
-    assert resp.status_code == 403
+    assert resp.status_code == 400
 
 
 # ============================================================================
@@ -2100,16 +2110,19 @@ async def test_p3_start_member_403(member_client, db_session, test_env):
 
 
 @pytest.mark.asyncio
-async def test_p3_start_hq_staff_403(hq_staff_client, db_session, test_env):
-    """P-3h: hq_staff starting a booking → 403 (HQ is read-only; hq_staff has
-    no store-side write role, and the store path requires bookings:update)."""
+async def test_p3_start_hq_staff_without_tenant_id_400(hq_staff_client, db_session, test_env):
+    """P-3h: hq_staff starting a booking without ``?tenant_id=`` → 400 (D1
+    必填守卫). Was 403 before slice 02 (casbin deny on the store path);
+    slice 02 lifts hq_staff to a platform writer on bookings, so the failure
+    mode shifts from 403 to 400. The success path (hq_staff + tenant_id) is
+    covered by the Q chapter below."""
     fixture = await _seed_lifecycle_fixture(db_session, test_env)
     booking = await fixture["make_booking"]()
 
     resp = await hq_staff_client.post(
         f"/api/v1/bookings/{booking.id}/start", headers=AUTH
     )
-    assert resp.status_code == 403, resp.text
+    assert resp.status_code == 400, resp.text
 
 
 @pytest.mark.asyncio
@@ -2197,15 +2210,18 @@ async def test_p4_end_member_403(member_client, db_session, test_env):
 
 
 @pytest.mark.asyncio
-async def test_p4_end_hq_staff_403(hq_staff_client, db_session, test_env):
-    """P-4e: hq_staff ending a booking → 403 (HQ read-only)."""
+async def test_p4_end_hq_staff_without_tenant_id_400(hq_staff_client, db_session, test_env):
+    """P-4e: hq_staff ending a booking without ``?tenant_id=`` → 400 (D1
+    必填守卫). Was 403 before slice 02 (HQ read-only); slice 02 lifts hq_staff
+    to a platform writer on bookings, so the failure mode shifts to 400. The
+    success path is covered by the Q chapter below."""
     fixture = await _seed_lifecycle_fixture(db_session, test_env)
     booking = await fixture["make_booking"](status="in_service")
 
     resp = await hq_staff_client.post(
         f"/api/v1/bookings/{booking.id}/end", headers=AUTH
     )
-    assert resp.status_code == 403, resp.text
+    assert resp.status_code == 400, resp.text
 
 
 @pytest.mark.asyncio
@@ -2517,3 +2533,493 @@ async def test_p6_no_show_writes_no_timestamp(
         assert row.status == "no_show"
         assert row.started_at is None
         assert row.ended_at is None
+
+
+# ============================================================================
+# Q. platform-cross-tenant-write slice 02 — super_admin + hq_staff cross-
+# tenant writes on bookings (create/update/cancel + start/end/no_show).
+# ----------------------------------------------------------------------------
+# Platform writers target the store named by ``tenant_id`` (body on POST/PUT,
+# ``?tenant_id=`` query on the no-body POST actions cancel/start/end/no-show).
+# The casbin ``require`` in the service body is skipped; ``resolve_target_tenant``
+# enforces D1 (platform writer must name target) and D1-2 (store role must not
+# carry tenant_id — anti-forgery). State machine ``_TRANSITIONS`` is unchanged
+# (D3-4) — slice 02 only adds an auth path, not new edges.
+#
+# This chapter lands what plan §6 split into slice 02 (CRUD) + slice 03 (state
+# machine) as a single unit — see plan §4.5.4a patch 5 for the merge rationale
+# (``check`` bypass is atomic across bookings write actions; ``update``/``delete``
+# acts are shared between CRUD and the state machine, so an act whitelist
+# cannot split them). The old ``test_*_hq_staff_writes_are_403`` /
+# ``test_p3_start_hq_staff_403`` / ``test_p4_end_hq_staff_403`` tests above were
+# rewritten to assert the new 400 (missing tenant_id) failure mode.
+#
+# Each Q test seeds its own target tenant + device + (sometimes) booking so it
+# does not depend on which second tenant a platform fixture happened to create.
+# ============================================================================
+
+
+async def _seed_target_tenant_with_device(db_session, *, name="Q Target"):
+    """Fresh tenant + a model + a device in that tenant. Returns
+    ``(target_tenant_id, model, device)``. Models are platform-level so one
+    model serves every tenant, but the device is tenant-scoped (its
+    ``tenant_id`` column matters for ``_assert_device_in_tenant``)."""
+    import uuid
+
+    from app.models.tenant import Tenant
+
+    target_tenant_id = f"tnt-q-{uuid.uuid4().hex[:24]}"
+    db_session.add(Tenant(id=target_tenant_id, name=name))
+    await db_session.commit()
+    model = await _seed_model(db_session, name=f"Q-Model-{target_tenant_id[-8:]}")
+    device = await _seed_device(
+        db_session,
+        tenant_id=target_tenant_id,
+        model_id=model.id,
+        serial=f"Q-DEV-{target_tenant_id[-8:]}",
+    )
+    return target_tenant_id, model, device
+
+
+@pytest.mark.asyncio
+async def test_q1_platform_writer_create_cross_tenant(
+    super_admin_client, hq_staff_client, db_session
+):
+    """Q1: super_admin + hq_staff POST /bookings/ with ``tenant_id`` → 201,
+    creating a booking in the TARGET store against that store's device. The
+    physical row lands in the target tenant."""
+    target_tenant_id, _model, device = await _seed_target_tenant_with_device(
+        db_session
+    )
+    s, e = _window(0, 1)
+
+    # super_admin creates in target store.
+    resp = await super_admin_client.post(
+        "/api/v1/bookings/",
+        json={
+            "device_id": device.id,
+            "scheduled_start_at": _iso(s),
+            "scheduled_end_at": _iso(e),
+            "tenant_id": target_tenant_id,
+        },
+        headers=AUTH,
+    )
+    assert resp.status_code == 201, resp.text
+    assert resp.json()["tenant_id"] == target_tenant_id
+
+    # hq_staff creates in target store (offset window to avoid overlap).
+    s2, e2 = _window(10, 1)
+    resp = await hq_staff_client.post(
+        "/api/v1/bookings/",
+        json={
+            "device_id": device.id,
+            "scheduled_start_at": _iso(s2),
+            "scheduled_end_at": _iso(e2),
+            "tenant_id": target_tenant_id,
+        },
+        headers=AUTH,
+    )
+    assert resp.status_code == 201, resp.text
+    assert resp.json()["tenant_id"] == target_tenant_id
+
+
+@pytest.mark.asyncio
+async def test_q2_platform_writer_update_cross_tenant(
+    super_admin_client, hq_staff_client, db_session
+):
+    """Q2: super_admin + hq_staff PUT /bookings/{id} with ``tenant_id`` → 200,
+    rescheduling a booking in the target store."""
+    target_tenant_id, _model, device = await _seed_target_tenant_with_device(
+        db_session
+    )
+
+    from app.models.booking import Booking
+
+    s1, e1 = _window(0, 1)
+    sa_booking = Booking(
+        tenant_id=target_tenant_id,
+        device_id=device.id,
+        scheduled_start_at=s1,
+        scheduled_end_at=e1,
+    )
+    s2, e2 = _window(10, 1)
+    hq_booking = Booking(
+        tenant_id=target_tenant_id,
+        device_id=device.id,
+        scheduled_start_at=s2,
+        scheduled_end_at=e2,
+    )
+    db_session.add_all([sa_booking, hq_booking])
+    await db_session.commit()
+
+    ns1, ne1 = _window(40, 1)
+    resp = await super_admin_client.put(
+        f"/api/v1/bookings/{sa_booking.id}",
+        json={
+            "scheduled_start_at": _iso(ns1),
+            "scheduled_end_at": _iso(ne1),
+            "tenant_id": target_tenant_id,
+        },
+        headers=AUTH,
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["scheduled_start_at"].startswith(_iso(ns1)[:19])
+
+    ns2, ne2 = _window(50, 1)
+    resp = await hq_staff_client.put(
+        f"/api/v1/bookings/{hq_booking.id}",
+        json={
+            "scheduled_start_at": _iso(ns2),
+            "scheduled_end_at": _iso(ne2),
+            "tenant_id": target_tenant_id,
+        },
+        headers=AUTH,
+    )
+    assert resp.status_code == 200, resp.text
+
+
+@pytest.mark.asyncio
+async def test_q3_platform_writer_cancel_cross_tenant(
+    super_admin_client, hq_staff_client, db_session
+):
+    """Q3: super_admin + hq_staff POST /bookings/{id}/cancel?tenant_id=<target>
+    → 204, cancelling a booking in the target store. cancel is a no-body POST
+    action → tenant_id rides as a query param."""
+    target_tenant_id, _model, device = await _seed_target_tenant_with_device(
+        db_session
+    )
+
+    from app.models.booking import Booking
+
+    s1, e1 = _window(0, 1)
+    sa_booking = Booking(
+        tenant_id=target_tenant_id,
+        device_id=device.id,
+        scheduled_start_at=s1,
+        scheduled_end_at=e1,
+    )
+    s2, e2 = _window(10, 1)
+    hq_booking = Booking(
+        tenant_id=target_tenant_id,
+        device_id=device.id,
+        scheduled_start_at=s2,
+        scheduled_end_at=e2,
+    )
+    db_session.add_all([sa_booking, hq_booking])
+    await db_session.commit()
+
+    resp = await super_admin_client.post(
+        f"/api/v1/bookings/{sa_booking.id}/cancel?tenant_id={target_tenant_id}",
+        headers=AUTH,
+    )
+    assert resp.status_code == 204, resp.text
+
+    resp = await hq_staff_client.post(
+        f"/api/v1/bookings/{hq_booking.id}/cancel?tenant_id={target_tenant_id}",
+        headers=AUTH,
+    )
+    assert resp.status_code == 204, resp.text
+
+    # Verify via the client's own GET (the test session's identity map would
+    # otherwise serve the pre-cancel Booking rows). super_admin sees the HQ
+    # panorama, which still carries ``status``.
+    for bid in (sa_booking.id, hq_booking.id):
+        resp = await super_admin_client.get(
+            f"/api/v1/bookings/{bid}", headers=AUTH
+        )
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["status"] == "cancelled"
+
+
+@pytest.mark.asyncio
+async def test_q4_platform_writer_start_cross_tenant(
+    super_admin_client, hq_staff_client, db_session
+):
+    """Q4: super_admin + hq_staff POST /bookings/{id}/start?tenant_id=<target>
+    → 200, starting a booking in the target store. start is a no-body POST →
+    query param. Platform writer is treated as enhanced store principal, so
+    it can also start a WALK-IN booking (customer_id None) — see Q5."""
+    target_tenant_id, _model, device = await _seed_target_tenant_with_device(
+        db_session
+    )
+
+    from app.models.booking import Booking
+
+    s, e = _window(0, 1)
+    sa_booking = Booking(
+        tenant_id=target_tenant_id,
+        device_id=device.id,
+        scheduled_start_at=s,
+        scheduled_end_at=e,
+    )
+    s2, e2 = _window(10, 1)
+    hq_booking = Booking(
+        tenant_id=target_tenant_id,
+        device_id=device.id,
+        scheduled_start_at=s2,
+        scheduled_end_at=e2,
+    )
+    db_session.add_all([sa_booking, hq_booking])
+    await db_session.commit()
+
+    resp = await super_admin_client.post(
+        f"/api/v1/bookings/{sa_booking.id}/start?tenant_id={target_tenant_id}",
+        headers=AUTH,
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["status"] == "in_service"
+    assert resp.json()["started_at"] is not None
+
+    resp = await hq_staff_client.post(
+        f"/api/v1/bookings/{hq_booking.id}/start?tenant_id={target_tenant_id}",
+        headers=AUTH,
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["status"] == "in_service"
+
+
+@pytest.mark.asyncio
+async def test_q5_platform_writer_start_walkin_cross_tenant(
+    super_admin_client, db_session
+):
+    """Q5 (D3-2): platform writer can start a WALK-IN booking
+    (``customer_id`` None) in a target store. A customer principal cannot
+    (walk-in is store-staff-only), but a platform writer is an enhanced
+    store principal — so it gets the same walk-in privilege as owner/admin."""
+    target_tenant_id, _model, device = await _seed_target_tenant_with_device(
+        db_session
+    )
+
+    from app.models.booking import Booking
+
+    s, e = _window(0, 1)
+    walkin = Booking(
+        tenant_id=target_tenant_id,
+        device_id=device.id,
+        customer_id=None,  # walk-in
+        scheduled_start_at=s,
+        scheduled_end_at=e,
+    )
+    db_session.add(walkin)
+    await db_session.commit()
+
+    resp = await super_admin_client.post(
+        f"/api/v1/bookings/{walkin.id}/start?tenant_id={target_tenant_id}",
+        headers=AUTH,
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["status"] == "in_service"
+
+
+@pytest.mark.asyncio
+async def test_q6_platform_writer_end_cross_tenant(
+    super_admin_client, hq_staff_client, db_session
+):
+    """Q6: super_admin + hq_staff POST /bookings/{id}/end?tenant_id=<target>
+    → 200, ending an in_service booking in the target store. End bypasses the
+    owner-only ``require("bookings","delete")`` for platform writers."""
+    target_tenant_id, _model, device = await _seed_target_tenant_with_device(
+        db_session
+    )
+
+    from app.models.booking import Booking
+
+    s, e = _window(0, 1)
+    sa_booking = Booking(
+        tenant_id=target_tenant_id,
+        device_id=device.id,
+        status="in_service",
+        scheduled_start_at=s,
+        scheduled_end_at=e,
+    )
+    s2, e2 = _window(10, 1)
+    hq_booking = Booking(
+        tenant_id=target_tenant_id,
+        device_id=device.id,
+        status="in_service",
+        scheduled_start_at=s2,
+        scheduled_end_at=e2,
+    )
+    db_session.add_all([sa_booking, hq_booking])
+    await db_session.commit()
+
+    resp = await super_admin_client.post(
+        f"/api/v1/bookings/{sa_booking.id}/end?tenant_id={target_tenant_id}",
+        headers=AUTH,
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["status"] == "done"
+    assert resp.json()["ended_at"] is not None
+
+    resp = await hq_staff_client.post(
+        f"/api/v1/bookings/{hq_booking.id}/end?tenant_id={target_tenant_id}",
+        headers=AUTH,
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["status"] == "done"
+
+
+@pytest.mark.asyncio
+async def test_q7_platform_writer_no_show_cross_tenant(
+    super_admin_client, hq_staff_client, db_session
+):
+    """Q7: super_admin + hq_staff POST /bookings/{id}/no-show?tenant_id=<target>
+    → 204, marking a target-store booking as no_show."""
+    target_tenant_id, _model, device = await _seed_target_tenant_with_device(
+        db_session
+    )
+
+    from app.models.booking import Booking
+
+    s, e = _window(0, 1)
+    sa_booking = Booking(
+        tenant_id=target_tenant_id,
+        device_id=device.id,
+        scheduled_start_at=s,
+        scheduled_end_at=e,
+    )
+    s2, e2 = _window(10, 1)
+    hq_booking = Booking(
+        tenant_id=target_tenant_id,
+        device_id=device.id,
+        scheduled_start_at=s2,
+        scheduled_end_at=e2,
+    )
+    db_session.add_all([sa_booking, hq_booking])
+    await db_session.commit()
+
+    resp = await super_admin_client.post(
+        f"/api/v1/bookings/{sa_booking.id}/no-show?tenant_id={target_tenant_id}",
+        headers=AUTH,
+    )
+    assert resp.status_code == 204, resp.text
+
+    resp = await hq_staff_client.post(
+        f"/api/v1/bookings/{hq_booking.id}/no-show?tenant_id={target_tenant_id}",
+        headers=AUTH,
+    )
+    assert resp.status_code == 204, resp.text
+
+    # Verify via the client's own GET (test session identity map would serve
+    # stale rows; the panorama GET is the honest read path).
+    for bid in (sa_booking.id, hq_booking.id):
+        resp = await super_admin_client.get(
+            f"/api/v1/bookings/{bid}", headers=AUTH
+        )
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["status"] == "no_show"
+
+
+@pytest.mark.asyncio
+async def test_q8_platform_writer_state_machine_guards_preserved(
+    super_admin_client, db_session
+):
+    """Q8: the state machine itself is unchanged (D3-4). Platform writers still
+    hit ``InvalidTransition`` → 400 for illegal edges, just like store roles.
+    Covers: start a done booking → 400; end a non-in_service booking → 400.
+    Asserts the platform_writer path doesn't accidentally bypass the state
+    machine."""
+    target_tenant_id, _model, device = await _seed_target_tenant_with_device(
+        db_session
+    )
+
+    from app.models.booking import Booking
+
+    s, e = _window(0, 1)
+    done_booking = Booking(
+        tenant_id=target_tenant_id,
+        device_id=device.id,
+        status="done",
+        scheduled_start_at=s,
+        scheduled_end_at=e,
+    )
+    s2, e2 = _window(10, 1)
+    pending_booking = Booking(
+        tenant_id=target_tenant_id,
+        device_id=device.id,
+        status="pending",
+        scheduled_start_at=s2,
+        scheduled_end_at=e2,
+    )
+    db_session.add_all([done_booking, pending_booking])
+    await db_session.commit()
+
+    # start a done booking → 400 InvalidTransition.
+    resp = await super_admin_client.post(
+        f"/api/v1/bookings/{done_booking.id}/start?tenant_id={target_tenant_id}",
+        headers=AUTH,
+    )
+    assert resp.status_code == 400, resp.text
+
+    # end a pending (not in_service) booking → 400 InvalidTransition.
+    resp = await super_admin_client.post(
+        f"/api/v1/bookings/{pending_booking.id}/end?tenant_id={target_tenant_id}",
+        headers=AUTH,
+    )
+    assert resp.status_code == 400, resp.text
+
+
+@pytest.mark.asyncio
+async def test_q9_owner_create_with_tenant_id_400(app_client, db_session, test_env):
+    """Q9 (owner): store role carrying tenant_id → 400 (D1-2 防伪造). The
+    owner cannot forge a target tenant to write cross-store bookings. The
+    owner's own device is in ``test_env.tenant_id``; trying to forge
+    ``tenant_id=<target>`` is refused at ``resolve_target_tenant`` before any
+    business check runs."""
+    target_tenant_id, model, _target_device = await _seed_target_tenant_with_device(
+        db_session, name="Q9 Target"
+    )
+    # Device in the owner's own tenant (so device_in_tenant would pass on the
+    # real path — but the anti-forgery guard fires first).
+    own_device = await _seed_device(
+        db_session,
+        tenant_id=test_env.tenant_id,
+        model_id=model.id,
+        serial="Q9-OWN-DEV",
+    )
+    s, e = _window(0, 1)
+    resp = await app_client.post(
+        "/api/v1/bookings/",
+        json={
+            "device_id": own_device.id,
+            "scheduled_start_at": _iso(s),
+            "scheduled_end_at": _iso(e),
+            "tenant_id": target_tenant_id,
+        },
+        headers=AUTH,
+    )
+    assert resp.status_code == 400, resp.text
+
+
+@pytest.mark.asyncio
+async def test_q9_member_state_action_with_tenant_id_400(
+    member_client, db_session, test_env
+):
+    """Q9 (member, state action): member carrying ``?tenant_id=`` on a state
+    action → 400 (anti-forgery). Unlike devices' member (which hits the router
+    ``require_permission`` dep first → 403), bookings' state actions
+    (start/end/no-show/cancel) have NO router-level dep — authorization lives
+    in the service body. So ``resolve_target_tenant`` runs first and refuses
+    the store-role-forge with 400 before the casbin ``require`` even fires.
+    The end result is the same protection: member cannot write, with or
+    without a forged tenant_id."""
+    target_tenant_id, _model, device = await _seed_target_tenant_with_device(
+        db_session
+    )
+    from app.models.booking import Booking
+
+    s, e = _window(0, 1)
+    booking = Booking(
+        tenant_id=test_env.tenant_id,
+        device_id=device.id,
+        scheduled_start_at=s,
+        scheduled_end_at=e,
+    )
+    db_session.add(booking)
+    await db_session.commit()
+
+    resp = await member_client.post(
+        f"/api/v1/bookings/{booking.id}/end?tenant_id={target_tenant_id}",
+        headers=AUTH,
+    )
+    assert resp.status_code == 400, resp.text

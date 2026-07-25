@@ -14,6 +14,12 @@
  * (slice 03) added the DropdownMenu with three lifecycle actions (start /
  * end / no-show) gated on ACTIONABLE_STATUS (pending/confirmed/in_service).
  *
+ * platform-cross-tenant-write slice 04 lifted the five Dialog bodies + the
+ * row action menu into ``shared-dialog.tsx`` so the HQ view can reuse them.
+ * StoreView is now a thin caller: it owns the dialog-open state and the
+ * mutation hooks, and passes ``tenantId={undefined}`` (the store path — the
+ * backend uses ``user.tenant_id``, behaviour unchanged from before slice 04).
+ *
  * Backend guard notes (see plan-device-booking.md):
  * - State-guard rule: the create/update payloads carry NO ``status`` /
  *   ``started_at`` / ``ended_at`` / ``feedback`` — the types make them
@@ -30,16 +36,7 @@
  */
 import { useMemo, useState } from "react";
 
-import {
-  CalendarX,
-  MoreHorizontal,
-  Pencil,
-  Play,
-  Plus,
-  Square,
-  UserX,
-  XCircle,
-} from "lucide-react";
+import { CalendarX, Plus } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -49,33 +46,9 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { EmptyState } from "@/components/ui/empty-state";
-import { FormField as Field } from "@/components/ui/form-field";
-import { Input } from "@/components/ui/input";
 import { ListState } from "@/components/ui/list-state";
 import { PageHeader } from "@/components/layout/page-header";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import {
   Table,
   TableBody,
@@ -88,16 +61,7 @@ import { useToast } from "@/components/ui/toast";
 import { apiErrorMessage } from "@/api/client";
 import { useAuth } from "@/components/auth/auth-context";
 import { hasPermission } from "@/lib/permission";
-import {
-  toDatetimeLocalValue,
-} from "@/lib/format";
-import type {
-  Booking,
-  BookingCreate,
-  BookingEndPayload,
-  BookingUpdate,
-  Device,
-} from "@/api/types";
+import type { Booking, BookingCreate, BookingEndPayload, BookingUpdate, Device } from "@/api/types";
 import {
   useBookings,
   useCancelBooking,
@@ -110,18 +74,22 @@ import {
   useUpdateBooking,
 } from "@/hooks/queries";
 import {
-  ACTIONABLE_STATUS,
   BookingStatusBadge,
   FilterChips,
-  MUTABLE_STATUS,
-  NONE,
   ScheduleGridCard,
   applyBookingFilter,
   deviceNameOf,
   fmt,
-  fromDatetimeLocalValue,
   type BookingFilter,
 } from "./shared";
+import {
+  BookingCancelDialog,
+  BookingCreateDialog,
+  BookingEditDialog,
+  BookingEndDialog,
+  BookingNoShowDialog,
+  BookingRowMenu,
+} from "./shared-dialog";
 
 // Exported for component tests (vitest, slice 03 store-view.test.tsx). Not
 // consumed anywhere else — the top-level ``BookingsPage`` is the public entry.
@@ -136,13 +104,12 @@ export function StoreView() {
   // HQ-pre-expanded names, so it won't need this feed.
   const { data: profiles } = useCustomerProfiles();
 
+  // Store path: no tenantId → backend uses user.tenant_id (zero behaviour
+  // change from before slice 04). The hooks are constructed once and reused
+  // across all five dialogs.
   const createMut = useCreateBooking();
   const updateMut = useUpdateBooking();
   const cancelMut = useCancelBooking();
-  // device-poweron (切片 03):three lifecycle mutations. ``start`` reuses the
-  // same hook as the customer view (store path needs ``:update``); ``end`` /
-  // ``no-show`` are owner-only (``:delete``). Each invalidates the same
-  // BOOKING_WRITE_KEYS set on success (see queries.ts).
   const startMut = useStartBooking();
   const endMut = useEndBooking();
   const noShowMut = useNoShowBooking();
@@ -162,32 +129,21 @@ export function StoreView() {
   // ---------- dialog state ----------
   // Create dialog
   const [createOpen, setCreateOpen] = useState(false);
-  const [createDevice, setCreateDevice] = useState("");
-  const [createCustomer, setCreateCustomer] = useState<string>(NONE);
-  const [createStart, setCreateStart] = useState("");
-  const [createEnd, setCreateEnd] = useState("");
-  const [createNotes, setCreateNotes] = useState("");
   // Edit (reschedule) dialog
   const [editTarget, setEditTarget] = useState<Booking | null>(null);
-  const [editCustomer, setEditCustomer] = useState<string>(NONE);
-  const [editStart, setEditStart] = useState("");
-  const [editEnd, setEditEnd] = useState("");
-  const [editNotes, setEditNotes] = useState("");
   // Cancel confirm dialog
   const [cancelTarget, setCancelTarget] = useState<Booking | null>(null);
-  // device-poweron (切片 03):end-service dialog (target booking + free-text
-  // feedback). The dialog collects the optional service note in a textarea
-  // (raw JSON string parsed at submit — matches the customers-page "标签 JSON"
-  // convention; we don't ship a richer form here, the feedback dict is a free-
-  // form audit trail). no-show has no body so it just needs a confirm dialog.
+  // device-poweron (切片 03):end-service + no-show confirm dialogs. Both are
+  // single-target confirms; the end dialog carries an optional free-text
+  // feedback payload (owned inside BookingEndDialog now).
   const [endTarget, setEndTarget] = useState<Booking | null>(null);
-  const [endFeedback, setEndFeedback] = useState("");
   const [noShowTarget, setNoShowTarget] = useState<Booking | null>(null);
 
   // device_id → serial_number, for resolving the list's "设备名" column from
   // the booking's device_id (BookingRead carries only device_id, no name —
   // devices have no ``name`` column; serial_number IS their identifier, per
-  // BookingService._to_hq_read docstring).
+  // BookingService._to_hq_read docstring). Also feeds the edit dialog's
+  // read-only device field.
   const deviceMap = useMemo(() => {
     const m = new Map<string, string>();
     for (const d of (devices ?? []) as Device[]) {
@@ -228,91 +184,13 @@ export function StoreView() {
     [bookings, filter],
   );
 
-  // ---------- create ----------
-  const openCreate = () => {
-    setCreateDevice("");
-    setCreateCustomer(NONE);
-    setCreateStart("");
-    setCreateEnd("");
-    setCreateNotes("");
-    setCreateOpen(true);
-  };
-
-  const submitCreate = async () => {
-    if (!createDevice) {
-      toast.error("请选择设备");
-      return;
-    }
-    if (!createStart || !createEnd) {
-      toast.error("请填写预约时段");
-      return;
-    }
-    const payload: BookingCreate = {
-      device_id: createDevice,
-      customer_id: createCustomer === NONE ? null : createCustomer,
-      scheduled_start_at: fromDatetimeLocalValue(createStart),
-      scheduled_end_at: fromDatetimeLocalValue(createEnd),
-      notes: createNotes.trim() || null,
-    };
-    try {
-      await createMut.mutateAsync(payload);
-      toast.success("预约已创建");
-      setCreateOpen(false);
-    } catch (err) {
-      // 400 here covers: window invalid (end <= start), device/customer not in
-      // tenant, AND time overlap. The backend message is human-readable, so we
-      // surface it verbatim — no client-side overlap pre-check (plan §6 UX).
-      toast.error("创建失败", apiErrorMessage(err));
-    }
-  };
-
-  // ---------- edit (reschedule) ----------
-  const openEdit = (b: Booking) => {
-    setEditTarget(b);
-    setEditCustomer(b.customer_id ?? NONE);
-    setEditStart(toDatetimeLocalValue(b.scheduled_start_at));
-    setEditEnd(toDatetimeLocalValue(b.scheduled_end_at));
-    setEditNotes(b.notes ?? "");
-  };
-
-  const submitEdit = async () => {
-    if (!editTarget) return;
-    if (!editStart || !editEnd) {
-      toast.error("请填写预约时段");
-      return;
-    }
-    const payload: BookingUpdate = {
-      customer_id: editCustomer === NONE ? null : editCustomer,
-      scheduled_start_at: fromDatetimeLocalValue(editStart),
-      scheduled_end_at: fromDatetimeLocalValue(editEnd),
-      notes: editNotes.trim() || null,
-    };
-    try {
-      await updateMut.mutateAsync({ id: editTarget.id, payload });
-      toast.success("已改约");
-      setEditTarget(null);
-    } catch (err) {
-      toast.error("改约失败", apiErrorMessage(err));
-    }
-  };
-
-  // ---------- cancel ----------
-  const submitCancel = async () => {
-    if (!cancelTarget) return;
-    try {
-      await cancelMut.mutateAsync(cancelTarget.id);
-      toast.success("已取消预约");
-      setCancelTarget(null);
-    } catch (err) {
-      toast.error("取消失败", apiErrorMessage(err));
-    }
-  };
-
-  // ---------- device-poweron lifecycle actions ----------
-  // ``start`` (pending/confirmed → in_service, walk-in OK). The same hook the
-  // customer view uses; the store path is authorized by ``bookings:update``
-  // server-side (owner/admin — member 403, button hidden via canUpdate).
-  const submitStart = async (b: Booking) => {
+  // ---------- row action handlers ----------
+  // Each handler runs the mutation + surfaces the success/error toast +
+  // closes the Dialog on success. The shared Dialog bodies own their form
+  // state + local validation; they call onSubmit and let the promise
+  // reject propagate (we catch here so a 400 keeps the Dialog open for the
+  // operator to fix + retry).
+  const handleStart = async (b: Booking) => {
     try {
       await startMut.mutateAsync(b.id);
       toast.success("已开机");
@@ -320,46 +198,53 @@ export function StoreView() {
       toast.error("开机失败", apiErrorMessage(err));
     }
   };
-
-  // ``end`` (in_service → done). Parses the feedback textarea as JSON; a blank
-  // or non-JSON input is treated as "no feedback" (the column stays null) — the
-  // textarea is explicitly optional, mirroring the customers-page tags-JSON
-  // convention. We do NOT block submit on parse failure (free-form audit note,
-  // not structured data): the backend stores whatever dict we send verbatim.
-  //
-  // Note(candidate-7): move this JSON.parse fallback into the endpoint layer.
-  const submitEnd = async () => {
-    if (!endTarget) return;
-    const trimmed = endFeedback.trim();
-    let payload: BookingEndPayload | undefined;
-    if (trimmed) {
-      try {
-        payload = { feedback: JSON.parse(trimmed) as Record<string, unknown> };
-      } catch {
-        // Fall back to wrapping the raw note so the audit trail isn't lost —
-        // the operator clearly typed something, treat it as a text note.
-        payload = { feedback: { note: trimmed } };
-      }
-    }
+  const handleEnd = async (id: string, payload?: BookingEndPayload) => {
     try {
-      await endMut.mutateAsync({ id: endTarget.id, payload });
+      await endMut.mutateAsync({ id, payload });
       toast.success("已结束服务");
       setEndTarget(null);
-      setEndFeedback("");
     } catch (err) {
       toast.error("结束失败", apiErrorMessage(err));
     }
   };
-
-  // ``no-show`` (pending/confirmed/in_service → no_show). Pure status flip.
-  const submitNoShow = async () => {
-    if (!noShowTarget) return;
+  const handleNoShow = async (id: string) => {
     try {
-      await noShowMut.mutateAsync(noShowTarget.id);
+      await noShowMut.mutateAsync(id);
       toast.success("已标记爽约");
       setNoShowTarget(null);
     } catch (err) {
       toast.error("标记爽约失败", apiErrorMessage(err));
+    }
+  };
+  const handleCancel = async (id: string) => {
+    try {
+      await cancelMut.mutateAsync(id);
+      toast.success("已取消预约");
+      setCancelTarget(null);
+    } catch (err) {
+      toast.error("取消失败", apiErrorMessage(err));
+    }
+  };
+  const handleCreate = async (payload: BookingCreate) => {
+    try {
+      await createMut.mutateAsync(payload);
+      toast.success("预约已创建");
+      setCreateOpen(false);
+    } catch (err) {
+      // 400 here covers: window invalid (end <= start), device/customer not
+      // in tenant, AND time overlap. The backend message is human-readable,
+      // so we surface it verbatim (no client-side overlap pre-check).
+      // We do NOT close the dialog on failure — the operator can adjust + retry.
+      toast.error("创建失败", apiErrorMessage(err));
+    }
+  };
+  const handleEdit = async (id: string, payload: BookingUpdate) => {
+    try {
+      await updateMut.mutateAsync({ id, payload });
+      toast.success("已改约");
+      setEditTarget(null);
+    } catch (err) {
+      toast.error("改约失败", apiErrorMessage(err));
     }
   };
 
@@ -370,7 +255,7 @@ export function StoreView() {
         subtitle="管理本店设备预约：创建、改约、取消，查看今日/明日/本周预约与设备排期。"
         actions={
           canCreate && (
-            <Button onClick={openCreate}>
+            <Button onClick={() => setCreateOpen(true)}>
               <Plus className="mr-2 h-4 w-4" /> 创建预约
             </Button>
           )
@@ -422,122 +307,41 @@ export function StoreView() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filtered.map((b) => {
-                  const mutable = MUTABLE_STATUS.has(b.status);
-                  // device-poweron (切片 03):the menu trigger is shown whenever
-                  // the row still has ≥1 lifecycle / edit / cancel action
-                  // available AND the principal holds a write perm. Terminal
-                  // rows (done/cancelled/no_show) hide the menu entirely.
-                  const actionable = ACTIONABLE_STATUS.has(b.status);
-                  // Per-state action visibility (B3/B4):start guards on
-                  // ``canUpdate`` (:update, owner/admin);end/no-show guard on
-                  // ``canCancel`` (:delete, owner only — admin has no such perm
-                  // per B2, the buttons stay hidden client-side).
-                  const canStart =
-                    actionable &&
-                    (b.status === "pending" || b.status === "confirmed") &&
-                    canUpdate;
-                  const canEnd = b.status === "in_service" && canCancel;
-                  const canMarkNoShow = actionable && canCancel;
-                  const showMenu =
-                    (canUpdate || canCancel) &&
-                    actionable &&
-                    (mutable || canStart || canEnd || canMarkNoShow);
-                  return (
-                    <TableRow key={b.id}>
-                      <TableCell className="font-medium">
-                        {deviceNameOf(b.device_id, deviceMap)}
+                {filtered.map((b) => (
+                  <TableRow key={b.id}>
+                    <TableCell className="font-medium">
+                      {deviceNameOf(b.device_id, deviceMap)}
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">
+                      {b.customer_id
+                        ? (customerMap.get(b.customer_id) ?? "—")
+                        : "散客(walk-in)"}
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">
+                      {fmt(b.scheduled_start_at)} → {fmt(b.scheduled_end_at)}
+                    </TableCell>
+                    <TableCell>
+                      <BookingStatusBadge status={b.status} />
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">
+                      {fmt(b.created_at)}
+                    </TableCell>
+                    {(canUpdate || canCancel) && (
+                      <TableCell className="text-right">
+                        <BookingRowMenu
+                          booking={b}
+                          canUpdate={canUpdate}
+                          canCancel={canCancel}
+                          onEdit={setEditTarget}
+                          onCancel={setCancelTarget}
+                          onStart={handleStart}
+                          onEnd={setEndTarget}
+                          onNoShow={setNoShowTarget}
+                        />
                       </TableCell>
-                      <TableCell className="text-muted-foreground">
-                        {b.customer_id
-                          ? (customerMap.get(b.customer_id) ?? "—")
-                          : "散客(walk-in)"}
-                      </TableCell>
-                      <TableCell className="text-muted-foreground">
-                        {fmt(b.scheduled_start_at)} → {fmt(b.scheduled_end_at)}
-                      </TableCell>
-                      <TableCell>
-                        <BookingStatusBadge status={b.status} />
-                      </TableCell>
-                      <TableCell className="text-muted-foreground">
-                        {fmt(b.created_at)}
-                      </TableCell>
-                      {(canUpdate || canCancel) && (
-                        <TableCell className="text-right">
-                          {showMenu && (
-                            <DropdownMenu>
-                              <DropdownMenuTrigger asChild>
-                                <Button variant="ghost" size="icon">
-                                  <MoreHorizontal className="h-4 w-4" />
-                                </Button>
-                              </DropdownMenuTrigger>
-                              <DropdownMenuContent align="end">
-                                {/* 改约 + 取消预约 stay pending-only
-                                    (MUTABLE_STATUS) — they are booking edits,
-                                    not lifecycle actions. */}
-                                {mutable && canUpdate && (
-                                  <DropdownMenuItem onClick={() => openEdit(b)}>
-                                    <Pencil className="mr-2 h-4 w-4" /> 改约
-                                  </DropdownMenuItem>
-                                )}
-                                {/* 确认开机 (device-poweron):walk-in 散客
-                                    预约也走这条 (B4)。``confirmed`` 行的按钮是
-                                    防御性渲染 —— 状态机允许 pending/confirmed
-                                    → in_service,但 device-booking 永不写
-                                    confirmed,故运行期不可达。 */}
-                                {canStart && (
-                                  <DropdownMenuItem
-                                    onClick={() => submitStart(b)}
-                                  >
-                                    <Play className="mr-2 h-4 w-4" /> 确认开机
-                                  </DropdownMenuItem>
-                                )}
-                                {/* 结束服务 (device-poweron):弹 feedback
-                                    dialog。owner only (canDelete). */}
-                                {canEnd && (
-                                  <DropdownMenuItem
-                                    onClick={() => {
-                                      setEndTarget(b);
-                                      setEndFeedback("");
-                                    }}
-                                  >
-                                    <Square className="mr-2 h-4 w-4" /> 结束服务
-                                  </DropdownMenuItem>
-                                )}
-                                {/* 爽约 (device-poweron):确认 dialog →
-                                    noShowBooking. owner only. */}
-                                {canMarkNoShow && (
-                                  <>
-                                    <DropdownMenuSeparator />
-                                    <DropdownMenuItem
-                                      className="text-destructive focus:text-destructive"
-                                      onClick={() => setNoShowTarget(b)}
-                                    >
-                                      <UserX className="mr-2 h-4 w-4" /> 标记爽约
-                                    </DropdownMenuItem>
-                                  </>
-                                )}
-                                {/* 取消预约 (device-booking,保留):pending
-                                    only,owner only. */}
-                                {mutable && canCancel && (
-                                  <>
-                                    <DropdownMenuSeparator />
-                                    <DropdownMenuItem
-                                      className="text-destructive focus:text-destructive"
-                                      onClick={() => setCancelTarget(b)}
-                                    >
-                                      <XCircle className="mr-2 h-4 w-4" /> 取消预约
-                                    </DropdownMenuItem>
-                                  </>
-                                )}
-                              </DropdownMenuContent>
-                            </DropdownMenu>
-                          )}
-                        </TableCell>
-                      )}
-                    </TableRow>
-                  );
-                })}
+                    )}
+                  </TableRow>
+                ))}
               </TableBody>
             </Table>
           </ListState>
@@ -551,272 +355,49 @@ export function StoreView() {
         onSelect={setGridDeviceId}
       />
 
-      {/* ---------------- create dialog ---------------- */}
-      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>创建预约</DialogTitle>
-            <DialogDescription>
-              选择设备、可选客户与预约时段。时段冲突由后端校验,提交后如有冲突会提示。
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <Field label="设备 *">
-              <Select value={createDevice} onValueChange={setCreateDevice}>
-                <SelectTrigger>
-                  <SelectValue placeholder="选择设备" />
-                </SelectTrigger>
-                <SelectContent>
-                  {(devices ?? [])
-                    .filter(
-                      (d): d is Device =>
-                        "serial_number" in (d as Device) &&
-                        (d as Device).status === "active",
-                    )
-                    .map((d) => (
-                      <SelectItem key={d.id} value={d.id}>
-                        {d.serial_number}
-                      </SelectItem>
-                    ))}
-                </SelectContent>
-              </Select>
-            </Field>
-            <Field
-              label="客户"
-              hint="可不选 — 散客(walk-in)预约不绑定客户"
-            >
-              <Select value={createCustomer} onValueChange={setCreateCustomer}>
-                <SelectTrigger>
-                  <SelectValue placeholder="选择客户(可选)" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={NONE}>不指定(散客)</SelectItem>
-                  {(profiles ?? []).map((p) => (
-                    <SelectItem key={p.customer_id} value={p.customer_id}>
-                      {p.customer.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </Field>
-            <Field label="预约开始时间 *">
-              <Input
-                type="datetime-local"
-                value={createStart}
-                onChange={(e) => setCreateStart(e.target.value)}
-              />
-            </Field>
-            <Field label="预约结束时间 *">
-              <Input
-                type="datetime-local"
-                value={createEnd}
-                onChange={(e) => setCreateEnd(e.target.value)}
-              />
-            </Field>
-            <Field label="备注">
-              <Input
-                value={createNotes}
-                onChange={(e) => setCreateNotes(e.target.value)}
-                placeholder="可选"
-              />
-            </Field>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setCreateOpen(false)}>
-              取消
-            </Button>
-            <Button onClick={submitCreate} disabled={createMut.isPending}>
-              创建
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* ---------------- edit (reschedule) dialog ---------------- */}
-      {/* device_id is immutable (D10) — rendered read-only/greyed. Only pending
-          bookings reach this dialog (the menu is hidden for other states), so
-          no extra gating is needed inside. */}
-      <Dialog
-        open={!!editTarget}
-        onOpenChange={(o) => !o && setEditTarget(null)}
-      >
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>改约</DialogTitle>
-            <DialogDescription>
-              调整预约时段、客户或备注。设备为预约身份,不可变更(如需换设备请取消后重建)。
-            </DialogDescription>
-          </DialogHeader>
-          {editTarget && (
-            <div className="space-y-4">
-              <Field label="设备(不可修改)">
-                <Input
-                  value={
-                    deviceMap.get(editTarget.device_id ?? "") ??
-                    (editTarget.device_id ?? "—")
-                  }
-                  disabled
-                />
-              </Field>
-              <Field label="客户">
-                <Select value={editCustomer} onValueChange={setEditCustomer}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="选择客户(可选)" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value={NONE}>不指定(散客)</SelectItem>
-                    {(profiles ?? []).map((p) => (
-                      <SelectItem key={p.customer_id} value={p.customer_id}>
-                        {p.customer.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </Field>
-              <Field label="预约开始时间 *">
-                <Input
-                  type="datetime-local"
-                  value={editStart}
-                  onChange={(e) => setEditStart(e.target.value)}
-                />
-              </Field>
-              <Field label="预约结束时间 *">
-                <Input
-                  type="datetime-local"
-                  value={editEnd}
-                  onChange={(e) => setEditEnd(e.target.value)}
-                />
-              </Field>
-              <Field label="备注">
-                <Input
-                  value={editNotes}
-                  onChange={(e) => setEditNotes(e.target.value)}
-                />
-              </Field>
-            </div>
-          )}
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setEditTarget(null)}>
-              取消
-            </Button>
-            <Button onClick={submitEdit} disabled={updateMut.isPending}>
-              保存
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* ---------------- cancel confirm dialog ---------------- */}
-      <Dialog
-        open={!!cancelTarget}
-        onOpenChange={(o) => !o && setCancelTarget(null)}
-      >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>确认取消预约</DialogTitle>
-            <DialogDescription>
-              确定取消该预约?取消后预约状态变为「已取消」,不可在此恢复
-              (如需重新预约请新建)。
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setCancelTarget(null)}>
-              返回
-            </Button>
-            <Button
-              variant="destructive"
-              onClick={submitCancel}
-              disabled={cancelMut.isPending}
-            >
-              <XCircle className="mr-2 h-4 w-4" /> 取消预约
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* ---------------- end-service dialog (device-poweron 切片 03) ------------- */}
-      {/* Owner only (``:delete``). The textarea is optional — a blank submit
-          ends the booking with no service note. ``submitEnd`` accepts raw JSON
-          (parsed into ``feedback``) or free text (wrapped as
-          ``{ note: <text> }`` so the operator's typed note is never silently
-          dropped on a JSON.parse failure). This fallback is a slice-03 UX
-          decision (spec D10 only requires an optional free-form ``feedback``
-          dict); it diverges from customers-page's "标签 JSON" textarea, which
-          rejects non-JSON. */}
-      <Dialog
-        open={!!endTarget}
-        onOpenChange={(o) => {
-          if (!o) {
-            setEndTarget(null);
-            setEndFeedback("");
-          }
-        }}
-      >
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>结束服务</DialogTitle>
-            <DialogDescription>
-              标记该预约为「已完成」并记录结束时间。可填写服务反馈(JSON 或纯文本,
-              可选)。结束操作不可撤销。
-            </DialogDescription>
-          </DialogHeader>
-          <Field
-            label="服务反馈(可选)"
-            hint='如 {"rating": 5, "note": "满意"} 或纯文本,留空则不记录'
-          >
-            <textarea
-              value={endFeedback}
-              onChange={(e) => setEndFeedback(e.target.value)}
-              placeholder='{"rating": 5, "note": "客户反馈"}'
-              className="flex w-full rounded-md border border-input bg-transparent px-3 py-2 font-mono text-xs shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-              rows={3}
-            />
-          </Field>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => {
-                setEndTarget(null);
-                setEndFeedback("");
-              }}
-            >
-              取消
-            </Button>
-            <Button onClick={submitEnd} disabled={endMut.isPending}>
-              <Square className="mr-2 h-4 w-4" /> 结束服务
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* ---------------- no-show confirm dialog (device-poweron 切片 03) --------- */}
-      {/* Owner only (``:delete``). Pure status flip — no body, no extra input.
-          Mirrors the cancel-confirm dialog shape. */}
-      <Dialog
-        open={!!noShowTarget}
-        onOpenChange={(o) => !o && setNoShowTarget(null)}
-      >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>确认标记爽约</DialogTitle>
-            <DialogDescription>
-              确定将该预约标记为「爽约」?爽约记录会影响排期释放与统计,操作不可撤销。
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setNoShowTarget(null)}>
-              返回
-            </Button>
-            <Button
-              variant="destructive"
-              onClick={submitNoShow}
-              disabled={noShowMut.isPending}
-            >
-              <UserX className="mr-2 h-4 w-4" /> 标记爽约
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {/* ---------------- shared Dialogs (platform-cross-tenant-write 切片 04 抽出) ---------------- */}
+      {/* Store path: tenantId undefined → backend uses user.tenant_id; profiles
+          feed the customer dropdown. */}
+      <BookingCreateDialog
+        open={createOpen}
+        devices={(devices ?? []) as Device[]}
+        profiles={profiles ?? []}
+        tenantId={undefined}
+        isPending={createMut.isPending}
+        onClose={() => setCreateOpen(false)}
+        onSubmit={handleCreate}
+      />
+      <BookingEditDialog
+        target={editTarget}
+        deviceName={
+          editTarget
+            ? deviceNameOf(editTarget.device_id, deviceMap)
+            : ""
+        }
+        profiles={profiles ?? []}
+        tenantId={undefined}
+        isPending={updateMut.isPending}
+        onClose={() => setEditTarget(null)}
+        onSubmit={handleEdit}
+      />
+      <BookingCancelDialog
+        target={cancelTarget}
+        isPending={cancelMut.isPending}
+        onClose={() => setCancelTarget(null)}
+        onSubmit={handleCancel}
+      />
+      <BookingEndDialog
+        target={endTarget}
+        isPending={endMut.isPending}
+        onClose={() => setEndTarget(null)}
+        onSubmit={handleEnd}
+      />
+      <BookingNoShowDialog
+        target={noShowTarget}
+        isPending={noShowMut.isPending}
+        onClose={() => setNoShowTarget(null)}
+        onSubmit={handleNoShow}
+      />
     </div>
   );
 }
