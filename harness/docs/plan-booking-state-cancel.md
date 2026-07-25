@@ -2,7 +2,7 @@
 
 > **id**: booking-state-cancel
 > **状态**: draft v1(EP2 回环产出,待 EP3 实施)
-> **优先级**: 67(新登记,「工程化」area,巡检候选 2 收尾债)
+> **优先级**: 68(原 67,2026-07-25 Session 144 因新任务 platform-cross-tenant-write 优先级更高而让位到 68,「工程化」area,巡检候选 2 收尾债)
 > **创建日期**: 2026-07-25
 > **来源**: [codebase-health-log.md](./codebase-health-log.md) 2026-07-25 巡检 · 候选 2(Strong,后端 deep module 收尾债)
 
