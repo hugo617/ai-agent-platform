@@ -1652,7 +1652,7 @@
       "area": "业务实体",
       "title": "设备型号目录管理页(super_admin 后台前端页)",
       "user_visible_behavior": "超级管理员能在后台界面维护设备型号目录:进入「设备型号」管理页,新增/编辑/软删型号(品牌、规格 JSON、供应商、单位成本),查看完整目录列表。该页与门店端「设备入库」共享同一型号下拉数据源,但只有 super_admin 可见可写",
-      "status": "in_progress",
+      "status": "passing",
       "plan": "harness/docs/plan-device-models-admin-ui.md",
       "verification": [
         "前端:新增 /device-models 路由 + DevicesModelsAdminPage 页面,RequireSuperAdmin 路由守卫(非 super_admin 重定向/403);列表(名称/品牌/规格摘要/单位成本/操作)+ 新增 Dialog + 编辑 Dialog + 软删确认 Dialog",
@@ -1661,8 +1661,13 @@
         "pytest:无新增后端测试(device-models 后端 CRUD 已被 device-models-crud 覆盖),仅回归确认现有 test_device_models_api.py 全绿",
         "cd frontend && npm run build 通过 + npx oxlint src/ 0 warnings + (若有组件测) vitest 通过"
       ],
-      "evidence": [],
-      "notes": "设备功能系列补遗(61 device-models-crud 的范围漂移修复)。**缺口溯源**:feature 61 的 verification 字段明确写了「前端:后台型号管理页(路由 /device-models,RequireSuperAdmin 守卫)」,但 evidence 最后一条范围决策把它剥离给了 62;62(devices-crud-ui)实际只做了门店「设备入库」下拉,从未交付 super_admin 管理页。导致缺口:device_models 表无任何 seed,无任何 UI 可建型号,门店入库下拉永远为空,链路从源头断掉。**本 feature 仅做前端**(后端 CRUD 全齐,2026-07-25 Session 已实测端到端:super_admin token 建型号 → 门店 owner 建设备 → 列表回读全通)。**不做的事**(避免越界):不补 seed 脚本(种子数据是 dev 体验问题,非产品能力,留给用户按需 curl 或独立 seed feature);不进权限矩阵 UI(device_models 不走 casbin,对齐 groups 平台级资源范式);不重构现有 devices-page 的型号下拉(已正常工作)。依赖:[device-models-crud](passing)。**EP2 回环已完成(2026-07-25 Session 140)**:plan 文档 `harness/docs/plan-device-models-admin-ui.md` 落地,含 PRD 主体 + 2 个实施切片(切片 01 前端地基 types/endpoints/hooks,切片 02 UI 层 page/route/nav + 新组件 KeySpecRows + vitest)。grill 决策:specs 用结构化 key-value 行编辑器(全量版多类型 string/number/boolean)、unit_cost 货币格式、brand datalist 联想、列表加名称/品牌搜索框、nav 挂平台分组 platformOnly。status `not_started → in_progress`(当前 frontier,依赖 device-models-crud 已 passing)。下一步:EP3 切片 01(`/implement`)。",
+      "evidence": [
+        "切片 01(前端地基 types+endpoints+hooks)PR #119 —— DeviceModelRead/Create/Update 类型 + create/update/deleteDeviceModel endpoints + useCreate/Update/DeleteDeviceModel hooks;PR #120 Standards 修正(覆盖 #119):fetchDeviceModels 改 union 单函数 `DeviceModelPublic[] | DeviceModelRead[]`,删独立 admin 读函数/hook(对齐 fetchDevices 范式,修类型不诚实 + 缓存碰撞)。commit 1010fd6 + 52f53e5",
+        "切片 02(UI 层 page+route+nav+KeySpecRows)PR #122 —— 新 components/ui/key-spec-rows.tsx(structural key-value 行编辑器 + serialize/deserialize 纯函数)+ key-spec-rows.test.tsx(vitest 7 用例)+ pages/device-models-page.tsx(参照 groups-page 骨架,列表+搜索+3 Dialog+brand datalist)+ App.tsx /device-models Route 挂 RequireSuperAdmin + nav-items.ts 平台段 Cpu 图标 platformOnly。实施期决策:specs 用平行 useState 对齐 groups-page selectedTenantIds 范式(plan §4.5 原写 Controller,留痕)。commit dd7c1b0",
+        "自动化验证全绿:tsc --noEmit 0 错 / oxlint src/ 0 warnings / vitest 22 passed(含新增 7 KeySpecRows)/ npm run build 通过(device-models-page chunk 9.01 kB)/ pytest tests/test_device_models_api.py 22 passed 回归 / PR #122 CI 4 检查全绿(Backend pytest+ruff / E2E Playwright / Frontend typecheck+build+lint / Migrations alembic)",
+        "手测项(plan 切片 02 AC 第 10 条)留真实环境:super_admin 登录 → 侧边栏见「设备型号」→ 列表/新增(填 specs 三类型)/编辑(round-trip 类型保持)/软删 + 普通租户角色无入口 + 直接访问 /device-models 重定向。本环境无浏览器自动化,对齐 devices-page/bookings-page 现状(均无自动化手测,靠 build+单测+CI 兜底)"
+      ],
+      "notes": "设备功能系列补遗(61 device-models-crud 的范围漂移修复)。**缺口溯源**:feature 61 的 verification 字段明确写了「前端:后台型号管理页(路由 /device-models,RequireSuperAdmin 守卫)」,但 evidence 最后一条范围决策把它剥离给了 62;62(devices-crud-ui)实际只做了门店「设备入库」下拉,从未交付 super_admin 管理页。导致缺口:device_models 表无任何 seed,无任何 UI 可建型号,门店入库下拉永远为空,链路从源头断掉。**本 feature 仅做前端**(后端 CRUD 全齐,2026-07-25 Session 已实测端到端:super_admin token 建型号 → 门店 owner 建设备 → 列表回读全通)。**不做的事**(避免越界):不补 seed 脚本(种子数据是 dev 体验问题,非产品能力,留给用户按需 curl 或独立 seed feature);不进权限矩阵 UI(device_models 不走 casbin,对齐 groups 平台级资源范式);不重构现有 devices-page 的型号下拉(已正常工作)。依赖:[device-models-crud](passing)。**EP2 回环已完成(2026-07-25 Session 140)**:plan 文档 `harness/docs/plan-device-models-admin-ui.md` 落地,含 PRD 主体 + 2 个实施切片(切片 01 前端地基 types/endpoints/hooks,切片 02 UI 层 page/route/nav + 新组件 KeySpecRows + vitest)。grill 决策:specs 用结构化 key-value 行编辑器(全量版多类型 string/number/boolean)、unit_cost 货币格式、brand datalist 联想、列表加名称/品牌搜索框、nav 挂平台分组 platformOnly。**EP3 全切片完成(2026-07-25 Session 142)**:切片 01 PR #119+#120(union 修正)、切片 02 PR #122(末切片,CI 4/4 绿,合并 dd7c1b0)。status `in_progress → passing`(设备功能系列补遗收官:61 device-models-crud → 62 devices-crud-ui → 63 device-booking → 64 device-poweron → 66 device-models-admin-ui 全链路 passing)。",
       "depends_on": "device-models-crud"
     }
   ]
