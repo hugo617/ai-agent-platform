@@ -393,7 +393,7 @@ bind/unbind 是 device 的 customer 子资源绑定(状态机外的写动作),�
   - [x] `./init.sh` 全绿 — 737 passed
 - **验证命令**:`./init.sh`
 
-### 切片 04 — 前端 HqView target tenant 下拉 + 写按钮 + 复用 Dialog
+### 切片 04 — 前端 HqView target tenant 下拉 + 写按钮 + 复用 Dialog ✅ PR 待提交(分支 feat/platform-cross-tenant-write-slice02,commit dc880b3,2026-07-25)
 
 - **What it delivers**:devices-page 和 bookings/hq-view 两个 HqView 加「目标门店」下拉(拉 `fetchAllTenants`)+ 行内写动作(devices:编辑/删除;bookings:DropdownMenu 三点菜单按 status 显隐取消/开机/结束/爽约);StoreView 的 Dialog 抽出为共享组件(参数化 `tenantId`),HqView 复用。API 类型 + endpoints + hooks 同步加 `tenant_id` 参数。
 - **Blocked by**: 切片 01+02(只需后端 API 契约稳定:devices/bookings 的 schema 加了 `tenant_id` + CRUD 写动作就位。**切片 03 的状态机 API(start/end/no_show)早已存在,前端调用路径不变**,故 04 不必等 03 —— 04 可与 03 并行,缩短关键路径)
@@ -407,18 +407,18 @@ bind/unbind 是 device 的 customer 子资源绑定(状态机外的写动作),�
   - `frontend/src/pages/bookings/shared-dialog.tsx`(**新文件**,~100 行,从 store-view 抽出)
   - 前端测试:`frontend/src/pages/bookings/__tests__/hq-view.test.tsx`(+平台角色写控件渲染 + DropdownMenu 显隐)+ `store-view.test.tsx` 原断言保留(回归护栏)
 - **Acceptance criteria**:
-  - [ ] `DeviceCreate` / `BookingCreate` / `Update` TS 类型有 optional `tenant_id?: string`
-  - [ ] 写动作 mut(`createDevice`/`updateDevice`/`deleteDevice`/`bindDeviceCustomer`/`unbindDeviceCustomer` + `createBooking`/`updateBooking`/`cancelBooking`/`startBooking`/`endBooking`/`noShowBooking`)payload 透传 `tenant_id`
-  - [ ] HqView(devices + bookings)顶部渲染「目标门店」下拉,选项来自 `fetchAllTenants`
-  - [ ] 选定 target 后,行内出现写动作控件(devices:编辑/删除;bookings:DropdownMenu)
-  - [ ] bookings HqView DropdownMenu 按 status 显隐:pending→取消/开机;in_service→结束/爽约;其他→无
-  - [ ] 点击写动作打开共享 Dialog(从 store-view 抽出),提交时 payload 带 `tenant_id = selectedTarget`
-  - [ ] **HqView 切 target 后 React Query cache key 含 target**(避免切换后显示错店数据,见 §9 风险表);或调 `invalidateQueries` 强刷
-  - [ ] **StoreView 现有 vitest 测试(`store-view.test.tsx`)全绿**(门店角色路径不带 tenant_id,Dialog 共享组件 tenantId 默认 undefined → 后端用 user.tenant_id;用现有测试当回归护栏,而非模糊的「行为零变化」)
-  - [ ] 平台角色未选 target 时写按钮 disabled / 隐藏
-  - [ ] vitest 全绿(含 hq-view.test.tsx 新断言 + store-view.test.tsx 回归)
-  - [ ] `cd frontend && npm run build` 通过
-- **验证命令**:`cd frontend && npm test && npm run build`
+  - [x] `DeviceCreate` / `BookingCreate` / `Update` TS 类型有 optional `tenant_id?: string` — `frontend/src/api/types.ts`(DeviceCreate/Update + BookingCreate/Update + DeviceBindRequest 均加 optional tenant_id)
+  - [x] 写动作 mut(`createDevice`/`updateDevice`/`deleteDevice`/`bindDeviceCustomer`/`unbindDeviceCustomer` + `createBooking`/`updateBooking`/`cancelBooking`/`startBooking`/`endBooking`/`noShowBooking`)payload 透传 `tenant_id` — `frontend/src/api/endpoints.ts`(create/update/bind 走 body;delete/unbind/cancel/start/end/no_show 走 ?tenant_id= query,plan §4.5.4a 补丁 1+5)+ `queries.ts`(6 个 id-only hook 加 tenantId 闭包参数)
+  - [x] HqView(devices + bookings)顶部渲染「目标门店」下拉,选项来自 `fetchAllTenants` — `devices-page.tsx` HqView + `bookings/hq-view.tsx` 都用 `useAllTenants()`
+  - [x] 选定 target 后,行内出现写动作控件(devices:编辑/删除/绑定;bookings:DropdownMenu)— `canWrite = !!targetTenantId` 守卫操作列 + 创建按钮
+  - [x] bookings HqView DropdownMenu 按 status 显隐:pending→取消/开机;in_service→结束/爽约;其他→无 — 复用 `BookingRowMenu`(MUTABLE_STATUS + ACTIONABLE_STATUS);`hq-view.test.tsx` AC5 in_service + 终态两用例覆盖
+  - [x] 点击写动作打开共享 Dialog(从 store-view 抽出),提交时 payload 带 `tenant_id = selectedTarget` — `bookings/shared-dialog.tsx`(新文件,5 Dialog + BookingRowMenu)+ `devices-page.tsx` 内抽 4 个 Device Dialog 模块级组件
+  - [x] **HqView 切 target 后 React Query cache key 含 target**(避免切换后显示错店数据,见 §9 风险表);或调 `invalidateQueries` 强刷 — `onTargetChange` 调 `qc.invalidateQueries({ queryKey: qk.bookings / qk.devices })`(列表数据其实不变,作保险)
+  - [x] **StoreView 现有 vitest 测试(`store-view.test.tsx`)全绿**(门店角色路径不带 tenant_id,Dialog 共享组件 tenantId 默认 undefined → 后端用 user.tenant_id;用现有测试当回归护栏,而非模糊的「行为零变化」)— `store-view.test.tsx` 6/6 全绿(回归护栏,关键证据:闭包模式让 store caller 调用形态零变化 → 测试断言零修改)
+  - [x] 平台角色未选 target 时写按钮 disabled / 隐藏 — `canWrite = !!targetTenantId` 守卫;`hq-view.test.tsx` AC9 用例断言"未选 target 时无操作列 + 无创建预约按钮 + 无菜单项"
+  - [x] vitest 全绿(含 hq-view.test.tsx 新断言 + store-view.test.tsx 回归)— 27/27(8 hq-view 含 5 新写控件 + 6 store-view 回归 + 6 my-bookings + 7 key-spec-rows)
+  - [x] `cd frontend && npm run build` 通过 — tsc -b + vite build 全绿(bookings-page 22.55 kB / devices-page 15.06 kB,oxlint 0 warnings)
+- **验证命令**:`cd frontend && npm test && npm run build` ✅ 全绿
 
 ### 切片 05 — 端到端联调 + 旧断言改写 + 收尾
 
