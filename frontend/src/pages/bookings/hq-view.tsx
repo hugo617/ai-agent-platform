@@ -109,9 +109,6 @@ export function HqView() {
   // §4.5.5 前端 says "复用 StoreView Dialog" — reusing the cross-store feed
   // + filtering client-side is the natural fit, no new endpoint needed).
   const { data: devices } = useDevices();
-  const targetDevices = ((devices ?? []) as DeviceHqRead[]).filter(
-    (d) => d.tenant_id === targetTenantId && d.status === "active",
-  );
 
   // useBookings() returns a union (Booking[] | BookingHqRead[]). The backend
   // guarantees BookingHqRead[] for HQ roles (the same guard that routes us
@@ -126,6 +123,22 @@ export function HqView() {
   // controls rendered (AC9). The picker is sourced from useAllTenants
   // (GET /tenants/all, super_admin + hq_staff authorised; plan §4.5.5 前端).
   const [targetTenantId, setTargetTenantId] = useState<string>("");
+
+  // HQ viewers get DeviceHqRead[] from useDevices (the same endpoint branches
+  // on platform_role). We filter to the selected target so the create dialog's
+  // device picker only offers that store's active devices — the dialog would
+  // otherwise show an empty dropdown (no target-scoped feed exists; plan
+  // §4.5.5 前端 says "复用 StoreView Dialog" — reusing the cross-store feed
+  // + filtering client-side is the natural fit, no new endpoint needed).
+  //
+  // MUST come after the ``const [targetTenantId, ...]`` declaration above: the
+  // .filter callback reads targetTenantId, and JS ``const`` does not hoist its
+  // initializer — referencing it earlier throws a TDZ ReferenceError that
+  // crashes HqView (white screen on /bookings for HQ roles). Regression test:
+  // "useDevices 返回非空数组时不抛 TDZ ReferenceError" in hq-view.test.tsx.
+  const targetDevices = ((devices ?? []) as DeviceHqRead[]).filter(
+    (d) => d.tenant_id === targetTenantId && d.status === "active",
+  );
 
   // Switching target invalidates the bookings query (AC7). The cross-tenant
   // list itself is unaffected (its data is the same regardless of target);
