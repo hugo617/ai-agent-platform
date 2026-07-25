@@ -13,31 +13,6 @@
   },
   "features": [
     {
-      "id": "platform-cross-tenant-write",
-      "priority": 67,
-      "area": "权限",
-      "title": "总部平台角色(super_admin + hq_staff)解锁设备/预约跨店全写权限",
-      "user_visible_behavior": "平台角色(super_admin + hq_staff)在 devices + bookings 两个模块的权限从「跨店只读」升格为「跨店全权运营」。现状:router 层 super_admin 已全 bypass,但 service body 有大量 owner-only/customer-only/hq_staff→403 硬分支,平台角色进了这些分支会被一并拒(无 tenant_id / 不是 owner / 不是 customer)。本任务把两个平台角色解锁写:devices 的 POST/PUT/DELETE + bookings 的 POST 创建/PUT 更新/POST cancel/POST start/POST end/POST no_show。鉴权机制:body 显式 tenant_id 字段(平台角色必填指定目标店,门店角色禁带防伪造→400 BizError),service 用 effective_tenant_id = payload.tenant_id or user.tenant_id;引入 is_platform_writer helper(边界={super_admin,hq_staff},与 is_cross_tenant_viewer 同);状态机 4 守卫(start/end/no_show/cancel)加 platform_writer 分支 bypass require,平台角色=增强版 store principal(start 可开 walk-in);DataScope/Role.data_scope/状态机 _TRANSITIONS 表零改动。前端 HqView 加 target tenant 下拉 + 行内写动作 DropdownMenu + 复用 StoreView Dialog(参数化 tenant_id)。向后兼容:门店角色(owner/admin/member/customer)不带 tenant_id 时行为零变化。",
-      "status": "in_progress",
-      "verification": [
-        "后端 app/services/permission_service.py:新增 PLATFORM_WRITER_ROLES=(super_admin,hq_staff) + is_platform_writer() helper(与 is_cross_tenant_viewer 同边界);契约测试 is_platform_writer(super_admin/hq_staff)→True,其他→False",
-        "后端 app/schemas/{device,booking}.py:DeviceCreate/Update + BookingCreate/Update 加 optional tenant_id: str | None = None 字段(向后兼容,门店角色不带=行为不变)",
-        "后端 app/services/{device,booking}_service.py:所有写动作(devices create/update/delete/bind/unbind + bookings create/update/cancel/start/end/no_show 共 11 个)用 _resolve_target_tenant(user.tenant_id, payload.tenant_id, platform_role) 解析 effective_tenant_id;平台角色带 tenant_id→用之,不带→400 BizError;门店角色带→400 BizError(防伪造),不带→user.tenant_id",
-        "后端 app/services/booking_service.py:start/end/no_show/cancel 4 个状态机动作加 elif is_platform_writer 分支:平台角色 skip require(bookings,delete/update),用 effective_tenant_id 取 booking;start 平台角色=增强 store principal(可开 walk-in,不进 customer ownership 分支);状态机 _TRANSITIONS 表/ACTIONS/transition() 函数体零改动(D3-4)",
-        "后端 app/services/device_service.py:create/update/delete/bind/unbind 加 elif is_platform_writer 分支:平台角色 skip require(devices,*),业务守卫(_assert_model_live/_assert_serial_unique/_assert_customer_in_tenant)用 effective_tenant_id;customer_id 沿用现有字段(平台角色手填或留空,customers 模块零改动)",
-        "测试 tests/test_devices_api.py:新增章节「平台角色跨店写」—— super_admin/hq_staff × POST/PUT/DELETE 全绿(6 用例)+ 平台角色不带 tenant_id→400 + 门店角色带 tenant_id→400(防伪造)+ A-F 门店章节原样绿(D6-3 不动现有章节)",
-        "测试 tests/test_bookings_api.py:新增章节「平台角色 CRUD + 状态机跨店写」—— super_admin/hq_staff × create/update/cancel/start/end/no_show 全绿(12 用例)+ walk-in start 边界(平台角色开 walk-in→200)+ 状态机守卫(start 已 done→400 InvalidTransition,end 非 in_service→400)+ 平台/门店 tenant_id 守卫 + A-F+E1-E3 原样绿",
-        "测试 tests/test_hq_platform_role.py:旧断言改写 —— hq_staff POST /devices/ {tenant_id}→201(新)/ hq_staff POST /bookings/ {tenant_id}→201(新);保留 hq_staff POST /customers/profiles/→403(customers 不在范围)+ hq_staff POST /groups/→403(require_super_admin 不动)",
-        "DataScope/Role.data_scope/DEFAULT_*_PERMS/casbin policy/require_permission caller 列表零改动(D4);数据库 schema/迁移链零改动(tenant_id 是请求字段非新列);router URL 前缀/OpenAPI 路径契约零改动(tenant_id 走 body)",
-        "前端 frontend/src/api/types.ts:DeviceCreate/BookingCreate/Update 加 tenant_id?: string;frontend/src/pages/{devices-page.tsx,bookings/hq-view.tsx}:HqView 加 target tenant 下拉(拉 fetchAllTenants)+ 行内写动作(devices 编辑/删除;bookings DropdownMenu 按 status 显隐取消/开机/结束/爽约)+ 复用 StoreView Dialog(抽到 bookings/shared-dialog.tsx 共享组件,参数化 tenantId);StoreView 行为零变化(门店角色不带 tenant_id)",
-        "验证:./init.sh 全绿(ruff + pytest 全量含新章节)+ cd frontend && npm test && npm run build 全绿"
-      ],
-      "notes": "设备/预约功能系列(61-66)收官后的平台角色权限升格需求。**现状**:平台角色(super_admin + hq_staff)在 devices+bookings 是「跨店只读」(CROSS_TENANT_VIEWER_ROLES 走 is_cross_tenant_viewer + permission_service.check 的 read short-circuit);router 层 super_admin 已全 bypass,但 service body 有 owner-only/customer-only/hq_staff→403 硬分支,平台角色进了这些分支会被一并拒(无 tenant_id/不是 owner/不是 customer)。**EP2 回环已完成(2026-07-25 Session 144)**:plan 文档 harness/docs/plan-platform-cross-tenant-write.md 落地,含 PRD 主体 + grill 6 决策(D1 body 显式 tenant_id 平台必填门店禁带→400 / D2 customer_id 沿用现有字段+手填/留空 customers 零改动 / D3 三分支 elif+增强 store principal+bypass require+状态机不动 / D4 is_platform_writer 边界={super_admin,hq_staff} DataScope 零改动 / D5 HqView target 下拉+行内 DropdownMenu+复用 StoreView Dialog / D6 全矩阵+边界 22-25 用例+门店伪造拒+旧断言改写+不动现有章节)+ 5 个实施切片(01 devices 后端 frontier / 02 bookings CRUD 后端 / 03 bookings 状态机后端 / 04 前端 / 05 联调收尾,线性依赖图无环)。plan 自检 4 项全过(无环/51 条 AC/首片可开工/决策无悬空)。**硬约束**:范围限定 devices+bookings(不动 customers/groups/device_models)/ 平台角色含 super_admin+hq_staff / 写操作全(devices POST/PUT/DELETE + bookings POST/PUT/cancel/start/end/no_show)/ 向后兼容(门店角色不带 tenant_id 行为不变)/ 鉴权零回归(门店角色不能伪造 tenant_id 跨店写)。**Out of Scope**:不动 customers 模块 / 不动状态机 _TRANSITIONS 表 / 不动权限基础设施(DEFAULT_*_PERMS/Role.data_scope/casbin/require_permission caller)/ 不动 router URL 前缀 / 不引临时 owner / 不重写 test 现有 A-F 章节 / 不做 customer_id 跨店选择器 UX / 不抽 booking-action-order-unify(cancel 顺序对齐债留独立 feature)。**上下文延续**:之前「巡检候选 2(booking-state-cancel 并入状态机)」推迟,排在本任务之后(已让位 priority 67→68)。",
-      "plan": "harness/docs/plan-platform-cross-tenant-write.md",
-      "depends_on": "device-poweron",
-      "evidence": []
-    },
-    {
       "id": "booking-state-cancel",
       "priority": 68,
       "area": "工程化",
@@ -56,6 +31,13 @@
       "plan": "harness/docs/plan-booking-state-cancel.md",
       "depends_on": "device-poweron",
       "evidence": []
+    },
+    {
+      "id": "platform-cross-tenant-write",
+      "priority": 67,
+      "area": "权限",
+      "title": "总部平台角色(super_admin + hq_staff)解锁设备/预约跨店全写权限",
+      "status": "passing"
     },
     {
       "id": "device-models-admin-ui",
@@ -86,17 +68,10 @@
       "status": "passing"
     },
     {
-      "id": "devices-crud-ui",
-      "priority": 62,
-      "area": "业务实体",
-      "title": "门店设备实例 CRUD + 绑定客户(租户隔离)",
-      "status": "passing"
-    },
-    {
       "id": "_milestone_archived",
       "priority": 0,
       "area": "里程碑",
-      "title": "[已归档 61 条 passing,见 archive/features-passing-archive.json]",
+      "title": "[已归档 62 条 passing,见 archive/features-passing-archive.json]",
       "status": "passing"
     }
   ],
