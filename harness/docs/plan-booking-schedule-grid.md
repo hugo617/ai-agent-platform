@@ -192,7 +192,7 @@
   - [x] `alembic upgrade head && alembic check` 无 drift
 - **验证命令**:`./init.sh && alembic upgrade head && alembic check`
 
-### 切片 02 — 后端:按天查询端点 + 复合索引 ✅
+### 切片 02 — 后端:按天查询端点 + 复合索引 ✅ PR #131
 
 - **What it delivers**:`GET /bookings/schedule-grid?tenant_id=&date=` 返回该店当天全设备 `BookingHqRead[]`;新建 `(tenant_id, scheduled_start_at)` 复合索引。
 - **Blocked by**: 切片 01(共用 booking 基础设施,虽然逻辑可并行但 EP3 串行实施)
@@ -214,30 +214,32 @@
   - [x] 空店空列表返回 `[]`(R-7)
   - [x] `./init.sh` 全绿
 
-### 切片 03 — 前端:API 层 + 配置 Dialog + 设置入口
+### 切片 03 — 前端:API 层 + 配置 Dialog + 设置入口 ✅ PR #130
 
 - **What it delivers**:前端能读写两级配置;网格上方的「⚙ 设置」Dialog 可用。
 - **Blocked by**: 切片 01(配置 API 契约)
 - **文件清单**:
-  - `frontend/src/api/types.ts`(+`BookingConfig`/`BookingConfigUpsert`)
-  - `frontend/src/api/endpoints.ts`(+6 endpoints)
-  - `frontend/src/hooks/queries.ts`(+5 hooks + 新增 `BOOKING_CONFIG_KEYS` invalidate 集合 + `qk.bookingConfig` query key;**不**塞进 `BOOKING_WRITE_KEYS` —— P4:配置改完应失效 config 查询缓存,不是 booking 写缓存,命名上避免误导)
-  - `frontend/src/pages/bookings/config-dialog.tsx`(新,~150 行)
-  - `frontend/src/pages/bookings/__tests__/config-dialog.test.tsx`(新,~5 用例)
+  - `frontend/src/api/types.ts`(+`BookingConfig`/`BookingConfigUpsert`;实施时 +`BookingConfigEffective` —— 后端 effective 路由返回带 `source` 的不同形状,合理超出)
+  - `frontend/src/api/endpoints.ts`(+5 endpoints;文件清单原写"+6"是笔误 —— AC#2 列 5 个 hook,后端恰好 5 路由,已对齐)
+  - `frontend/src/hooks/queries.ts`(+5 hooks + 新增 `BOOKING_CONFIG_WRITE_KEYS` invalidate 集合 + `qk.bookingConfig` query key;**不**塞进 `BOOKING_WRITE_KEYS` —— P4:配置改完应失效 config 查询缓存,不是 booking 写缓存,命名上避免误导。命名对齐 `BOOKING_WRITE_KEYS` 用 `BOOKING_CONFIG_WRITE_KEYS` 而非 `BOOKING_CONFIG_KEYS`,标明它是写失效集)
+  - `frontend/src/pages/bookings/config-dialog.tsx`(新,~280 行)
+  - `frontend/src/pages/bookings/__tests__/config-dialog.test.tsx`(新,5 用例)
 - **Acceptance criteria**:
-  - [ ] `BookingConfig` 类型含 id/tenant_id/default_duration_minutes/window_start/window_end
-  - [ ] 5 hooks:`useBookingConfigEffective(tenantId)` / `usePlatformBookingConfig()` / `useUpdatePlatformBookingConfig()` / `useTenantBookingConfig(tenantId)` / `useUpdateTenantBookingConfig(tenantId)`
-  - [ ] 配置 Dialog:super_admin 看两栏(平台默认 + 当前 target 店覆盖);owner/admin 看一栏(当前店覆盖)
-  - [ ] duration UI:常用预设按钮(45/60/90)+ 自定义数字输入(D3)
-  - [ ] window UI:两个 `<input type="time">`
-  - [ ] 提交调对应 hook,成功后 `invalidateQueries({ queryKey: qk.bookingConfig })` + toast
-  - [ ] vitest ~5 用例:渲染 / super_admin 两栏 / owner 一栏 / duration 切换 / 提交调 mock
-  - [ ] `cd frontend && npm test && npm run build` 全绿 + oxlint 0
+  - [x] `BookingConfig` 类型含 id/tenant_id/default_duration_minutes/window_start/window_end
+  - [x] 5 hooks:`useBookingConfigEffective(tenantId)` / `usePlatformBookingConfig()` / `useUpdatePlatformBookingConfig()` / `useTenantBookingConfig(tenantId)` / `useUpdateTenantBookingConfig(tenantId)`
+  - [x] 配置 Dialog:super_admin 看两栏(平台默认 + 当前 target 店覆盖);owner/admin 看一栏(当前店覆盖)
+  - [x] duration UI:常用预设按钮(45/60/90)+ 自定义数字输入(D3)
+  - [x] window UI:两个 `<input type="time">`
+  - [x] 提交调对应 hook,成功后 `invalidateQueries({ queryKey: qk.bookingConfig })` + toast
+    - **注**:`invalidateQueries` 已在两个 update hook 内经 `useApiMutation(..., BOOKING_CONFIG_WRITE_KEYS)` 满足;**toast 延后到切片 04b** —— Dialog 按本项目 shared-dialog.tsx 既有约定设计为纯展示体(onSubmit 回调由父控制 mutation+toast),本切片文件清单不含 view 编辑,toast wiring 归属 04b 接入 StoreView/HqView 时(与其他所有 Dialog 一致)
+  - [x] vitest ~5 用例:渲染 / super_admin 两栏 / owner 一栏 / duration 切换 / 提交调 mock
+  - [x] `cd frontend && npm test && npm run build` 全绿 + oxlint 0
+    - 证据:npm test 33/33(含新加 5)、npm run build 成功、oxlint 0 warning 0 error
 
 ### 切片 04a — 前端:ScheduleGrid 网格组件(核心)
 
 - **What it delivers**:网格组件本身(~300 行),对齐 demo D0 形态。纯展示 + 点击回调,不含数据获取(由父组件传 props)。
-- **Blocked by**: 切片 03(需要 `BookingConfig` TS 类型契约 + `BOOKING_CONFIG_KEYS`;04a 的 `Props.config: BookingConfig` 依赖切片 03 的 types.ts 改动)。**修正(M2)**:v1 写"Blocked by 无"与"EP3 排在 03 后"自相矛盾,根因是 04a 实际需要 03 的类型契约,故改为显式依赖 03。
+- **Blocked by**: 切片 03(需要 `BookingConfig` TS 类型契约 + `BOOKING_CONFIG_WRITE_KEYS`;04a 的 `Props.config: BookingConfig` 依赖切片 03 的 types.ts 改动)。**修正(M2)**:v1 写"Blocked by 无"与"EP3 排在 03 后"自相矛盾,根因是 04a 实际需要 03 的类型契约,故改为显式依赖 03。
 - **文件清单**:
   - `frontend/src/pages/bookings/schedule-grid.tsx`(新,~300 行)
   - `frontend/src/pages/bookings/__tests__/schedule-grid.test.tsx`(新,~10 用例)
