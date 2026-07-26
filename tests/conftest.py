@@ -146,6 +146,7 @@ async def test_env() -> AsyncIterator[_TestEnv]:
         agent_specialist,
         api_token,
         booking,
+        booking_config,
         customer,
         device,
         device_model,

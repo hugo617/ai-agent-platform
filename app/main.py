@@ -16,6 +16,7 @@ from app.api.v1 import (
     api_tokens,
     auth,
     billing,
+    booking_config,
     bookings,
     chat,
     conversations,
@@ -147,6 +148,7 @@ def create_app() -> FastAPI:
     app.include_router(device_models.router, prefix=prefix)
     app.include_router(devices.router, prefix=prefix)
     app.include_router(bookings.router, prefix=prefix)
+    app.include_router(booking_config.router, prefix=prefix)
     app.include_router(me.router, prefix=prefix)
     app.include_router(billing.router, prefix=prefix)
     app.include_router(dashboard.router, prefix=prefix)
