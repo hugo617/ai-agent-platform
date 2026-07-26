@@ -56,7 +56,7 @@ tz-aware datetimes across the two).
 # where ``list`` is still the builtin.
 from __future__ import annotations
 
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, time, timedelta
 from itertools import groupby
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -347,6 +347,85 @@ class BookingService:
         ):
             schedule[day] = [await self._to_read(b) for b in group]
         return schedule
+
+    async def get_tenant_schedule(
+        self,
+        actor_id: str,
+        tenant_id: str,
+        target_date: date,
+        target_tenant_id: str | None = None,
+        platform_role: str | None = None,
+    ) -> list[BookingHqRead]:
+        """One store's bookings for a single calendar day, as ``BookingHqRead``
+        — backs ``GET /bookings/schedule-grid`` (booking-schedule-grid slice 02).
+
+        The window is ``[target_date 00:00, target_date+1 00:00)`` in UTC. This
+        mirrors the sibling ``GET /devices/{id}/schedule`` convention
+        (``app/api/v1/devices.py``): all stored ``scheduled_start_at`` values
+        are tz-aware UTC, so a UTC day window is the natural half-open range
+        and keeps SQLite tests identical to real Postgres. (A non-UTC store's
+        wall-clock day boundary would shift, but the project has no per-tenant
+        timezone column today; resolving that is out of scope for this slice.)
+
+        Authorization (read-path analogue of the platform-cross-tenant-write
+        rule, plan §4.5 + slice 02 AC):
+
+        - **Cross-tenant viewer** (super_admin / hq_staff): MUST pass
+          ``target_tenant_id`` (the store to view); missing → ``BizError`` 400
+          (reuses ``resolve_target_tenant`` so the rule is uniform with the
+          write path). May view any store. The branch keys off the READ helper
+          ``is_cross_tenant_viewer`` (not the write helper
+          ``is_platform_writer``) so a future split — e.g. hq_staff read-only —
+          keeps this read path serving the wider viewer set.
+        - **Store role** (owner / admin / member): MUST NOT pass
+          ``target_tenant_id`` — a client-supplied value is a cross-tenant
+          forgery attempt → ``PermissionError`` 403 (NOT BizError 400: this is
+          the read-path anti-forgery surface, and 403 matches the project's
+          "store role reaches beyond its tenant" vocabulary). The effective
+          target is always ``tenant_id`` (the caller's own).
+
+        There is intentionally NO per-tenant ``permission_service.require``:
+        the schedule-grid is a ``bookings:read`` surface and the default perms
+        grant every tenant role ``bookings:read`` (member included), so a
+        require would always pass and add nothing. Cross-tenant isolation is
+        enforced structurally — the resolved target tenant is the ONLY tenant
+        the repo query touches.
+        """
+        if is_cross_tenant_viewer(platform_role):
+            # Cross-tenant viewer (super_admin / hq_staff): target must come
+            # from the query param. Reuses ``resolve_target_tenant`` so the
+            # "missing target → 400" rule is the same as on the write path
+            # (``resolve_target_tenant`` branches on ``is_platform_writer``
+            # internally, which today covers the same role set). Uses the READ
+            # helper ``is_cross_tenant_viewer`` (not the write helper
+            # ``is_platform_writer``) so if the two role sets ever diverge —
+            # e.g. hq_staff becomes read-only — this read path keeps serving
+            # the wider viewer set.
+            effective_tenant = resolve_target_tenant(
+                tenant_id, target_tenant_id, platform_role
+            )
+        else:
+            # Store role: tenant_id is the caller's own. A client-supplied
+            # target_tenant_id is a cross-tenant forgery → 403.
+            if target_tenant_id is not None:
+                raise PermissionError(
+                    "门店角色不可指定目标租户(tenant_id)"
+                )
+            effective_tenant = resolve_target_tenant(
+                tenant_id, None, platform_role
+            )
+
+        # Calendar-day window in UTC. ``combine`` with ``time.min``/``time.max``
+        # would give 23:59:59.999999; we want a clean half-open [00:00, +1d 00:00)
+        # so the endpoint matches the AC exactly.
+        range_start = datetime.combine(target_date, time.min, tzinfo=UTC)
+        range_end = datetime.combine(
+            target_date + timedelta(days=1), time.min, tzinfo=UTC
+        )
+        bookings = await self.repo.list_for_tenant_schedule(
+            effective_tenant, range_start, range_end
+        )
+        return [await self._to_hq_read(b) for b in bookings]
 
     async def list_my_bookings(
         self, customer_id: str | None
