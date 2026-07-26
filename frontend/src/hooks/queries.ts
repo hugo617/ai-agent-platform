@@ -52,6 +52,9 @@ import {
   fetchCustomerUsage,
   fetchBooking,
   fetchBookings,
+  fetchEffectiveBookingConfig,
+  fetchPlatformBookingConfig,
+  fetchTenantBookingConfig,
   fetchDeviceModels,
   fetchDevices,
   fetchDeviceSchedule,
@@ -105,6 +108,8 @@ import {
   updateMe,
   updateMember,
   updatePricing,
+  updatePlatformBookingConfig,
+  updateTenantBookingConfig,
   updateTenant,
   updateTenantConfig,
   updatePlatformEmbeddingConfig,
@@ -126,6 +131,7 @@ import type {
   AgentCreate,
   AgentUpdate,
   ApiTokenCreate,
+  BookingConfigUpsert,
   BookingCreate,
   BookingEndPayload,
   BookingUpdate,
@@ -222,6 +228,19 @@ export const qk = {
   deviceSchedule: (deviceId: string, start?: string, end?: string) =>
     ["device-schedule", deviceId, start ?? null, end ?? null] as const,
   myBookings: ["me", "bookings"] as const,
+  // booking schedule-grid config (booking-schedule-grid 切片 01/03). Two-level
+  // config: platform default row + per-tenant overrides. The grid reads the
+  // MERGED view (effective); the config Dialog reads/writes each tier.
+  //
+  // P4: the invalidate set below is deliberately a SEPARATE family from
+  // BOOKING_WRITE_KEYS — a config write should refresh config reads (effective
+  // + platform + tenant reads), NOT booking rows. Folding it into
+  // BOOKING_WRITE_KEYS would be misleading (it'd over-invalidate booking
+  // caches on every config save) and would couple two unrelated concerns.
+  // The literal-prefix family ["booking-config"] matches the existing
+  // convention (see useDeleteConversation's ["conversations"]).
+  bookingConfig: ["booking-config"] as const,
+  bookingConfigEffective: ["booking-config", "effective"] as const,
   // Token 费用管理系列 4/4 — wallet / ledger / usage / pricing.
   wallet: ["billing", "wallet"] as const,
   walletByTenant: (tenantId: string) =>
@@ -666,6 +685,78 @@ export function useDeviceSchedule(
  * identity (slice 07). */
 export function useMyBookings() {
   return useQuery({ queryKey: qk.myBookings, queryFn: fetchMyBookings });
+}
+
+// ---------- booking schedule-grid config (booking-schedule-grid 切片 03) ----------
+//
+// Five hooks mirror the backend /bookings/config router. The two writes
+// (updatePlatform / updateTenant) invalidate BOOKING_CONFIG_WRITE_KEYS — the
+// literal-prefix ["booking-config"] family covers effective + platform + any
+// tenant read, so every open consumer refetches after a config save. P4 keeps
+// this set separate from BOOKING_WRITE_KEYS on purpose (see qk.bookingConfig).
+//
+// effective / tenant hooks are parameterised by tenantId to thread the
+// anti-forgery contract through: platform roles MUST name their target store
+// (the HQ view passes its picked targetTenantId), store roles MUST omit it
+// (resolved server-side from the token). Passing ``undefined`` on the store
+// path → no query param → backend uses user.tenant_id.
+//
+// BOOKING_CONFIG_WRITE_KEYS is the shared invalidate set for the two config
+// writes; same literal-prefix-family convention as BOOKING_WRITE_KEYS above.
+// References qk.bookingConfig (not a bare literal) per the qk-factory rule —
+// the factory exists so the key string is spelled once.
+const BOOKING_CONFIG_WRITE_KEYS: QueryKey[] = [qk.bookingConfig];
+
+/** Effective merged config (tenant override → platform default → hardcoded
+ * fallback). This is what the grid renders off. ``tenantId`` is REQUIRED for
+ * platform roles (HQ view passes its picked target) and MUST be omitted by
+ * store roles (anti-forgery, enforced server-side). */
+export function useBookingConfigEffective(tenantId?: string) {
+  return useQuery({
+    queryKey: qk.bookingConfigEffective,
+    queryFn: () => fetchEffectiveBookingConfig(tenantId),
+  });
+}
+
+/** Platform-wide default config row, or null when none is seeded yet.
+ * super_admin-only endpoint; the Dialog reads this for the「平台默认」column. */
+export function usePlatformBookingConfig() {
+  return useQuery({
+    queryKey: qk.bookingConfig,
+    queryFn: fetchPlatformBookingConfig,
+  });
+}
+
+/** Upsert the platform default row (full-replace of the 3 upsert fields).
+ * Invalidates the whole config family so the effective read + any open
+ * tenant column refresh. super_admin-only. */
+export function useUpdatePlatformBookingConfig() {
+  return useApiMutation(
+    (payload: BookingConfigUpsert) => updatePlatformBookingConfig(payload),
+    BOOKING_CONFIG_WRITE_KEYS,
+  );
+}
+
+/** One store's override row, or null when that store hasn't customized.
+ * Backend enforces own-tenant access for store roles; platform roles may read
+ * any tenant via the path id. */
+export function useTenantBookingConfig(tenantId: string) {
+  return useQuery({
+    queryKey: [...qk.bookingConfig, "tenant", tenantId],
+    queryFn: () => fetchTenantBookingConfig(tenantId),
+    enabled: !!tenantId,
+  });
+}
+
+/** Upsert one store's override (full-replace). Invalidates the whole config
+ * family so effective + any open column refresh. Backend enforces own-tenant
+ * write for store roles (settings:update); platform roles may write any tenant. */
+export function useUpdateTenantBookingConfig(tenantId: string) {
+  return useApiMutation(
+    (payload: BookingConfigUpsert) =>
+      updateTenantBookingConfig(tenantId, payload),
+    BOOKING_CONFIG_WRITE_KEYS,
+  );
 }
 
 // ---------- agents ----------

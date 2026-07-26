@@ -857,6 +857,58 @@ export interface DeviceSchedule {
   [date: string]: Booking[];
 }
 
+// ============= booking schedule-grid config (booking-schedule-grid 切片 03) =============
+//
+// Two-level configuration for the schedule grid: a platform-wide default row
+// (``tenant_id=null``) + an optional per-tenant override. The grid asks the
+// backend to merge them via the /bookings/config/effective endpoint; the
+// config Dialog (pages/bookings/config-dialog.tsx) writes either the platform
+// row or one tenant's override depending on the caller's role.
+//
+// Mirrors backend app/schemas/booking_config.py. ``window_*`` are 24-hour
+// ``"HH:MM"`` strings (5 chars, pattern ``^([01]\d|2[0-3]):[0-5]\d$``), NOT
+// ISO datetimes — the backend stores them as String(5) so ``<input
+// type="time">`` values pass through unchanged and SQLite/Postgres agree.
+// The schedule-grid demo D0/window is exactly this shape.
+
+/** One persisted booking_config row (GET /bookings/config/platform |
+ * tenant/{id} response). ``tenant_id=null`` = the platform default row;
+ * non-null = a per-tenant override. May be ``null`` on read when no row
+ * exists yet (200 + null body, not 404) — see usePlatformBookingConfig /
+ * useTenantBookingConfig for the null-tolerant read. */
+export interface BookingConfig {
+  id: string;
+  tenant_id: string | null; // null = platform default; set = tenant override
+  default_duration_minutes: number; // positive int (backend-enforced ≥1)
+  window_start: string; // "HH:MM" 24-hour, 5 chars
+  window_end: string; // "HH:MM" 24-hour, 5 chars
+  created_at: string;
+  updated_at: string;
+}
+
+/** PUT /bookings/config/{platform | tenant/{id}} body. Full replace, not a
+ * partial patch — all three fields are required on every save (matches the
+ * backend ``BookingConfigUpsert`` Pydantic schema). The Dialog collects these
+ * three and the endpoint call site adds nothing else. */
+export interface BookingConfigUpsert {
+  default_duration_minutes: number; // positive int (≥1)
+  window_start: string; // "HH:MM"
+  window_end: string; // "HH:MM"
+}
+
+/** Effective merged config (GET /bookings/config/effective). The backend
+ * resolves tenant-override → platform-default → hardcoded fallback and reports
+ * which tier won via ``source``. The three literal values mirror the backend
+ * service (``tenant`` / ``platform`` / ``default``); typed as a union so the
+ * grid consumer can switch on it safely. No id/tenant_id/timestamps — this is
+ * a derived read view, not a persisted row. */
+export interface BookingConfigEffective {
+  default_duration_minutes: number;
+  window_start: string; // "HH:MM"
+  window_end: string; // "HH:MM"
+  source: "tenant" | "platform" | "default";
+}
+
 // ============= billing (Token 费用管理系列 4/4) =============
 //
 // Aligns with app/schemas/billing.py. The wallet carries the live balance +
