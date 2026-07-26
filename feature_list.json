@@ -24,7 +24,7 @@
       "area": "业务实体",
       "title": "HqView 设备×时间排期网格 + 两级预约配置(平台默认+租户覆盖)",
       "user_visible_behavior": "超级管理员/平台角色(super_admin + hq_staff)在 HqView 选目标门店后,可切换到「排期网格」视图:设备为列(X 轴)、时间为行(Y 轴,08:00-22:00 每 30 分钟一行)的当日排期网格,一眼看出各设备的占用与空闲。点击空时段弹 Dialog 预填设备+时段即可预约;已占用时段(状态色块)和今天已过时段(斜纹禁用)不可点。日期可选今天及往后(不能选过去)。预约时长默认 45 分钟、可预约时段默认 08:00-22:00,均支持「平台默认 + 租户覆盖」两级配置:super_admin 设平台默认,门店 owner/admin 覆盖本店。配置入口在网格上方「⚙ 设置」按钮。视觉形态已 demo 验收(harness/demo/booking-schedule-grid-demo.html)。",
-      "status": "in_progress",
+      "status": "passing",
       "verification": [
         "后端 app/models/booking_config.py:新建 booking_configs 表,照抄 model_pricing 两级范式(tenant_id 可空,NULL=平台默认/X=租户覆盖),repo 继承 BaseRepository(非 TenantScopedRepository,否则 NULL 平台默认行被过滤);default_duration_minutes Integer default=45 + window_start String '08:00' + window_end String '22:00';迁移双库兼容 + seed 平台默认行 + alembic check 无 drift",
         "后端 app/services/booking_config_service.py:get_effective(tenant_id) 三级 fallback(租户覆盖 → 平台默认 → 硬编码默认 45/08:00/22:00);upsert 调 logging_service 审计",
@@ -40,7 +40,14 @@
       "notes": "HqView 排期网格需求(2026-07-26)。**EP2 回环已完成(2026-07-26)**:plan 文档 harness/docs/plan-booking-schedule-grid.md 落地,含 PRD 主体(11 节对齐 prd-template)+ grill 7 决策(D0 网格形态 demo 验收 / D1 HqView Tabs 并存 / D2 新建 booking_configs 表抄 model_pricing 两级范式 repo 继承 BaseRepository 不继承 TenantScopedRepository / D3 duration 任意 Integer 非 {45,60} 枚举 / D4 新增按天端点+新建 (tenant_id,scheduled_start_at) 复合索引因现有索引无 tenant 前缀 / D5 复用 settings:update 权限 / D6 now prop 注入不用 fake timers / D7 网格内嵌配置 Dialog)+ 6 切片(01 booking_configs 表 frontier / 02 按天端点+索引 / 03 前端配置 API+Dialog / 04a ScheduleGrid 组件 / 04b HqView Tabs 集成 / 05 联调收尾,线性依赖图无环,~50 条 AC)。plan 自检 4 项全过。**审查修正(2026-07-26)**:首轮 plan 经 3 个子智能体审查发现 3 处失实 + 3 处需求误读 + 6 个决策悬空,已全部修正(详见 plan §4.0 决策表论证 + §4.2/§4.3/§4.4 多租户/权限/表设计评估)。**硬约束**:范围限定 HqView 网格(不动 StoreView/MyBookingsView/ScheduleGridCard)/ 平台角色含 super_admin+hq_staff / 视觉严格对齐 demo / 配置两级(平台默认+租户覆盖)/ 向后兼容(现有 HqView 列表视图零变化)。**Out of Scope**:不动 StoreView / 不动状态机 / 不引 shadcn Tabs/calendar/popover / 不引日期库 / 不做拖拽改约/周月视图/客户跨店选择器/每设备独立时长。",
       "plan": "harness/docs/plan-booking-schedule-grid.md",
       "depends_on": "platform-cross-tenant-write",
-      "evidence": []
+      "evidence": [
+        "切片 01(booking_configs 表 + 两级配置 API,PR #129,2026-07-26):落地 7 新文件 + 3 改文件(model/schema/repo/service/api/main.py/迁移/test_booking_config_api.py)。验证:ruff clean + pytest 769 passed(基线 750+19)+ alembic upgrade head && alembic check 无 drift(Postgres)+ seed 平台行已验证(tenant_id=NULL/duration=45/window 08:00-22:00)+ grep 验证无 unique/uq_ 约束。/code-review 双轴:Standards 0 硬违规、Spec 12/12 AC 全过。",
+        "切片 02(按天查询端点 + 复合索引,PR #131,2026-07-26):GET /bookings/schedule-grid + idx_bookings_tenant_schedule (tenant_id, scheduled_start_at)。验证:pytest 777 passed(含 R 章节 8 用例 R-1~R-8)+ alembic check 无 drift + 新索引落地。/code-review 双轴:Standards 0 硬违规、Spec 8/8 AC 全过。",
+        "切片 03(前端 API 层 + 配置 Dialog,PR #130,2026-07-26):BookingConfigDialog 两栏/单栏 + 5 hooks + BOOKING_CONFIG_WRITE_KEYS。验证:npm test 33/33(含新 5)+ build 成功 + oxlint 0/0。",
+        "切片 04a(ScheduleGrid 网格组件,PR #132,2026-07-26):纯展示组件对齐 demo D0。验证:vitest 44/44(含 11)+ tsc 0 error + oxlint 0/0(94 文件)+ build 成功。/code-review 双轴:Standards 0 硬违规、Spec 12/12 AC 全过(11 用例 = AC 10 + 额外「未来日期全可点」)。",
+        "切片 04b(HqView Tabs + 网格集成,PR #133,2026-07-26):Tabs 手搓 + 日期选择 + 配置触发 + 网格渲染 + 点击预填 BookingCreateDialog。验证:npm test 48/48(hq-view 13 = 9 既有 + 4 新)+ build 成功 + oxlint 0/0(88 文件)+ tsc 0 error。/code-review 双轴:Standards 0 硬违规(2 判断项已修)、Spec 核心 AC 全满足。",
+        "切片 05(端到端联调 + feature 收尾,末切片,2026-07-26):无新源码,纯联调 + 文档。验证:./init.sh 全绿 777 passed(ruff + pytest,402s)+ cd frontend && npm test 48/48 + npm run build 成功(2.78s)。决策项定夺:StoreView ConfigDialog 不接(StoreView ScheduleGridCard 用 useDeviceSchedule 不读 booking_config,接入装饰性;plan line 234 修订为「仅 HqView」对齐 §8)。文档影响评估:① feature_list.json status→passing + evidence 6 条;② progress.md 顶部「最高优先级未完成」清空 + 切片 05 Session 记录;③ 项目指南/02-后端架构/03-数据库与ORM.md 补「两级配置表」章节(booking_configs 范式)+ checklist 第 3 条交叉引用;④ plan draft v2 → passing + 切片 05 checklist 勾选;不动 README。demo 保留作设计参考(源码 4 处注释以 demo 为 Visual truth source)。依赖解锁扫描:无任何 feature depends_on 指向 booking-schedule-grid,无需推进。手测项(super_admin 选店→网格渲染→点空格创建→重叠拒 400→改时间成功→列表视图看到新预约;配置改 duration=60 + window 09:00-21:00 → 网格重渲染)对齐 device-models-admin-ui/device-booking 范式,真实环境留手测(逻辑路径已被单元/集成测试覆盖)。"
+      ]
     },
     {
       "id": "auth-local",
