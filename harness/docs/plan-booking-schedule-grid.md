@@ -163,10 +163,11 @@
 
 > 对照 platform-cross-tenant-write 5 切片范式。04 拆成 04a/04b(审查建议:网格组件本身重,独立切片)。
 
-### 切片 01 — 后端:booking_configs 表 + 两级配置 API(frontier)
+### 切片 01 — 后端:booking_configs 表 + 两级配置 API(frontier) ✅
 
 - **What it delivers**:`booking_configs` 表 + 迁移(含 seed 平台默认行)+ repo/schema/service/api 全套。super_admin 设平台默认,owner/admin/super_admin 设租户覆盖,effective 三级 fallback。
 - **Blocked by**: 无(frontier,首片可立即开工)
+- **状态**:**已完成**(2026-07-26)。证据:ruff clean + 全量 pytest 769 passed(含 19 新用例)+ `alembic upgrade head && alembic check` 无 drift(Postgres)+ seed 平台行已验证(tenant_id=NULL/duration=45/window 08:00-22:00)。/code-review 双轴:Standards 0 硬违规、Spec 12/12 AC 全过。
 - **文件清单**:
   - `app/models/booking_config.py`(新)
   - `app/schemas/booking_config.py`(新)
@@ -177,18 +178,18 @@
   - `alembic/versions/2026_07_2x_xxxx_booking_config.py`(新迁移,含 seed 平台默认行:duration=45/window 08:00-22:00)
   - `tests/test_booking_config_api.py`(新,~12 用例)
 - **Acceptance criteria**:
-  - [ ] `booking_configs` 表字段:id/tenant_id(可空 FK CASCADE)/default_duration_minutes(Integer default=45)/window_start(String "08:00")/window_end(String "22:00")/created_at/updated_at
-  - [ ] repo 继承 `BaseRepository`(非 `TenantScopedRepository`),手写 `where(tenant_id == X)` / `where(tenant_id.is_(None))`
-  - [ ] **无 DB 唯一约束(P2)**:`booking_configs` 表无 `UNIQUE` / 无 `uq_` / 迁移无 `create_unique_constraint` / 无 `NULLS NOT DISTINCT`(对齐 D2 + model_pricing/llm_config 注释,唯一性由 service 层 upsert 保证)。AC 验证:`grep -i "unique\|uq_" app/models/booking_config.py` 零命中 + 迁移文件无唯一约束调用
-  - [ ] 迁移双库兼容(PG + SQLite),`alembic check` 无 drift
-  - [ ] seed 平台默认行(tenant_id=NULL, duration=45, window 08:00-22:00)
-  - [ ] `GET /bookings/config/effective?tenant_id=` 三级 fallback,三种 DB 状态各测一次(P3):① 有租户覆盖行 → 用之;② 无租户行有平台默认行 → 用平台;③ 两者皆无 → 硬编码默认(45/08:00/22:00)
-  - [ ] super_admin GET/PUT `/bookings/config/platform` 200;其他角色 → 403
-  - [ ] owner/admin GET/PUT `/bookings/config/tenant/{id}` 200(本租户);跨租户 → 403;super_admin → 200;member/customer → 403(无 settings:update)
-  - [ ] duration 校验:Integer 任意值,前端合理范围(15-240),后端只校验类型(>0)
-  - [ ] service upsert 调 `logging_service.record` 审计;测法(P2):`mocker.spy(LoggingService, "record")` 拦截,断言被调用 + `module="booking_config"` + `old_values`/`new_values` 非空
-  - [ ] `./init.sh` 全绿(ruff + pytest 含 test_booking_config_api.py)
-  - [ ] `alembic upgrade head && alembic check` 无 drift
+  - [x] `booking_configs` 表字段:id/tenant_id(可空 FK CASCADE)/default_duration_minutes(Integer default=45,server_default text("45"))/window_start(String "08:00")/window_end(String "22:00")/created_at/updated_at
+  - [x] repo 继承 `BaseRepository`(非 `TenantScopedRepository`),手写 `where(tenant_id == X)` / `where(tenant_id.is_(None))`
+  - [x] **无 DB 唯一约束(P2)**:`booking_configs` 表无 `UNIQUE` / 无 `uq_` / 迁移无 `create_unique_constraint` / 无 `NULLS NOT DISTINCT`(对齐 D2 + model_pricing/llm_config 注释,唯一性由 service 层 upsert 保证)。AC 验证:`grep -i "unique\|uq_" app/models/booking_config.py` 零命中 + 迁移文件无唯一约束调用
+  - [x] 迁移双库兼容(PG + SQLite),`alembic check` 无 drift
+  - [x] seed 平台默认行(tenant_id=NULL, duration=45, window 08:00-22:00)
+  - [x] `GET /bookings/config/effective?tenant_id=` 三级 fallback,三种 DB 状态各测一次(P3):① 有租户覆盖行 → 用之;② 无租户行有平台默认行 → 用平台;③ 两者皆无 → 硬编码默认(45/08:00/22:00)
+  - [x] super_admin GET/PUT `/bookings/config/platform` 200;其他角色 → 403
+  - [x] owner/admin GET/PUT `/bookings/config/tenant/{id}` 200(本租户);跨租户 → 403;super_admin → 200;member/customer → 403(无 settings:update)
+  - [x] duration 校验:Integer 任意值,前端合理范围(15-240),后端只校验类型(>0)
+  - [x] service upsert 调 `logging_service.record` 审计;测法(P2):`patch.object(LoggingService, "record", autospec=True)` 拦截,断言被调用 + `module="booking_config"` + `old_values`/`new_values` 非空(项目无 pytest-mock 依赖,用 unittest.mock 替代 mocker.spy)
+  - [x] `./init.sh` 全绿(ruff + pytest 含 test_booking_config_api.py)
+  - [x] `alembic upgrade head && alembic check` 无 drift
 - **验证命令**:`./init.sh && alembic upgrade head && alembic check`
 
 ### 切片 02 — 后端:按天查询端点 + 复合索引

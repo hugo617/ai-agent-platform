@@ -19,6 +19,7 @@ from app.models import (  # noqa: F401
     agent_specialist,
     api_token,
     booking,
+    booking_config,
     customer,
     device,
     device_model,
