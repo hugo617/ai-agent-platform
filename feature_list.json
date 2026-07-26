@@ -1,7 +1,7 @@
 {
   "project": "ai-agent-platform",
   "description": "多租户 AI 智能体 SaaS 平台脚手架(FastAPI + React + pycasbin + LangGraph)",
-  "last_updated": "2026-07-25",
+  "last_updated": "2026-07-26",
   "harness_version": "stage1-clean-state",
   "rules": {
     "single_active_feature": true,
@@ -18,6 +18,30 @@
     "passing": "验证通过且证据已记录(不可逆)"
   },
   "features": [
+    {
+      "id": "booking-schedule-grid",
+      "priority": 69,
+      "area": "业务实体",
+      "title": "HqView 设备×时间排期网格 + 两级预约配置(平台默认+租户覆盖)",
+      "user_visible_behavior": "超级管理员/平台角色(super_admin + hq_staff)在 HqView 选目标门店后,可切换到「排期网格」视图:设备为列(X 轴)、时间为行(Y 轴,08:00-22:00 每 30 分钟一行)的当日排期网格,一眼看出各设备的占用与空闲。点击空时段弹 Dialog 预填设备+时段即可预约;已占用时段(状态色块)和今天已过时段(斜纹禁用)不可点。日期可选今天及往后(不能选过去)。预约时长默认 45 分钟、可预约时段默认 08:00-22:00,均支持「平台默认 + 租户覆盖」两级配置:super_admin 设平台默认,门店 owner/admin 覆盖本店。配置入口在网格上方「⚙ 设置」按钮。视觉形态已 demo 验收(harness/demo/booking-schedule-grid-demo.html)。",
+      "status": "in_progress",
+      "verification": [
+        "后端 app/models/booking_config.py:新建 booking_configs 表,照抄 model_pricing 两级范式(tenant_id 可空,NULL=平台默认/X=租户覆盖),repo 继承 BaseRepository(非 TenantScopedRepository,否则 NULL 平台默认行被过滤);default_duration_minutes Integer default=45 + window_start String '08:00' + window_end String '22:00';迁移双库兼容 + seed 平台默认行 + alembic check 无 drift",
+        "后端 app/services/booking_config_service.py:get_effective(tenant_id) 三级 fallback(租户覆盖 → 平台默认 → 硬编码默认 45/08:00/22:00);upsert 调 logging_service 审计",
+        "后端 app/api/v1/booking_config.py:5 端点(GET/PUT /bookings/config/platform super_admin + GET/PUT /bookings/config/tenant/{id} owner/admin/super_admin + GET /bookings/config/effective?tenant_id=);复用 settings:update 权限(不新造)",
+        "后端 app/repositories/booking.py:+list_for_tenant_schedule(tenant_id, range_start, range_end) 显式 where(tenant_id==X);app/models/booking.py +Index('idx_bookings_tenant_schedule','tenant_id','scheduled_start_at')(现有 idx_bookings_device_schedule 无 tenant_id 前缀不能复用);app/api/v1/bookings.py +GET /bookings/schedule-grid?tenant_id=&date= 返回 BookingHqRead[]",
+        "前端 frontend/src/pages/bookings/schedule-grid.tsx:网格组件对齐 demo(harness/demo/booking-schedule-grid-demo.html):布局 A 设备为列卡片式表头(大设备名+ID+状态圆点)+ 时间为行(28 行整点大字半点淡色)+ 左上角斜线分隔 + 表格居中不撑满 + 45分钟=1整行+1半行(虚线+→:45)/60分钟=2整行 + 已占用=状态色块+客户名+hover tooltip 不可点 + 今天早于 now cell 斜纹禁用(now 用 prop 注入不用 fake timers)",
+        "前端 frontend/src/pages/bookings/hq-view.tsx:加 Tabs(手搓 FilterChips 范式,列表/网格并存默认列表)+ 日期选择(min=今天默认今天)+ 「⚙ 设置」按钮弹 config-dialog + 点击空 cell 复用 BookingCreateDialog 预填 device+start/end;现有 9 测试零回归",
+        "前端 frontend/src/pages/bookings/config-dialog.tsx:配置 Dialog(super_admin 看平台默认+当前店覆盖两栏,owner/admin 看当前店覆盖一栏);duration 常用预设(45/60/90)+自定义数字输入(D3 任意分钟数,非枚举);window 两个 input type=time",
+        "测试 tests/test_booking_config_api.py ~12 用例(平台/租户 GET PUT 权限 + effective 三级 fallback + 跨租户拒)+ test_bookings_api.py R 章节 ~6 用例(按天查询跨租户隔离 + date 校验 + 空店)+ schedule-grid.test.tsx ~10 用例 + config-dialog.test.tsx ~5 用例 + hq-view.test.tsx +3(Tab 切换/网格 smoke/设置弹窗)",
+        "DataScope/Role.data_scope/DEFAULT_*_PERMS/casbin policy/require_permission caller 零改动(复用 settings:update);booking 状态机/_TRANSITIONS/_assert_no_overlap 零改动;StoreView/MyBookingsView/ScheduleGridCard 零改动",
+        "验证:./init.sh 全绿(ruff + pytest 含新章节)+ cd frontend && npm test && npm run build 全绿 + oxlint 0 + alembic upgrade head && alembic check 无 drift"
+      ],
+      "notes": "HqView 排期网格需求(2026-07-26)。**EP2 回环已完成(2026-07-26)**:plan 文档 harness/docs/plan-booking-schedule-grid.md 落地,含 PRD 主体(11 节对齐 prd-template)+ grill 7 决策(D0 网格形态 demo 验收 / D1 HqView Tabs 并存 / D2 新建 booking_configs 表抄 model_pricing 两级范式 repo 继承 BaseRepository 不继承 TenantScopedRepository / D3 duration 任意 Integer 非 {45,60} 枚举 / D4 新增按天端点+新建 (tenant_id,scheduled_start_at) 复合索引因现有索引无 tenant 前缀 / D5 复用 settings:update 权限 / D6 now prop 注入不用 fake timers / D7 网格内嵌配置 Dialog)+ 6 切片(01 booking_configs 表 frontier / 02 按天端点+索引 / 03 前端配置 API+Dialog / 04a ScheduleGrid 组件 / 04b HqView Tabs 集成 / 05 联调收尾,线性依赖图无环,~50 条 AC)。plan 自检 4 项全过。**审查修正(2026-07-26)**:首轮 plan 经 3 个子智能体审查发现 3 处失实 + 3 处需求误读 + 6 个决策悬空,已全部修正(详见 plan §4.0 决策表论证 + §4.2/§4.3/§4.4 多租户/权限/表设计评估)。**硬约束**:范围限定 HqView 网格(不动 StoreView/MyBookingsView/ScheduleGridCard)/ 平台角色含 super_admin+hq_staff / 视觉严格对齐 demo / 配置两级(平台默认+租户覆盖)/ 向后兼容(现有 HqView 列表视图零变化)。**Out of Scope**:不动 StoreView / 不动状态机 / 不引 shadcn Tabs/calendar/popover / 不引日期库 / 不做拖拽改约/周月视图/客户跨店选择器/每设备独立时长。",
+      "plan": "harness/docs/plan-booking-schedule-grid.md",
+      "depends_on": "platform-cross-tenant-write",
+      "evidence": []
+    },
     {
       "id": "auth-local",
       "priority": 1,

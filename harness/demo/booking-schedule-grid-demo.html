@@ -1,0 +1,562 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>预约排期网格 · 布局 A · 优化版</title>
+<!--
+  v2 优化版(基于用户反馈):
+  - 锁定布局 A(设备为列,时间为行)
+  - 卡片式设备表头(大设备名 + ID + 状态圆点)
+  - 整点大字 + 半点淡色
+  - 左上角斜线分隔(时间/设备)
+  - 字号整体放大,留白优化
+  - 设备多时横向滚动
+  - 日期选择器(今天 + 往后可选,默认今天)
+  - 45 分钟 = 1 整行 + 1 半行(虚线 + →:45 标注)
+  - 已占用 = 状态色块 + 客户名 + hover tooltip,不可点
+  - 今天早于 now 的 cell 斜纹禁用;未来日期全可点
+  - 点空 cell → 高亮 + 右下角确认面板
+-->
+<style>
+  :root {
+    --bg: #ffffff;
+    --fg: #0f172a;
+    --muted: #64748b;
+    --muted-light: #94a3b8;
+    --muted-bg: #f8fafc;
+    --muted-bg-2: #f1f5f9;
+    --border: #e2e8f0;
+    --border-strong: #cbd5e1;
+    --primary: #2563eb;
+    --primary-dark: #1d4ed8;
+    --primary-light: #dbeafe;
+    /* 状态色 */
+    --st-pending-bg: #fef3c7;   --st-pending-fg: #92400e;  --st-pending-bd: #fcd34d;
+    --st-confirmed-bg: #dbeafe; --st-confirmed-fg: #1e40af; --st-confirmed-bd: #93c5fd;
+    --st-inservice-bg: #dcfce7; --st-inservice-fg: #166534; --st-inservice-bd: #86efac;
+    --st-done-bg: #f1f5f9;      --st-done-fg: #475569;     --st-done-bd: #cbd5e1;
+    --st-cancel-bg: #fee2e2;    --st-cancel-fg: #991b1b;   --st-cancel-bd: #fca5a5;
+    --cell-h: 40px;
+    --time-col-w: 88px;
+    --device-col-w: 160px;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    background: var(--muted-bg-2);
+    color: var(--fg);
+    font-size: 15px;
+    line-height: 1.5;
+  }
+  .page { max-width: 1400px; margin: 0 auto; padding: 24px 16px 100px; }
+
+  /* ===== 顶部 ===== */
+  .header {
+    background: var(--bg); border: 1px solid var(--border);
+    border-radius: 12px; padding: 20px 24px; margin-bottom: 20px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+  }
+  .header h1 { margin: 0 0 4px; font-size: 20px; font-weight: 600; }
+  .header .sub { color: var(--muted); font-size: 14px; margin-bottom: 18px; }
+  .controls { display: flex; flex-wrap: wrap; gap: 24px; align-items: center; }
+  .control-group { display: flex; align-items: center; gap: 10px; }
+  .control-group > label { color: var(--muted); font-size: 14px; font-weight: 500; }
+  .btn {
+    padding: 8px 16px; border: 1px solid var(--border-strong);
+    background: var(--bg); border-radius: 8px; cursor: pointer;
+    font-size: 14px; color: var(--fg); transition: all 0.12s; font-weight: 500;
+  }
+  .btn:hover { background: var(--muted-bg); border-color: var(--muted-light); }
+  .btn.active { background: var(--primary); color: white; border-color: var(--primary); }
+  /* 日期选择器:今天按钮 + 往后日期 input */
+  input[type="date"].btn { padding: 7px 10px; }
+
+  .legend {
+    display: flex; flex-wrap: wrap; gap: 16px; margin-top: 16px;
+    padding-top: 14px; border-top: 1px solid var(--border);
+    font-size: 13px; color: var(--muted);
+  }
+  .legend .item { display: flex; align-items: center; gap: 6px; }
+  .legend .swatch { width: 16px; height: 16px; border-radius: 4px; border: 1px solid; }
+  .sw-pending   { background: var(--st-pending-bg);   border-color: var(--st-pending-bd); }
+  .sw-confirmed { background: var(--st-confirmed-bg); border-color: var(--st-confirmed-bd); }
+  .sw-inservice { background: var(--st-inservice-bg); border-color: var(--st-inservice-bd); }
+  .sw-done      { background: var(--st-done-bg);      border-color: var(--st-done-bd); }
+  .sw-cancel    { background: var(--st-cancel-bg);    border-color: var(--st-cancel-bd); }
+
+  /* ===== 网格块 ===== */
+  .grid-block {
+    background: var(--bg); border: 1px solid var(--border);
+    border-radius: 12px; padding: 20px; margin-bottom: 24px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+  }
+  .grid-block h2 { margin: 0 0 4px; font-size: 17px; font-weight: 600; }
+  .grid-block .desc { color: var(--muted); font-size: 13px; margin-bottom: 16px; }
+
+  /* 横向滚动容器 */
+  .grid-scroll {
+    overflow: auto; max-height: 640px;
+    border: 1px solid var(--border); border-radius: 8px;
+    background: var(--bg);
+    text-align: center; /* 让内部 table 居中(表格宽于容器时此属性被忽略,自动左对齐 + 滚动)*/
+  }
+  /* 自定义滚动条 */
+  .grid-scroll::-webkit-scrollbar { width: 10px; height: 10px; }
+  .grid-scroll::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 5px; }
+  .grid-scroll::-webkit-scrollbar-thumb:hover { background: var(--muted-light); }
+  .grid-scroll::-webkit-scrollbar-track { background: var(--muted-bg); }
+
+  table.grid {
+    border-collapse: separate; border-spacing: 0;
+    width: auto;            /* 按内容宽度(设备数 × 列宽 + 时间列),不撑满容器 */
+    margin: 0 auto;         /* 设备少时在容器内居中;设备多宽于容器时自动左对齐 + 滚动 */
+    display: inline-table;  /* 配合父容器 text-align:center 实现居中 */
+  }
+  table.grid th, table.grid td {
+    border-right: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+    padding: 0; margin: 0;
+  }
+
+  /* ===== sticky ===== */
+  /* 表头 sticky top(z-index 高于 cell);左列 sticky left */
+  table.grid thead th { position: sticky; top: 0; z-index: 5; }
+  table.grid th.corner, table.grid td.time-col {
+    position: sticky; left: 0; z-index: 6; background: var(--bg);
+  }
+  table.grid thead th.corner { z-index: 7; } /* 左上交叉格最高 */
+
+  /* ===== 左上角交叉格:斜线分隔 ===== */
+  th.corner {
+    width: var(--time-col-w); min-width: var(--time-col-w);
+    height: 56px; position: relative; background: var(--muted-bg);
+  }
+  th.corner::before {
+    /* 斜线 */
+    content: ""; position: absolute; top: 0; left: 0;
+    width: 1px; height: 145%;
+    background: var(--border-strong);
+    transform-origin: top left;
+    transform: rotate(31deg);
+    box-shadow: 0 0 0 0.5px var(--border-strong);
+  }
+  th.corner .lbl-device {
+    position: absolute; top: 6px; right: 8px;
+    font-size: 12px; color: var(--muted); font-weight: 500;
+  }
+  th.corner .lbl-time {
+    position: absolute; bottom: 6px; left: 8px;
+    font-size: 12px; color: var(--muted); font-weight: 500;
+  }
+
+  /* ===== 时间列(左侧) ===== */
+  td.time-col {
+    width: var(--time-col-w); min-width: var(--time-col-w);
+    text-align: center; vertical-align: middle;
+    background: var(--muted-bg);
+  }
+  td.time-col .t-hour {
+    font-size: 15px; font-weight: 600; color: var(--fg);
+    display: block; line-height: 1.2;
+  }
+  td.time-col .t-half {
+    font-size: 12px; color: var(--muted-light); font-weight: 400;
+    display: block; line-height: 1.2;
+  }
+
+  /* ===== 设备表头(卡片式) ===== */
+  th.device-col {
+    width: var(--device-col-w); min-width: var(--device-col-w);
+    padding: 12px 14px; text-align: left; vertical-align: top;
+    background: var(--bg);
+    border-bottom: 2px solid var(--border-strong);
+  }
+  th.device-col .d-card { display: flex; align-items: flex-start; gap: 10px; }
+  th.device-col .d-status-dot {
+    width: 10px; height: 10px; border-radius: 50%; margin-top: 6px; flex-shrink: 0;
+    background: #22c55e; /* 默认在线(active)*/
+    box-shadow: 0 0 0 2px rgba(34,197,94,0.2);
+  }
+  th.device-col .d-status-dot.maintenance { background: #f59e0b; box-shadow: 0 0 0 2px rgba(245,158,11,0.2); }
+  th.device-col .d-status-dot.retired { background: var(--muted-light); box-shadow: 0 0 0 2px rgba(148,163,184,0.2); }
+  th.device-col .d-info { flex: 1; min-width: 0; }
+  th.device-col .d-name {
+    font-size: 15px; font-weight: 600; color: var(--fg);
+    line-height: 1.3; margin-bottom: 2px;
+  }
+  th.device-col .d-id {
+    font-size: 12px; color: var(--muted); font-weight: 400;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+
+  /* ===== 单元格 ===== */
+  td.cell {
+    height: var(--cell-h); position: relative; cursor: pointer;
+    vertical-align: top;
+    width: var(--device-col-w); min-width: var(--device-col-w);
+  }
+  td.cell.bookable:hover { background: var(--primary-light); }
+  td.cell.disabled {
+    background: repeating-linear-gradient(45deg, #f8fafc, #f8fafc 5px, #f1f5f9 5px, #f1f5f9 10px);
+    cursor: not-allowed;
+  }
+  td.cell.disabled:hover { background: repeating-linear-gradient(45deg, #f8fafc, #f8fafc 5px, #f1f5f9 5px, #f1f5f9 10px); }
+
+  /* ===== 选中高亮(45分钟=1整+1半) ===== */
+  td.cell.selected-full {
+    background: var(--primary) !important;
+    box-shadow: inset 0 0 0 2px var(--primary-dark);
+  }
+  td.cell.selected-full::after {
+    content: ""; position: absolute; left: 8px; top: 50%; transform: translateY(-50%);
+    width: 8px; height: 8px; border-radius: 50%; background: white;
+  }
+  td.cell.selected-half::before {
+    content: ""; position: absolute; left: 0; top: 0; bottom: 0;
+    width: 75%; background: var(--primary);
+    border-right: 2px dashed rgba(255,255,255,0.85);
+  }
+  td.cell.selected-half::after {
+    content: "→ :45"; position: absolute; left: 10px; top: 50%; transform: translateY(-50%);
+    color: white; font-size: 12px; font-weight: 600; z-index: 1; white-space: nowrap;
+  }
+
+  /* ===== 已占用 cell(状态色块) ===== */
+  .booking-block {
+    position: absolute; left: 3px; right: 3px; top: 3px; bottom: 3px;
+    border-radius: 6px; padding: 6px 10px; font-size: 13px; line-height: 1.3;
+    cursor: not-allowed; overflow: hidden; border: 1.5px solid;
+    display: flex; flex-direction: column; justify-content: center;
+  }
+  .booking-block .b-customer {
+    font-weight: 600; font-size: 13px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .booking-block .b-meta { font-size: 11px; opacity: 0.85; margin-top: 2px; white-space: nowrap; }
+  .booking-block.st-pending   { background: var(--st-pending-bg);   color: var(--st-pending-fg);   border-color: var(--st-pending-bd); }
+  .booking-block.st-confirmed { background: var(--st-confirmed-bg); color: var(--st-confirmed-fg); border-color: var(--st-confirmed-bd); }
+  .booking-block.st-inservice { background: var(--st-inservice-bg); color: var(--st-inservice-fg); border-color: var(--st-inservice-bd); box-shadow: 0 0 0 1px var(--st-inservice-bd); }
+  .booking-block.st-done      { background: var(--st-done-bg);      color: var(--st-done-fg);      border-color: var(--st-done-bd); opacity: 0.8; }
+  .booking-block.st-cancel    { background: var(--st-cancel-bg);   color: var(--st-cancel-fg);   border-color: var(--st-cancel-bd); opacity: 0.6; text-decoration: line-through; }
+
+  /* 跨行预约(60分钟=2cell / 45分钟=1.5cell):绝对定位延伸 */
+  .booking-block.span-2 { bottom: calc(-1 * var(--cell-h) - 3px); }
+  .booking-block.span-1-5 { bottom: calc(-1 * (var(--cell-h) / 2) - 3px); }
+
+  /* tooltip */
+  .booking-block[data-tooltip]:hover::after {
+    content: attr(data-tooltip);
+    position: absolute; left: 50%; bottom: calc(100% + 8px); transform: translateX(-50%);
+    background: #0f172a; color: white; padding: 8px 12px; border-radius: 6px;
+    font-size: 12px; white-space: nowrap; z-index: 50; pointer-events: none;
+    font-weight: 400; line-height: 1.5;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  }
+
+  /* ===== 确认面板 ===== */
+  .confirm-panel {
+    position: fixed; right: 24px; bottom: 24px;
+    background: var(--bg); border: 1px solid var(--border-strong);
+    border-radius: 12px; padding: 18px 20px; min-width: 280px;
+    box-shadow: 0 12px 32px rgba(0,0,0,0.15);
+    display: none; z-index: 100;
+  }
+  .confirm-panel.show { display: block; }
+  .confirm-panel h3 { margin: 0 0 14px; font-size: 16px; font-weight: 600; }
+  .confirm-panel .row {
+    display: flex; justify-content: space-between; align-items: center;
+    margin: 8px 0; font-size: 14px;
+    padding: 6px 0; border-bottom: 1px solid var(--border);
+  }
+  .confirm-panel .row:last-of-type { border-bottom: none; }
+  .confirm-panel .row .k { color: var(--muted); }
+  .confirm-panel .row .v { color: var(--fg); font-weight: 600; }
+  .confirm-panel .actions { margin-top: 14px; display: flex; gap: 8px; }
+  .confirm-panel .btn-primary {
+    background: var(--primary); color: white; border: none;
+    padding: 10px 16px; border-radius: 8px; cursor: pointer; font-size: 14px; flex: 1;
+    font-weight: 500; transition: background 0.12s;
+  }
+  .confirm-panel .btn-primary:hover { background: var(--primary-dark); }
+  .confirm-panel .btn-ghost {
+    background: transparent; color: var(--muted); border: 1px solid var(--border-strong);
+    padding: 10px 16px; border-radius: 8px; cursor: pointer; font-size: 14px;
+  }
+  .confirm-panel .btn-ghost:hover { background: var(--muted-bg); }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <!-- ========== 顶部 ========== -->
+  <div class="header">
+    <h1>预约排期网格 · 布局 A(优化版)</h1>
+    <div class="sub">选定门店后展示该店设备的可预约时段。默认今天,可往后选日期。点空格预约,看右下角面板。</div>
+    <div class="controls">
+      <div class="control-group">
+        <label>预约时长</label>
+        <button class="btn active" data-duration="45" onclick="setDuration(45)">45 分钟</button>
+        <button class="btn" data-duration="60" onclick="setDuration(60)">60 分钟</button>
+      </div>
+      <div class="control-group">
+        <label>日期</label>
+        <input type="date" class="btn" id="datePicker" onchange="onDateChange()" min="">
+      </div>
+    </div>
+    <div class="legend">
+      <div class="item"><span class="swatch sw-pending"></span>待开始</div>
+      <div class="item"><span class="swatch sw-confirmed"></span>已确认</div>
+      <div class="item"><span class="swatch sw-inservice"></span>进行中</div>
+      <div class="item"><span class="swatch sw-done"></span>已完成</div>
+      <div class="item"><span class="swatch sw-cancel"></span>已取消/爽约</div>
+      <div class="item">🟦 蓝色 = 选中态(45分钟 = 1整行 + 1半行)</div>
+      <div class="item">⊞ 斜纹 = 已过时间禁用</div>
+      <div class="item">🟢 表头圆点 = 设备在线状态</div>
+    </div>
+  </div>
+
+  <!-- ========== 网格(布局 A)========== -->
+  <div class="grid-block">
+    <h2>设备 × 时间 排期网格</h2>
+    <div class="desc">设备为列(卡片式表头),时间为行(整点加粗 + 半点淡色)。设备多时左右滚动。点空格预约。</div>
+    <div class="grid-scroll" id="scrollA"></div>
+  </div>
+
+</div>
+
+<!-- ========== 确认面板 ========== -->
+<div class="confirm-panel" id="confirmPanel">
+  <h3>确认预约</h3>
+  <div class="row"><span class="k">设备</span><span class="v" id="cpDevice">—</span></div>
+  <div class="row"><span class="k">日期</span><span class="v" id="cpDay">—</span></div>
+  <div class="row"><span class="k">时段</span><span class="v" id="cpSlot">—</span></div>
+  <div class="row"><span class="k">时长</span><span class="v" id="cpDuration">—</span></div>
+  <div class="actions">
+    <button class="btn-ghost" onclick="clearSelection()">取消</button>
+    <button class="btn-primary" onclick="alert('此处接 BookingCreateDialog:填客户/备注 → POST /bookings/(真表单不在 demo 范围)')">填写客户并预约 →</button>
+  </div>
+</div>
+
+<script>
+/* ========== 配置 ========== */
+const WINDOW_START = 8;
+const WINDOW_END = 22;
+const SLOT_STEP = 0.5;
+const TOTAL_SLOTS = (WINDOW_END - WINDOW_START) / SLOT_STEP;
+
+// 多放几台设备(演示横向滚动)
+const DEVICES = [
+  { id: "DEV-001", name: "理疗床 1", status: "active" },
+  { id: "DEV-002", name: "理疗床 2", status: "active" },
+  { id: "DEV-003", name: "中医诊台", status: "active" },
+  { id: "DEV-004", name: "艾灸仪",   status: "active" },
+  { id: "DEV-005", name: "推拿床 1", status: "maintenance" },
+  { id: "DEV-006", name: "推拿床 2", status: "active" },
+];
+
+// today 的预约(明天/后天用空数据,体现「全部可点」)
+const BOOKINGS_TODAY = [
+  { device: 0, start: 9,    end: 10,   customer: "张三",   service: "全身理疗",   status: "done" },
+  { device: 0, start: 10.5, end: 11.5, customer: "李四",   service: "肩颈理疗",   status: "inservice" },
+  { device: 0, start: 14,   end: 15,   customer: "王五",   service: "足底按摩",   status: "pending" },
+  { device: 1, start: 9.5,  end: 10.5, customer: "赵六",   service: "中医推拿",   status: "done" },
+  { device: 1, start: 11,   end: 12,   customer: "孙七",   service: "艾灸",       status: "cancelled" },
+  { device: 2, start: 10,   end: 11,   customer: "周八",   service: "中医问诊",   status: "confirmed" },
+  { device: 2, start: 13.5, end: 14.5, customer: "吴九",   service: "复诊",       status: "pending" },
+  { device: 3, start: 15,   end: 16,   customer: "郑十",   service: "艾灸理疗",   status: "confirmed" },
+  { device: 3, start: 16.5, end: 17.5, customer: "钱十一", service: "温针灸",     status: "pending" },
+  { device: 5, start: 14,   end: 15,   customer: "冯十二", service: "肩周理疗",   status: "pending" },
+];
+
+/* ========== 状态 ========== */
+// now 用真实当前时间(浏览器时区),小数小时(13.5 = 13:30)。
+// 只用于「今天已过时间不可预约」判断;选未来日期时 now 不参与。
+let state = {
+  duration: 45,
+  selectedDate: todayYmd(),  // 默认今天,YYYY-MM-DD 字符串
+  selection: null,
+};
+
+/* ========== 日期工具 ========== */
+// 返回浏览器当地时区的 YYYY-MM-DD(用于 date input value + 比较是否今天)
+function todayYmd() {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+// 当前小时小数(13:30 = 13.5),用于判断「今天已过时间」
+function currentHourDecimal() {
+  const d = new Date();
+  return d.getHours() + d.getMinutes() / 60;
+}
+// 选中的日期是不是今天
+function isSelectedToday() {
+  return state.selectedDate === todayYmd();
+}
+
+/* ========== 工具 ========== */
+function hourToLabel(h) {
+  const hh = Math.floor(h);
+  const mm = Math.round((h - hh) * 60);
+  return String(hh).padStart(2, "0") + ":" + String(mm).padStart(2, "0");
+}
+function slotIdxToHour(idx) { return WINDOW_START + idx * SLOT_STEP; }
+function bookingStatusText(st) {
+  return { pending:"待开始", confirmed:"已确认", inservice:"进行中", done:"已完成", cancelled:"已取消", no_show:"爽约" }[st] || st;
+}
+function bookingClass(st) {
+  return { pending:"st-pending", confirmed:"st-confirmed", inservice:"st-inservice", done:"st-done", cancelled:"st-cancel", no_show:"st-cancel" }[st];
+}
+// 只有选中的是「今天」时才显示模拟预约;其他日期用空数据(全可点)
+function activeBookings() {
+  return isSelectedToday() ? BOOKINGS_TODAY : [];
+}
+function findBooking(deviceIdx, slotIdx) {
+  const h = slotIdxToHour(slotIdx);
+  return activeBookings().find(b => b.device === deviceIdx && h >= b.start && h < b.end) || null;
+}
+function bookingSpanSlots(b) { return (b.end - b.start) / SLOT_STEP; }
+function dayLabel() {
+  return state.selectedDate;
+}
+
+/* ========== 渲染 ========== */
+function renderA() {
+  const scrollA = document.getElementById("scrollA");
+  let html = `<table class="grid"><thead><tr>`;
+
+  // 左上角交叉格(斜线分隔)
+  html += `<th class="corner">
+    <span class="lbl-device">设备 →</span>
+    <span class="lbl-time">← 时间</span>
+  </th>`;
+  // 设备表头(卡片式)
+  DEVICES.forEach(d => {
+    const dotClass = d.status === "maintenance" ? "maintenance" : (d.status === "retired" ? "retired" : "");
+    html += `<th class="device-col">
+      <div class="d-card">
+        <span class="d-status-dot ${dotClass}"></span>
+        <div class="d-info">
+          <div class="d-name">${d.name}</div>
+          <div class="d-id">${d.id}</div>
+        </div>
+      </div>
+    </th>`;
+  });
+  html += `</tr></thead><tbody>`;
+
+  // 时间行
+  for (let s = 0; s < TOTAL_SLOTS; s++) {
+    const h = slotIdxToHour(s);
+    const isHour = s % 2 === 0; // 整点
+    // 时间列:整点大字 + 半点淡色(每两行:整点行显示大字,半点行显示小字)
+    if (isHour) {
+      html += `<tr><td class="time-col"><span class="t-hour">${hourToLabel(h)}</span><span class="t-half">${hourToLabel(h + 0.5)}</span></td>`;
+    } else {
+      // 半点行:时间列留空(整点行已显示),避免重复
+      html += `<tr><td class="time-col"></td>`;
+    }
+    for (let d = 0; d < DEVICES.length; d++) {
+      html += renderCell(d, s);
+    }
+    html += `</tr>`;
+  }
+  html += `</tbody></table>`;
+  scrollA.innerHTML = html;
+  bindCellClicks();
+}
+
+function renderCell(deviceIdx, slotIdx) {
+  const b = findBooking(deviceIdx, slotIdx);
+  if (b) {
+    const h = slotIdxToHour(slotIdx);
+    if (Math.abs(h - b.start) < 0.01) {
+      const spanSlots = bookingSpanSlots(b);
+      let spanClass = spanSlots === 2 ? "span-2" : (spanSlots === 1.5 ? "span-1-5" : "");
+      const tooltip = `${b.customer} · ${b.service} | ${hourToLabel(b.start)}-${hourToLabel(b.end)} | 状态:${bookingStatusText(b.status)}`;
+      return `<td class="cell"><div class="booking-block ${bookingClass(b.status)} ${spanClass}" data-tooltip="${tooltip}">
+        <div class="b-customer">${b.customer}</div>
+        <div class="b-meta">${hourToLabel(b.start)}-${hourToLabel(b.end)} · ${bookingStatusText(b.status)}</div>
+      </div></td>`;
+    } else {
+      return `<td class="cell"></td>`;
+    }
+  }
+  // 仅当所选日期是「今天」时,早于当前真实时间的 cell 才禁用;未来日期全可点
+  const isDisabled = isSelectedToday() && slotIdxToHour(slotIdx) < currentHourDecimal();
+  return `<td class="cell ${isDisabled ? "disabled" : "bookable"}" data-device="${deviceIdx}" data-slot="${slotIdx}"></td>`;
+}
+
+/* ========== 点击 ========== */
+function bindCellClicks() {
+  document.querySelectorAll(`td.cell.bookable`).forEach(td => {
+    td.addEventListener("click", () => {
+      const deviceIdx = parseInt(td.dataset.device, 10);
+      const slotIdx = parseInt(td.dataset.slot, 10);
+      selectCell(deviceIdx, slotIdx);
+    });
+  });
+}
+
+function selectCell(deviceIdx, slotIdx) {
+  clearSelection(false);
+  state.selection = { deviceIdx, slotIdx };
+
+  const cells = document.querySelectorAll(`td.cell[data-device="${deviceIdx}"]`);
+  cells.forEach(c => {
+    const s = parseInt(c.dataset.slot, 10);
+    if (s === slotIdx) c.classList.add("selected-full");
+    if (state.duration === 45 && s === slotIdx + 1) c.classList.add("selected-half");
+    if (state.duration === 60 && s === slotIdx + 1) c.classList.add("selected-full");
+  });
+
+  const startH = slotIdxToHour(slotIdx);
+  const endH = startH + state.duration / 60;
+  document.getElementById("cpDevice").textContent = `${DEVICES[deviceIdx].name} (${DEVICES[deviceIdx].id})`;
+  document.getElementById("cpDay").textContent = dayLabel();
+  document.getElementById("cpSlot").textContent = `${hourToLabel(startH)} - ${hourToLabel(endH)}`;
+  document.getElementById("cpDuration").textContent = `${state.duration} 分钟`;
+  document.getElementById("confirmPanel").classList.add("show");
+}
+
+function clearSelection() {
+  document.querySelectorAll(".selected-full,.selected-half").forEach(c => {
+    c.classList.remove("selected-full", "selected-half");
+  });
+  state.selection = null;
+  document.getElementById("confirmPanel").classList.remove("show");
+}
+
+/* ========== 控件回调 ========== */
+function setDuration(d) {
+  state.duration = d;
+  document.querySelectorAll("[data-duration]").forEach(b => {
+    b.classList.toggle("active", parseInt(b.dataset.duration, 10) === d);
+  });
+  if (state.selection) {
+    selectCell(state.selection.deviceIdx, state.selection.slotIdx);
+  }
+}
+// date input 的 onchange:读用户选的日期,重渲染
+function onDateChange() {
+  const v = document.getElementById("datePicker").value;
+  if (!v) return;  // 用户清空时不处理
+  state.selectedDate = v;
+  clearSelection();
+  renderA();
+}
+
+/* ========== 启动:date input 默认今天 + min=今天 ========== */
+(function () {
+  const todayStr = todayYmd();
+  document.getElementById("datePicker").value = todayStr;
+  document.getElementById("datePicker").min = todayStr;
+  renderA();
+})();
+</script>
+</body>
+</html>
