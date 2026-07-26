@@ -37,6 +37,12 @@ Chapter layout (matches plan-device-booking.md slice 01 acceptance criteria):
 - SCH. schedule grid (slice 03) — GET /devices/{device_id}/schedule day
   aggregation: same-day bookings grouped under one key; empty days omitted;
   cross-tenant / nonexistent device → 404.
+- R. tenant-by-day grid (booking-schedule-grid slice 02) —
+  GET /bookings/schedule-grid?tenant_id=&date= returns that store's bookings
+  for the day as BookingHqRead[]; platform writers target any store via
+  tenant_id, store roles query their own (carrying tenant_id → 403 anti-
+  forgery), cross-tenant store role → no leak, invalid date → 422, empty
+  store → [].
 
 Test-organization note (matches test_devices_api.py): each test uses ONE
 client fixture. The conftest seeds bookings:* perms for owner/admin/member
@@ -3023,3 +3029,252 @@ async def test_q9_member_state_action_with_tenant_id_400(
         headers=AUTH,
     )
     assert resp.status_code == 400, resp.text
+
+
+# ============================================================================
+# R. tenant-by-day schedule grid (booking-schedule-grid slice 02) —
+# GET /bookings/schedule-grid?tenant_id=&date=YYYY-MM-DD.
+#
+# Backs the HqView 排期网格: returns ONE store's bookings for ONE day as a
+# flat ``BookingHqRead[]`` (the frontend lays them out on the device×time grid).
+# The window is the calendar day ``[date 00:00, date+1 00:00)`` in UTC — the
+# grid renders cells by time-of-day so a tz-naive day boundary is fine, and
+# using UTC keeps SQLite tests and real Postgres identical.
+#
+# Authorization (read-path analogue of the platform-cross-tenant-write rule):
+# - Platform writers (super_admin / hq_staff) MUST pass ``tenant_id`` (the
+#   target store); missing → 400. They may read any store's grid.
+# - Store roles (owner / admin / member) MUST NOT pass ``tenant_id`` (anti-
+#   forgery → 403); they always read their own tenant.
+# - date must be a valid YYYY-MM-DD, else 422.
+# - Cross-tenant isolation: a store role never sees another tenant's booking.
+# - Empty store (or empty day) → ``[]``.
+# ============================================================================
+
+
+async def _seed_schedule_grid_bookings(db_session, test_env):
+    """Seed one booking on ``_BASE`` day in the caller's own tenant AND one in
+    a 2nd tenant, so the R-section cross-tenant + same-tenant assertions both
+    have data. Returns the seeded rows + the 2nd tenant id.
+
+    Mirrors ``_seed_two_tenant_bookings`` but the bookings are pinned to a
+    known calendar day (``_BASE`` = 2030-01-01) so the ``?date=`` filter is
+    deterministic and independent of "today"."""
+    from app.models.booking import Booking
+    from app.models.tenant import Tenant
+
+    model = await _seed_model(db_session, name="R-Model")
+
+    own_device = await _seed_device(
+        db_session,
+        tenant_id=test_env.tenant_id,
+        model_id=model.id,
+        serial="R-OWN",
+    )
+    own_customer, _own_profile = await _seed_customer_with_profile(
+        db_session, tenant_id=test_env.tenant_id, name="R-本店客户"
+    )
+    # _BASE day 10:00–11:00 → falls inside ?date=2030-01-01.
+    own_start, own_end = _window(0, 1)
+    own_booking = Booking(
+        tenant_id=test_env.tenant_id,
+        device_id=own_device.id,
+        customer_id=own_customer.id,
+        scheduled_start_at=own_start,
+        scheduled_end_at=own_end,
+        notes="本店当日预约",
+    )
+    db_session.add(own_booking)
+
+    other_tenant_id = f"tnt-r-{uuid.uuid4().hex}"
+    db_session.add(Tenant(id=other_tenant_id, name="R Other Tenant"))
+    other_device = await _seed_device(
+        db_session,
+        tenant_id=other_tenant_id,
+        model_id=model.id,
+        serial="R-OTHER",
+    )
+    other_customer, _other_profile = await _seed_customer_with_profile(
+        db_session, tenant_id=other_tenant_id, name="R-他店客户"
+    )
+    # Same _BASE day in the 2nd tenant.
+    other_start, other_end = _window(2, 1)
+    other_booking = Booking(
+        tenant_id=other_tenant_id,
+        device_id=other_device.id,
+        customer_id=other_customer.id,
+        scheduled_start_at=other_start,
+        scheduled_end_at=other_end,
+        notes="他店当日预约",
+    )
+    db_session.add(other_booking)
+    await db_session.commit()
+    return {
+        "own_booking": own_booking,
+        "own_device": own_device,
+        "own_customer": own_customer,
+        "other_booking": other_booking,
+        "other_device": other_device,
+        "other_customer": other_customer,
+        "other_tenant_id": other_tenant_id,
+        "model": model,
+    }
+
+
+@pytest.mark.asyncio
+async def test_r1_super_admin_target_tenant_returns_grid(
+    super_admin_client, db_session, test_env
+):
+    """R-1: super_admin ``GET /bookings/schedule-grid?tenant_id=<other>&date=``
+    returns the 2nd tenant's bookings for that day as ``BookingHqRead[]``
+    (panorama fields populated). The own-tenant booking is NOT in the result —
+    the grid is per-target-tenant, not a panorama."""
+    seeded = await _seed_schedule_grid_bookings(db_session, test_env)
+    date = _BASE.date().isoformat()
+    resp = await super_admin_client.get(
+        f"/api/v1/bookings/schedule-grid?tenant_id={seeded['other_tenant_id']}"
+        f"&date={date}",
+        headers=AUTH,
+    )
+    assert resp.status_code == 200, resp.text
+    items = resp.json()
+    ids = {b["id"] for b in items}
+    assert seeded["other_booking"].id in ids
+    # Per-target-tenant: own-tenant booking must NOT leak in.
+    assert seeded["own_booking"].id not in ids
+    # Panorama fields populated.
+    other_row = next(b for b in items if b["id"] == seeded["other_booking"].id)
+    assert other_row["tenant_name"] == "R Other Tenant"
+    assert other_row["device_name"] == "R-OTHER"
+    assert other_row["customer_name"] == "R-他店客户"
+
+
+@pytest.mark.asyncio
+async def test_r2_hq_staff_target_tenant_returns_grid(
+    hq_staff_client, db_session, test_env
+):
+    """R-2: hq_staff sees the same per-target-tenant grid as super_admin — the
+    cross-tenant read bypass applies to the schedule-grid endpoint too. Guards
+    the regression where a router-level guard would 403 hq_staff before the
+    body branch."""
+    seeded = await _seed_schedule_grid_bookings(db_session, test_env)
+    date = _BASE.date().isoformat()
+    resp = await hq_staff_client.get(
+        f"/api/v1/bookings/schedule-grid?tenant_id={seeded['other_tenant_id']}"
+        f"&date={date}",
+        headers=AUTH,
+    )
+    assert resp.status_code == 200, resp.text
+    items = resp.json()
+    ids = {b["id"] for b in items}
+    assert seeded["other_booking"].id in ids
+    assert seeded["own_booking"].id not in ids
+
+
+@pytest.mark.asyncio
+async def test_r3_platform_writer_missing_tenant_id_400(
+    super_admin_client, db_session, test_env
+):
+    """R-3: platform writer MUST target a tenant — omitting ``tenant_id`` → 400
+    (mirrors the write-path ``resolve_target_tenant`` guard; the read path
+    applies the same rule so the contract is uniform)."""
+    await _seed_schedule_grid_bookings(db_session, test_env)
+    date = _BASE.date().isoformat()
+    resp = await super_admin_client.get(
+        f"/api/v1/bookings/schedule-grid?date={date}",
+        headers=AUTH,
+    )
+    assert resp.status_code == 400, resp.text
+
+
+@pytest.mark.asyncio
+async def test_r4_store_role_reads_own_no_tenant_id_param(
+    app_client, db_session, test_env
+):
+    """R-4: a store role (owner here) queries its own grid by omitting
+    ``tenant_id`` — the endpoint resolves the target to ``user.tenant_id`` and
+    returns the own-tenant bookings for the day. Cross-tenant bookings are
+    invisible (the other tenant's booking is NOT in the result)."""
+    seeded = await _seed_schedule_grid_bookings(db_session, test_env)
+    date = _BASE.date().isoformat()
+    resp = await app_client.get(
+        f"/api/v1/bookings/schedule-grid?date={date}",
+        headers=AUTH,
+    )
+    assert resp.status_code == 200, resp.text
+    items = resp.json()
+    ids = {b["id"] for b in items}
+    assert seeded["own_booking"].id in ids
+    # Cross-tenant isolation: other-tenant booking never leaks.
+    assert seeded["other_booking"].id not in ids
+
+
+@pytest.mark.asyncio
+async def test_r5_store_role_forges_tenant_id_403(
+    app_client, db_session, test_env
+):
+    """R-5: a store role carrying ``?tenant_id=<other>`` → 403 (anti-forgery).
+    The rule is the read-path analogue of ``resolve_target_tenant``'s store-
+    role guard: a store principal's target is always its own tenant, so a
+    client-supplied tenant_id is a cross-tenant probe and must be refused."""
+    seeded = await _seed_schedule_grid_bookings(db_session, test_env)
+    date = _BASE.date().isoformat()
+    resp = await app_client.get(
+        f"/api/v1/bookings/schedule-grid?tenant_id={seeded['other_tenant_id']}"
+        f"&date={date}",
+        headers=AUTH,
+    )
+    assert resp.status_code == 403, resp.text
+
+
+@pytest.mark.asyncio
+async def test_r6_invalid_date_422(app_client, db_session, test_env):
+    """R-6: ``?date=not-a-date`` → 422 (FastAPI's Query date parser rejects it
+    before the service body runs). The contract is "YYYY-MM-DD or 422"."""
+    resp = await app_client.get(
+        "/api/v1/bookings/schedule-grid?date=not-a-date",
+        headers=AUTH,
+    )
+    assert resp.status_code == 422, resp.text
+
+
+@pytest.mark.asyncio
+async def test_r7_empty_store_returns_empty_list(
+    super_admin_client, db_session, test_env
+):
+    """R-7: a target tenant with NO bookings on the requested day → 200 + ``[]``
+    (empty list, NOT 404 — the grid renders an empty grid, the store exists)."""
+    import uuid
+
+    from app.models.tenant import Tenant
+
+    empty_tenant_id = f"tnt-empty-{uuid.uuid4().hex}"
+    async with db_session.begin_nested():
+        db_session.add(Tenant(id=empty_tenant_id, name="Empty Tenant"))
+    await db_session.commit()
+
+    date = _BASE.date().isoformat()
+    resp = await super_admin_client.get(
+        f"/api/v1/bookings/schedule-grid?tenant_id={empty_tenant_id}&date={date}",
+        headers=AUTH,
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json() == []
+
+
+@pytest.mark.asyncio
+async def test_r8_other_day_excluded(
+    super_admin_client, db_session, test_env
+):
+    """R-8: bookings on a DIFFERENT day are excluded — the window is the single
+    calendar day ``[date 00:00, date+1 00:00)``. Seeds a booking on _BASE and
+    queries the next day; the result must be empty."""
+    seeded = await _seed_schedule_grid_bookings(db_session, test_env)
+    next_day = (_BASE + timedelta(days=1)).date().isoformat()
+    resp = await super_admin_client.get(
+        f"/api/v1/bookings/schedule-grid?tenant_id={seeded['other_tenant_id']}"
+        f"&date={next_day}",
+        headers=AUTH,
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json() == []

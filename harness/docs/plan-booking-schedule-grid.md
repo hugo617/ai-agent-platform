@@ -196,22 +196,23 @@
 
 - **What it delivers**:`GET /bookings/schedule-grid?tenant_id=&date=` 返回该店当天全设备 `BookingHqRead[]`;新建 `(tenant_id, scheduled_start_at)` 复合索引。
 - **Blocked by**: 切片 01(共用 booking 基础设施,虽然逻辑可并行但 EP3 串行实施)
+- **状态**:**已完成**(2026-07-26)。证据:`./init.sh` 全绿 ruff + pytest 777 passed(含 R 章节 8 新用例)+ `alembic upgrade head && alembic check` 无 drift(Postgres)+ 新索引 `idx_bookings_tenant_schedule` 已落地。/code-review 双轴:Standards 0 硬违规(3 个 judgement call 均为本地一致性/避免越界,不改)、Spec 8/8 AC 全过(tz 语义对齐 sibling devices schedule 范式、helper 用 read 路径 `is_cross_tenant_viewer` 语义更准)。
 - **文件清单**:
   - `app/models/booking.py`(+`Index("idx_bookings_tenant_schedule", "tenant_id", "scheduled_start_at")`)
-  - `app/repositories/booking.py`(+`list_for_tenant_schedule`)
-  - `app/services/booking_service.py`(+`get_tenant_schedule`)
-  - `app/api/v1/bookings.py`(+`GET /bookings/schedule-grid` 端点)
-  - `alembic/versions/2026_07_2x_xxxx_add_tenant_schedule_index.py`(新迁移,加索引)
-  - `tests/test_bookings_api.py`(+R 章节 ~6 用例)
+  - `app/repositories/booking.py`(+`list_for_tenant_schedule` 含 `selectinload`)
+  - `app/services/booking_service.py`(+`get_tenant_schedule`,门店角色带 tenant_id → 403 防伪造,平台角色缺 tenant_id → 400)
+  - `app/api/v1/bookings.py`(+`GET /bookings/schedule-grid` 端点,路由序在 `/{booking_id}` 前)
+  - `alembic/versions/2026_07_26_1100_5565cf1e81bd_add_bookings_tenant_schedule_index.py`(新迁移,加索引)
+  - `tests/test_bookings_api.py`(+R 章节 8 用例:R-1~R-8)
 - **Acceptance criteria**:
-  - [ ] `list_for_tenant_schedule(tenant_id, range_start, range_end)` 显式 `where(Booking.tenant_id == tenant_id)`,半开区间 `[range_start, range_end)` 在 `scheduled_start_at` 上
-  - [ ] 新复合索引 `idx_bookings_tenant_schedule (tenant_id, scheduled_start_at)` 落地,`alembic check` 无 drift
-  - [ ] `GET /bookings/schedule-grid?tenant_id=&date=YYYY-MM-DD` 返回当天 [00:00, 次日 00:00) 的 `BookingHqRead[]`
-  - [ ] 平台写者带 target tenant_id 可查任何店;门店角色查自己(禁带 tenant_id,带则 403 防伪造);跨租户门店角色 → 403/404
-  - [ ] date 参数 YYYY-MM-DD 校验,非法 → 422
-  - [ ] 跨租户隔离:租户 A 查不到租户 B 的 booking(R 章节测试覆盖)
-  - [ ] 空店空列表返回 `[]`
-  - [ ] `./init.sh` 全绿
+  - [x] `list_for_tenant_schedule(tenant_id, range_start, range_end)` 显式 `where(Booking.tenant_id == tenant_id)`,半开区间 `[range_start, range_end)` 在 `scheduled_start_at` 上
+  - [x] 新复合索引 `idx_bookings_tenant_schedule (tenant_id, scheduled_start_at)` 落地,`alembic check` 无 drift
+  - [x] `GET /bookings/schedule-grid?tenant_id=&date=YYYY-MM-DD` 返回当天 [00:00, 次日 00:00) 的 `BookingHqRead[]`
+  - [x] 平台写者带 target tenant_id 可查任何店;门店角色查自己(禁带 tenant_id,带则 403 防伪造);跨租户门店角色 → 403/404(R-5 覆盖 403;404 分支结构上不可达 —— store role 的 target 永远是自己,forge 在 403 拦截,无独立 404 路径)
+  - [x] date 参数 YYYY-MM-DD 校验,非法 → 422(R-6,native `date` Query 类型 FastAPI 自动 422)
+  - [x] 跨租户隔离:租户 A 查不到租户 B 的 booking(R-1/R-4 覆盖 —— 平台角色查 target 店只见 target 店 booking,store role 不见他店)
+  - [x] 空店空列表返回 `[]`(R-7)
+  - [x] `./init.sh` 全绿
 
 ### 切片 03 — 前端:API 层 + 配置 Dialog + 设置入口 ✅ PR #130
 
