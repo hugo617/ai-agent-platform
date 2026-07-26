@@ -25,7 +25,15 @@ Cancel returns **204** (D9): it's a POST-to-a-sub-resource action that
 transitions state, not a resource creation. It's also idempotent: re-cancelling
 an already-cancelled booking is a no-op that still returns 204 (mirrors the
 DELETE-idempotency convention device unbind uses).
+
+``GET /schedule-grid`` (booking-schedule-grid slice 02) is a per-store
+by-day read. Route-order note: it MUST be declared before ``GET /{booking_id}``
+or FastAPI's path matcher would capture the literal ``schedule-grid`` segment
+as a booking_id. The ``date`` query param is a native ``datetime.date`` so
+FastAPI 422's a non-YYYY-MM-DD value before the service body runs.
 """
+
+from datetime import date
 
 from fastapi import APIRouter, Depends, Query, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -67,6 +75,50 @@ async def list_bookings(
     """
     return await BookingService(db).list(
         user.user_id, user.tenant_id, platform_role=user.platform_role
+    )
+
+
+# -------------------------------------------------- per-store schedule grid
+#
+# booking-schedule-grid slice 02. ``GET /bookings/schedule-grid`` returns ONE
+# store's bookings for ONE calendar day as ``BookingHqRead[]`` — the HqView
+# 排期网格 data source. Declared BEFORE ``GET /{booking_id}`` so the literal
+# ``schedule-grid`` path segment isn't captured as a booking_id.
+#
+# Authorization lives entirely in ``BookingService.get_tenant_schedule``:
+# platform writers (super_admin / hq_staff) MUST pass ``?tenant_id=<target>``
+# (missing → 400); store roles MUST NOT pass it (forgery → 403). There is NO
+# router-level ``require_permission`` dep — hq_staff has no tenant role and a
+# router-level require would 403 them before the service body branches on the
+# platform role, exactly the bug the slice-03 refactor fixed on ``GET /``.
+
+
+@router.get("/schedule-grid", response_model=list[BookingHqRead])
+async def get_tenant_schedule_grid(
+    date: date = Query(..., description="网格日期 (YYYY-MM-DD)"),
+    tenant_id: str | None = Query(
+        default=None,
+        description=(
+            "目标门店 id。平台角色(super_admin/hq_staff)必填;"
+            "门店角色禁填(防伪造)"
+        ),
+    ),
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> list[BookingHqRead]:
+    """One store's bookings for a single day, as ``BookingHqRead[]``.
+
+    - super_admin / hq_staff → pass ``?tenant_id=<target>`` to view any store.
+    - owner / admin / member → omit ``tenant_id``; always reads own tenant.
+      Carrying ``tenant_id`` is a forgery attempt → 403.
+    - ``date`` must be a valid YYYY-MM-DD, else 422.
+    """
+    return await BookingService(db).get_tenant_schedule(
+        user.user_id,
+        user.tenant_id,
+        date,
+        target_tenant_id=tenant_id,
+        platform_role=user.platform_role,
     )
 
 

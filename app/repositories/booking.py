@@ -136,6 +136,50 @@ class BookingRepository(TenantScopedRepository[Booking]):
         )
         return list((await self.db.execute(stmt)).scalars().all())
 
+    async def list_for_tenant_schedule(
+        self,
+        tenant_id: str,
+        range_start: datetime,
+        range_end: datetime,
+    ) -> list[Booking]:
+        """Windowed bookings for ONE tenant in ``[range_start, range_end)``,
+        backing the HqView per-store schedule-grid endpoint
+        (booking-schedule-grid slice 02). Ordered by ``scheduled_start_at`` so
+        the frontend's left-to-right time layout is trivial.
+
+        Tenant-scoped by construction (``WHERE tenant_id == ?``) — the service
+        guarantees ``tenant_id`` is the resolved target (platform writer's
+        ``?tenant_id=`` param, or the store role's own tenant), never a
+        client-supplied value for a store principal. The composite index
+        ``idx_bookings_tenant_schedule (tenant_id, scheduled_start_at)`` serves
+        this read as one index walk.
+
+        ``selectinload`` pre-loads tenant/device/customer because the service
+        builds ``BookingHqRead`` (which reads ``tenant.name`` /
+        ``device.serial_number`` / ``customer.name``) — without it the async
+        session would hit ``MissingGreenlet`` on the lazy attribute access.
+        Mirrors ``list_all_with_meta``.
+
+        Bookings are never soft-deleted (D8), so every row in the window is
+        returned including cancelled ones — the grid renders cancelled slots
+        in their status colour, they are NOT hidden.
+        """
+        stmt = (
+            select(Booking)
+            .where(
+                Booking.tenant_id == tenant_id,
+                Booking.scheduled_start_at >= range_start,
+                Booking.scheduled_start_at < range_end,
+            )
+            .options(
+                selectinload(Booking.tenant),
+                selectinload(Booking.device),
+                selectinload(Booking.customer),
+            )
+            .order_by(Booking.scheduled_start_at.asc())
+        )
+        return list((await self.db.execute(stmt)).scalars().all())
+
     # ------------------------------------------------ customer own (slice 04)
 
     async def list_for_customer(self, customer_id: str) -> list[Booking]:

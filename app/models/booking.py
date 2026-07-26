@@ -29,7 +29,13 @@ Foreign keys:
 Index strategy is query-pattern driven (see plan-device-booking.md §4.4):
 - ``idx_bookings_tenant`` — list query (within-store GET /)
 - ``idx_bookings_device_schedule`` — (device_id, scheduled_start_at), the
-  overlap-detection + schedule-grid hot path
+  overlap-detection + per-device schedule-grid hot path
+- ``idx_bookings_tenant_schedule`` — (tenant_id, scheduled_start_at), the
+  per-store by-day schedule-grid read (booking-schedule-grid slice 02). The
+  existing ``idx_bookings_device_schedule`` leads with ``device_id`` so it
+  cannot serve a tenant-only range scan; this index leads with ``tenant_id``
+  so the by-day endpoint's ``WHERE tenant_id=? AND scheduled_start_at>=? AND
+  scheduled_start_at<?`` is a single ordered index walk.
 - ``idx_bookings_customer`` — ``GET /me/bookings`` (customer own view, slice 04)
 - ``idx_bookings_status`` — filter chips (待确认 / 爽约) + slot-box three-state
 
@@ -93,6 +99,13 @@ class Booking(Base):
         ),
         Index("idx_bookings_tenant", "tenant_id"),
         Index("idx_bookings_device_schedule", "device_id", "scheduled_start_at"),
+        # Per-store by-day grid read (booking-schedule-grid slice 02): leads
+        # with tenant_id so a store+day range scan is one index walk. The
+        # device_schedule index above leads with device_id and cannot serve a
+        # tenant-only predicate efficiently.
+        Index(
+            "idx_bookings_tenant_schedule", "tenant_id", "scheduled_start_at"
+        ),
         Index("idx_bookings_customer", "customer_id"),
         Index("idx_bookings_status", "status"),
     )
