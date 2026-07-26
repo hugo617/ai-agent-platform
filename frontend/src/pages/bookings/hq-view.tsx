@@ -10,6 +10,14 @@
  * tenant_name/device_name/customer_name server-side (BookingHqRead), so the
  * list still needs no client-side lookups.
  *
+ * booking-schedule-grid 切片 04b adds a Tabs row (列表 / 网格) once a target is
+ * picked — the grid Tab renders the device×time ``ScheduleGrid`` (切片 04a) fed
+ * by ``useTenantBookingsByDate`` (切片 02 endpoint) + ``useBookingConfigEffective``
+ * (切片 01), with a「⚙ 设置」button opening ``BookingConfigDialog`` (切片 03) and
+ * empty-cell clicks prefilling ``BookingCreateDialog`` (device + slot). The list
+ * Tab stays the default; the grid is an alternate view onto the same target
+ * store, NOT a replacement.
+ *
  * Cross-tenant write contract (plan §4.5.4a 补丁 5):
  * - Platform writers MUST select a target tenant before any write action —
  *   the row action menu stays hidden until a target is picked (AC9).
@@ -34,11 +42,12 @@
  * candidate 8 in the 2026-07-25 architecture review, intentionally out of
  * scope here.
  */
-import { useState } from "react";
+import { useMemo, useState } from "react";
 
-import { CalendarX, Plus } from "lucide-react";
+import { CalendarX, Plus, Settings } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 
+import { useAuth } from "@/components/auth/auth-context";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -69,6 +78,7 @@ import { useToast } from "@/components/ui/toast";
 import { apiErrorMessage } from "@/api/client";
 import type {
   Booking,
+  BookingConfigUpsert,
   BookingCreate,
   BookingEndPayload,
   BookingHqRead,
@@ -78,16 +88,25 @@ import type {
 import {
   qk,
   useAllTenants,
+  useBookingConfigEffective,
   useBookings,
   useCancelBooking,
   useCreateBooking,
   useDevices,
   useEndBooking,
   useNoShowBooking,
+  usePlatformBookingConfig,
   useStartBooking,
+  useTenantBookingsByDate,
+  useTenantBookingConfig,
   useUpdateBooking,
+  useUpdatePlatformBookingConfig,
+  useUpdateTenantBookingConfig,
 } from "@/hooks/queries";
-import { BookingStatusBadge, fmt } from "./shared";
+import { isSuperAdmin } from "@/lib/permission";
+import { BookingStatusBadge, fmt, isoDate, startOfToday } from "./shared";
+import { BookingConfigDialog, DEFAULT_BOOKING_CONFIG } from "./config-dialog";
+import { ScheduleGrid } from "./schedule-grid";
 import {
   BookingCancelDialog,
   BookingCreateDialog,
@@ -148,6 +167,11 @@ export function HqView() {
   const onTargetChange = (id: string) => {
     setTargetTenantId(id);
     qc.invalidateQueries({ queryKey: qk.bookings });
+    // 切片 04b: a stale createPrefill belongs to the OLD target store (its
+    // device id isn't valid for the new store). Clear it so the next create
+    // Dialog open — whether from the list button or a fresh grid click —
+    // starts clean for the newly-picked store.
+    setCreatePrefill(null);
   };
 
   // ---------- write hooks (closure-bound to the selected target) ----------
@@ -163,6 +187,62 @@ export function HqView() {
   const startMut = useStartBooking(targetTenantId || undefined);
   const endMut = useEndBooking(targetTenantId || undefined);
   const noShowMut = useNoShowBooking(targetTenantId || undefined);
+
+  // ---------- 切片 04b: schedule-grid view mode + data ----------
+  // Tabs appear only after a target is picked (canWrite). The grid Tab is an
+  // alternate view onto the SAME target store the list shows — same target,
+  // same write hooks, just a different presentation. ``viewMode`` defaults to
+  // "list" (AC: 默认列表); the user can flip to "grid" to see the device×time
+  // sheet. Hand-rolled Button row (FilterChips 范式, no shadcn Tabs — plan §8
+  // out-of-scope).
+  const [viewMode, setViewMode] = useState<"list" | "grid">("list");
+
+  // Grid date: defaults to today (local), clamped to ≥ today via the input's
+  // ``min`` attr (AC: min=今天默认今天). ``isoDate`` gives local YYYY-MM-DD so
+  // the value matches the user's calendar regardless of tz (toISOString would
+  // drift a day in the evening east of UTC). Memoised once — the default
+  // doesn't change across renders; the user overrides it via the input.
+  const todayISO = useMemo(() => isoDate(startOfToday()), []);
+  const [gridDate, setGridDate] = useState<string>(todayISO);
+
+  // Grid data (切片 02 endpoint + 切片 01 effective config). Both gated on a
+  // picked target — useTenantBookingsByDate is ``enabled: !!tenantId``
+  // internally, and useBookingConfigEffective tolerates undefined the same
+  // way. They only fire when viewMode==="grid" && canWrite, but react-query
+  // doesn't support conditional hooks — so we always call them and let
+  // ``enabled`` + the component tree gate actual fetches. Cheap: the grid Tab
+  // isn't rendered until viewMode flips, and these stay dormant meanwhile.
+  const { data: gridBookings, isLoading: gridLoading } = useTenantBookingsByDate(
+    targetTenantId || undefined,
+    gridDate,
+  );
+  const { data: effectiveConfig } = useBookingConfigEffective(
+    targetTenantId || undefined,
+  );
+
+  // Config Dialog (切片 03): super_admin sees two columns (platform + tenant),
+  // hq_staff sees one (tenant). The two read hooks + two write hooks mirror
+  // the backend's two-level config router. ``isSuperAdmin(me)`` is computed
+  // in render (cheap, mirrors dashboard-page's pattern) — kept out of the
+  // Dialog so the Dialog stays a pure body.
+  const { me } = useAuth();
+  const admin = isSuperAdmin(me);
+  const { data: platformConfig } = usePlatformBookingConfig();
+  const { data: tenantConfig } = useTenantBookingConfig(targetTenantId || "");
+  const updatePlatformConfigMut = useUpdatePlatformBookingConfig();
+  const updateTenantConfigMut = useUpdateTenantBookingConfig(
+    targetTenantId || "",
+  );
+  const [configOpen, setConfigOpen] = useState(false);
+
+  // Prefill for the create Dialog when opened from a grid cell click (AC:
+  // 点击空 cell → 复用 BookingCreateDialog 预填 device + start/end). Null on
+  // the list Tab's「创建预约」button path → the Dialog opens blank as before.
+  const [createPrefill, setCreatePrefill] = useState<{
+    deviceId: string;
+    start: string;
+    end: string;
+  } | null>(null);
 
   // ---------- dialog state ----------
   // Edit target is typed BookingHqRead (the row shape we render); the shared
@@ -235,6 +315,44 @@ export function HqView() {
     }
   };
 
+  // 切片 04b: config Dialog submit. Routes scope → the matching two-level
+  // write hook, surfaces the toast, and closes the Dialog on success. The
+  // hooks already invalidate BOOKING_CONFIG_WRITE_KEYS (the whole config
+  // family), so effectiveConfig + both columns refresh automatically — no
+  // manual invalidateQueries needed here. Mirrors the create/edit handler
+  // shape (parent owns mutation + toast + close).
+  const handleConfigSubmit = async (
+    scope: "platform" | "tenant",
+    payload: BookingConfigUpsert,
+  ) => {
+    try {
+      if (scope === "platform") {
+        await updatePlatformConfigMut.mutateAsync(payload);
+      } else {
+        await updateTenantConfigMut.mutateAsync(payload);
+      }
+      toast.success(scope === "platform" ? "平台配置已保存" : "门店配置已保存");
+      setConfigOpen(false);
+    } catch (err) {
+      toast.error("保存配置失败", apiErrorMessage(err));
+    }
+  };
+
+  // 切片 04b: empty-cell click on the grid → prefill the create Dialog with
+  // the clicked device + slot, then open it. Mirrors how the list Tab's
+  // 「创建预约」button opens the same Dialog (just without prefill). The
+  // ScheduleGrid hands us (device, startISO, endISO); we stash them and let
+  // BookingCreateDialog's defaultDeviceId/defaultStart/defaultEnd props do
+  // the actual form prefill.
+  const handleSlotClick = (
+    device: DeviceHqRead,
+    startISO: string,
+    endISO: string,
+  ) => {
+    setCreatePrefill({ deviceId: device.id, start: startISO, end: endISO });
+    setCreateOpen(true);
+  };
+
   // HQ operators bypass casbin require server-side (plan §4.5.4a 补丁 2), so
   // the row menu's canUpdate/canCancel guards reduce to "a target is picked".
   // Without a target the menu is hidden entirely (AC9); with one, every
@@ -248,7 +366,16 @@ export function HqView() {
         subtitle="跨店聚合：查看所有门店的设备预约，并选定目标门店代为运营(创建/改约/取消/开机/结束/爽约)。"
         actions={
           canWrite && (
-            <Button onClick={() => setCreateOpen(true)}>
+            <Button
+              onClick={() => {
+                // List Tab's create button: open the Dialog with NO prefill
+                // (the prefill is a grid-cell-click concern only). Resetting
+                // here also clears any stale prefill from a previous grid
+                // click so the operator gets a blank form.
+                setCreatePrefill(null);
+                setCreateOpen(true);
+              }}
+            >
               <Plus className="mr-2 h-4 w-4" /> 创建预约
             </Button>
           )
@@ -289,20 +416,46 @@ export function HqView() {
               </span>
             )}
           </div>
+          {/* 切片 04b: view-mode Tabs. Hand-rolled Button row (FilterChips
+              范式 — no shadcn Tabs, plan §8 out-of-scope). Shown only after a
+              target is picked: the grid needs a target to query, and the list
+              is the default. aria-pressed mirrors config-dialog's preset
+              buttons so the active Tab is announced to screen readers. */}
+          {canWrite && (
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                size="sm"
+                variant={viewMode === "list" ? "default" : "outline"}
+                aria-pressed={viewMode === "list"}
+                onClick={() => setViewMode("list")}
+              >
+                列表
+              </Button>
+              <Button
+                size="sm"
+                variant={viewMode === "grid" ? "default" : "outline"}
+                aria-pressed={viewMode === "grid"}
+                onClick={() => setViewMode("grid")}
+              >
+                网格
+              </Button>
+            </div>
+          )}
         </CardHeader>
         <CardContent>
-          <ListState
-            isLoading={isLoading}
-            isEmpty={list.length === 0}
-            loadingVariant="skeleton"
-            skeletonRows={8}
-            emptyContent={
-              <EmptyState
-                icon={CalendarX}
-                title="暂无预约"
-                description="跨全部门店暂无设备预约"
-              />
-            }
+          {viewMode === "list" || !canWrite ? (
+            <ListState
+              isLoading={isLoading}
+              isEmpty={list.length === 0}
+              loadingVariant="skeleton"
+              skeletonRows={8}
+              emptyContent={
+                <EmptyState
+                  icon={CalendarX}
+                  title="暂无预约"
+                  description="跨全部门店暂无设备预约"
+                />
+              }
           >
             <Table>
               <TableHeader>
@@ -375,6 +528,59 @@ export function HqView() {
               </TableBody>
             </Table>
           </ListState>
+          ) : (
+            /* 切片 04b: grid view. Date picker (min=今天默认今天, AC) + ⚙ 设置
+             * button (opens 切片 03 BookingConfigDialog) + ScheduleGrid (切片
+             * 04a). The grid is fed by useTenantBookingsByDate (切片 02) +
+             * useBookingConfigEffective (切片 01); an empty-cell click prefills
+             * + opens BookingCreateDialog (handleSlotClick). Effective config
+             * may be undefined while loading — fall back to the backend's
+             * hardcoded defaults (45/08:00/22:00) so the grid renders rows
+             * immediately rather than blanking on first paint. */
+            <div className="space-y-3">
+              <div className="flex flex-wrap items-center gap-3">
+                <label
+                  htmlFor="grid-date"
+                  className="text-sm font-medium"
+                >
+                  日期：
+                </label>
+                <input
+                  id="grid-date"
+                  type="date"
+                  value={gridDate}
+                  min={todayISO}
+                  onChange={(e) => setGridDate(e.target.value || todayISO)}
+                  className="rounded-md border border-input bg-transparent px-3 py-1.5 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                />
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setConfigOpen(true)}
+                >
+                  <Settings className="mr-2 h-4 w-4" /> 设置
+                </Button>
+              </div>
+              {gridLoading ? (
+                <ListState
+                  isLoading
+                  isEmpty={false}
+                  loadingVariant="skeleton"
+                  skeletonRows={8}
+                >
+                  <></>
+                </ListState>
+              ) : (
+                <ScheduleGrid
+                  devices={targetDevices}
+                  bookings={gridBookings ?? []}
+                  config={effectiveConfig ?? DEFAULT_BOOKING_CONFIG}
+                  selectedDate={new Date(`${gridDate}T00:00:00`)}
+                  onSlotClick={handleSlotClick}
+                />
+              )}
+            </div>
+          )}
         </CardContent>
       </Card>
 
@@ -393,6 +599,13 @@ export function HqView() {
         isPending={createMut.isPending}
         onClose={() => setCreateOpen(false)}
         onSubmit={handleCreate}
+        /* 切片 04b: grid-cell-click prefill. Null on the list Tab's create
+           button (we reset it there) → Dialog opens blank. Set on a grid
+           empty-cell click → device + slot prefilled (P7 spy-on-children
+           test asserts these props). */
+        defaultDeviceId={createPrefill?.deviceId}
+        defaultStart={createPrefill?.start}
+        defaultEnd={createPrefill?.end}
       />
       <BookingEditDialog
         target={editTarget}
@@ -427,6 +640,29 @@ export function HqView() {
         isPending={noShowMut.isPending}
         onClose={() => setNoShowTarget(null)}
         onSubmit={handleNoShow}
+      />
+      {/* 切片 04b: schedule-grid config Dialog (切片 03 body). super_admin →
+          two columns (platform + tenant); hq_staff → one (tenant). The two
+          read hooks supply the seeded rows (null when not customised yet);
+          onSubmit routes scope → the matching two-level write hook. The
+          tenant column's name is the picked store (tenants lookup); falls
+          back to the raw id when the tenant row somehow isn't in the
+          all-tenants feed (defensive — the picker sourced from the same
+          feed so this is unreachable in practice). */}
+      <BookingConfigDialog
+        open={configOpen}
+        isSuperAdmin={admin}
+        targetTenantName={
+          tenants?.find((t) => t.id === targetTenantId)?.name ??
+          targetTenantId
+        }
+        platformConfig={platformConfig ?? null}
+        tenantConfig={tenantConfig ?? null}
+        isPending={
+          updatePlatformConfigMut.isPending || updateTenantConfigMut.isPending
+        }
+        onClose={() => setConfigOpen(false)}
+        onSubmit={handleConfigSubmit}
       />
     </div>
   );

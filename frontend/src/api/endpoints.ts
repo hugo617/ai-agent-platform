@@ -579,6 +579,25 @@ export async function fetchMyBookings(): Promise<Booking[]> {
   return data;
 }
 
+/** GET /bookings/schedule-grid?date=&tenant_id= — one store's bookings for a
+ * single calendar day, as ``BookingHqRead[]`` (booking-schedule-grid 切片 02).
+ *
+ * Anti-forgery contract mirrors the config ``effective`` read: ``tenantId`` is
+ * REQUIRED for platform roles (HQ view passes its picked target) and MUST be
+ * omitted by store roles (the backend resolves their own tenant from the
+ * token; carrying it is a forgery attempt → 403). ``dateISO`` is a
+ * "YYYY-MM-DD" string; the backend validates it (FastAPI native ``date`` Query
+ * → 422 on malformed). */
+export async function fetchTenantBookingsByDate(
+  dateISO: string,
+  tenantId?: string,
+): Promise<BookingHqRead[]> {
+  const { data } = await api.get<BookingHqRead[]>("/bookings/schedule-grid", {
+    params: { date: dateISO, ...(tenantId ? { tenant_id: tenantId } : {}) },
+  });
+  return data;
+}
+
 // ---------- booking schedule-grid config (booking-schedule-grid 切片 01) ----------
 //
 // Two-level configuration for the schedule grid, mirroring the backend

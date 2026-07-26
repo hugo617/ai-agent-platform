@@ -53,8 +53,13 @@ const DURATION_PRESETS = [45, 60, 90] as const;
  * tenant override nor a platform row exists. Centralised here so the form
  * stays operable on a fresh tenant without spelling the triple twice
  * (initialPayload seeds from it; ConfigColumn's useState mirrors the same
- * defaults so the inputs are non-empty before the first effect runs). */
-const DEFAULT_BOOKING_CONFIG: BookingConfigUpsert = {
+ * defaults so the inputs are non-empty before the first effect runs).
+ *
+ * 切片 04b: EXPORTED so HqView's schedule-grid fallback (effectiveConfig
+ * undefined while loading) reuses the same triple — one source of truth for
+ * the backend's hardcoded defaults. A backend default change still touches
+ * one site (here), not two. */
+export const DEFAULT_BOOKING_CONFIG: BookingConfigUpsert = {
   default_duration_minutes: 45,
   window_start: "08:00",
   window_end: "22:00",
