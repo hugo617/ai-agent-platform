@@ -265,23 +265,36 @@
   - [x] `cd frontend && npm test && npm run build` 全绿 + oxlint 0
     - **证据**:vitest 44/44(含本切片 11)、tsc 0 error、oxlint 0/0(94 文件)、npm run build 成功(chunk size warning 是既有基线)。
 
-### 切片 04b — 前端:HqView Tabs + 网格集成
+### 切片 04b — 前端:HqView Tabs + 网格集成 ✅
 
 - **What it delivers**:HqView 加 Tabs(列表/网格),网格视图集成日期选择 + 配置 Dialog + ScheduleGrid + 点击弹 BookingCreateDialog。
 - **Blocked by**: 切片 02(按天查询)+ 03(配置 Dialog)+ 04a(网格组件)
+- **状态**:**已完成**(2026-07-26)。证据:`cd frontend && npm test` 48/48 全绿(基线 44 + 新增 4:Tab 默认列表 / 网格渲染 smoke / 设置弹 Dialog / P7 预填 spy-on-children)+ `npm run build` 成功 + oxlint 0/0(88 文件全量)+ tsc 0 error。/code-review 双轴:Standards 0 硬违规(2 判断项已修:① `DEFAULT_BOOKING_CONFIG` export 化消除 Shotgun Surgery ② `createDialogCalls` 在 afterEach 重置防未来测试继承);Spec 核心 AC 全满足(2 处 doc/spec 漂移见下方留痕,非代码缺陷)。
 - **文件清单**:
   - `frontend/src/pages/bookings/hq-view.tsx`(改,+Tabs + 日期选择 + 配置触发 + 渲染网格)
-  - `frontend/src/pages/bookings/__tests__/hq-view.test.tsx`(改,+Tab 切换 / 网格 smoke,现有 8 测试零回归)
+  - `frontend/src/pages/bookings/__tests__/hq-view.test.tsx`(改,+Tab 切换 / 网格 smoke / 设置弹 Dialog / P7 预填)
+  - `frontend/src/pages/bookings/shared-dialog.tsx`(改,BookingCreateDialog +`defaultDeviceId`/`defaultStart`/`defaultEnd` 可选预填 props —— 复用而非新建,P7 测法要求)
+  - `frontend/src/pages/bookings/config-dialog.tsx`(改,`DEFAULT_BOOKING_CONFIG` const→export,hq-view 复用消除重复 —— /code-review 修)
+  - `frontend/src/hooks/queries.ts`(改,+`useTenantBookingsByDate` hook + `qk.tenantSchedule` 工厂项 + `BOOKING_WRITE_KEYS` 加 `["schedule-grid"]` 失效项)
+  - `frontend/src/api/endpoints.ts`(改,+`fetchTenantBookingsByDate` 调切片 02 端点)
 - **Acceptance criteria**:
-  - [ ] HqView 选 target 后出现 Tabs(列表/网格),默认列表
-  - [ ] Tabs 手搓 Button 行(沿用 `FilterChips` 范式,不引 shadcn Tabs)
-  - [ ] 网格 Tab:日期选择(`<input type="date">` min=今天,默认今天)+ 「⚙ 设置」按钮 + `<ScheduleGrid>`
-  - [ ] 网格数据:`useTenantBookingsByDate(targetTenantId, selectedDate)`(切片 02 端点)
-  - [ ] 网格配置:`useBookingConfigEffective(targetTenantId)`(切片 01 端点)
-  - [ ] 点击空 cell → 复用 `BookingCreateDialog` 预填 device + start/end(= cellStart + duration),提交走现有 `useCreateBooking`;**预填值测法(P7)**:`vi.mock("./shared-dialog", ...)` 捕获 `BookingCreateDialog` 的 props,断言 `defaultDevice === clickedDevice.id` 且 `defaultStart === cellStart ISO`(spy-on-children 范式)
-  - [ ] 「⚙ 设置」按钮 → 弹切片 03 的 `ConfigDialog`
-  - [ ] 现有 `hq-view.test.tsx` 8 测试零回归 + 新增 ~3 测试(Tab 切换 / 网格渲染 smoke / 设置按钮弹 Dialog)
-  - [ ] `cd frontend && npm test && npm run build` 全绿 + oxlint 0
+  - [x] HqView 选 target 后出现 Tabs(列表/网格),默认列表
+  - [x] Tabs 手搓 Button 行(沿用 `FilterChips` 范式,不引 shadcn Tabs)
+  - [x] 网格 Tab:日期选择(`<input type="date">` min=今天,默认今天)+ 「⚙ 设置」按钮 + `<ScheduleGrid>`
+  - [x] 网格数据:`useTenantBookingsByDate(targetTenantId, selectedDate)`(切片 02 端点)
+  - [x] 网格配置:`useBookingConfigEffective(targetTenantId)`(切片 01 端点)
+  - [x] 点击空 cell → 复用 `BookingCreateDialog` 预填 device + start/end(= cellStart + duration),提交走现有 `useCreateBooking`;**预填值测法(P7)**:`vi.mock("./shared-dialog", ...)` 捕获 `BookingCreateDialog` 的 props,断言 `defaultDevice === clickedDevice.id` 且 `defaultStart === cellStart ISO`(spy-on-children 范式)
+    - **命名留痕**:实施用 `defaultDeviceId`(值是 device id,比 `defaultDevice` 更清晰)/ `defaultStart` / `defaultEnd` 三 props,与 plan 写的 `defaultDevice` / `defaultStart` 语义等价但 prop 名更精确。P7 测法断言 `lastCall.defaultDeviceId === "d-1"` + start/end 本地小时数(slot 2 = 09:00,duration 45min → end 09:45)。
+  - [x] 「⚙ 设置」按钮 → 弹切片 03 的 `ConfigDialog`
+  - [x] 现有 `hq-view.test.tsx` 8 测试零回归 + 新增 ~3 测试(Tab 切换 / 网格渲染 smoke / 设置按钮弹 Dialog)
+    - **基线留痕**:plan 写「8 测试」是记忆偏差,实际基线是 **9 测试**(bookings-page-split 拆分时补了 HqView smoke)。实施 9 既有零回归 + **新增 4 测试**(Tab 默认列表 / 网格渲染 smoke / 设置弹 Dialog / P7 预填)= 13/13 全绿。
+  - [x] `cd frontend && npm test && npm run build` 全绿 + oxlint 0
+- **实施期决策与留痕**:
+  - **`useTenantBookingsByDate` 在本切片新建**(非切片 02):plan §6 切片 02 文件清单是 backend-only(端点 + 索引),但切片 04b AC line 279 直接引用 `useTenantBookingsByDate` 作为网格数据源 —— 这 hook 属 04b 范围(调用切片 02 已落地的端点)。endpoint `fetchTenantBookingsByDate` 同理。AC 合规。
+  - **StoreView ConfigDialog 未接**(已知 gap,推切片 05):plan line 234(切片 03 toast 留痕)写「toast wiring 归属 04b 接入 StoreView/HqView」,但 §8 line 331 写「不动 StoreView」—— 两处冲突。本切片按 §8「不动 StoreView」执行(只接 HqView),因 StoreView 的 `ScheduleGridCard` 不读 booking_config,toast 接入目前是装饰性。**推切片 05 联调时决定**:若 StoreView 也要暴露配置入口,在切片 05 补(届时 §8 需修订)。
+  - **`onTargetChange` 清 `createPrefill`**:切 target 时旧 prefill 的 deviceId 属旧店,清空防下次 create Dialog 残留跨店 device id。切片 04 既有 `qc.invalidateQueries({queryKey: qk.bookings})` 旁新增一行 `setCreatePrefill(null)`。
+  - **PageHeader「创建预约」按钮也清 prefill**:列表 Tab 路径不应预填(预填是网格 cell 点击专属),按钮 onClick 加 `setCreatePrefill(null)` 防上次网格点击残留。
+  - **`vi.mock("../shared-dialog", importOriginal)` spy 边界**:只替换 `BookingCreateDialog`(返回 null + push props 到 `createDialogCalls`),其他 Dialog + RowMenu 透传真实实现。既有 9 测试从不打开 create Dialog,spy 占位零影响(13/13 验证)。
 
 ### 切片 05 — 端到端联调 + feature 收尾(末切片)
 

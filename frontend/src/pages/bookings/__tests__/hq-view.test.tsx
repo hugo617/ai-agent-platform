@@ -22,8 +22,11 @@ import type { BookingHqRead, Tenant } from "@/api/types";
 
 // ---- mock wiring ----
 // HqView 切片 04 改造后调的 hooks:列表 + 全租户 + 写 mut + 设备列表
-// (targetDevices filter 用)。queryClient 来自 renderWithProviders,所以
-// useQueryClient 不需要 mock。
+// (targetDevices filter 用)。切片 04b 新增:网格数据 + 两级配置 read/write
+// hooks(useTenantBookingsByDate / useBookingConfigEffective /
+// usePlatformBookingConfig / useTenantBookingConfig /
+// useUpdatePlatformBookingConfig / useUpdateTenantBookingConfig)。
+// queryClient 来自 renderWithProviders,所以 useQueryClient 不需要 mock。
 const mocks = vi.hoisted(() => ({
   useBookings: vi.fn() as Mock,
   useAllTenants: vi.fn() as Mock,
@@ -34,6 +37,18 @@ const mocks = vi.hoisted(() => ({
   useStartBooking: vi.fn() as Mock,
   useEndBooking: vi.fn() as Mock,
   useNoShowBooking: vi.fn() as Mock,
+  // 切片 04b 网格 + 配置 hooks
+  useTenantBookingsByDate: vi.fn() as Mock,
+  useBookingConfigEffective: vi.fn() as Mock,
+  usePlatformBookingConfig: vi.fn() as Mock,
+  useTenantBookingConfig: vi.fn() as Mock,
+  useUpdatePlatformBookingConfig: vi.fn() as Mock,
+  useUpdateTenantBookingConfig: vi.fn() as Mock,
+  // useAuth 返回 { me },me 用来判 isSuperAdmin(决定 ConfigDialog 两栏/单栏)
+  useAuthMe: { platform_role: "super_admin", tenant_id: null } as {
+    platform_role: string | null;
+    tenant_id: string | null;
+  },
 }));
 
 vi.mock("@/hooks/queries", () => ({
@@ -46,10 +61,58 @@ vi.mock("@/hooks/queries", () => ({
   useStartBooking: mocks.useStartBooking,
   useEndBooking: mocks.useEndBooking,
   useNoShowBooking: mocks.useNoShowBooking,
+  // 切片 04b
+  useTenantBookingsByDate: mocks.useTenantBookingsByDate,
+  useBookingConfigEffective: mocks.useBookingConfigEffective,
+  usePlatformBookingConfig: mocks.usePlatformBookingConfig,
+  useTenantBookingConfig: mocks.useTenantBookingConfig,
+  useUpdatePlatformBookingConfig: mocks.useUpdatePlatformBookingConfig,
+  useUpdateTenantBookingConfig: mocks.useUpdateTenantBookingConfig,
   // qk 是常量对象,HqView 用它做 invalidateQueries 的 key。直接引真实值即可
   // (vi.mock 工厂返回的对象必须覆盖所有 HqView 引用的 named export)。
   qk: { bookings: ["bookings"] },
 }));
+
+// 切片 04b:HqView 调 useAuth() 取 me 判 isSuperAdmin(决定 ConfigDialog 形态)。
+// isSuperAdmin 读 me.platform_role === "super_admin";mock 返回 super_admin 让
+// 既有用例(不关心 ConfigDialog 形态)走两栏分支也能正常渲染。预填测试 describe
+// 里会单独覆写为 hq_staff 验证单栏(若需)。
+vi.mock("@/components/auth/auth-context", () => ({
+  useAuth: () => ({ me: mocks.useAuthMe }),
+}));
+
+// 切片 04b P7:spy-on-children 范式。BookingCreateDialog 被替换为一个捕获 props
+// 的占位组件 —— 每次渲染把收到的 props 推到 ``createDialogCalls`` 数组,预填测试
+// 断言最后一次调用的 defaultDeviceId/defaultStart/defaultEnd。既有 9 用例 + Tab/
+// 网格/设置 用例都不点 cell 打开 create Dialog(它们测的是列表/网格/配置),所以
+// 占位从不显示内容,零影响。其他 Dialog(Edit/Cancel/End/NoShow)+ RowMenu 用
+// importOriginal 透传真实实现,既有「行内菜单」测试不受影响。
+const createDialogCalls: Array<{
+  defaultDeviceId?: string;
+  defaultStart?: string;
+  defaultEnd?: string;
+  open: boolean;
+}> = [];
+vi.mock("../shared-dialog", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../shared-dialog")>();
+  return {
+    ...actual,
+    BookingCreateDialog: (props: {
+      defaultDeviceId?: string;
+      defaultStart?: string;
+      defaultEnd?: string;
+      open: boolean;
+    }) => {
+      createDialogCalls.push({
+        defaultDeviceId: props.defaultDeviceId,
+        defaultStart: props.defaultStart,
+        defaultEnd: props.defaultEnd,
+        open: props.open,
+      });
+      return null;
+    },
+  };
+});
 
 // ---- factories ----
 function makeHqBooking(overrides: Partial<BookingHqRead> = {}): BookingHqRead {
@@ -92,6 +155,9 @@ function makeMut() {
 }
 
 // 把所有写 hooks 喂成稳定 stub,避免每个用例重复设置。
+// 切片 04b:同时喂网格 + 两级配置 read/write hooks 的默认空值,让既有 9 用例
+// (不关心网格/配置)零改动通过 —— 网格 Tab 默认不渲染(viewMode="list"),
+// 这些 stub 只在 HqView 顶层 hooks 调用时被读取返回值。
 function stubWriteMutations() {
   mocks.useCreateBooking.mockReturnValue(makeMut());
   mocks.useUpdateBooking.mockReturnValue(makeMut());
@@ -99,10 +165,21 @@ function stubWriteMutations() {
   mocks.useStartBooking.mockReturnValue(makeMut());
   mocks.useEndBooking.mockReturnValue(makeMut());
   mocks.useNoShowBooking.mockReturnValue(makeMut());
+  // 切片 04b 默认:空数据 + 未加载配置(用 undefined 让 HqView 走 fallback)
+  mocks.useTenantBookingsByDate.mockReturnValue({ data: [], isLoading: false });
+  mocks.useBookingConfigEffective.mockReturnValue({ data: undefined });
+  mocks.usePlatformBookingConfig.mockReturnValue({ data: null });
+  mocks.useTenantBookingConfig.mockReturnValue({ data: null });
+  mocks.useUpdatePlatformBookingConfig.mockReturnValue(makeMut());
+  mocks.useUpdateTenantBookingConfig.mockReturnValue(makeMut());
 }
 
 afterEach(() => {
   vi.clearAllMocks();
+  // 切片 04b: createDialogCalls 是模块级裸数组,vi.clearAllMocks 不碰它。
+  // 每个用例后清空,防未来新增测试继承前序用例的 spy 记录(P7 测试虽也手动
+  // 清一次,但这里是 belt-and-braces 的统一兜底)。
+  createDialogCalls.length = 0;
 });
 
 // 触发行内 DropdownMenu(MoreHorizontal icon-only ghost button)。沿用
@@ -410,5 +487,167 @@ describe("HqView — platform-cross-tenant-write 切片 04 write controls", () =
     // startMut 是 useStartBooking(targetTenantId) 的返回值 —— closure 已绑
     // 定 target。mutateAsync 直接以 id 调用(tenantId 在 hook 内部加 query)。
     expect(startMut.mutateAsync).toHaveBeenCalledWith("bk_p");
+  });
+});
+
+// ============================================================ 切片 04b: Tabs + 网格 + 配置
+describe("HqView — booking-schedule-grid 切片 04b Tabs + 网格集成", () => {
+  // 网格测试共用 setup:选 target + 喂 device 数据 + effective config + 空 grid。
+  // targetDevices 在 HqView 内 .filter(tenant_id===target && status==="active"),
+  // 所以 devices 要含一条 target 店的 active 设备,网格才有列可渲染。
+  function setupGrid() {
+    mocks.useBookings.mockReturnValue({ data: [], isLoading: false });
+    mocks.useAllTenants.mockReturnValue({
+      data: [makeTenant({ id: "t-1", name: "上海徐汇店" })],
+    });
+    mocks.useDevices.mockReturnValue({
+      data: [
+        {
+          id: "d-1",
+          tenant_id: "t-1",
+          status: "active",
+          model_name: "理疗床 1",
+          serial_number: "DEV-001",
+        },
+      ],
+    });
+    stubWriteMutations();
+    // 网格数据:空列表(只测渲染,不测数据)。effectiveConfig 给真实形状让
+    // ScheduleGrid 渲染 08:00-22:00 行(28 half-hour rows)。
+    mocks.useTenantBookingsByDate.mockReturnValue({ data: [], isLoading: false });
+    mocks.useBookingConfigEffective.mockReturnValue({
+      data: {
+        default_duration_minutes: 45,
+        window_start: "08:00",
+        window_end: "22:00",
+      },
+    });
+  }
+
+  it("Tab 出现 + 默认列表:选 target 后出现 列表/网格 Tab,列表默认选中", async () => {
+    setupGrid();
+    const { baseElement, getByRole, getByText } = renderWithProviders(<HqView />);
+
+    await pickTarget(
+      baseElement as unknown as HTMLElement,
+      getByRole("combobox"),
+      "上海徐汇店",
+    );
+
+    // 两个 Tab 按钮出现
+    const listTab = getByText("列表");
+    const gridTab = getByText("网格");
+    expect(listTab).toBeTruthy();
+    expect(gridTab).toBeTruthy();
+    // 默认列表:list Tab aria-pressed=true,grid false
+    expect(listTab).toHaveAttribute("aria-pressed", "true");
+    expect(gridTab).toHaveAttribute("aria-pressed", "false");
+    // list 为空时 ListState 渲染空态(不渲染 Table 表头),这里只验证 Tab
+    // 选中态 —— 表头渲染由「渲染跨店表」smoke 用例(带数据)覆盖。
+  });
+
+  it("Tab 切到网格 + 网格渲染:点网格 → ScheduleGrid 渲染 + 日期 input min=今天", async () => {
+    const user = userEvent.setup();
+    setupGrid();
+    const { baseElement, getByRole, container } = renderWithProviders(<HqView />);
+
+    await pickTarget(
+      baseElement as unknown as HTMLElement,
+      getByRole("combobox"),
+      "上海徐汇店",
+    );
+
+    // 点网格 Tab
+    await user.click(getByRole("button", { name: "网格" }));
+
+    // ScheduleGrid 渲染:.grid table 出现 + 设备列表头(理疗床 1)
+    expect(container.querySelector("table.grid")).toBeTruthy();
+    expect(baseElement.ownerDocument.body.textContent).toContain("理疗床 1");
+    // 日期 input min=今天(YYYY-MM-DD 格式)
+    const dateInput = container.querySelector(
+      'input[type="date"]',
+    ) as HTMLInputElement;
+    expect(dateInput).toBeTruthy();
+    expect(dateInput.min).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    // 默认值也是今天
+    expect(dateInput.value).toBe(dateInput.min);
+    // 设置按钮可见
+    expect(getByRole("button", { name: /设置/ })).toBeTruthy();
+  });
+
+  it("设置按钮 → 弹 ConfigDialog:点设置后「预约配置」标题可见", async () => {
+    const user = userEvent.setup();
+    setupGrid();
+    const { baseElement, getByRole } = renderWithProviders(<HqView />);
+
+    await pickTarget(
+      baseElement as unknown as HTMLElement,
+      getByRole("combobox"),
+      "上海徐汇店",
+    );
+    await user.click(getByRole("button", { name: "网格" }));
+
+    // 配置 Dialog 未开时标题不可见
+    expect(baseElement.ownerDocument.body.textContent).not.toContain("预约配置");
+
+    // 点设置 → Dialog 打开,标题可见
+    await user.click(getByRole("button", { name: /设置/ }));
+    expect(baseElement.ownerDocument.body.textContent).toContain("预约配置");
+  });
+
+  // P7: spy-on-children 范式。点网格空 cell → BookingCreateDialog(已被 spy 替换)
+  // 收到预填 props(defaultDeviceId/defaultStart/defaultEnd)。断言最后一次调用
+  // 的 props 含点击的 device + cellStart/cellEnd ISO。
+  it("P7:点网格空 cell → BookingCreateDialog 收到预填 device + start/end props", async () => {
+    const user = userEvent.setup();
+    setupGrid();
+    // createDialogCalls 已在 afterEach 统一清空,这里无需手动清。
+    const { baseElement, getByRole, container } = renderWithProviders(<HqView />);
+
+    await pickTarget(
+      baseElement as unknown as HTMLElement,
+      getByRole("combobox"),
+      "上海徐汇店",
+    );
+    await user.click(getByRole("button", { name: "网格" }));
+
+    // 把日期改到未来(明天),让所有 cell 都可预订 —— ScheduleGrid 默认 now=今天,
+    // 今天的早些时段 cell 会是 disabled(不可点)。换未来日期 isSelectedToday=false
+    // → 全部 cell bookable。date input 的 value/min 是 YYYY-MM-DD。
+    const dateInput = container.querySelector(
+      'input[type="date"]',
+    ) as HTMLInputElement;
+    const today = dateInput.min; // 今天 YYYY-MM-DD
+    // 明天 = 今天 + 1 天(手算避免引日期库,对齐 plan §8 不引日期库)。
+    const [y, m, d] = today.split("-").map(Number);
+    const tomorrow = new Date(y, m - 1, d + 1);
+    const tomorrowISO = `${tomorrow.getFullYear()}-${String(
+      tomorrow.getMonth() + 1,
+    ).padStart(2, "0")}-${String(tomorrow.getDate()).padStart(2, "0")}`;
+    fireEvent.change(dateInput, { target: { value: tomorrowISO } });
+
+    // 点一个空 bookable cell。config window 08:00-22:00,slot 2 = 09:00。
+    // data-device=0(第一列 d-1),data-slot=2。fireEvent.change 后网格会随
+    // gridDate 重渲染,但 selectin 立即可用(同步 setState)。
+    const cellEl = container.querySelector(
+      'td.cell.bookable[data-device="0"][data-slot="2"]',
+    ) as HTMLElement | null;
+    expect(cellEl).toBeTruthy();
+    await user.click(cellEl as HTMLElement);
+
+    // spy 应被以 open=true + 预填 props 调用。最后一次调用即点击后的那次。
+    const lastCall = createDialogCalls[createDialogCalls.length - 1];
+    expect(lastCall).toBeTruthy();
+    expect(lastCall.open).toBe(true);
+    expect(lastCall.defaultDeviceId).toBe("d-1");
+    // slot 2 = windowStart(8) + 2*0.5h = 09:00 本地;45 分钟 duration →
+    // end 09:45 本地。ScheduleGrid.slotHourToISO 用 setHours(本地)+ toISOString,
+    // 所以断言本地小时数(不假设 UTC —— jsdom 跑在宿主时区,toISOString 会偏移)。
+    const startLocalHour = new Date(lastCall.defaultStart as string).getHours();
+    const endLocalHour = new Date(lastCall.defaultEnd as string).getHours();
+    const endLocalMin = new Date(lastCall.defaultEnd as string).getMinutes();
+    expect(startLocalHour).toBe(9);
+    expect(endLocalHour).toBe(9);
+    expect(endLocalMin).toBe(45);
   });
 });

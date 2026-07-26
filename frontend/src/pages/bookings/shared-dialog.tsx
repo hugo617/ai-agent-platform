@@ -141,6 +141,9 @@ export function BookingCreateDialog({
   isPending,
   onClose,
   onSubmit,
+  defaultDeviceId,
+  defaultStart,
+  defaultEnd,
 }: {
   open: boolean;
   devices: Device[];
@@ -149,6 +152,15 @@ export function BookingCreateDialog({
   isPending: boolean;
   onClose: () => void;
   onSubmit: (payload: BookingCreate) => Promise<void>;
+  /** Prefill the device + time window when the Dialog opens (booking-schedule-
+   * grid 切片 04b: clicking an empty grid cell opens this Dialog with the
+   * clicked device + slot already filled). Undefined on the StoreView path →
+   * the Dialog opens blank as before (zero behaviour change for store callers).
+   * ``defaultStart`` / ``defaultEnd`` are ISO timestamps (the grid's
+   * slotHourToISO output); they're converted to datetime-local values here. */
+  defaultDeviceId?: string;
+  defaultStart?: string;
+  defaultEnd?: string;
 }) {
   const [deviceId, setDeviceId] = useState("");
   const [customerId, setCustomerId] = useState<string>(NONE);
@@ -161,16 +173,22 @@ export function BookingCreateDialog({
   // Reset the form when the dialog opens. Without this, the inputs would
   // retain stale values from the previous open (React keeps the component
   // mounted across open/close because the parent keeps it in the tree).
+  //
+  // 切片 04b: when the HQ grid opens this Dialog from a cell click, the parent
+  // passes ``defaultDeviceId`` / ``defaultStart`` / ``defaultEnd`` to prefill
+  // the clicked slot. StoreView doesn't pass them → the Dialog opens blank
+  // (zero behaviour change). The prefill is read on every open, so a fresh
+  // cell click while the Dialog is closed-and-reopened picks up the new slot.
   useEffect(() => {
     if (open) {
-      setDeviceId("");
+      setDeviceId(defaultDeviceId ?? "");
       setCustomerId(NONE);
-      setStart("");
-      setEnd("");
+      setStart(defaultStart ? toDatetimeLocalValue(defaultStart) : "");
+      setEnd(defaultEnd ? toDatetimeLocalValue(defaultEnd) : "");
       setNotes("");
       setMissing(null);
     }
-  }, [open]);
+  }, [open, defaultDeviceId, defaultStart, defaultEnd]);
 
   const submit = async () => {
     if (!deviceId) {

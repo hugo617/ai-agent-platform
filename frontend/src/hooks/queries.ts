@@ -55,6 +55,7 @@ import {
   fetchEffectiveBookingConfig,
   fetchPlatformBookingConfig,
   fetchTenantBookingConfig,
+  fetchTenantBookingsByDate,
   fetchDeviceModels,
   fetchDevices,
   fetchDeviceSchedule,
@@ -228,6 +229,14 @@ export const qk = {
   deviceSchedule: (deviceId: string, start?: string, end?: string) =>
     ["device-schedule", deviceId, start ?? null, end ?? null] as const,
   myBookings: ["me", "bookings"] as const,
+  // booking-schedule-grid 切片 02/04b: per-store single-day grid feed
+  // (GET /bookings/schedule-grid). Keyed by [target tenant, date] so each
+  // store×day caches independently — switching target or paging the date
+  // refetches only that one cell. The literal-prefix ["schedule-grid"]
+  // family lets a write (create/reschedule/cancel) invalidate every open
+  // grid in one shot (added to BOOKING_WRITE_KEYS below).
+  tenantSchedule: (tenantId: string, dateISO: string) =>
+    ["schedule-grid", tenantId, dateISO] as const,
   // booking schedule-grid config (booking-schedule-grid 切片 01/03). Two-level
   // config: platform default row + per-tenant overrides. The grid reads the
   // MERGED view (effective); the config Dialog reads/writes each tier.
@@ -562,14 +571,36 @@ export function useDeleteDeviceModel() {
 //
 // BOOKING_WRITE_KEYS is the shared invalidate set for the three write hooks;
 // see useDeleteConversation for the same literal-prefix-family convention.
+// Includes ["schedule-grid"] (booking-schedule-grid 切片 04b): a create /
+// reschedule / cancel moves a booking onto / off a day, so any open HQ grid
+// is stale until refetched.
 const BOOKING_WRITE_KEYS: QueryKey[] = [
   qk.bookings,
   ["device-schedule"],
   qk.myBookings,
+  ["schedule-grid"],
 ];
 
 export function useBookings() {
   return useQuery({ queryKey: qk.bookings, queryFn: fetchBookings });
+}
+
+/** One store's bookings for a single calendar day (booking-schedule-grid
+ * 切片 02 endpoint, 切片 04b hook). Powers the HQ schedule grid. ``tenantId``
+ * is REQUIRED for platform roles (HQ passes its picked target) and MUST be
+ * omitted by store roles (anti-forgery). ``dateISO`` is "YYYY-MM-DD".
+ * Gated on a truthy ``tenantId`` so the HQ grid doesn't fire before a target
+ * is picked (the store path doesn't reach this hook — StoreView keeps its
+ * ScheduleGridCard). */
+export function useTenantBookingsByDate(
+  tenantId: string | undefined,
+  dateISO: string,
+) {
+  return useQuery({
+    queryKey: qk.tenantSchedule(tenantId ?? "", dateISO),
+    queryFn: () => fetchTenantBookingsByDate(dateISO, tenantId),
+    enabled: !!tenantId,
+  });
 }
 
 /** One booking (GET /bookings/{id}). Branches on platform_role like the list:
