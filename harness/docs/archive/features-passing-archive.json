@@ -1,7 +1,7 @@
 {
   "project": "ai-agent-platform",
   "description": "已 passing feature 的历史归档(完整字段保留,审计用)",
-  "count": 63,
+  "count": 64,
   "features": [
     {
       "id": "data-export",
@@ -1574,6 +1574,33 @@
         "EP3 切片 06 已合并(PR #112 commit 354f528):前端门店端 StoreView —— 首个真正展示 UI 的切片,复刻 devices-page.tsx 骨架把 /bookings 从占位页变成完整门店端预约管理界面。StoreView(bookings-page.tsx +920/-18):列表 Table(设备名 serial_number / 客户名 walk-in 标散客 / 预约时段 scheduled_start_at→scheduled_end_at / 状态 Badge / 创建时间 / 操作 DropdownMenu);filter chips 行(全部/今日/明日/本周/待确认 pending/爽约 no_show —— 手写 Button 行,项目无 shadcn Tabs 范式,settings-page 明确不加,dashboard 趋势切换是先例);状态 Badge 映射 STATUS_META(6 态→dot-* 变体:pending→dot-warning / confirmed→dot-muted / in_service→dot-success / done→dot-muted / cancelled→dot-muted / no_show→dot-destructive —— 新增 badge.tsx 的 dot-muted 变体,中性态不再塌缩成 dot,语义显式);创建 Dialog(设备 Select 仅 active 活设备 + 客户 Select 含「不指定 散客」walk-in 选项 NONE sentinel + 开始/结束 datetime-local + 备注 Input);改约 Dialog(仅 pending 可进 MUTABLE_STATUS;device_id disabled 灰显 D10 不可改;可改 scheduled_*/customer_id/notes);取消确认 Dialog(仅 pending 显示操作菜单;调 cancelBooking POST /cancel 非 DELETE D8;非 pending 终态隐藏菜单);排期网格 ScheduleGridCard(选设备 → 7 天 × slot-box 三态色:active primary / done muted / cancelled·no_show destructive line-through,复用 useDeviceSchedule(id, today, today+7d),每空天显「空」占位);时段冲突 UX(创建/改约 400 → toast 显示后端 apiErrorMessage「设备时段冲突:...」,不前端预判);权限隐藏(canCreate/canUpdate/canCancel = hasPermission(me,\"bookings\",act),member 只读写按钮全隐藏,canCancel 用 :delete 因后端 cancel 端点 require_permission bookings delete)。支撑改动:badge.tsx 加 dot-muted 变体(与 dot 同渲染,语义显式);lib/format.ts 加 toDatetimeLocalValue/fromDatetimeLocalValue 两个 datetime-local ↔ ISO 换算 helper(无既有范式,plan 指定用原生 input type=datetime-local,本地时间模型因门店排期按墙钟时间读)。切片 07(HqView + MyBookingsView + 三叉分支 + feature 收尾)明确留给切片 07,本切片 BookingsPage 直接渲染 StoreView。验证:./init.sh 全绿 651 passed(无后端改动,基线无回归)+ cd frontend && npm run build ✓ 1.93s + npx oxlint 0 warnings/errors(75 files)。/code-review 双轴:Standards 0 硬违规(3 个判断项已修:dead void me + useAuth / STATUS_META 神秘 token 合并 / ListState isEmpty 死参数),Spec 10 项 acceptance criteria 全勾(dot-muted 色调修正后)。CI 4/4 全绿(Backend pytest+ruff 5m2s / E2E 3m1s / Frontend 1m56s / Migrations 57s)。无迁移、无后端改动。feature 仍 in_progress(切片 07 待做)",
         "EP3 切片 07 已合并(PR #113 commit 5b75fb4,末切片):把 /bookings 从切片 06 的纯 StoreView 升级为按身份分叉的三视图。BookingsPage 顶层三叉路由 isSuperAdmin||isHQStaff?HqView:hasCustomerIdentity?MyBookingsView:StoreView(复刻 devices-page 二叉 + 加 customer 第三叉,HQ 优先于 customer 身份)。HqView 跨租户只读全景表格(复刻 devices-page HqView 骨架,PageHeader+Card+Table+ListState+EmptyState,换数据源 useBookings()→BookingHqRead[] narrowing cast,列 tenant_name/device_name/customer_name/scheduled_*/status Badge/created_at,walk-in 显散客,无写按钮)。MyBookingsView customer 只读列表(调 useMyBookings(),后端 /me/bookings 已按 caller customer_id 过滤,无写按钮)。hasCustomerIdentity(me) helper 新建于 permission.ts(照 isHQStaff 范式,判断 me.customer_id 非空,JSDoc 注明三叉语义)。**Blocker 修复**:plan 要求 me.customer_id 判断,但 MeResponse API 契约未暴露 customer_id(切片 04 只加在后端内部 CurrentUser)→ 本切片补 MeResponse.customer_id 字段(app/schemas/auth.py schema + app/api/v1/auth.py _build_me_response 透传 user.customer_id + frontend types.ts 对齐),窄范围契约对齐,无新迁移无表结构改动。测试 N 章节 2 个(N1 customer 身份 GET /auth/me 返回 own customer_id / N2 store-staff 返回 null)+ import uuid。验证:./init.sh 全绿 653 passed(基线 651 + N1/N2 新 2)+ ruff 0 error + cd frontend && npm run build ✓ 1.94s + npx oxlint 0 warnings/errors(75 files)。/code-review 双轴:Standards 0 硬违规(4 判断级 smell 均为复刻 devices-page 约定或可接受:Repeated Switches 三叉字面量 / as BookingHqRead[] 强转 / HqView·MyBookingsView 同文件骨架 / hasCustomerIdentity Middle Man),Spec 代码实现全勾(MeResponse.customer_id 契约对齐判定 in-scope 非越界)。已知 UX 缺口:MyBookingsView 设备列显 device_id 前缀(BookingRead 不带 device_name,拉 devices feed 会泄露跨租户设备故不拉,后端 /me/bookings 加 selectinload device_name 留给未来增量,plan §3 line 55 未硬定列故 spec 合规)。无迁移、无表结构改动。",
         "【feature 收尾】device-booking 7 切片全部合并(01-07),verification 笔误修正(第 3 条 409→400 对齐 plan §0 D1 BizError 走 HTTP 400 / 第 4 条 POST/GET/PUT/DELETE → POST/GET/PUT + POST /cancel 对齐 D8 bookings 不软删无 DELETE 端点),status in_progress→passing,evidence 实测结果回填。./init.sh 全绿 653 passed + npm build ✓ + oxlint 0 warnings。文档影响评估:02-后端架构(auth/me 契约加 customer_id)+ 04-前端架构(bookings-page 三叉路由范式 / permission.ts 加 hasCustomerIdentity)无需同步(既有文档描述的是范式层级,本次是范式内的实例,不改变架构约定)。依赖解锁:device-poweron(priority 64,depends_on device-booking)依赖已解锁 → 按 three-tier §5 可置 in_progress(待用户决定何时启动)。"
+      ]
+    },
+    {
+      "id": "device-poweron",
+      "priority": 64,
+      "area": "业务实体",
+      "title": "设备开机/结束/爽约状态机动作(不含硬件下发)",
+      "user_visible_behavior": "客户/店员点击「开机」按钮 → 设备订单从 pending 流转到 in_service,记录开始时间;点击「结束」→ 流转到 done,记录结束时间 + 可填反馈;爽约按钮 → 流转到 no_show。⚠️ 当前只到状态机层,「点击开机 → 设备真开启」的硬件下发链路(MQTT/WS/寻址)留空,归于未来 backlog",
+      "status": "passing",
+      "verification": [
+        "后端:POST /bookings/{id}/start(pending/confirmed→in_service,填 started_at)、POST /bookings/{id}/end(in_service→done,填 ended_at + 写 feedback JSON,device-booking 建为通用 JSON 非 JSONB,SQLite/PG 双库兼容)、POST /bookings/{id}/no-show(→no_show);状态机纯函数 app/services/booking_state.py(6 条合法跳转,内部 {state,action}→new_state 表)+ 非法跳转 raise InvalidTransition(BizError 子类)→ HTTP 400(全仓库无 409 概念,D1 定调)",
+        "权限:start 可由 customer(自己的 booking 且 customer_id 非空)或 store_staff+ 触发;walk-in booking(customer_id 为空)必须由 store_staff+ start,customer 端无权;end/no-show 仅 store owner(`bookings:delete`,admin 无此码 → 403,B2);所有端点强制 tenant_id + customer_id(如适用)校验防越权",
+        "前端:customer 端 MyBookingsView「确认开机」按钮真调 API(StorePilot 仅 Toast 是已知占位,本项目补真调用,切片 02);门店端 StoreView 预约列表的「确认开机(walk-in)」「结束服务」「标记爽约」操作按钮(切片 03,DropdownMenu + ACTIONABLE_STATUS 松绑 + end/no-show Dialog)",
+        "pytest:覆盖 6 条合法跳转 + 非法跳转 400 + 权限矩阵(start: owner/admin 200、member 403;end/no-show: owner 200/204、admin/member/customer/hq_staff 403)+ customer own 校验 + **walk-in booking(customer_id 为空)customer start 应 403,store_staff start 应 200** + started_at/ended_at 自动填充 + feedback 落库 + alembic check 无 drift(本 feature 无新迁移,迁移链 head 不变)",
+        "vitest 前端组件测(首个前端单测基建):MyBookingsView(切片 02,6 tests)+ StoreView(切片 03,6 tests)按钮的渲染/调用/禁用/toast/Dialog 覆盖",
+        "cd frontend && npm run build 通过 + oxlint 0 warnings + vitest 全绿"
+      ],
+      "notes": "设备功能系列 4/4 收官。**重要边界:硬件下发链路不在范围** —— 与 StorePilot slice-30-d3-iot-static.md 阶段 1 妥协一致(MQTT broker/WebSocket 实时流/设备寻址下发均推迟)。devices 表本次不加 mqtt_topic/hw_address 字段(YAGNI,等真上 IoT 时一次迁移补)。devices.serial_number 已有,未来硬件寻址可复用。开机动作不加 StorePilot 的 risk_ack/血压采集前置(那是医疗设备特定业务,本项目作为通用 SaaS 脚手架不该假设客户业务有此合规要求)。**walk-in booking 边界:customer_id 为空的预约只能由 store_staff+ start,customer 端无权触发(避免匿名预约被冒认)**。本 feature 写入的 started_at/ended_at/feedback 字段由 device-booking feature 先建好 schema(见其 notes),本 feature 不需要再加迁移列。未来要落地真实硬件下发时,新开 feature(预计 priority 65+,area=基础设施或 IoT)。依赖:[device-booking]。",
+      "plan": "harness/docs/plan-device-poweron.md",
+      "depends_on": "device-booking",
+      "evidence": [
+        "切片 01 合并 PR #114(commit 6e74073):booking_state.py 纯函数 6 合法边 + BookingService.start/end/no_show 三方法 + 三端点(函数体内 require,B1)+ tests/test_booking_state.py(6 合法 + 全非法组合 InvalidTransition)+ tests/test_bookings_api.py P 章节(P-1 6 合法跳转 / P-2 非法 400 / P-3 start 权限矩阵 customer own+walkin+owner+admin+member+hq+unauth / P-4 end/no-show 权限矩阵 owner 200/204 + admin/member/customer/hq 403 / P-5 跨租户 404 含 customer / P-6 副作用落库 started_at/ended_at/feedback)",
+        "切片 02 合并 PR #115(commit 1621c99):frontend vitest 基建(vitest.config + setup.ts + test-utils.tsx + tsconfig.app.json types)+ startBooking/useStartBooking + MyBookingsView 确认开机按钮 + my-bookings-view.test.tsx(6 tests)",
+        "切片 03 合并 PR #116(本会话):endBooking/noShowBooking endpoints + useEndBooking/useNoShowBooking hooks + StoreView DropdownMenu 三动作(确认开机/结束服务/标记爽约)+ ACTIONABLE_STATUS 松绑(pending/confirmed/in_service)+ end feedback Dialog + no-show 确认 Dialog + store-view.test.tsx(6 tests:walk-in start / in_service end+feedback Dialog / pending no-show 确认 / 终态无按钮 / member 无写按钮 / pending 行四菜单项共存)",
+        "./init.sh 全绿 714 passed(ruff + pytest,SQLite 内存库,含 test_booking_state + test_bookings_api A–P 全章节)",
+        "cd frontend && npm run build ✓ 1.53s + npx oxlint 0 warnings 0 errors(80 files 102 rules)+ npx vitest run ✓ 12/12(2 files:my-bookings-view 6 + store-view 6)",
+        "/code-review 双轴(Standards + Spec)通过:0 阻断;修 1 注释误导(submitEnd fallback 不再归因 customers-page '标签 JSON' 范式);ACTIONABLE_STATUS 含 confirmed 经核实是 plan §0a B4 / §8 L276-278 显式要求的防御性渲染,非 speculative generality"
       ]
     }
   ]

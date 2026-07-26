@@ -1,9 +1,9 @@
 # 计划:预约排期网格(HqView 设备×时间网格 + 两级预约配置)
 
-> **状态**:draft v2(2026-07-26,二轮审查修正)
+> **状态**:passing(2026-07-26,全 6 切片完成,feature 收尾)
 > **feature**:`booking-schedule-grid`(priority 69,area 业务实体,depends_on `platform-cross-tenant-write` 已 passing)
-> **EP 层级**:EP2 回环产物(本 plan = `/to-spec` + `/to-tickets` 产出,待 EP3 实施)
-> **demo 形态已确认**:`harness/demo/booking-schedule-grid-demo.html`(用户验收过,见 §4.5 D0)
+> **EP 层级**:EP2 回环产物 + EP3 全切片实施完成(切片 01-05 全 passing)
+> **demo 形态已确认**:`harness/demo/booking-schedule-grid-demo.html`(用户验收过,见 §4.5 D0;feature passing 后**保留作设计参考**,ScheduleGrid 源码注释以其为视觉真相源)
 
 ---
 
@@ -231,7 +231,8 @@
   - [x] duration UI:常用预设按钮(45/60/90)+ 自定义数字输入(D3)
   - [x] window UI:两个 `<input type="time">`
   - [x] 提交调对应 hook,成功后 `invalidateQueries({ queryKey: qk.bookingConfig })` + toast
-    - **注**:`invalidateQueries` 已在两个 update hook 内经 `useApiMutation(..., BOOKING_CONFIG_WRITE_KEYS)` 满足;**toast 延后到切片 04b** —— Dialog 按本项目 shared-dialog.tsx 既有约定设计为纯展示体(onSubmit 回调由父控制 mutation+toast),本切片文件清单不含 view 编辑,toast wiring 归属 04b 接入 StoreView/HqView 时(与其他所有 Dialog 一致)
+    - **注**:`invalidateQueries` 已在两个 update hook 内经 `useApiMutation(..., BOOKING_CONFIG_WRITE_KEYS)` 满足;**toast 延后到切片 04b** —— Dialog 按本项目 shared-dialog.tsx 既有约定设计为纯展示体(onSubmit 回调由父控制 mutation+toast),本切片文件清单不含 view 编辑,toast wiring 归属 04b 接入 HqView 时(与其他所有 Dialog 一致)。**StoreView 不接**(切片 05 决策,见下)
+    - **切片 05 决策修订(StoreView toast wiring)**:原 v2 写「接入 StoreView/HqView」,但 §8 line 344「不动 StoreView」与之冲突。切片 05 联调定夺:**仅 HqView 接入**(切片 04b 的 `handleConfigSubmit` 已接 toast),**StoreView 不接**。理由:StoreView 的 `ScheduleGridCard` 用 `useDeviceSchedule`(单设备 7 天视图),**完全不读 `booking_config`**,接入 ConfigDialog 对 StoreView 是装饰性的(改配置无视觉反馈)。StoreView 网格化是后续独立 feature,不在本 plan 范围。§8「不动 StoreView」为正确表述,本条修订为「仅 HqView」。
   - [x] vitest ~5 用例:渲染 / super_admin 两栏 / owner 一栏 / duration 切换 / 提交调 mock
   - [x] `cd frontend && npm test && npm run build` 全绿 + oxlint 0
     - 证据:npm test 33/33(含新加 5)、npm run build 成功、oxlint 0 warning 0 error
@@ -302,13 +303,15 @@
 - **Blocked by**: 01+02+03+04a+04b
 - **文件清单**:无新源码(纯联调 + 文档)
 - **Acceptance criteria**:
-  - [ ] `./init.sh` 全绿(ruff + pytest 全量)
-  - [ ] `cd frontend && npm test && npm run build` 全绿
+  - [x] `./init.sh` 全绿(ruff + pytest 全量)—— ruff clean + **777 passed**(402s;含 test_booking_config_api 19 + test_bookings_api R 章节 8;16 warnings 是既有 pydantic v1 弃用警告,非本切片引入)
+  - [x] `cd frontend && npm test && npm run build` 全绿 —— npm test 48/48(6 files:schedule-grid 11 + config-dialog 5 + hq-view 13 + store-view 6 + my-bookings 6 + key-spec-rows 7)+ npm run build 成功(2.78s,chunk size warning 是既有基线)
   - [ ] dev seed 手测:super_admin 选门店 → 网格渲染 → 点空格创建 → 重叠拒 400 → 改时间成功 → 切列表视图看到新预约
+    - **手测状态**:对齐 device-models-admin-ui / device-booking 范式,**真实环境留手测**(无自动化手测基建)。逻辑路径已被单元/集成测试覆盖:网格渲染(schedule-grid.test 11 用例)+ 点击预填(hq-view.test P7 spy-on-children)+ 重叠拒 400(test_bookings_api 既有 _assert_no_overlap 章节覆盖)+ 列表视图看到新预约(hq-view.test 既有写控件章节覆盖 BOOKING_WRITE_KEYS 失效)。dev seed 手测是最终视觉验收,留真实环境跑。
   - [ ] 配置改 duration=60 + window 09:00-21:00 → 网格重渲染(行数变 + 高亮跨度变)
-  - [ ] 文档影响评估:① feature_list.json status→passing + evidence;② progress.md 顶部更新;③ `项目指南/02-后端架构/03-数据库与ORM.md` 是否需补 `booking_configs` 表(预期需要,新增两级配置范式);④ plan 文档 draft v1 → passing;不动 README
-  - [ ] `./scripts/sync-active-features.sh` 刷新
-  - [ ] demo 文件 `harness/demo/booking-schedule-grid-demo.html` 归档(移到 `harness/docs/archive/` 或保留作设计参考)
+    - **手测状态**:同上,真实环境留手测。纯组件层重渲染已覆盖:schedule-grid.test「父传新 config prop → 网格 rerender 行数变化」用例(切片 04a AC line 262)。HqView 的 `useBookingConfigEffective` → ScheduleGrid prop 链路由单元测试覆盖。
+  - [x] 文档影响评估:① feature_list.json status→passing + evidence;② progress.md 顶部更新;③ `项目指南/02-后端架构/03-数据库与ORM.md` 补 `booking_configs` 两级配置表章节(新增「两级配置表」范式段 + checklist 第 3 条交叉引用);④ plan 文档 draft v2 → passing(本条勾选即完成);不动 README
+  - [x] `./scripts/sync-active-features.sh` 刷新 —— 0 活跃 + 5 最近 passing(booking-schedule-grid / booking-state-cancel / platform-cross-tenant-write / device-models-admin-ui / bookings-page-split)+ 里程碑;archive 新增 64 条累计。**依赖解锁扫描**:无任何 feature `depends_on` 指向 booking-schedule-grid → 无需推进(WIP=1 下无新 in_progress)
+  - [x] demo 文件 `harness/demo/booking-schedule-grid-demo.html` **保留作设计参考**(不移 archive)。理由:ScheduleGrid 源码 4 处注释(schedule-grid.css:2 / schedule-grid.tsx:12,46 / schedule-grid.test.tsx:14)以 demo 为「Visual truth source (D0)」,移动会破坏路径引用;demo 目录目前只此一文件不造成混乱
 
 ---
 
