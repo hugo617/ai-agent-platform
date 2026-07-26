@@ -1,0 +1,359 @@
+/**
+ * ScheduleGrid styles — ported from harness/demo/booking-schedule-grid-demo.html
+ * (booking-schedule-grid 切片 04a, plan D0).
+ *
+ * The CSS class names are the test selectors (plan P5) AND the visual contract:
+ * do NOT rename. States (selected-full / selected-half / disabled / span-2 /
+ * span-1-5 / st-pending|st-confirmed|st-inservice|st-done|st-cancel) are
+ * complex enough that Tailwind utilities would obscure them — kept as plain
+ * CSS, one source of truth, identical to the demo the user accepted.
+ *
+ * Imported by schedule-grid.tsx. Scoped by the demo's class names (no ``.sg``
+ * prefix) — these class names are specific enough that they don't collide with
+ * Tailwind utilities or other components in the app.
+ */
+
+/* ===== layout ===== */
+.grid-scroll {
+  overflow: auto;
+  max-height: 640px;
+  border: 1px solid hsl(214.3 31.8% 91.2%);
+  border-radius: 8px;
+  background: hsl(0 0% 100%);
+  /* let the inner table center when narrower than the container */
+  text-align: center;
+}
+.grid-scroll::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+.grid-scroll::-webkit-scrollbar-thumb {
+  background: hsl(212.9 26.8% 70%);
+  border-radius: 5px;
+}
+.grid-scroll::-webkit-scrollbar-thumb:hover {
+  background: hsl(215.4 19.3% 56.5%);
+}
+.grid-scroll::-webkit-scrollbar-track {
+  background: hsl(210 40% 96.1%);
+}
+
+table.grid {
+  border-collapse: separate;
+  border-spacing: 0;
+  width: auto;
+  margin: 0 auto;
+  display: inline-table;
+}
+table.grid th,
+table.grid td {
+  border-right: 1px solid hsl(214.3 31.8% 91.2%);
+  border-bottom: 1px solid hsl(214.3 31.8% 91.2%);
+  padding: 0;
+  margin: 0;
+}
+
+/* ===== sticky header + first column ===== */
+table.grid thead th {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+}
+table.grid th.corner,
+table.grid td.time-col {
+  position: sticky;
+  left: 0;
+  z-index: 6;
+  background: hsl(0 0% 100%);
+}
+table.grid thead th.corner {
+  z-index: 7;
+}
+
+/* ===== corner cell (diagonal divider) ===== */
+th.corner {
+  --time-col-w: 88px;
+  width: var(--time-col-w);
+  min-width: var(--time-col-w);
+  height: 56px;
+  position: relative;
+  background: hsl(210 40% 96.1%);
+}
+th.corner::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 1px;
+  height: 145%;
+  background: hsl(212.9 26.8% 70%);
+  transform-origin: top left;
+  transform: rotate(31deg);
+  box-shadow: 0 0 0 0.5px hsl(212.9 26.8% 70%);
+}
+th.corner .lbl-device {
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  font-size: 12px;
+  color: hsl(215.4 16.3% 46.9%);
+  font-weight: 500;
+}
+th.corner .lbl-time {
+  position: absolute;
+  bottom: 6px;
+  left: 8px;
+  font-size: 12px;
+  color: hsl(215.4 16.3% 46.9%);
+  font-weight: 500;
+}
+
+/* ===== time column ===== */
+td.time-col {
+  --time-col-w: 88px;
+  width: var(--time-col-w);
+  min-width: var(--time-col-w);
+  text-align: center;
+  vertical-align: middle;
+  background: hsl(210 40% 96.1%);
+}
+td.time-col .t-hour {
+  font-size: 15px;
+  font-weight: 600;
+  color: hsl(222.2 47.4% 11.2%);
+  display: block;
+  line-height: 1.2;
+}
+td.time-col .t-half {
+  font-size: 12px;
+  color: hsl(215.4 25% 60%);
+  font-weight: 400;
+  display: block;
+  line-height: 1.2;
+}
+
+/* ===== device column header (card style) ===== */
+th.device-col {
+  --device-col-w: 160px;
+  width: var(--device-col-w);
+  min-width: var(--device-col-w);
+  padding: 12px 14px;
+  text-align: left;
+  vertical-align: top;
+  background: hsl(0 0% 100%);
+  border-bottom: 2px solid hsl(212.9 26.8% 70%);
+}
+th.device-col .d-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+th.device-col .d-status-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  margin-top: 6px;
+  flex-shrink: 0;
+  background: #22c55e; /* active = green */
+  box-shadow: 0 0 0 2px rgba(34, 197, 94, 0.2);
+}
+th.device-col .d-status-dot.maintenance {
+  background: #f59e0b;
+  box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.2);
+}
+th.device-col .d-status-dot.retired {
+  background: hsl(215.4 25% 60%);
+  box-shadow: 0 0 0 2px rgba(148, 163, 184, 0.2);
+}
+th.device-col .d-info {
+  flex: 1;
+  min-width: 0;
+}
+th.device-col .d-name {
+  font-size: 15px;
+  font-weight: 600;
+  color: hsl(222.2 47.4% 11.2%);
+  line-height: 1.3;
+  margin-bottom: 2px;
+}
+th.device-col .d-id {
+  font-size: 12px;
+  color: hsl(215.4 16.3% 46.9%);
+  font-weight: 400;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+/* ===== cells ===== */
+td.cell {
+  --cell-h: 40px;
+  --device-col-w: 160px;
+  height: var(--cell-h);
+  position: relative;
+  cursor: pointer;
+  vertical-align: top;
+  width: var(--device-col-w);
+  min-width: var(--device-col-w);
+}
+td.cell.bookable:hover {
+  background: hsl(217 91% 91%);
+}
+td.cell.disabled {
+  background: repeating-linear-gradient(
+    45deg,
+    hsl(210 40% 98%),
+    hsl(210 40% 98%) 5px,
+    hsl(210 40% 94%) 5px,
+    hsl(210 40% 94%) 10px
+  );
+  cursor: not-allowed;
+}
+td.cell.disabled:hover {
+  background: repeating-linear-gradient(
+    45deg,
+    hsl(210 40% 98%),
+    hsl(210 40% 98%) 5px,
+    hsl(210 40% 94%) 5px,
+    hsl(210 40% 94%) 10px
+  );
+}
+
+/* ===== selection highlight ===== */
+td.cell.selected-full {
+  background: hsl(221.2 83.2% 53.3%) !important;
+  box-shadow: inset 0 0 0 2px hsl(224.3 76.3% 48%);
+}
+td.cell.selected-full::after {
+  content: "";
+  position: absolute;
+  left: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: white;
+}
+td.cell.selected-half::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 75%;
+  background: hsl(221.2 83.2% 53.3%);
+  border-right: 2px dashed rgba(255, 255, 255, 0.85);
+}
+td.cell.selected-half::after {
+  content: "→ :45";
+  position: absolute;
+  left: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: white;
+  font-size: 12px;
+  font-weight: 600;
+  z-index: 1;
+  white-space: nowrap;
+}
+
+/* ===== occupied booking block ===== */
+.booking-block {
+  position: absolute;
+  left: 3px;
+  right: 3px;
+  top: 3px;
+  bottom: 3px;
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 13px;
+  line-height: 1.3;
+  cursor: not-allowed;
+  overflow: hidden;
+  border: 1.5px solid;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+.booking-block .b-customer {
+  font-weight: 600;
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.booking-block .b-meta {
+  font-size: 11px;
+  opacity: 0.85;
+  margin-top: 2px;
+  white-space: nowrap;
+}
+.booking-block.st-pending {
+  background: #fef3c7;
+  color: #92400e;
+  border-color: #fcd34d;
+}
+.booking-block.st-confirmed {
+  background: #dbeafe;
+  color: #1e40af;
+  border-color: #93c5fd;
+}
+.booking-block.st-inservice {
+  background: #dcfce7;
+  color: #166534;
+  border-color: #86efac;
+  box-shadow: 0 0 0 1px #86efac;
+}
+.booking-block.st-done {
+  background: hsl(210 40% 96.1%);
+  color: hsl(215.4 25.9% 27.8%);
+  border-color: hsl(212.9 26.8% 70%);
+  opacity: 0.8;
+}
+.booking-block.st-cancel {
+  background: #fee2e2;
+  color: #991b1b;
+  border-color: #fca5a5;
+  opacity: 0.6;
+  text-decoration: line-through;
+}
+
+/* Multi-slot bookings: the block anchors on its start slot and extends
+   downward via absolute positioning. 60min = span-2 (one extra row); 45min =
+   span-1-5 (half an extra row). */
+.booking-block.span-2 {
+  bottom: calc(-1 * var(--cell-h, 40px) - 3px);
+}
+.booking-block.span-1-5 {
+  bottom: calc(-1 * (var(--cell-h, 40px) / 2) - 3px);
+}
+
+/* tooltip — pure CSS, no JS hover. data-tooltip is the attribute (P6). */
+.booking-block[data-tooltip]:hover::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 8px);
+  transform: translateX(-50%);
+  background: hsl(222.2 47.4% 11.2%);
+  color: white;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  white-space: nowrap;
+  z-index: 50;
+  pointer-events: none;
+  font-weight: 400;
+  line-height: 1.5;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+/* ===== empty state ===== */
+.sg-empty {
+  padding: 48px 16px;
+  text-align: center;
+}
+.sg-empty-text {
+  color: hsl(215.4 16.3% 46.9%);
+  font-size: 14px;
+  margin: 0;
+}
