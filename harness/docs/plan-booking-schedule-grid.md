@@ -192,7 +192,7 @@
   - [x] `alembic upgrade head && alembic check` 无 drift
 - **验证命令**:`./init.sh && alembic upgrade head && alembic check`
 
-### 切片 02 — 后端:按天查询端点 + 复合索引
+### 切片 02 — 后端:按天查询端点 + 复合索引 ✅ PR #131
 
 - **What it delivers**:`GET /bookings/schedule-grid?tenant_id=&date=` 返回该店当天全设备 `BookingHqRead[]`;新建 `(tenant_id, scheduled_start_at)` 复合索引。
 - **Blocked by**: 切片 01(共用 booking 基础设施,虽然逻辑可并行但 EP3 串行实施)
@@ -213,7 +213,7 @@
   - [ ] 空店空列表返回 `[]`
   - [ ] `./init.sh` 全绿
 
-### 切片 03 — 前端:API 层 + 配置 Dialog + 设置入口
+### 切片 03 — 前端:API 层 + 配置 Dialog + 设置入口 ✅ PR #130
 
 - **What it delivers**:前端能读写两级配置;网格上方的「⚙ 设置」Dialog 可用。
 - **Blocked by**: 切片 01(配置 API 契约)
