@@ -236,7 +236,7 @@
   - [x] `cd frontend && npm test && npm run build` 全绿 + oxlint 0
     - 证据:npm test 33/33(含新加 5)、npm run build 成功、oxlint 0 warning 0 error
 
-### 切片 04a — 前端:ScheduleGrid 网格组件(核心)
+### 切片 04a — 前端:ScheduleGrid 网格组件(核心) ✅
 
 - **What it delivers**:网格组件本身(~300 行),对齐 demo D0 形态。纯展示 + 点击回调,不含数据获取(由父组件传 props)。
 - **Blocked by**: 切片 03(需要 `BookingConfig` TS 类型契约 + `BOOKING_CONFIG_WRITE_KEYS`;04a 的 `Props.config: BookingConfig` 依赖切片 03 的 types.ts 改动)。**修正(M2)**:v1 写"Blocked by 无"与"EP3 排在 03 后"自相矛盾,根因是 04a 实际需要 03 的类型契约,故改为显式依赖 03。
@@ -244,21 +244,26 @@
   - `frontend/src/pages/bookings/schedule-grid.tsx`(新,~300 行)
   - `frontend/src/pages/bookings/__tests__/schedule-grid.test.tsx`(新,~10 用例)
 - **Acceptance criteria**:
-  - [ ] Props:`devices: DeviceHqRead[]` / `bookings: BookingHqRead[]` / `config: BookingConfig` / `selectedDate: Date` / `now: Date`(D6,默认 `new Date()`)/ `onSlotClick(device, startISO, endISO)`
-  - [ ] 布局 A:设备为列(卡片式表头 160px),时间为行(40px,28 行按 config window)
-  - [ ] 左上角斜线分隔(右上「设备 →」/ 左下「← 时间」)
-  - [ ] 时间列整点大字 + 半点淡色
-  - [ ] 设备表头:大设备名 + ID(等宽)+ 状态圆点(active 绿/maintenance 橙/retired 灰)
-  - [ ] 表格 `width: auto` + `display: inline-table` + 父容器居中(D0)
-  - [ ] 已占用 cell:状态色块(pending 黄/confirmed 蓝/in_service 绿/done 灰/cancelled 红)+ 客户名 + hover tooltip,**不可点**
-  - [ ] 跨行预约:60 分钟 span-2 / 45 分钟 span-1-5(绝对定位延伸)
-  - [ ] 空 cell 可点击;今天早于 now 的 cell 斜纹禁用(`isSelectedToday && cellStart < now`)
-  - [ ] 点击空 cell:高亮(duration=45 → selected-full + selected-half;duration=60 → 2× selected-full)+ 调 `onSlotClick`
-  - [ ] 无设备时空态「该门店暂无可用设备」
-  - [ ] **沿用 demo 的 CSS class 名作测试 selector(P5)**:`selected-full` / `selected-half` / `span-2` / `span-1-5` / `disabled` / `booking-block.st-pending|st-confirmed|st-inservice|st-done|st-cancel` —— vitest 用 `container.querySelector('.selected-half')` 等断言 class 存在,实施时 class 名与 demo 一致不重命名
-  - [ ] vitest ~10 用例:空网格渲染 / 占用 cell / 跨行 span / 已过时间禁用(用 `now` prop)/ 点击回调(含「点击已占用 cell 不触发 onSlotClick」)/ 45分钟半行高亮 / 60分钟整行 / 无设备空态 / 父传新 `config` prop → 网格 rerender 行数变化(纯组件 props 驱动,不测 react-query cache)/ hover tooltip
-  - [ ] **hover tooltip 测法(P6)**:断言 `data-tooltip` attribute 存在且内容正确(如 `张三 · 全身理疗 | 09:00-10:00 | 状态:已完成`),**不测 `:hover` 伪类触发**(jsdom 不支持 CSS 伪类)
-  - [ ] `cd frontend && npm test && npm run build` 全绿 + oxlint 0
+  - [x] Props:`devices: DeviceHqRead[]` / `bookings: BookingHqRead[]` / `config: BookingConfig` / `selectedDate: Date` / `now: Date`(D6,默认 `new Date()`)/ `onSlotClick(device, startISO, endISO)`
+    - **注**:`config` 用 `Pick<BookingConfig, "default_duration_minutes"|"window_start"|"window_end">` 结构子类型,使切片 04b 的 `useBookingConfigEffective`(`BookingConfigEffective` 形状)可直接透传无需 adapter;plan 字面 `BookingConfig` 的意图(网格只需 duration + window 三字段)由此满足,且对 04b 友好(code-review Spec 轴确认 faithful)。
+  - [x] 布局 A:设备为列(卡片式表头 160px),时间为行(40px,28 行按 config window)
+  - [x] 左上角斜线分隔(右上「设备 →」/ 左下「← 时间」)
+  - [x] 时间列整点大字 + 半点淡色
+  - [x] 设备表头:大设备名 + ID(等宽)+ 状态圆点(active 绿/maintenance 橙/retired 灰)
+    - **注**:大设备名用 `model_name ?? serial_number`(贴近 demo 的「理疗床 1」语义;DeviceHqRead 无独立 name 字段,model_name 是最接近的人类可读名),小字 ID 用 `serial_number`(等宽,对应 demo 的 DEV-001 式标识符)。
+  - [x] 表格 `width: auto` + `display: inline-table` + 父容器居中(D0)
+  - [x] 已占用 cell:状态色块(pending 黄/confirmed 蓝/in_service 绿/done 灰/cancelled 红)+ 客户名 + hover tooltip,**不可点**
+  - [x] 跨行预约:60 分钟 span-2 / 45 分钟 span-1-5(绝对定位延伸)
+  - [x] 空 cell 可点击;今天早于 now 的 cell 斜纹禁用(`isSelectedToday && cellStart < now`)
+  - [x] 点击空 cell:高亮(duration=45 → selected-full + selected-half;duration=60 → 2× selected-full)+ 调 `onSlotClick`
+    - **泛化**:高亮规则按 duration 分钟数通用化(D3 任意分钟数),不限于 45/60;`selectionClass` 按 `duration - offset*30` 余量判定 full/half。
+  - [x] 无设备时空态「该门店暂无可用设备」
+  - [x] **沿用 demo 的 CSS class 名作测试 selector(P5)**:`selected-full` / `selected-half` / `span-2` / `span-1-5` / `disabled` / `booking-block.st-pending|st-confirmed|st-inservice|st-done|st-cancel` —— vitest 用 `container.querySelector('.selected-half')` 等断言 class 存在,实施时 class 名与 demo 一致不重命名
+  - [x] vitest ~10 用例:空网格渲染 / 占用 cell / 跨行 span / 已过时间禁用(用 `now` prop)/ 点击回调(含「点击已占用 cell 不触发 onSlotClick」)/ 45分钟半行高亮 / 60分钟整行 / 无设备空态 / 父传新 `config` prop → 网格 rerender 行数变化(纯组件 props 驱动,不测 react-query cache)/ hover tooltip
+    - **实际 11 用例**(AC 列 10 项 + 额外「未来日期全可点」1 项,覆盖 AC line 255 的「未来日期」语义)。
+  - [x] **hover tooltip 测法(P6)**:断言 `data-tooltip` attribute 存在且内容正确(如 `张三 · 全身理疗 | 09:00-10:00 | 状态:已完成`),**不测 `:hover` 伪类触发**(jsdom 不支持 CSS 伪类)
+  - [x] `cd frontend && npm test && npm run build` 全绿 + oxlint 0
+    - **证据**:vitest 44/44(含本切片 11)、tsc 0 error、oxlint 0/0(94 文件)、npm run build 成功(chunk size warning 是既有基线)。
 
 ### 切片 04b — 前端:HqView Tabs + 网格集成
 
