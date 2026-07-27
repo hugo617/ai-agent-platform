@@ -59,13 +59,9 @@ from app.schemas.device import (
     DeviceRead,
     DeviceUpdate,
 )
-from app.services._tenant_target import resolve_target_tenant
 from app.services.errors import BizError, NotFoundError
-from app.services.permission_service import (
-    is_cross_tenant_viewer,
-    is_platform_writer,
-    permission_service,
-)
+from app.services.permission_service import permission_service
+from app.services.principal import Principal
 
 
 class DeviceService:
@@ -76,6 +72,11 @@ class DeviceService:
         self.repo = DeviceRepository(db)
         self.models = DeviceModelRepository(db)
         self.customers = CustomerProfileRepository(db)
+        # Principal absorbs the role + tenant + scope reasoning that used to be
+        # inlined as ``resolve_target_tenant`` / ``is_platform_writer`` /
+        # ``is_cross_tenant_viewer`` calls in each method. Holds the same db
+        # session object — no duplicate lifecycle (plan-principal-module.md §4.1).
+        self.principal = Principal(db)
 
     # ------------------------------------------------------------- helpers
 
@@ -180,17 +181,20 @@ class DeviceService:
         devices as ``DeviceRead`` after ``require("devices", "read")``
         (member passes because the default perms grant ``devices:read``).
         """
-        if is_cross_tenant_viewer(platform_role):
+        access = await self.principal.for_read(
+            actor_id=actor_id, user_tenant_id=tenant_id,
+            obj=self.OBJECT, act="read", platform_role=platform_role,
+        )
+        if access.is_panorama:
             devices = await self.repo.list_all_with_meta()
             return [await self._to_hq_read(d) for d in devices]
+        assert access.require is not None  # store branch always sets it
         await permission_service.require(
-            actor_id,
-            tenant_id,
-            self.OBJECT,
-            "read",
+            actor_id, access.effective_tenant,
+            access.require.obj, access.require.act,
             platform_role=platform_role,
         )
-        devices = await self.repo.list_for_tenant(tenant_id)
+        devices = await self.repo.list_for_tenant(access.effective_tenant)
         return [await self._to_read(d) for d in devices]
 
     async def get(
@@ -210,19 +214,22 @@ class DeviceService:
         Tenant roles go through ``require("devices", "read")`` +
         ``_get_live_device`` (tenant-scoped, so a foreign device is 404).
         """
-        if is_cross_tenant_viewer(platform_role):
+        access = await self.principal.for_read(
+            actor_id=actor_id, user_tenant_id=tenant_id,
+            obj=self.OBJECT, act="read", platform_role=platform_role,
+        )
+        if access.is_panorama:
             device = await self.repo.get_all_with_meta(device_id)
             if device is None:
                 raise NotFoundError(f"设备不存在: {device_id}")
             return await self._to_hq_read(device)
+        assert access.require is not None  # store branch always sets it
         await permission_service.require(
-            actor_id,
-            tenant_id,
-            self.OBJECT,
-            "read",
+            actor_id, access.effective_tenant,
+            access.require.obj, access.require.act,
             platform_role=platform_role,
         )
-        device = await self._get_live_device(device_id, tenant_id)
+        device = await self._get_live_device(device_id, access.effective_tenant)
         return await self._to_read(device)
 
     # ---------------------------------------------------------------- write
@@ -234,17 +241,18 @@ class DeviceService:
         payload: DeviceCreate,
         platform_role: str | None = None,
     ) -> DeviceRead:
-        effective_tenant = resolve_target_tenant(
-            tenant_id, payload.tenant_id, platform_role
+        access = await self.principal.for_write(
+            actor_id=actor_id, user_tenant_id=tenant_id,
+            payload_tenant_id=payload.tenant_id,
+            obj=self.OBJECT, act="create", platform_role=platform_role,
         )
-        if not is_platform_writer(platform_role):
+        if access.require:
             await permission_service.require(
-                actor_id,
-                effective_tenant,
-                self.OBJECT,
-                "create",
+                actor_id, access.effective_tenant,
+                access.require.obj, access.require.act,
                 platform_role=platform_role,
             )
+        effective_tenant = access.effective_tenant
         await self._assert_model_live(payload.model_id)
         await self._assert_serial_unique(effective_tenant, payload.serial_number)
         # Platform writers cross-tenant bind at create time must point at a
@@ -252,10 +260,10 @@ class DeviceService:
         # Store roles historically treat ``customer_id`` as an unchecked create-
         # time hint (the real guard is the bind endpoint) — keep that path
         # unchanged to avoid a within-store behaviour shift outside this slice.
-        if (
-            is_platform_writer(platform_role)
-            and payload.customer_id is not None
-        ):
+        # ``access.require is None`` is the platform-writer signal — the
+        # Principal invariant (plan §4.0 Q3') makes it equivalent to the old
+        # ``is_platform_writer(platform_role)`` check.
+        if access.require is None and payload.customer_id is not None:
             await self._assert_customer_in_tenant(
                 effective_tenant, payload.customer_id
             )
@@ -284,17 +292,18 @@ class DeviceService:
         payload: DeviceUpdate,
         platform_role: str | None = None,
     ) -> DeviceRead:
-        effective_tenant = resolve_target_tenant(
-            tenant_id, payload.tenant_id, platform_role
+        access = await self.principal.for_write(
+            actor_id=actor_id, user_tenant_id=tenant_id,
+            payload_tenant_id=payload.tenant_id,
+            obj=self.OBJECT, act="update", platform_role=platform_role,
         )
-        if not is_platform_writer(platform_role):
+        if access.require:
             await permission_service.require(
-                actor_id,
-                effective_tenant,
-                self.OBJECT,
-                "update",
+                actor_id, access.effective_tenant,
+                access.require.obj, access.require.act,
                 platform_role=platform_role,
             )
+        effective_tenant = access.effective_tenant
         device = await self._get_live_device(device_id, effective_tenant)
         data = payload.model_dump(exclude_unset=True)
         # ``tenant_id`` is a request-scoped routing field (which store to write
@@ -329,17 +338,18 @@ class DeviceService:
         """Soft-delete. The row stays so historical references (bookings,
         audits) remain resolvable; the serial becomes reusable via the
         partial unique index."""
-        effective_tenant = resolve_target_tenant(
-            tenant_id, target_tenant_id, platform_role
+        access = await self.principal.for_write(
+            actor_id=actor_id, user_tenant_id=tenant_id,
+            payload_tenant_id=target_tenant_id,
+            obj=self.OBJECT, act="delete", platform_role=platform_role,
         )
-        if not is_platform_writer(platform_role):
+        if access.require:
             await permission_service.require(
-                actor_id,
-                effective_tenant,
-                self.OBJECT,
-                "delete",
+                actor_id, access.effective_tenant,
+                access.require.obj, access.require.act,
                 platform_role=platform_role,
             )
+        effective_tenant = access.effective_tenant
         device = await self._get_live_device(device_id, effective_tenant)
         device.is_deleted = True
         device.deleted_at = datetime.now(UTC)
@@ -377,17 +387,18 @@ class DeviceService:
         operate on ``target_tenant_id``; store roles are anti-forgery guarded
         against carrying it (see ``resolve_target_tenant``).
         """
-        effective_tenant = resolve_target_tenant(
-            tenant_id, target_tenant_id, platform_role
+        access = await self.principal.for_write(
+            actor_id=actor_id, user_tenant_id=tenant_id,
+            payload_tenant_id=target_tenant_id,
+            obj=self.OBJECT, act="update", platform_role=platform_role,
         )
-        if not is_platform_writer(platform_role):
+        if access.require:
             await permission_service.require(
-                actor_id,
-                effective_tenant,
-                self.OBJECT,
-                "update",
+                actor_id, access.effective_tenant,
+                access.require.obj, access.require.act,
                 platform_role=platform_role,
             )
+        effective_tenant = access.effective_tenant
         await self._assert_customer_in_tenant(effective_tenant, customer_id)
         device = await self._get_live_device(device_id, effective_tenant)
         if device.customer_id == customer_id:
@@ -413,17 +424,18 @@ class DeviceService:
         Platform writers pass ``target_tenant_id`` (the store whose device to
         unbind); store roles omit it (anti-forgery).
         """
-        effective_tenant = resolve_target_tenant(
-            tenant_id, target_tenant_id, platform_role
+        access = await self.principal.for_write(
+            actor_id=actor_id, user_tenant_id=tenant_id,
+            payload_tenant_id=target_tenant_id,
+            obj=self.OBJECT, act="update", platform_role=platform_role,
         )
-        if not is_platform_writer(platform_role):
+        if access.require:
             await permission_service.require(
-                actor_id,
-                effective_tenant,
-                self.OBJECT,
-                "update",
+                actor_id, access.effective_tenant,
+                access.require.obj, access.require.act,
                 platform_role=platform_role,
             )
+        effective_tenant = access.effective_tenant
         device = await self._get_live_device(device_id, effective_tenant)
         if device.customer_id is None:
             return

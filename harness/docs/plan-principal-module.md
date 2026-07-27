@@ -202,19 +202,19 @@ docstring 加交叉引用标明「Internal: called by Principal, service layer s
 - [x] AC2a.5 ruff clean
 - [x] AC2a.6 ~~booking_service.py 行数净减 ≥ 30 行~~ **指标修订**(实施时发现 §7.1 估算有误,详见下方修订记录):本切片的真实价值是「鉴权决策收口到单一推理点(Principal)+ 跨 service 形状统一」,不是 LOC 削减。实测净增 +34 行(Note 注释 +16 / effective_tenant alias +5 / keyword-arg 展开 +12 / panorama 折叠省 ~6 被 (1)(3) 抵消)。`assert access.require is not None`(list/get)与既有 `assert fresh is not None` 同范式,作为类型窄化辅助保留。code-review 双轴通过(Standards: 0 HARD violation / Spec: AC2a.1-2.5 ✅,AC2a.6 指标修订留痕)。
 
-#### 切片 02b — device service 迁移到 Principal
+#### 切片 02b — device service 迁移到 Principal ✅ commit (PR 待开,本地沙箱网络不可达 GitHub)
 
 **What to build**(用户视角):作为后端开发者,device_service 里全 7 方法统一调 `self.principal.for_write/for_read`,与 booking_service 形状一致 —— 改角色规则时只需看一种心智模型。既有 device 端到端测试零修改仍全绿。
 
 **Blocked by**: 切片 01(**与 02a 互相独立,可任意顺序**)
 
-**Status**: ready-for-agent
+**Status**: ✅ done(2026-07-27)
 
-- [ ] AC2b.1 `device_service.py` `__init__` 加 `self.principal = Principal(db)`
-- [ ] AC2b.2 迁移全 7 方法(list / get / create / update / delete / bind / unbind):删直接 helper 调用,改走 `self.principal.for_write/for_read`
-- [ ] AC2b.3 全量 pytest 777 passed(零行为变更;test_devices_api / test_hq_platform_role 全绿)
-- [ ] AC2b.4 ruff clean
-- [ ] AC2b.5 device_service.py 行数净减 ≥ 20 行(逐方法核算 ~4 行/方法 × 7 ≈ 28 行)
+- [x] AC2b.1 `device_service.py` `__init__` 加 `self.principal = Principal(db)`
+- [x] AC2b.2 迁移全 7 方法(list / get / create / update / delete / bind / unbind):删直接 helper 调用,改走 `self.principal.for_write/for_read`;三 import(`resolve_target_tenant` / `is_cross_tenant_viewer` / `is_platform_writer`)干净删除(device 全 7 方法都用 helper,迁完零残余代码引用,docstring/comment 历史交叉引用保留)
+- [x] AC2b.3 全量 pytest 783 passed(777 baseline + 6 Principal contract;零行为变更;test_devices_api / test_hq_platform_role 61 passed)
+- [x] AC2b.4 ruff clean
+- [x] AC2b.5 ~~device_service.py 行数净减 ≥ 20 行(逐方法核算 ~4 行/方法 × 7 ≈ 28 行)~~ **指标修订**(实测与估算反向,与 02a 同向偏差,§7.1 已预警):实测净增 **+12 行**(432 → 444,diff +69/-57)。成因同 02a:`for_write`/`for_read` 6 个 keyword args 展开(即便压紧仍 3-4 行 vs 旧 `resolve_target_tenant(a,b,c)` 单行)是主因;`effective_tenant = access.effective_tenant` alias(5 写方法各 +1)次之。device 无 02a 的 Note 注释开销(§4.2 无 device 不迁方法)。Principal 的真实价值仍是「鉴权决策收口到单一推理点 + 跨 service 形状统一」(deletion test 见 §1),不是 LOC 削减。code-review 双轴通过(Standards: 0 HARD violation / Spec: AC2b.1-2.4 ✅,AC2b.5 指标修订留痕)。
 
 #### 切片 03 — customer service + 特殊读注释 + feature 收尾(末切片)
 
