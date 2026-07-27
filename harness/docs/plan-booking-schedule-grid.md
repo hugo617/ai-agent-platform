@@ -397,3 +397,93 @@
 - [x] **每片有 acceptance criteria**(§6 每片 AC 清单,共 ~50 条可执行 AC)
 - [x] **首片可立即开工**(切片 01 Blocked by 无,唯一 frontier)
 - [x] **plan 主体决策无 TODO/待定悬空**(D0-D7 全部锁定,无悬空决策)
+
+---
+
+## 后续修补(2026-07-27):切片 05 后真实环境手测反馈
+
+feature 已 passing(PR #134 合并)后,super_admin 在 `http://localhost:3000/bookings` 网格视图真实手测反馈「预约创建后网格不显示 / 时段冲突误报」。**不属于原 plan AC 范围**(原 AC 已全勾,这是 dev 环境手测发现的真问题),记录于此不丢排查成果。
+
+### 诊断过程(Playwright 真实复现)
+
+用 Playwright 起浏览器,真实复现 super_admin 登录 → 选 Dev HQ → 切网格 → 点空 cell → 创建预约的全链路,**捕获所有 API 请求 + 错误响应**。结论:
+
+| 链路 | 实际发生 |
+|---|---|
+| POST /bookings/ | ⚠️ **400 设备时段冲突**(冲突窗口 14:30-15:15 UTC) |
+| 后端冲突检查 | ✅ 正确报告冲突(已有 15:00-15:45 UTC 预约重叠 15 分钟) |
+| **冲突窗口 vs 用户视角** | ❌ **时间偏移 8 小时** —— 用户点的 14:30 北京 = 应是 06:30 UTC,但前端提交的是 14:30(被当 UTC) |
+
+### 真根因:`fromDatetimeLocalValue` 返回 naive datetime(无时区)
+
+`frontend/src/lib/format.ts:110-114` 的旧实现:
+
+```ts
+return v.length >= 16 ? `${v}:00` : v;
+// "2026-07-27T14:30" → "2026-07-27T14:30:00"(无时区后缀)
+```
+
+完整时区错乱链:
+
+1. 用户在网格点 14:30 北京时间 → `slotHourToISO(selectedDate, 14.5)` → `new Date(本地).setHours(14, 30) → toISOString()` → `"2026-07-27T06:30:00.000Z"`(正确 UTC)
+2. Dialog `defaultStart="...06:30:00.000Z"` → `toDatetimeLocalValue` 用 `getHours()`(本地)→ `"2026-07-27T14:30"`(datetime-local 格式,UI 显示 14:30 对用户正确)
+3. 用户点创建 → `fromDatetimeLocalValue("2026-07-27T14:30")` → ❌ **`"2026-07-27T14:30:00"`**(丢掉了 UTC 信息)
+4. 后端 Pydantic `datetime` 解析无后缀字符串 → **naive datetime**(`tzinfo=None`)
+5. SQLAlchemy 写入 `DateTime(timezone=True)` 列 → 当 UTC 解释 → 14:30 UTC
+6. 冲突检查 `[14:30 UTC, 15:15 UTC)` 跟已有 15:00 UTC 重叠 15 分钟 → **400 冲突**
+7. 用户视角:点的 14:30 北京 ≠ 网格显示的 23:00 北京(15:00 UTC),**完全看不到冲突预约**,误以为误报
+
+**为何之前没暴露**:`/diagnosing-bugs` 流程下,booking 测试都用 `2026-07-27T10:00:00Z` 这种**带 Z 的 ISO** 直接构造请求,绕过了 `fromDatetimeLocalValue`。前端 vitest 测试 mock 了 hooks,也没真跑 datetime 转换。bug 只在「用户从 datetime-local input 创建预约」时触发。
+
+### 修补
+
+#### 1. 真根因:`frontend/src/lib/format.ts:fromDatetimeLocalValue` 改返回 UTC ISO
+
+```ts
+// 旧:return v.length >= 16 ? `${v}:00` : v;  // naive
+// 新:
+const d = new Date(v);
+return Number.isNaN(d.getTime()) ? v : d.toISOString();  // UTC + Z
+```
+
+`new Date("YYYY-MM-DDTHH:mm")` 解析 naive 值为**本地时间**,`toISOString()` 正确转 UTC。修复后:用户点北京 14:30 → 提交 `2026-07-27T06:30:00Z` → 后端正确存 06:30 UTC → 网格渲染时 `getHours()` 又转回 14:30 北京给用户看。
+
+#### 2. 加回归测试 `frontend/src/lib/__tests__/format.test.ts`(15 用例)
+
+新文件,覆盖 `lib/format.ts` 所有 6 个 export。重点锁定 `fromDatetimeLocalValue`:
+- 必须返回带 `Z` 的 UTC ISO(`/Z$/` regex)
+- round-trip:本地 wall-clock pick → API ISO → 解析回 Date,**instant 必须等于原时刻**(±60s,因 datetime-local 无秒)
+
+#### 3. UI 布局修补(辅助):`schedule-grid.css` 网格撑满
+
+副产物(同时修):用户原本反馈「网格两边空白过多」让预约块视觉上扫不到。`schedule-grid.css` 改 2 处:
+- `.grid-scroll`: `text-align: center` → `left`(表格从左边缘铺开)
+- `table.grid`: `width: auto / display: inline-table / margin: 0 auto` → `width: 100% / display: table / margin: 0`
+
+Playwright 实测 table 从 408px → 1044px 撑满容器,预约块占满列宽立即可见。**CSS class 名不变**(P5 测试 selector 契约保留)。
+
+### 文件改动清单
+
+- `frontend/src/lib/format.ts`:`fromDatetimeLocalValue` 改返回 UTC ISO(核心 bug fix)
+- `frontend/src/lib/__tests__/format.test.ts`:新建,15 用例(回归守护)
+- `frontend/src/pages/bookings/schedule-grid.css`:`.grid-scroll` text-align + `table.grid` width/display/margin(辅助 UI 修补)
+- `harness/docs/plan-booking-schedule-grid.md`:本段(后续修补记录)
+- 不改:`schedule-grid.tsx` / `hq-view.tsx` / `shared-dialog.tsx` / `queries.ts` / 任何后端代码
+
+### 验证
+
+- `cd frontend && npm test`:**65/65 passed**(原 50 + 新加 15 个 format 测试,零回归)
+- `cd frontend && npm run build`:成功
+- `cd frontend && npx oxlint .`:0 warnings / 0 errors
+- **Playwright 端到端复测**(设置 `timezoneId: 'Asia/Shanghai'`):
+  - 点北京 13:30 → POST 201 ✓ → 返回 `scheduled_start_at: "2026-07-27T05:30:00Z"` ✓(北京 13:30 = UTC 05:30)
+  - 点北京 18:00 → POST 201 ✓ → 返回 `scheduled_start_at: "2026-07-27T10:00:00Z"` ✓(北京 18:00 = UTC 10:00)
+  - 网格 tooltip 显示新预约在用户点击的时段(13:30 / 18:00)✓
+
+### 历史诊断错误(留痕反思)
+
+第一次修补(已回滚)尝试 `hq-view.tsx` 加 `max-w-3xl mx-auto` 限宽居中,凭直觉以为「缩窄容器减少空白」。**错的方向** —— 限宽后表格更小更难看到预约块。已回滚。
+
+第二次诊断(已修正)说「代码链路从未坏过,根因是 UI 布局」。**部分错误** —— Playwright 复现确实看到 POST 201 成功案例(因为避开了所有冲突时段,bug 不暴露),但**没在真冲突场景下测试**,漏了 `fromDatetimeLocalValue` 的 datetime bug。第三次诊断才用真冲突场景发现时间偏移 8 小时。
+
+**教训**:① 布局调整必须用 Playwright 实测数据,不能凭直觉;② bug 复现必须覆盖**失败路径**(400/500),不能只测成功路径(201);③ datetime 涉及时区转换,测试必须在目标时区(`timezoneId: 'Asia/Shanghai'`)下跑,不能在 UTC 默认环境跑。
