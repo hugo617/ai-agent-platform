@@ -11,6 +11,7 @@
 |---|---|---|---|---|---|
 | 2026-07-20 | 6 候选(P0:permission_service / token_context+deps / graph.py / chat.py;P1:user_service / exports.py;P2:前端 fat files) | ③ Agent 流式模块(graph.py,SSE + asyncio.timeout + 工具内权限) | No(用户改做设备功能系列 61-64,未走 grill) | — | `~/.cache/ai-agent-platform-architecture-reviews/2026-07-20.html` |
 | 2026-07-25 | 8 候选(Strong ×4:Booking 单文件三视图 / 状态机 cancel 未并入 / end-no_show auth 推 body / 前端 9 page 零单测;Worth exploring ×4:Customer principal 参数透传 / HQ Panorama mirror / 三叉路由 4 page 复制 / union endpoint cast) | ① Booking 三视图拆 module(零行为变更)+ ② cancel 并入状态机(完成 deep module) | Yes(候选 1) | [plan-bookings-page-split.md](./plan-bookings-page-split.md)(grill 4 决策:bookings/ 子文件夹 / 测试跟 view / 只拆不碰 cast / 现有测试全绿+补 HqView smoke) | `~/.cache/ai-agent-platform-architecture-reviews/2026-07-25.html` |
+| 2026-07-27 | 14 候选(Strong ×4:Principal 深模块吸收 77 处角色扇出 / permission_service 拆 3 模块(899 行)/ devices-page.tsx 1073 行拆 module / chat-page.tsx 954 行单 function 拆 panel;Worth exploring ×4:exports.py 4 row generator 吸收回 service / union endpoint cast 扩散至 7 处(candidate-8 恶化)/ schedule-grid datetime helper 收编 format.ts / settings-page ApiTokenCard 抽出;Speculative ×6:状态机残留 _MUTABLE_STATUSES / deps.py 重复 / graph.py streaming 循环 / _to_read ×12 重写 / conversation 6 metadata 方法 / queries+endpoints 按 domain 拆) | ① Principal 深模块(leverage 最大,77 处 → 1 处,顺带吸收 candidate-8) | No(用户刚启动巡检,未走 grill) | — | `~/.cache/ai-agent-platform-architecture-reviews/2026-07-27.html` |
 
 ---
 
