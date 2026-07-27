@@ -20,8 +20,12 @@
   border: 1px solid hsl(214.3 31.8% 91.2%);
   border-radius: 8px;
   background: hsl(0 0% 100%);
-  /* let the inner table center when narrower than the container */
-  text-align: center;
+  /* 后续修补(2026-07-27):改 left。原本 center + table.inline-table + margin:0 auto
+     让表格按内容收缩到 ~408px(2 设备场景)在 ~1100px 容器里居中,左右各空 ~400px,
+     用户视觉上扫不到预约块,误以为「创建后没显示」。改 table.width:100% 撑满后,
+     left 让表格从左边缘开始铺开,设备列 160px 固定 + 空 cell 自适应填充,预约块
+     占满列宽更显眼。class 名不变(P5 测试 selector 契约)。 */
+  text-align: left;
 }
 .grid-scroll::-webkit-scrollbar {
   width: 10px;
@@ -41,9 +45,14 @@
 table.grid {
   border-collapse: separate;
   border-spacing: 0;
-  width: auto;
-  margin: 0 auto;
-  display: inline-table;
+  /* 后续修补(2026-07-27):width:100% + display:table 撑满 grid-scroll 容器。
+     原本 auto + inline-table + margin:0 auto 让表格收缩到内容宽度(2 设备
+     ~408px),在 ~1100px 容器里大量留白。设备列宽 th.device-col/td.cell 已固定
+     160px(line 137/189),width:100% 让剩余空间分给空 cell,预约块占满列宽
+     更显眼。class 名不变(P5 测试 selector 契约)。 */
+  width: 100%;
+  margin: 0;
+  display: table;
 }
 table.grid th,
 table.grid td {

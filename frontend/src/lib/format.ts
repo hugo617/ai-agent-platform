@@ -102,14 +102,28 @@ export function toDatetimeLocalValue(s?: string | null): string {
 /**
  * ``YYYY-MM-DDTHH:mm`` (datetime-local) → ISO-8601 string for the API.
  *
- * The native value has no timezone, so we treat it as local time and emit a
- * naive ISO (``YYYY-MM-DDTHH:mm:ss``, no offset). The backend stores naive
- * datetimes (the SQLAlchemy column is ``DateTime``, not ``DateTime(timezone-
- * true)``), so a naive ISO round-trips cleanly on both SQLite and Postgres.
+ * The native value has no timezone — it represents a local wall-clock time
+ * (the user picked "14:30 today" in their browser tz). We rebuild a ``Date``
+ * from it (parsed as local) and emit ``toISOString()`` so the wire value is
+ * unambiguous UTC with a ``Z`` suffix.
+ *
+ * **Why UTC, not naive-local (bug fix 2026-07-27)**: the booking columns are
+ * ``DateTime(timezone=True)`` and Pydantic's ``datetime`` parses a no-suffix
+ * string as a *naive* datetime, which SQLAlchemy/Postgres then interprets as
+ * UTC. The previous implementation returned ``${v}:00`` (naive), so a user in
+ * UTC+8 picking "14:30 local" submitted ``2026-07-27T14:30:00`` → stored as
+ * 14:30 UTC (= 22:30 Beijing) instead of the intended 06:30 UTC. This shifted
+ * every booking's window by the user's tz offset and produced spurious overlap
+ * errors that didn't match what the grid showed. Emitting a proper UTC ISO
+ * (``...Z``) round-trips correctly through Pydantic → ``DateTime(timezone-
+ * true)`` → query windows, and the grid's ``isoToHours`` (``getHours()`` on
+ * the rendered Date) shows the right wall-clock time back to the user.
  */
 export function fromDatetimeLocalValue(v: string): string {
-  // ``new Date("YYYY-MM-DDTHH:mm")`` parses as local but then ``toISOString``
-  // shifts to UTC. We want to keep the wall-clock time, so append seconds and
-  // emit the string directly (no Date round-trip).
-  return v.length >= 16 ? `${v}:00` : v;
+  if (v.length < 16) return v;
+  // ``new Date("YYYY-MM-DDTHH:mm")`` parses the naive value as local time, so
+  // ``toISOString`` correctly converts the user's wall-clock pick to the UTC
+  // instant it represents. Skip the empty/invalid case (length check above).
+  const d = new Date(v);
+  return Number.isNaN(d.getTime()) ? v : d.toISOString();
 }

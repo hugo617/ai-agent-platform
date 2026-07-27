@@ -741,11 +741,19 @@ const BOOKING_CONFIG_WRITE_KEYS: QueryKey[] = [qk.bookingConfig];
 /** Effective merged config (tenant override → platform default → hardcoded
  * fallback). This is what the grid renders off. ``tenantId`` is REQUIRED for
  * platform roles (HQ view passes its picked target) and MUST be omitted by
- * store roles (anti-forgery, enforced server-side). */
+ * store roles (anti-forgery, enforced server-side).
+ *
+ * ``enabled: !!tenantId`` mirrors ``useTenantBookingsByDate``: the HQ grid must
+ * not fire before a target store is picked. The backend 403s platform writers
+ * that hit /effective without ``tenant_id`` (anti-forgery, see
+ * app/api/v1/booking_config.py:166-179), so an unguarded hook emits a spurious
+ * 403 on first paint when ``targetTenantId`` is still "". Store-path callers
+ * always have a resolved tenant id, so this gate never blocks them. */
 export function useBookingConfigEffective(tenantId?: string) {
   return useQuery({
     queryKey: qk.bookingConfigEffective,
     queryFn: () => fetchEffectiveBookingConfig(tenantId),
+    enabled: !!tenantId,
   });
 }
 
