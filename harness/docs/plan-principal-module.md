@@ -187,7 +187,7 @@ docstring 加交叉引用标明「Internal: called by Principal, service layer s
 - [x] AC1.6 全量 pytest 783 passed(777 baseline + 6 新增,零回归;既有 service 零改动)
 - [x] AC1.7 ruff clean
 
-#### 切片 02a — booking service 迁移到 Principal ✅ PR #TBD commit TBD
+#### 切片 02a — booking service 迁移到 Principal ✅ commit 82b08c3(PR 待开,本地沙箱网络不可达 GitHub)
 
 **What to build**(用户视角):作为后端开发者,booking_service 里 7 个用了 helper 的方法不再各写一遍鉴权模板,而是统一调 `self.principal.for_write/for_read`,service 方法体回归业务逻辑主导。4 个不迁方法(start 三叉 customer / get_tenant_schedule / list_my_bookings / get_device_schedule)有清晰注释标明 Principal 不覆盖的原因。既有 booking 端到端测试零修改仍全绿,证明行为零变化。
 
