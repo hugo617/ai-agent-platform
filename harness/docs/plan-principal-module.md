@@ -1,7 +1,7 @@
 # 计划:抽 Principal 深模块吸收后端跨 service 的角色扇出
 
 > **id**: principal-module
-> **状态**: draft v1(EP2 回环产出,经子智能体审查 + 修正 grill,待 EP3 实施)
+> **状态**: ✅ passing(EP3 全 4 切片完成,2026-07-27 Session 150 收尾)
 > **优先级**: 70(新登记,「工程化」area;巡检候选 1,Strong)
 > **创建日期**: 2026-07-27
 > **来源**: 2026-07-27 第 3 次代码健康度巡检 Top recommendation;HTML 报告 `~/.cache/ai-agent-platform-architecture-reviews/2026-07-27.html`;grill 9 决策 + 审查 3 RED 修正 + 2 优化 + 2 误判纠正
@@ -216,23 +216,25 @@ docstring 加交叉引用标明「Internal: called by Principal, service layer s
 - [x] AC2b.4 ruff clean
 - [x] AC2b.5 ~~device_service.py 行数净减 ≥ 20 行(逐方法核算 ~4 行/方法 × 7 ≈ 28 行)~~ **指标修订**(实测与估算反向,与 02a 同向偏差,§7.1 已预警):实测净增 **+12 行**(432 → 444,diff +69/-57)。成因同 02a:`for_write`/`for_read` 6 个 keyword args 展开(即便压紧仍 3-4 行 vs 旧 `resolve_target_tenant(a,b,c)` 单行)是主因;`effective_tenant = access.effective_tenant` alias(5 写方法各 +1)次之。device 无 02a 的 Note 注释开销(§4.2 无 device 不迁方法)。Principal 的真实价值仍是「鉴权决策收口到单一推理点 + 跨 service 形状统一」(deletion test 见 §1),不是 LOC 削减。code-review 双轴通过(Standards: 0 HARD violation / Spec: AC2b.1-2.4 ✅,AC2b.5 指标修订留痕)。
 
-#### 切片 03 — customer service + 特殊读注释 + feature 收尾(末切片)
+#### 切片 03 — customer service + 特殊读注释 + feature 收尾(末切片) ✅ commit(PR 待开,本地沙箱网络不可达 GitHub)
 
 **What to build**(用户视角):作为代码审查者 / 项目维护者,booking/device/customer 三 service 的鉴权决策形状统一(都走 Principal),`DataScopeService` 调用从 customer_service 内部挪进 Principal.for_read(读路径的 principal 解析集中)。`Principal` 作为新领域概念进入 `CONTEXT.md`,docstring 交叉引用标明适用范围。feature 收尾:status → passing + 证据落库 + active 视图刷新。
 
 **Blocked by**: 切片 02a + 切片 02b(02a/02b 全完成才能收尾)
 
-**Status**: ready-for-agent
+**Status**: ✅ done(2026-07-27 Session 150)
 
-- [ ] AC3.1 `customer_service.py` 迁移 list_profiles + statistics 2 方法:删 `is_cross_tenant_viewer` / `DataScopeService(self.db).resolve` 直接调用,改走 `self.principal.for_read`(scope 通过 access.scope 获取)
-- [ ] AC3.2 `customer_service.py` `__init__` 加 `self.principal = Principal(db)`
-- [ ] AC3.3 `CONTEXT.md` 加 `Principal` 条目(「租户与身份」章节),描述为「当前请求的身份抽象,统一解析读/写访问边界(effective tenant + scope + require-or-skip)」,_Avoid_: user(那是 User 实体), identity(那是 token claim)
-- [ ] AC3.4 Principal.py docstring 标明「Service layer should use Principal.for_*. Internal helpers retained for Principal's own use + out-of-scope callers」
-- [ ] AC3.5 4 个旧 helper(`is_cross_tenant_viewer` / `is_platform_writer` / `resolve_target_tenant` / `DataScopeService`)docstring 加交叉引用「Internal: called by Principal. Currently only booking/device/customer services use Principal; other services still call these helpers directly — adoption can be evaluated in future architecture reviews.」
-- [ ] AC3.6 全量 pytest 777 passed(零行为变更;customer 测试全绿)
-- [ ] AC3.7 ruff clean + `./scripts/sync-active-features.sh` 刷新
-- [ ] AC3.8 feature 收尾:feature_list.json status `in_progress → passing` + evidence 写入(切片 01/02a/02b/03 + 收尾条)+ progress.md 更新 + plan status `draft v1 → passing` + 切片标题 ✅ + AC 勾选
-- [ ] AC3.9 文档影响评估(对照 §10):① feature_list.json ✅ / ② progress.md ✅ / ③ CONTEXT.md ✅ / ④ plan draft v1 → passing;不动 README / 不动 `项目指南/02-后端架构/`(Principal 是 service 层内部重构,现有架构文档完全覆盖)
+- [x] AC3.1 `customer_service.py` 迁移 list_profiles + statistics 2 方法:删 `is_cross_tenant_viewer` / `DataScopeService(self.db).resolve` 直接调用,改走 `self.principal.for_read`(scope 通过 access.scope 获取)
+- [x] AC3.2 `customer_service.py` `__init__` 加 `self.principal = Principal(db)`
+- [x] AC3.3 `CONTEXT.md` 加 `Principal` 条目(「租户与身份」章节),描述为「当前请求的身份抽象,统一解析读/写访问边界(effective tenant + scope + require-or-skip)」,_Avoid_: user(那是 User 实体), identity(那是 token claim)。**实施留痕**:_Avoid_ 多列 `session`(同章节风格,准确无害 —— Spec 子智能体标温和 scope creep 留痕)
+- [x] AC3.4 Principal.py docstring 标明「Service layer should use Principal.for_*. Internal helpers retained for Principal's own use + out-of-scope callers」(切片 01 已就位,切片 03 核对一致)
+- [x] AC3.5 4 个旧 helper(`is_cross_tenant_viewer` / `is_platform_writer` / `resolve_target_tenant` / `DataScopeService`)docstring 加交叉引用「Internal: called by Principal. Currently only booking/device/customer services use Principal; other services still call these helpers directly — adoption can be evaluated in future architecture reviews.」
+- [x] AC3.6 全量 pytest 783 passed(零行为变更;customer 测试全绿 — test_customers_api 17 passed + test_hq_platform_role + test_service_platform_role + test_principal 全绿)
+- [x] AC3.7 ruff clean + `./scripts/sync-active-features.sh` 刷新(active 视图:0 活跃 + 5 最近 passing)
+- [x] AC3.8 feature 收尾:feature_list.json status `in_progress → passing` + evidence 写入(切片 01/02a/02b/03 + 收尾条)+ progress.md 更新 + plan status `draft v1 → passing` + 切片标题 ✅ + AC 勾选
+- [x] AC3.9 文档影响评估(对照 §10):① feature_list.json ✅ / ② progress.md ✅ / ③ CONTEXT.md ✅ / ④ plan draft v1 → passing;不动 README / 不动 `项目指南/02-后端架构/`(Principal 是 service 层内部重构,现有架构文档完全覆盖)
+
+**AC3.6 LOC 指标修订留痕(沿用 02a/02b 范式,plan §7.1 预警第三次兑现)**:customer_service.py 353 → 374 = **+21 行**(diff +35/-14)。根因同 02a/02b:6-arg keyword-arg 展开(2 方法 × ~5 行 vs 旧 `DataScopeService(self.db).resolve(a,b,c)` 单行)+ `# Store role:` 解释注释 × 2 + 模块 docstring 新增「Read paths」段。customer **无** 02a 的 Note 注释开销(§4.2 无 customer 不迁方法),无 02b 的 effective_tenant alias 开销(customer 写路径不迁,只迁读路径 2 方法),但 +21 > 02b 的 +12,因模块 docstring 扩写 + 2 个方法各加注释段。Principal 的真实价值仍是「鉴权决策收口到单一推理点 + 跨 service 形状统一」(deletion test §1),不是 LOC 削减。code-review 双轴通过(Standards: 0 HARD violation / Spec: AC3.1-3.6 ✅,AC3.7-3.9 收尾仪式在本 commit 内完成)。
 
 ### 4.4 不可违反契约
 

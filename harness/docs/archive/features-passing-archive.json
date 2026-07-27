@@ -1,7 +1,7 @@
 {
   "project": "ai-agent-platform",
   "description": "已 passing feature 的历史归档(完整字段保留,审计用)",
-  "count": 64,
+  "count": 65,
   "features": [
     {
       "id": "data-export",
@@ -1601,6 +1601,34 @@
         "./init.sh 全绿 714 passed(ruff + pytest,SQLite 内存库,含 test_booking_state + test_bookings_api A–P 全章节)",
         "cd frontend && npm run build ✓ 1.53s + npx oxlint 0 warnings 0 errors(80 files 102 rules)+ npx vitest run ✓ 12/12(2 files:my-bookings-view 6 + store-view 6)",
         "/code-review 双轴(Standards + Spec)通过:0 阻断;修 1 注释误导(submitEnd fallback 不再归因 customers-page '标签 JSON' 范式);ACTIONABLE_STATUS 含 confirmed 经核实是 plan §0a B4 / §8 L276-278 显式要求的防御性渲染,非 speculative generality"
+      ]
+    },
+    {
+      "id": "bookings-page-split",
+      "priority": 65,
+      "area": "工程化",
+      "title": "bookings-page 按视图拆 module(巡检候选 1,纯 locality 重构)",
+      "user_visible_behavior": "无用户可见行为变化(纯前端代码重构)。frontend/src/pages/bookings-page.tsx 1373 行按 view 边界拆成 frontend/src/pages/bookings/ 文件夹:BookingsPage 三叉路由入口 + StoreView/HqView/MyBookingsView 三个 view module + shared module(STATUS_META/FILTER/date helpers)。现有 12 个 vitest 测试全绿验证零行为变更,顺便给零测试的 HqView 补 smoke test。",
+      "status": "passing",
+      "verification": [
+        "frontend/src/pages/bookings-page.tsx 已删除",
+        "frontend/src/pages/bookings/ 文件夹存在:bookings-page.tsx(barrel re-export BookingsPage)+ index.tsx(三叉路由 ~15 行)+ store-view.tsx(~680)+ hq-view.tsx(~105)+ my-bookings-view.tsx(~105)+ shared.ts(~250)",
+        "App.tsx lazy import 指向 @/pages/bookings/bookings-page,路由 /bookings 正常",
+        "cd frontend && npx vitest run → 15/15 绿(12 现有 store-view 6 + my-bookings-view 6 + 3 新 hq-view smoke)",
+        "cd frontend && npm run build 绿 + npx oxlint 0 warning + npx tsc -b 绿",
+        "./init.sh 全绿(后端无改动,基线不应回归)",
+        "5 处 as cast(候选 8 范围)原样保留在各自 view,代码注释标注委托;无新 TODO/FIXME"
+      ],
+      "notes": "巡检产出([codebase-health-log.md] 2026-07-25 候选 1,Strong)。grill 4 决策(D2 bookings/ 子文件夹 / D4 测试跟 view 走 / D6 只拆不碰 cast / D7 现有测试全绿+补 HqView smoke)。**不越界**:cast 处理(候选 8)/ submitEnd JSON.parse 搬 endpoint(候选 7)/ cancel 并入状态机(候选 2,后端)/ queries-endpoints-types 拆分(候选 5)/ CrossTenantReadOnlyTable 抽取(候选 7)/ 其他 page 补测(候选 4)均在 Out of Scope。项目首个 page 子文件夹先例(目前所有 page 是 xxx-page.tsx 平铺)。plan:plan-bookings-page-split.md。",
+      "plan": "harness/docs/plan-bookings-page-split.md",
+      "depends_on": "device-poweron",
+      "evidence": [
+        "拆分:frontend/src/pages/bookings-page.tsx(1373 行)→ bookings/ 文件夹 5 module + barrel:bookings-page.tsx(barrel re-export)+ index.tsx(三叉路由 ~30 行)+ store-view.tsx(StoreView + 4 Dialog + DropdownMenu 三动作 ~680 行)+ hq-view.tsx(HqView export ~140 行)+ my-bookings-view.tsx(MyBookingsView ~150 行)+ shared.tsx(STATUS_META/NONE/MUTABLE/ACTIONABLE 常量 + FilterChips/BookingStatusBadge/deviceNameOf + date helpers + slotTone + ScheduleGridCard/ScheduleSlot ~360 行)",
+        "测试挪位:store-view.test.tsx + my-bookings-view.test.tsx 从 pages/__tests__/ git mv 到 bookings/__tests__/(保留历史),import 路径从 ../bookings-page 改为 ../store-view / ../my-bookings-view;新增 hq-view.test.tsx smoke 3 tests(渲染跨店表+列头+行数据 / 空态 EmptyState / null fallback:tenant_name 门店硬删 + walk-in 散客 + device_name 软删)",
+        "App.tsx lazy import 路径:@/pages/bookings-page → @/pages/bookings/bookings-page(barrel re-export BookingsPage 保路由兼容,路由 /bookings 不变)",
+        "验证:cd frontend && npx vitest run ✓ 15/15(3 files:store-view 6 + my-bookings-view 6 + hq-view 3)+ npm run build ✓ 1.75s(bookings-page chunk 18.98 kB 与拆分前一致,零行为变更)+ npx oxlint 0 warnings 0 errors(86 files 102 rules)+ npx tsc -b ✓ 绿;./init.sh 全绿 714 passed(后端无改动,基线无回归)",
+        "code-review 双轴:Standards 无 hard violation(AGENTS.md 铁律未触达,纯前端 view 搬运);judgement call 发现 shared.tsx 轻微 Divergent Change(ScheduleGridCard + 私有 date helpers 只 StoreView 用却混共享文件)→ 本次不拆登记为独立后续候选;Spec 核心达成(零行为变更 + locality),处置 1 处冲突:§10.10「无新 TODO」vs §4.5 D3「注释标注委托」→ TODO(candidate-X) 改 Note(candidate-X)(保标注价值不触发 IDE TODO 扫描);订正 plan 文字瑕疵(cast 5→7 处 / shared.ts→shared.tsx)",
+        "7 处 as cast 原样保留(hq-view ×1 as BookingHqRead[] / my-bookings-view ×1 as Booking[] / store-view ×1 as Booking[] + ×3 as Device[] + ×1 as Device 类型守卫),代码注释 Note(candidate-8) 标注委托范围;frontend/src/ TODO 总数回到基线 2(Logto OIDC 占位不变)"
       ]
     }
   ]

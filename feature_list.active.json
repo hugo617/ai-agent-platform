@@ -17,13 +17,7 @@
       "priority": 70,
       "area": "工程化",
       "title": "抽 Principal 深模块吸收后端跨 service 的角色扇出(巡检候选 1)",
-      "user_visible_behavior": "无(纯后端重构,行为零变更;booking/device/customer 三 service 鉴权决策统一走 Principal.for_write/for_read)",
-      "status": "in_progress",
-      "verification": "./init.sh 全绿 777 passed(零行为变更)+ ruff clean + 切片 01 新增 test_principal.py contract test(for_write 4 分支 + for_read 2 分支)",
-      "notes": "2026-07-27 第 3 次代码健康度巡检 Top recommendation(Strong)。grill 9 决策 + opus 子智能体审查(3 RED + 2 YELLOW + 2 误判纠正)+ 修正 grill 8 项修订。HTML 报告 ~/.cache/ai-agent-platform-architecture-reviews/2026-07-27.html。4 切片:01 frontier / 02a booking 7 方法 / 02b device 7 方法 / 03 customer 2 + 特殊读注释 + 收尾。leverage:三 service 内 31 处 helper 调用 → N 处 Principal 调用;booking -34 行 / device -28 行 / customer -8 行(逐方法核算,非虚高)。不宣称吸收 candidate-8(那是前端 cast)。4 个旧 helper 全保留为实现细节。",
-      "plan": "harness/docs/plan-principal-module.md",
-      "depends_on": "",
-      "evidence": []
+      "status": "passing"
     },
     {
       "id": "booking-schedule-grid",
@@ -54,17 +48,10 @@
       "status": "passing"
     },
     {
-      "id": "bookings-page-split",
-      "priority": 65,
-      "area": "工程化",
-      "title": "bookings-page 按视图拆 module(巡检候选 1,纯 locality 重构)",
-      "status": "passing"
-    },
-    {
       "id": "_milestone_archived",
       "priority": 0,
       "area": "里程碑",
-      "title": "[已归档 64 条 passing,见 archive/features-passing-archive.json]",
+      "title": "[已归档 65 条 passing,见 archive/features-passing-archive.json]",
       "status": "passing"
     }
   ],
