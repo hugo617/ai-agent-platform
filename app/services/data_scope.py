@@ -59,7 +59,17 @@ class ResolvedScope:
 
 
 class DataScopeService:
-    """Resolve the current principal's effective row-level data scope."""
+    """Resolve the current principal's effective row-level data scope.
+
+    Internal: called by Principal (``app.services.principal.Principal.for_read``
+    delegates the store-role scope resolution here so the read path keeps a
+    single reasoning point across booking / device / customer). The panorama
+    branch short-circuits in Principal before this service is reached, so a
+    cross-tenant viewer read makes no db round-trip. ``CustomerService`` no
+    longer calls this directly (slice 03 migrated its two read methods to
+    Principal); other services can be evaluated for Principal adoption in
+    future architecture reviews.
+    """
 
     def __init__(self, db: AsyncSession) -> None:
         self.db = db

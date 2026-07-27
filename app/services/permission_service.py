@@ -668,7 +668,15 @@ CROSS_TENANT_VIEWER_ROLES: tuple[str, ...] = ("super_admin", "hq_staff")
 
 
 def is_cross_tenant_viewer(platform_role: str | None) -> bool:
-    """True if the role grants cross-tenant read access (super_admin or hq_staff)."""
+    """True if the role grants cross-tenant read access (super_admin or hq_staff).
+
+    Internal: called by Principal (``app.services.principal.Principal.for_read``
+    branches on this to pick the panorama vs scoped path). Currently only
+    booking / device / customer services consume Principal; other services
+    (group / conversation / dashboard / device_model / permission router) still
+    call this helper directly — adoption can be evaluated in future
+    architecture reviews.
+    """
     return platform_role in CROSS_TENANT_VIEWER_ROLES
 
 
@@ -684,7 +692,15 @@ PLATFORM_WRITER_ROLES: tuple[str, ...] = ("super_admin", "hq_staff")
 
 
 def is_platform_writer(platform_role: str | None) -> bool:
-    """True if the role grants cross-tenant WRITE access on devices/bookings."""
+    """True if the role grants cross-tenant WRITE access on devices/bookings.
+
+    Internal: called by Principal (``app.services.principal.Principal.for_write``
+    sets ``require=None`` ⇔ this predicate, the invariant pinned in
+    plan-principal-module §4.0 Q3'). Currently only booking / device / customer
+    services consume Principal; ``_tenant_target.resolve_target_tenant`` still
+    calls this helper directly (Principal composes it). Adoption across other
+    services can be evaluated in future architecture reviews.
+    """
     return platform_role in PLATFORM_WRITER_ROLES
 
 

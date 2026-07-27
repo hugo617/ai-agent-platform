@@ -26,6 +26,10 @@ _Avoid_: capability, grant
 **跨租户**的全局身份,不绑定单个 Tenant。super_admin 跨租户写,hq_staff 跨租户只读。
 _Avoid_: global role, system role
 
+**Principal**:
+当前请求的身份抽象(后端 `app/services/principal.py`)。把 Platform Role + 门店角色 + 目标租户 + Data Scope 统一解析成读/写访问边界 —— `for_write()` 返回 `WriteAccess`(effective tenant + require-or-skip),`for_read()` 返回 `ReadAccess`(effective tenant + scope + require-or-skip + is_panorama)。booking / device / customer 三 service 的鉴权决策统一走 Principal。**不是** User 实体,也不是 token claim。
+_Avoid_: user(那是 User 实体), identity(那是 token claim), session(那是登录会话)
+
 ## AI 智能体与对话
 
 **Agent**:

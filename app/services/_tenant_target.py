@@ -32,6 +32,14 @@ def resolve_target_tenant(
 
     The ``user_tenant_id`` missing-store-tenant case is defensive — store
     principals always have a tenant, this only fires on misconfigured tokens.
+
+    Internal: called by Principal (``app.services.principal.Principal.for_write``
+    delegates tenant resolution + the two BizError guards here so the error
+    messages stay byte-identical with the pre-Principal behaviour). Currently
+    only booking / device / customer services consume Principal; the two
+    out-of-scope booking read variants (``get_tenant_schedule`` /
+    ``list_my_bookings``) still call this helper directly. Adoption across
+    other services can be evaluated in future architecture reviews.
     """
     if is_platform_writer(platform_role):
         if not payload_tenant_id:
