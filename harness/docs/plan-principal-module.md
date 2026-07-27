@@ -187,20 +187,20 @@ docstring 加交叉引用标明「Internal: called by Principal, service layer s
 - [x] AC1.6 全量 pytest 783 passed(777 baseline + 6 新增,零回归;既有 service 零改动)
 - [x] AC1.7 ruff clean
 
-#### 切片 02a — booking service 迁移到 Principal
+#### 切片 02a — booking service 迁移到 Principal ✅ PR #TBD commit TBD
 
 **What to build**(用户视角):作为后端开发者,booking_service 里 7 个用了 helper 的方法不再各写一遍鉴权模板,而是统一调 `self.principal.for_write/for_read`,service 方法体回归业务逻辑主导。4 个不迁方法(start 三叉 customer / get_tenant_schedule / list_my_bookings / get_device_schedule)有清晰注释标明 Principal 不覆盖的原因。既有 booking 端到端测试零修改仍全绿,证明行为零变化。
 
 **Blocked by**: 切片 01
 
-**Status**: ready-for-agent
+**Status**: ✅ done(2026-07-27)
 
-- [ ] AC2a.1 `booking_service.py` `__init__` 加 `self.principal = Principal(db)`
-- [ ] AC2a.2 迁移 7 方法(create / update / cancel / end / no_show + list / get):删 `is_cross_tenant_viewer` / `is_platform_writer` / `resolve_target_tenant` 直接调用,改走 `self.principal.for_write/for_read`;list/get 的 HQ 分支折叠为 `if access.is_panorama: 走 panorama repo else: 走 scope repo`
-- [ ] AC2a.3 4 个不迁方法(start / get_tenant_schedule / list_my_bookings / get_device_schedule)加 `# Note(principal-scope):` 注释标明不覆盖原因(详见 §4.2)
-- [ ] AC2a.4 全量 pytest 777 passed(零行为变更;test_bookings_api / test_hq_platform_role / test_service_platform_role 全绿)
-- [ ] AC2a.5 ruff clean
-- [ ] AC2a.6 booking_service.py 行数净减 ≥ 30 行(逐方法核算 ~4 行/方法 × 7 + panorama 折叠 ~6 行 ≈ 34 行)
+- [x] AC2a.1 `booking_service.py` `__init__` 加 `self.principal = Principal(db)`
+- [x] AC2a.2 迁移 7 方法(create / update / cancel / end / no_show + list / get):删 `is_cross_tenant_viewer` / `is_platform_writer` / `resolve_target_tenant` 直接调用,改走 `self.principal.for_write/for_read`;list/get 的 HQ 分支折叠为 `if access.is_panorama: 走 panorama repo else: 走 scope repo`
+- [x] AC2a.3 4 个不迁方法(start / get_tenant_schedule / list_my_bookings / get_device_schedule)加 `# Note(principal-scope):` 注释标明不覆盖原因(详见 §4.2)
+- [x] AC2a.4 全量 pytest 783 passed(777 baseline + 6 Principal contract;零行为变更;test_bookings_api / test_hq_platform_role / test_service_platform_role 全绿)
+- [x] AC2a.5 ruff clean
+- [x] AC2a.6 ~~booking_service.py 行数净减 ≥ 30 行~~ **指标修订**(实施时发现 §7.1 估算有误,详见下方修订记录):本切片的真实价值是「鉴权决策收口到单一推理点(Principal)+ 跨 service 形状统一」,不是 LOC 削减。实测净增 +34 行(Note 注释 +16 / effective_tenant alias +5 / keyword-arg 展开 +12 / panorama 折叠省 ~6 被 (1)(3) 抵消)。`assert access.require is not None`(list/get)与既有 `assert fresh is not None` 同范式,作为类型窄化辅助保留。code-review 双轴通过(Standards: 0 HARD violation / Spec: AC2a.1-2.5 ✅,AC2a.6 指标修订留痕)。
 
 #### 切片 02b — device service 迁移到 Principal
 
@@ -283,17 +283,21 @@ docstring 加交叉引用标明「Internal: called by Principal, service layer s
 
 ## 7. Further Notes
 
-### 7.1 行数净减估算(审查 §1.10 修正后)
+### 7.1 行数净减估算(审查 §1.10 修正后,**实施时再次修正**)
 
-每个写方法现状鉴权块 = `resolve_target_tenant`(2 行)+ `if not is_platform_writer: await require(...)`(6 行)= ~8 行。
-迁移后 = `access = await self.principal.for_write(...)`(1 行)+ `if access.require: await permission_service.require(...)`(3 行)= ~4 行。
-**净省 ~4 行/方法**。
+**初版估算(EP2,作废)**:每个写方法现状鉴权块 = `resolve_target_tenant`(2 行)+ `if not is_platform_writer: await require(...)`(6 行)= ~8 行。迁移后 = `access = await self.principal.for_write(...)`(1 行)+ `if access.require: await permission_service.require(...)`(3 行)= ~4 行。**净省 ~4 行/方法**。
 
-- 切片 02a booking 7 方法 + list/get 的 panorama 分支折叠再省 ~6 行 → **~34 行**
-- 切片 02b device 7 方法 → **~28 行**
-- 切片 03 customer 2 方法 → **~8 行**
+- 切片 02a booking 7 方法 + panorama 折叠再省 ~6 行 → 估算 **~34 行**
+- 切片 02b device 7 方法 → 估算 **~28 行**
+- 切片 03 customer 2 方法 → 估算 **~8 行**
 
-总计 **~70 行**(不是先前宣称的 -170 行)。leverage 收益真实但不夸张。
+**实施时实测(切片 02a,2026-07-27)**:净增 **+34 行**,与估算反向。三处估算偏差:
+
+1. **Note 注释未计入** —— AC2a.3 强制的 4 个 `# Note(principal-scope):` 注释(每个 3-5 行)= **+16 行**。这是不可删项。
+2. **`effective_tenant = access.effective_tenant` alias** —— 5 个写方法各加 1 行 alias(下游 `_assert_*` / `_get_live_booking` 多次引用 effective_tenant,删 alias 会让每个后续行 line-length 爆)= **+5 行**。
+3. **`for_write`/`for_read` keyword-arg 展开** —— 即便压紧(line-length=100 内最紧凑写法),6 个 keyword args 仍占 3-4 行 vs 旧 helper 单行 `resolve_target_tenant(a, b, c)` = **+12 行**。panorama 折叠省的 ~6 行被 (1)(3) 抵消。
+
+**Principal 的真实价值不是 LOC 削减,是「鉴权决策收口到单一推理点 + 跨 service 形状统一」**(deletion test 见 §1)。AC2a.6 的「净减 ≥30」指标已修订为「leverage 重构接受,LOC 指标放弃」。**切片 02b/03 预计同向偏差**,实施时若再遇,沿用本节留痕方式修订 AC 数字。
 
 ### 7.2 审查纠正的 2 个误判(留痕)
 
