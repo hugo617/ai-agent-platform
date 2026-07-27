@@ -206,6 +206,54 @@ alembic upgrade head
 
 ---
 
+## 两级配置表(平台默认 + 租户覆盖)
+
+有些配置既要「全平台一个默认值」、又要「允许单店覆盖」。项目里这类**两级配置表**有一个
+固定范式,照抄即可。现成的例子:`model_pricing`(token 单价)、`llm_config`(模型参数)、
+`embedding_config`、`booking_configs`(预约时长/可预约时段)。
+
+### 范式特征(四条都满足才算两级配置表)
+
+1. **单表,`tenant_id` 可空**:`tenant_id IS NULL` = 平台默认行(所有租户的 fallback);
+   `tenant_id = <id>` = 某店的覆盖行。一张表装两个 scope。
+2. **Repository 继承 `BaseRepository`,不是 `TenantScopedRepository`**。原因:
+   `TenantScopedRepository` 强制 `tenant_id == X`,会把 `NULL` 的平台默认行过滤掉。
+   所以每个查询方法要**手写** `where(Model.tenant_id == tenant_id)`(租户级)或
+   `where(Model.tenant_id.is_(None))`(平台级)。参照 `ModelPricingRepository`。
+3. **唯一性靠 service 层 upsert,不靠 DB 约束**。 nullable `tenant_id` 上的部分唯一索引需要
+   `NULLS NOT DISTINCT`,Postgres 和 SQLite 语义冲突(违反双库兼容原则),所以不在表上加
+   `UNIQUE` / `uq_`,而是在 service 的 `upsert` 里「先查有没有,没有就 insert,有就 update」。
+4. **`get_effective` 三级 fallback**:租户覆盖 → 平台默认 → 硬编码默认(代码里的常量,
+   保证全新库没跑 seed 也能用)。例:`BookingConfigService.get_effective(tenant_id)`。
+
+### 范例:`booking_configs`(预约时长 / 可预约时段)
+
+```python
+class BookingConfig(Base):
+    __tablename__ = "booking_configs"
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
+    # NULL = 平台默认;非空 = 租户覆盖
+    tenant_id: Mapped[str | None] = mapped_column(
+        String(32), ForeignKey("tenants.id", ondelete="CASCADE"),
+        index=True, nullable=True,
+    )
+    default_duration_minutes: Mapped[int] = mapped_column(Integer, default=45)
+    window_start: Mapped[str] = mapped_column(String(5), default="08:00")
+    window_end: Mapped[str] = mapped_column(String(5), default="22:00")
+    created_at / updated_at  # 标配,无软删除(配置是活的,用 upsert 不用 delete)
+```
+
+> 💡 **何时用两级配置表,何时塞 `tenant_configs`?**
+> - `tenant_configs` 是**纯租户级**(无平台默认行),适合「每个租户独立的白标品牌配置」。
+> - 两级配置表适合「有平台默认值 + 少数租户要覆盖」的运营参数(token 价格、模型参数、
+>   预约时长)。两者领域解耦,不要混。
+
+> ⚠️ **和第 3 条「业务表必须有 tenant_id」的区别**:业务表(`bookings`/`devices`/`customers`)
+> 的每一行都属于某个租户,`tenant_id` 必填 + `TenantScopedRepository` 自动隔离;两级配置表
+> 的 `tenant_id` 可空,语义是「scope 标记」不是「归属」,所以要换 repo 基类 + 手写过滤。
+
+---
+
 ## 新增表的设计原则(给 AI 的 checklist)
 
 > 后面加业务、要新建表时,**先过这 8 条**。现阶段「权限表 + 基础属性表」已齐全——
@@ -218,7 +266,7 @@ alembic upgrade head
 |---|---|---|
 | 1 | **能不加就不加** | 先看能否复用现有表的字段,或塞进 `metadata`(JSONB)。新表是「确有新业务实体」时的最后手段。 |
 | 2 | **必备字段** | `id`:`String(32)` + `default=_uuid()`(uuid hex,不自增 int);`created_at`:`DateTime(timezone=True), server_default=func.now()`。业务实体再加 `updated_at`(带 `onupdate=func.now()`)。 |
-| 3 | **租户归属** | 业务表必须有 `tenant_id`(`ForeignKey("tenants.id", ondelete="CASCADE")`),Repository 继承 `TenantScopedRepository`。**全局身份表**(`users`、`tenants` 本身)除外。详见 [04-多租户隔离](04-多租户隔离.md)。 |
+| 3 | **租户归属** | 业务表必须有 `tenant_id`(`ForeignKey("tenants.id", ondelete="CASCADE")`),Repository 继承 `TenantScopedRepository`。**全局身份表**(`users`、`tenants` 本身)除外。**两级配置表**(`booking_configs`/`model_pricing` 等)`tenant_id` 可空,改继承 `BaseRepository` + 手写过滤,详见上方「两级配置表」章节。详见 [04-多租户隔离](04-多租户隔离.md)。 |
 | 4 | **软删除看情况** | 有「删除后标识符要复用」或「需审计/可恢复」的表:加 `is_deleted` + `deleted_at` + partial unique(抄 `User` 的 `uq_users_username_active`)。**纯 append-only 的表**(消息、日志、验证码)不需要软删除。 |
 | 5 | **命名规范** | 表名**复数蛇形**(`users`、`role_permissions`);普通索引 `ix_` / `idx_`;唯一约束 `uq_`;**外键必须显式写 `ondelete`**(`CASCADE` / `SET NULL` 想清楚再定)。 |
 | 6 | **历史维度:默认不搞** | 绝大多数表用「当前态主表 + `system_logs` 审计」即可(够回答「谁、何时、把什么从 X 改成 Y」)。**只有授权链这类有「任意时间点还原」合规刚需的表**,才上 SCD2(`valid_from` / `valid_to`)。**SCD2 是按需项,不是标配**——现阶段不实施,真有需求再按 [`docs/auth-history-scd2-plan.md`](../../docs/auth-history-scd2-plan.md) 加。 |
