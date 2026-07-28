@@ -4,16 +4,21 @@ Permission flow:
   1. The user must have the ``chat`` action on ``conversations`` (casbin).
   2. If a target agent is referenced, it must exist in the same tenant.
   3. Every tool the agent can invoke re-checks permissions at call time.
+
+Composite (priority 72) lives in ``composite_chat`` below — a plain JSON POST
+that fans out to N agents and synthesizes one answer (no SSE), billed as N+1
+usage events. Contrast with ``chat_stream`` (single agent, SSE, 1 usage event).
 """
 
 import json
+import logging
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
 from langchain_core.messages import AIMessage, HumanMessage
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.agents.graph import stream_agent
+from app.agents.graph import composite_query, stream_agent
 from app.agents.token_budget import truncate_history
 from app.api.deps import CurrentUser, get_current_user, require_permission
 from app.core.database import get_db
@@ -23,9 +28,12 @@ from app.models.usage_event import UsageEvent
 from app.repositories.agent import AgentRepository
 from app.repositories.conversation import MessageRepository
 from app.repositories.usage_event import UsageEventRepository
-from app.schemas.conversation import ChatRequest
+from app.schemas.conversation import ChatRequest, CompositeRequest, CompositeResponse
 from app.services.conversation_service import ConversationService
 from app.services.llm_config_service import llm_config_service
+from app.services.permission_service import permission_service
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
@@ -121,6 +129,70 @@ async def _charge_usage(
         await BillingService(db).charge(tenant_id, event, operator_id=None)
     except Exception:  # noqa: BLE001 - billing is best-effort
         await db.rollback()
+
+
+async def _record_composite_usage(
+    db: AsyncSession,
+    conv: Conversation,
+    msg: Message,
+    *,
+    agent_id: str | None,
+    user: CurrentUser,
+    prompt_tokens: int,
+    completion_tokens: int,
+    total_tokens: int,
+    model: str,
+) -> UsageEvent | None:
+    """Append one UsageEvent ledger row for a composite turn (priority 72).
+
+    NOT shared with ``_record_usage``: that one takes an ``Agent`` object (it
+    also pulls tokens out of an SSE usage dict), while composite billing drives
+    N+1 rows from already-resolved token triples + a bare ``agent_id`` (None for
+    the synthesize row). Each call records one event then charges the wallet
+    *paired* (record commit → charge), so a charge failure rolls back only the
+    current WalletTransaction, not the committed UsageEvent — see H4.
+
+    best-effort like the SSE path: a ledger/charge failure is logged (NOT
+    silently swallowed — N+1 rows amplify the cost of a quiet bug) and the next
+    row proceeds, so one bad row never drops the whole batch. Returns the
+    persisted event (or None on failure) for test observability.
+    """
+    try:
+        repo = UsageEventRepository(db)
+        event = await repo.add(
+            UsageEvent(
+                tenant_id=conv.tenant_id,
+                conversation_id=conv.id,
+                message_id=msg.id,
+                # None for the synthesize row (the N+1th call has no agent).
+                agent_id=agent_id,
+                customer_id=conv.customer_id,  #透传:composite 为该 customer 服务
+                user_id=user.user_id,
+                model=model,
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
+                total_tokens=total_tokens,
+                cost=None,  # filled by BillingService.charge below
+            )
+        )
+        await db.commit()
+    except Exception:  # noqa: BLE001 - ledger is best-effort
+        # logger.exception (not a bare pass): composite writes N+1 rows per
+        # turn, so a silent swallow would multiply a quiet bug across every
+        # agent + the synthesize step. The audit trail matters here.
+        logger.exception(
+            "composite UsageEvent insert failed (agent_id=%s, conv=%s)",
+            agent_id,
+            conv.id,
+        )
+        await db.rollback()
+        return None
+
+    # Paired charge: the UsageEvent is committed above, so a charge failure
+    # rolls back only the WalletTransaction (best-effort). Reconciliation
+    # recovers the gap from the usage_events ledger.
+    await _charge_usage(db, conv.tenant_id, event)
+    return event
 
 
 @router.post(
@@ -309,3 +381,171 @@ async def chat_stream(
         yield "data: [DONE]\n\n"
 
     return StreamingResponse(event_source(), media_type="text/event-stream")
+
+
+# --------------------------------------------------------------- composite (72)
+#
+# POST /chat/composite — fan out one question to N agents, synthesize one
+# answer. Plain JSON (NOT SSE): composite returns a single payload, so there's
+# no stream to frame. Contrast with /chat/stream (single agent, typewriter SSE).
+# Billed as N+1 UsageEvents (one per agent fragment + one for the synthesize
+# call); wallet pre-check is strict (HTTP 402, project-first) because the N+1
+# cost is much higher than a single-agent turn.
+
+
+@router.post(
+    "/composite",
+    dependencies=[Depends(require_permission("conversations", "chat"))],
+    response_model=CompositeResponse,
+)
+async def composite_chat(
+    payload: CompositeRequest,
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> CompositeResponse:
+    """Fan-out one question to N agents in parallel, then synthesize one answer.
+
+    Pipeline (plan §Step 7):
+      Pass 1 — resolve + gate. De-duplicate ``agent_ids`` (order-preserving),
+        fetch each via ``AgentRepository.get_for_tenant`` (cross-tenant and
+        soft-deleted both 404, no existence leak), and re-check
+        ``conversations:chat`` per agent. ``agent_ids`` length is already
+        bounded 1..8 by the Pydantic schema (422 on violation).
+      Wallet pre-check — non-super_admin with no balance → HTTP 402. Stricter
+        than /chat/stream's "no wallet = allow" degradation: composite is N+1
+        times the token cost, so the gate blocks early. (Project-first 402; the
+        frontend must catch it separately and show a recharge prompt.)
+      Create/resume — ``create_or_get(kind="composite")``. New conversation
+        stamps ``agent_id=agents[0]`` (the "primary"/attribution anchor); all N
+        agents live in fragments. Resuming applies the H2 kind-consistency
+        check (single id → 404, blocks single↔composite cross-pollution).
+      Pass 2+3 — ``composite_query`` fans out (parallel, per-agent timeout)
+        and synthesizes. Failures degrade per-agent (failed fragment) and the
+        synthesis falls back to raw concatenation — the request always returns.
+      Persist + bill — one assistant Message carries the synthesis + fragments
+        (JSONB); N+1 UsageEvents (fragment rows + synthesize row with
+        agent_id=None) are recorded and charged pairwise-atomic (H4).
+    """
+    # ---- Pass 1: resolve + gate --------------------------------------------
+    # De-duplicate preserving order (dict.fromkeys): a repeated id must NOT
+    # fan out twice (wasted tokens + duplicated fragment + double charge).
+    unique_ids = list(dict.fromkeys(payload.agent_ids))
+    agent_repo = AgentRepository(db)
+    agents: list[Agent] = []
+    for aid in unique_ids:
+        # get_for_tenant filters tenant_id + is_deleted, so a cross-tenant OR
+        # soft-deleted agent both surface as None → 404 (same code, no leak).
+        agent = await agent_repo.get_for_tenant(aid, user.tenant_id)
+        if agent is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"agent {aid} not found in tenant {user.tenant_id}",
+            )
+        # Re-check chat permission on this path too (the router-level Depends
+        # already gated the user; this mirrors /chat/stream's per-agent intent
+        # and keeps a single permission entry point).
+        await permission_service.require(
+            user.user_id,
+            user.tenant_id,
+            "conversations",
+            "chat",
+            platform_role=user.platform_role,
+        )
+        agents.append(agent)
+
+    # ---- Wallet pre-check --------------------------------------------------
+    # Strict (block) semantics, unlike /chat/stream's lenient (allow) path.
+    # super_admin bypasses — platform-level, never billed.
+    if user.platform_role != "super_admin":
+        from app.services.billing_service import BillingService
+
+        if not await BillingService(db).has_balance(user.tenant_id):
+            # HTTP 402 Payment Required — project-first. Not SSE, so a real
+            # status code is usable (unlike /chat/stream's error frame).
+            raise HTTPException(
+                status_code=status.HTTP_402_PAYMENT_REQUIRED,
+                detail="token 余额不足,请联系总部充值",
+            )
+
+    # ---- Create / resume composite conversation ---------------------------
+    conv_service = ConversationService(db)
+    conv = await conv_service.create_or_get(
+        user_id=user.user_id,
+        tenant_id=user.tenant_id,
+        agent_id=agents[0].id,  # primary/attribution anchor (new conv only)
+        conversation_id=payload.conversation_id,
+        platform_role=user.platform_role,
+        first_message=payload.message,
+        customer_id=payload.customer_id,
+        kind="composite",
+    )
+    # Persist the user turn immediately (composite_query reads nothing from it,
+    # but the history view + future follow-ups need it committed first).
+    await conv_service.append_message(conv.tenant_id, conv.id, "user", payload.message)
+
+    # ---- Pass 2+3: fan-out + synthesize ------------------------------------
+    llm_cfg = await llm_config_service.get_effective(db, user.tenant_id)
+    result = await composite_query(
+        user_id=user.user_id,
+        tenant_id=user.tenant_id,
+        db=db,
+        api_key=llm_cfg.api_key,
+        base_url=llm_cfg.base_url,
+        agents=agents,
+        message=payload.message,
+        synthesize_model=payload.synthesize_model,
+    )
+
+    # ---- Persist the synthesized assistant message (+ fragments) ----------
+    # The aggregate usage lands on the Message (self-describing for reporting);
+    # the per-agent breakdown lives in fragments (JSONB). model is the
+    # synthesize call's model — that's the row a reader attributes this turn to.
+    msg = await conv_service.append_message(
+        conv.tenant_id,
+        conv.id,
+        "assistant",
+        result["synthesis"],
+        prompt_tokens=result["usage_total"]["input_tokens"],
+        completion_tokens=result["usage_total"]["output_tokens"],
+        total_tokens=result["usage_total"]["total_tokens"],
+        model=result["synthesize_usage"]["model"],
+        fragments=result["fragments"],
+    )
+
+    # ---- N+1 UsageEvents + pairwise charge ---------------------------------
+    # Serial (not gather): BillingService.charge takes SELECT...FOR UPDATE,
+    # which already serializes — parallel charges would only contend. Each
+    # fragment → one event (agent_id set); the synthesize call → one event
+    # (agent_id=None). All share message_id = the synthesized Message and
+    # customer_id = conv.customer_id (透传).
+    for frag in result["fragments"]:
+        await _record_composite_usage(
+            db,
+            conv,
+            msg,
+            agent_id=frag["agent_id"],
+            user=user,
+            prompt_tokens=frag["input_tokens"],
+            completion_tokens=frag["output_tokens"],
+            total_tokens=frag["total_tokens"],
+            model=frag["model"],
+        )
+    # Synthesize row (the N+1th): agent_id=None, model = synth model.
+    su = result["synthesize_usage"]
+    await _record_composite_usage(
+        db,
+        conv,
+        msg,
+        agent_id=None,
+        user=user,
+        prompt_tokens=su["input_tokens"],
+        completion_tokens=su["output_tokens"],
+        total_tokens=su["total_tokens"],
+        model=su["model"],
+    )
+
+    return CompositeResponse(
+        conversation_id=conv.id,
+        synthesis=result["synthesis"],
+        fragments=result["fragments"],
+    )

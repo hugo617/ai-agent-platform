@@ -39,6 +39,7 @@ class ConversationService:
         platform_role: str | None = None,
         first_message: str | None = None,
         customer_id: str | None = None,
+        kind: str = "single",
     ) -> Conversation:
         """Return an existing conversation or create a new one (after permission check).
 
@@ -52,6 +53,14 @@ class ConversationService:
         an existing one (via ``conversation_id``) keeps its original attribution
         intact, so a follow-up turn never silently re-binds the chat to a
         different customer. Token 费用管理系列 3/4.
+
+        ``kind`` (composite-chat priority 72): when ``conversation_id`` resumes
+        an existing conversation, the passed ``kind`` MUST match the stored
+        ``conv.kind`` — a single↔composite mismatch raises ``NotFoundError``
+        (404, not 400) so the existence leak is consistent with the cross-tenant
+        404. This blocks polluting a single-agent chat with composite turns and
+        vice versa. For a new conversation, ``kind`` is stamped on the row
+        (defaults to ``"single"`` so existing callers are unaffected).
         """
         await permission_service.require(
             user_id, tenant_id, self.OBJECT, "create", platform_role=platform_role
@@ -62,6 +71,15 @@ class ConversationService:
             if conv is None:
                 raise NotFoundError(
                     f"conversation {conversation_id} not found in tenant {tenant_id}"
+                )
+            # H2 kind-consistency guard (composite-chat slice 03): a single
+            # conversation id cannot be resumed as composite (and vice versa).
+            # Reported as 404 so it's indistinguishable from "doesn't exist" —
+            # no existence leak. Mirrors the cross-tenant 404 behavior.
+            if conv.kind != kind:
+                raise NotFoundError(
+                    f"conversation {conversation_id} is kind={conv.kind}, "
+                    f"cannot resume as kind={kind}"
                 )
             return conv
 
@@ -77,6 +95,7 @@ class ConversationService:
             user_id=user_id,
             title=derived_title,
             customer_id=customer_id,
+            kind=kind,
         )
         await self.conversations.add(conv)
         await self.db.commit()
@@ -155,6 +174,7 @@ class ConversationService:
         model: str | None = None,
         status: str = "completed",
         error: str | None = None,
+        fragments: list[dict] | None = None,
     ) -> Message:
         """Append a message and optionally record its token usage.
 
@@ -163,6 +183,9 @@ class ConversationService:
         pass them simply leave the columns NULL (backward compatible).
         ``status``/``error`` mark failed turns so a provider/LLM failure is
         auditable instead of a silent SSE drop (defaults to completed/None).
+        ``fragments`` (composite-chat priority 72) carries the per-agent
+        breakdown of a composite turn; only the composite assistant turn sets
+        it, every other caller leaves it None (backward compatible).
         """
         msg = Message(
             conversation_id=conversation_id,
@@ -175,6 +198,7 @@ class ConversationService:
             model=model,
             status=status,
             error=error,
+            fragments=fragments,
         )
         await self.messages.add(msg)
         # Bump the conversation's updated_at so the list ordering reflects
