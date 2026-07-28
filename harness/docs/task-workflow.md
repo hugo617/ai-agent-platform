@@ -92,7 +92,7 @@ agent 天然"顺便多改",每个改动稀释注意力。所以钉死:**同时�
 
 ### 完成定义(4 条全满足才算完成)
 1. 目标行为已实现;
-2. 要求的验证真的跑过(`./init.sh` 全过,不是"看起来没问题");
+2. 要求的验证真的跑过(收尾跑 `./init.sh full` 全量全过,不是"看起来没问题";开工冒烟 `./init.sh` 仅作起点确认,不算完成证据);
 3. 证据已记录到 `feature_list.json` 的 `evidence` 字段;
 4. 仓库仍能按标准路径(`./init.sh`)重新开始工作。
 
@@ -101,7 +101,7 @@ agent 天然"顺便多改",每个改动稀释注意力。所以钉死:**同时�
 ## 4. 每轮会话的节奏
 
 ### 会话开始
-1. `./init.sh` —— 跑验证,确认起点干净
+1. `./init.sh` —— 跑冒烟验证(~15s),确认起点干净
 2. 读 `progress.md` —— 恢复"做到哪了"
 3. 读 `feature_list.active.json` —— 找当前 `in_progress`,或下一个 `not_started`(派生视图,~58 行;完整数据见 `feature_list.json`)
 
@@ -110,7 +110,7 @@ agent 天然"顺便多改",每个改动稀释注意力。所以钉死:**同时�
 - 照着对应的 `harness/docs/plan-<任务id>.md` 执行步骤
 
 ### 会话结束
-1. `./init.sh` —— 验证还绿吗?
+1. `./init.sh full` —— 跑全量验证(~5min),确认没回归(开工 `./init.sh` 冒烟不算)
 2. 更新 `progress.md` —— 追加本轮 Session 记录
 3. 如果做完了:填 `evidence` + `status` 改 `passing`
 4. 跑 `./scripts/sync-active-features.sh` —— 刷新 `feature_list.active.json`(若本期有状态变化)
@@ -284,7 +284,8 @@ cat .skill-counters.json   # 查看本机的 skill 使用统计
 
 ### Step N:<验证>
 - **命令**:
-  - `./init.sh`
+  - `./init.sh`(开工冒烟,~15s)
+  - `./init.sh full`(收尾全量,~5min)
   - `<其他验证命令>`
 - **通过标准**:...
 

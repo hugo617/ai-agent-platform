@@ -31,6 +31,8 @@ from app.services.principal import (
     WriteAccess,
 )
 
+pytestmark = pytest.mark.smoke
+
 # =============================================================
 # for_write: 4-branch decision table (pure-function contract).
 # =============================================================

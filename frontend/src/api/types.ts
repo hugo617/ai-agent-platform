@@ -403,6 +403,12 @@ export interface PasswordChange {
   new_password: string; // min 8 chars (backend-enforced)
 }
 
+// composite-chat (priority 72). Mirrors the backend Literal["single","composite"]
+// on ConversationRead.kind. Defaults to "single" so legacy rows (and the
+// server_default) round-trip as ordinary single-agent conversations; a
+// composite conversation is a fan-out + synthesize turn (POST /chat/composite).
+export type ConversationKind = "single" | "composite";
+
 export interface Conversation {
   id: string;
   agent_id: string;
@@ -417,6 +423,10 @@ export interface Conversation {
   tags: string[];
   is_pinned: boolean;
   is_starred: boolean;
+  // composite-chat (priority 72). "single" = ordinary one-agent conversation;
+  // "composite" = fan-out + synthesize (the agent_id above is the first /
+  // primary agent for ownership, all N agents live in Message.fragments).
+  kind: ConversationKind;
   created_at: string;
   updated_at: string;
 }
@@ -425,6 +435,16 @@ export interface Message {
   id: string;
   role: "user" | "assistant";
   content: string;
+  // composite-chat (priority 72, M8). Aligns the frontend type with the
+  // backend MessageRead: ``status`` defaults to "completed" and ``error`` is
+  // null unless a turn failed. Single-agent failed messages also rely on these
+  // (the retry/regenerate hint), so they're not composite-only.
+  status?: "completed" | "failed";
+  error?: string | null;
+  // composite-chat (priority 72). Only present on the assistant turn of a
+  // composite conversation — one entry per fanned-out agent. Null for ordinary
+  // messages (kept optional so single-agent Message payloads still type-check).
+  fragments?: CompositeFragment[] | null;
   created_at: string;
 }
 
@@ -434,6 +454,50 @@ export interface Message {
 export interface ConversationFilters {
   search?: string;
   tag?: string;
+}
+
+// ============= composite-chat (priority 72) =============
+//
+// Composite = fan-out + synthesize: ask N agents the same question in parallel,
+// then synthesize one answer. Contrast with Supervisor (priority 58), which
+// routes to ONE specialist. The request/response are plain JSON (not SSE) —
+// composite returns a single synthesized payload. Mirrors the backend
+// CompositeRequest / CompositeFragment / CompositeResponse (app/schemas/conversation.py).
+
+/** One agent's result inside a composite response / assistant Message.fragments. */
+export interface CompositeFragment {
+  agent_id: string;
+  agent_name: string;
+  // Short excerpt of the agent's reply (the backend stores the full reply in
+  // its own log; the fragment carries a snippet for the collapsed UI view).
+  snippet: string;
+  status: "completed" | "failed";
+  error?: string | null;
+  model?: string | null;
+  // Token triple — each fragment drives one UsageEvent row on the backend.
+  input_tokens?: number | null;
+  output_tokens?: number | null;
+  total_tokens?: number | null;
+}
+
+/** Body of POST /chat/composite — fan out to N agents, synthesize one answer. */
+export interface CompositeRequest {
+  // De-duplicated (order-preserving) by the backend; capped at 8.
+  agent_ids: string[];
+  message: string;
+  // Resume an existing composite conversation (a single-type id is rejected
+  // with 404 by the backend's kind-consistency check).
+  conversation_id?: string;
+  customer_id?: string;
+  // Override the synthesize model (defaults to the first agent's model).
+  synthesize_model?: string;
+}
+
+/** Response of POST /chat/composite — the synthesis plus the per-agent fragments. */
+export interface CompositeResponse {
+  conversation_id: string;
+  synthesis: string;
+  fragments: CompositeFragment[];
 }
 
 // ============= API tokens (AtoA — agenthub CLI auth) =============

@@ -16,7 +16,7 @@
 
 ## 清单(9 项)
 
-- [ ] **基础验证可用**:`./init.sh` 跑过(`ruff check` + `pytest` 全绿)
+- [ ] **基础验证可用**:`./init.sh full` 跑过(`ruff check` + 全量 `pytest` 全绿;**收尾必须全量**,开工 `./init.sh` 冒烟不算)
 - [ ] **进度已记录**:`progress.md` 已追加本轮 Session 记录(目标/已完成/验证/下一步)
 - [ ] **功能状态真实**:`feature_list.json` 的状态真实反映 passing 和「未验证」的边界
   —— 没跑完整验证的绝不能标 passing(没有假 passing)。多切片 feature **EP2 完成 + 依赖满足(当前 frontier)即 `in_progress`**;EP2 完成但依赖未满足(排队)保持 `not_started` + `plan` 字段已填(区分「已规划待实施」vs plan 为空的「未规划」)
@@ -27,7 +27,7 @@
 - [ ] **无调试残留**:没有遗留的 `print()` / `breakpoint()` / `debugger` / 临时文件
 - [ ] **遵守架构铁律**:改动符合分层约束(Controller → Service → Repository → Model 单向)、
   多租户过滤在 Repository 层(`TenantScopedRepository`)、软删除带 `is_deleted=False`
-- [ ] **可无缝接手**:下一轮会话无需人工修复即可 `./init.sh` 继续工作
+- [ ] **可无缝接手**:下一轮会话无需人工修复即可 `./init.sh`(冒烟 ~15s)继续工作
 - [ ] **切片 checklist 已勾选**:若本次完成(或推进)了某 `plan-<feature>.md` 的切片,
   `/code-review` 通过后、commit 前已把该切片的 acceptance criteria 从 `- [ ]` 改 `- [x]`,
   并在切片标题行追加 `✅ PR #NN commit <hash>`(切片级真相源,见
@@ -53,7 +53,7 @@
 
 ## 与其他 harness 工件的关系
 
-- **`./init.sh`**:本清单第 1 项的执行入口
+- **`./init.sh`**:本清单第 1 项的执行入口(默认冒烟 `./init.sh`,收尾全量 `./init.sh full`)
 - **`progress.md`**:本清单第 2、8 项的落点
 - **`feature_list.json`**:本清单第 3、4 项的真相源(完整版,CI/审计用)
 - **`feature_list.active.json`**:本清单第 4 项的刷新对象(派生视图,agent 开工读)

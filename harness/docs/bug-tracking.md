@@ -35,7 +35,7 @@
 | `reported` | 刚记录 | feature_list.json 录入 + 复现步骤写进 plan | 开始尝试复现 |
 | `reproducing` | 正在复现 | — | 稳定复现 / 判定无法复现 / 判定重复 |
 | `fixing` | 正在修复 | 根因已定位 + 修复方案已定 | 改完代码 + 自测通过 |
-| `verifying` | 正在验证 | 改完代码 + `./init.sh` 全绿 | 回归测试通过 + evidence 已填 |
+| `verifying` | 正在验证 | 改完代码 + `./init.sh full` 全绿(全量,bug 收尾必须全量) | 回归测试通过 + evidence 已填 |
 | `closed` | 终态 | — | — |
 
 > **feature_list.json 状态映射**:`reported`/`reproducing`/`fixing` 都映射到 `not_started` 或 `in_progress`(WIP=1 仍生效,同时只能一个 bug 在 `fixing`)。`verifying` = `in_progress`。`closed` = `passing`(终态)。无法复现/重复/working-as-intended 的 `closed` 在 `evidence` 写明原因。
@@ -57,7 +57,7 @@
   "plan": "harness/docs/plan-bug-<简短描述>.md",
   "verification": [
     "原复现脚本不再触发(给出可执行命令)",
-    "./init.sh 全绿(无回归)",
+    "./init.sh full 全量全绿(无回归)",
     "边界场景测试 N 条"
   ],
   "evidence": [],
@@ -107,12 +107,12 @@ curl -X POST http://localhost:8000/api/v1/... -H "Authorization: Bearer <token>"
 
 ## 5. 回归测试
 - 新增测试用例 N 条(覆盖根因 + 边界)
-- 跑 `./init.sh` 确认全绿
+- 跑 `./init.sh full` 确认全绿(bug 收尾必须全量)
 - 手动跑原复现脚本确认不再触发
 
 ## 6. 验收标准(同步 feature_list.json verification)
 1. 原复现脚本失败(不再触发)
-2. ./init.sh 全绿
+2. `./init.sh full` 全量全绿
 3. 边界场景全过
 
 ## 7. 风险

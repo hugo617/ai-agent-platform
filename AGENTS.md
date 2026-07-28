@@ -27,8 +27,9 @@
    - **若 active.json 过时或缺失**:回退读完整 [`feature_list.json`](feature_list.json),然后跑 `./scripts/sync-active-features.sh` 刷新。
    - **判断在哪一层(EP1/EP2/EP3)**:选定 feature 后,读其 `plan-<feature>.md` 看有无「实施切片」章节 —— 有未勾 checklist → 在 **EP3**(从 frontier 切片接 `/implement`);无切片章 → 在 **EP2**(跑 `/grill→/to-spec→/to-tickets` 拆切片);plan 文档不存在 → EP1 或 EP2 起点。若 progress.md 顶部有「当前 EP2 回环」断点记录,从断点接。详见 [`harness/docs/three-tier-workflow.md`](harness/docs/three-tier-workflow.md)。
 4. `git log --oneline -5` —— 看最近发生了什么。
-5. 运行 `./init.sh` —— 装依赖 + 跑基础验证(ruff + pytest,SQLite 内存库,秒级)。
-6. **如果基础验证失败,先修基础,不要在坏起点上叠新功能。**
+5. 运行 `./init.sh` —— 装依赖 + 跑**冒烟验证**(ruff + `pytest -m smoke`,SQLite 内存库,~15s)。
+6. **如果冒烟验证失败,先修基础,不要在坏起点上叠新功能。**
+7. **收尾/PR 前/大模块完成时**:跑 `./init.sh full`(全量 ~5min),确认没回归。详见 [`init.sh` 注释](init.sh)。
 
 ---
 

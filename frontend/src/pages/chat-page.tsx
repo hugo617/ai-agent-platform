@@ -52,9 +52,12 @@ import { useToast } from "@/components/ui/toast";
 import { useAuth } from "@/components/auth/auth-context";
 import { isSuperAdmin } from "@/lib/permission";
 import { MarkdownView } from "@/components/chat/markdown-view";
+import { Switch } from "@/components/ui/switch";
+import { Badge } from "@/components/ui/badge";
 import { apiErrorMessage } from "@/api/client";
 import { sendChatStream } from "@/api/endpoints";
-import type { Conversation, Message } from "@/api/types";
+import { CompositeMode } from "@/pages/composite-mode";
+import type { Conversation, ConversationKind, Message } from "@/api/types";
 import {
   useAddConversationTag,
   useAgents,
@@ -148,6 +151,16 @@ export function ChatPage() {
   // at creation time only — follow-up turns keep the original binding).
   const [selectedCustomerId, setSelectedCustomerId] = useState<string>("");
 
+  // composite-chat (priority 72), slice 04 — single/composite mode switch.
+  // Defaults to "single" (AC4.6 / H5: preserves backward compat with the
+  // existing SSE stream). The mode is a *conversation-level* transient state
+  // (NOT an Agent attribute like is_orchestrator); an effect below syncs it to
+  // the selected conversation's `kind` so opening a composite conversation
+  // shows its history in the composite view. Switching to composite starts a
+  // NEW composite query (selecting an existing single conversation while in
+  // composite mode is reconciled by the same effect).
+  const [mode, setMode] = useState<ConversationKind>("single");
+
   const { data: history, isLoading: historyLoading } = useMessages(
     selectedConversationId,
   );
@@ -222,6 +235,17 @@ export function ChatPage() {
   useEffect(() => {
     setLocalMessages(null);
   }, [selectedConversationId]);
+
+  // composite mode follows the selected conversation's kind (AC4.6): opening a
+  // composite conversation renders its fragments via CompositeMode; opening a
+  // single conversation (or starting fresh) falls back to the SSE stream view.
+  // When no conversation is selected the user's last-chosen mode is kept, so a
+  // "new chat" started from composite mode stays composite until toggled off.
+  useEffect(() => {
+    if (!selectedConversationId) return;
+    const conv = conversations?.find((c) => c.id === selectedConversationId);
+    if (conv?.kind) setMode(conv.kind);
+  }, [selectedConversationId, conversations]);
 
   const startNewConversation = () => {
     if (streaming) return;
@@ -551,6 +575,14 @@ export function ChatPage() {
                           <span className="truncate">
                             {conversationLabel(conv)}
                           </span>
+                          {conv.kind === "composite" && (
+                            <Badge
+                              variant="secondary"
+                              className="shrink-0 px-1.5 py-0 text-[10px]"
+                            >
+                              复合
+                            </Badge>
+                          )}
                         </span>
                         <span className="flex w-full items-center gap-1 text-[11px] text-muted-foreground">
                           {conv.customer_id && (() => {
@@ -642,68 +674,77 @@ export function ChatPage() {
         <CardHeader className="flex-row items-center justify-between space-y-0 border-b">
           <div className="flex items-center gap-3">
             <CardTitle className="text-base">对话</CardTitle>
-            <Select
-              value={selectedAgentId}
-              onValueChange={setSelectedAgentId}
-              disabled={streaming || agentsLoading}
-            >
-              <SelectTrigger className="h-8 w-48">
-                <SelectValue
-                  placeholder={agentsLoading ? "加载中…" : "选择智能体"}
-                />
-              </SelectTrigger>
-              <SelectContent>
-                {agents?.map((agent) => (
-                  <SelectItem key={agent.id} value={agent.id}>
-                    {agent.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            {mode === "single" && (
+              <>
+                <Select
+                  value={selectedAgentId}
+                  onValueChange={setSelectedAgentId}
+                  disabled={streaming || agentsLoading}
+                >
+                  <SelectTrigger className="h-8 w-48">
+                    <SelectValue
+                      placeholder={agentsLoading ? "加载中…" : "选择智能体"}
+                    />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {agents?.map((agent) => (
+                      <SelectItem key={agent.id} value={agent.id}>
+                        {agent.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
 
-            {/* Multi-agent orchestration (priority 58): when an orchestrator is
-                selected, hint that messages will be routed to specialists. MVP
-                does not show real-time specialist attribution (SSE frames carry
-                no source field); only this static hint. */}
-            {(() => {
-              const agent = agents?.find((a) => a.id === selectedAgentId);
-              if (!agent?.is_orchestrator) return null;
-              const n = agent.specialist_ids.length;
-              return (
-                <span className="rounded-md bg-accent px-2 py-1 text-xs text-muted-foreground">
-                  编排器{n > 0 ? `:将路由到 ${n} 个 specialist` : ":未挂载 specialist"}
-                </span>
-              );
-            })()}
+                {/* Multi-agent orchestration (priority 58): when an orchestrator is
+                    selected, hint that messages will be routed to specialists. MVP
+                    does not show real-time specialist attribution (SSE frames carry
+                    no source field); only this static hint. */}
+                {(() => {
+                  const agent = agents?.find((a) => a.id === selectedAgentId);
+                  if (!agent?.is_orchestrator) return null;
+                  const n = agent.specialist_ids.length;
+                  return (
+                    <span className="rounded-md bg-accent px-2 py-1 text-xs text-muted-foreground">
+                      编排器{n > 0 ? `:将路由到 ${n} 个 specialist` : ":未挂载 specialist"}
+                    </span>
+                  );
+                })()}
 
-            {/* Token 费用管理系列 3/4: optional customer attribution picker.
-                Store users can tag a NEW chat as "serving customer X". Hidden
-                for super_admin (they don't serve store customers) and disabled
-                when viewing an existing conversation (attribution is fixed at
-                creation). */}
-            {!isSuperAdmin(me) && !selectedConversationId && (
-              <Select
-                value={selectedCustomerId || "_none"}
-                onValueChange={(v) =>
-                  setSelectedCustomerId(v === "_none" ? "" : v)
-                }
-                disabled={streaming}
-              >
-                <SelectTrigger className="h-8 w-44">
-                  <span className="flex items-center gap-1.5 text-muted-foreground">
-                    <User className="h-3.5 w-3.5" />
-                    <SelectValue placeholder="关联客户(可选)" />
-                  </span>
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="_none">不关联客户</SelectItem>
-                  {customerProfiles?.map((p) => (
-                    <SelectItem key={p.customer_id} value={p.customer_id}>
-                      {p.customer.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                {/* Token 费用管理系列 3/4: optional customer attribution picker.
+                    Store users can tag a NEW chat as "serving customer X". Hidden
+                    for super_admin (they don't serve store customers) and disabled
+                    when viewing an existing conversation (attribution is fixed at
+                    creation). */}
+                {!isSuperAdmin(me) && !selectedConversationId && (
+                  <Select
+                    value={selectedCustomerId || "_none"}
+                    onValueChange={(v) =>
+                      setSelectedCustomerId(v === "_none" ? "" : v)
+                    }
+                    disabled={streaming}
+                  >
+                    <SelectTrigger className="h-8 w-44">
+                      <span className="flex items-center gap-1.5 text-muted-foreground">
+                        <User className="h-3.5 w-3.5" />
+                        <SelectValue placeholder="关联客户(可选)" />
+                      </span>
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="_none">不关联客户</SelectItem>
+                      {customerProfiles?.map((p) => (
+                        <SelectItem key={p.customer_id} value={p.customer_id}>
+                          {p.customer.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+              </>
+            )}
+            {mode === "composite" && (
+              <span className="rounded-md bg-accent px-2 py-1 text-xs text-muted-foreground">
+                复合查询:并行问多个智能体，综合答案
+              </span>
             )}
             {/* When viewing an existing conversation that's attributed to a
                 customer, show a read-only badge so the staff member knows who
@@ -721,16 +762,57 @@ export function ChatPage() {
               ) : null;
             })()}
           </div>
-          {selectedConversationId && (
-            <span className="text-xs text-muted-foreground">
-              {fmt(
-                conversations?.find((c) => c.id === selectedConversationId)
-                  ?.updated_at ?? null,
-              )}
-            </span>
-          )}
+          <div className="flex items-center gap-3">
+            {/* composite-chat (priority 72): single ↔ composite mode switch.
+                Reuses the same Switch component as agents-page's orchestrator
+                toggle, but this is conversation-level (not an Agent field). */}
+            <Label className="text-xs text-muted-foreground">单智能体</Label>
+            <Switch
+              checked={mode === "composite"}
+              onCheckedChange={(v) => {
+                // Toggling to composite while a single conversation is open
+                // would mismatch the view; drop the selection so the compose
+                // form starts fresh (mirrors startNewConversation).
+                if (v && mode === "single" && selectedConversationId) {
+                  setSelectedConversationId(null);
+                  setLocalMessages(null);
+                }
+                setMode(v ? "composite" : "single");
+              }}
+              disabled={streaming}
+              aria-label="切换复合查询模式"
+            />
+            <Label className="text-xs text-muted-foreground">复合查询</Label>
+            {selectedConversationId && (
+              <span className="text-xs text-muted-foreground">
+                {fmt(
+                  conversations?.find((c) => c.id === selectedConversationId)
+                    ?.updated_at ?? null,
+                )}
+              </span>
+            )}
+          </div>
         </CardHeader>
 
+        {/* composite-chat (priority 72): composite mode renders its own panel
+            (compose form + history with fragments); single mode keeps the
+            existing SSE message stream + input below. */}
+        {mode === "composite" ? (
+          <CompositeMode
+            agents={agents ?? []}
+            selectedConversationId={selectedConversationId}
+            history={history ?? []}
+            selectedCustomerId={selectedCustomerId}
+            onConversationCreated={(id) => {
+              setSelectedConversationId(id);
+              setSelectedCustomerId("");
+            }}
+            onRefreshConversations={() =>
+              qc.invalidateQueries({ queryKey: ["conversations"] })
+            }
+          />
+        ) : (
+        <>
         {/* message stream */}
         <div ref={scrollRef} className="flex-1 space-y-4 overflow-y-auto p-6">
           {historyLoading && !localMessages ? (
@@ -858,6 +940,8 @@ export function ChatPage() {
             )}
           </div>
         </CardContent>
+        </>
+        )}
       </Card>
 
       {/* ---- rename dialog ---- */}

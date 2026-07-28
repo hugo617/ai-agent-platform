@@ -513,28 +513,29 @@ async def composite_chat(payload: CompositeRequest, user, db):
 - [x] HTTP 集成测试(照 test_chat.py 范式,测试内自建 agent + monkeypatch composite_query):happy path 3 agent / 部分失败 / synthesize 失败 / wallet 402 / member 403 / 跨租户 404 / **软删 agent 404** / **重复 agent_ids 去重** / agent_ids 校验 422 / **续接 kind 不符 404**(single↔composite)/ fragments 持久化可读 / 计费 N+1 笔 / customer 透传 / 多轮 usage 准确 / **扣费容错(第 2 笔 charge 失败,1/3/4 笔仍入库)**。实际 18 测(plan 列 14 场景 + 4 个对称/旁路用例:super_admin 旁路 wallet / 无钱包 402 / 续接 composite 200 / 续接 single 404 拆分)。**「多轮 usage 准确」由切片 02 纯函数测试 `test_composite_query_multi_round_usage_accumulates`(test_composite_chat_engine.py:400)完整覆盖**(astream_events 两轮累加防 ainvoke 漏计)—— 集成层用 fake_composite 是 test_chat.py 既定范式,此场景在纯函数层测试价值更高,文档化标准覆盖。
 - [x] `./init.sh` 全绿(828 passed = 基线 810 + 新增 18,零回归);`alembic check` 同步(本切片零 migration 改动)
 
-### 切片 04 — 前端模式切换 + 真实验证 + ship-it 收尾
+### 切片 04 — 前端模式切换 + 真实验证 + ship-it 收尾 ✅
 
 **What to build**:用户能在 chat 页面切换到「复合查询」模式,多选 agent,发起查询,看到综合答案 + 折叠的各 agent 原始回答。含前端类型、API 封装、composite-mode.tsx 独立组件、会话列表 badge。最后跑真实 DeepSeek key 端到端验证 + feature 收尾(feature_list.json evidence + progress.md + 文档影响评估)。
 
 **Blocked by**:切片 03(需要 `/chat/composite` API)
 
-**Status**:ready-for-agent(blocked)
+**Status**:done
 
-- [ ] `types.ts`:`Conversation.kind` + `Message.fragments` + `Message.status`+`Message.error`(M8 顺手补)+ `CompositeFragment`/`CompositeRequest`/`CompositeResponse`
-- [ ] `endpoints.ts`:`compositeChat(payload)`(POST /chat/composite,非流式)+ **402 单独 catch 展示充值引导**(项目首例)
-- [ ] **`composite-mode.tsx` 独立组件**(文件 kebab-case,export `CompositeMode`,照 `pages/bookings/` 惯例):发送/结果/fragments 折叠全封装
-- [ ] **chat-page 边界(H6)**:`mode` state 由 chat-page 持有 + Switch + 条件渲染 + 导入,**净增 ≤ 30 行**;composite 逻辑全在 composite-mode.tsx
-- [ ] **Switch 默认态(H5)**:`useState<"single"|"composite">("single")` 初始化为 single;切会话时按 kind 同步 mode(useEffect 监听 selectedConversationId)
-- [ ] Switch 复用现有 `switch.tsx`(M7:非"全项目未用",agents-page:643 已用);**composite 是会话级临时态,不写 Agent 字段**(区别于 agents-page 的 is_orchestrator 属性)
-- [ ] 结果消息:fragments 折叠展示,每条带 status badge(复用 Badge:✓ completed / ✗ failed)
-- [ ] 会话列表 composite 会话显示「复合」badge
-- [ ] `selectConversation` 按 kind 切 mode;**composite 模式隐藏 header 的 agent/customer Select**(避免误导)
-- [ ] composite 会话续问(M10 明确):MVP 默认折叠 agent 多选区沿用首次 agent_ids,或仅查看历史(写进「不做的事」)
-- [ ] `npm run build` 0 类型错误;`oxlint` 0 warnings
-- [ ] 真实 DeepSeek key 端到端(M9 前置:llm_config DB 行或 .env key + 若 RAG 需灌文档):建 3 agent(至少 1 带 RAG)+ 复合查询 → 验证 fan-out + synthesize + fragments 折叠 + 计费 4 笔 UsageEvent + 历史可查看
-- [ ] 向后兼容:普通单 agent 对话 + Supervisor orchestrator 路径零回归(依赖 H5 默认态 single)
-- [ ] **feature 收尾(对照 clean-state-checklist)**:feature_list.json evidence + status=passing + progress.md Session + 文档影响评估执行 + **ADR-0002 判断(composite 落地后即判,不等 ship-it)** + **`./scripts/sync-active-features.sh` 跑过** + **依赖解锁扫描**(priority 72 最高位,若有 feature 等它需解锁)+ clean-state checklist 9 项全勾
+- [x] `types.ts`:`Conversation.kind` + `Message.fragments` + `Message.status`+`Message.error`(M8 顺手补)+ `CompositeFragment`/`CompositeRequest`/`CompositeResponse`
+- [x] `endpoints.ts`:`compositeChat(payload)`(POST /chat/composite,非流式)+ **402 单独 catch 展示充值引导**(项目首例,`CompositeInsufficientBalanceError` + 内联充值卡片带「前往充值」CTA)
+- [x] **`composite-mode.tsx` 独立组件**(文件 kebab-case,export `CompositeMode`,照 `pages/bookings/` 惯例):发送/结果/fragments 折叠全封装
+- [x] **chat-page 边界(H6)**:`mode` state 由 chat-page 持有 + Switch + 条件渲染 + 导入;composite 逻辑全在 composite-mode.tsx(code-review 后 compositeAgents useMemo 下沉到 composite-mode,chat-page 净增逻辑最小化)
+- [x] **Switch 默认态(H5)**:`useState<"single"|"composite">("single")` 初始化为 single;切会话时按 kind 同步 mode(useEffect 监听 selectedConversationId)
+- [x] Switch 复用现有 `switch.tsx`(M7:非"全项目未用",agents-page:643 已用);**composite 是会话级临时态,不写 Agent 字段**(区别于 agents-page 的 is_orchestrator 属性)
+- [x] 结果消息:fragments 折叠展示,每条带 status badge(复用 Badge:✓ 完成 / ✗ 失败)
+- [x] 会话列表 composite 会话显示「复合」badge
+- [x] `selectConversation` 按 kind 切 mode;**composite 模式隐藏 header 的 agent/customer Select**(避免误导)
+- [x] composite 会话续问(M10 明确):MVP 仅查看历史(compose 视图无 selectedConversationId 才显示发起新轮;历史视图只读),续问在 composite-mode 内拦截 + 提示「请新建对话」(写进「不做的事」)
+- [x] `npm run build` 0 类型错误;`oxlint` 0 warnings
+- [x] 真实 DeepSeek key 端到端(M9 前置:llm_configs DB platform 行 sk-***ec3a + DeepSeek base_url):3 agent 复合查询 → 验证 fan-out + synthesize + fragments 折叠 + 计费 4 笔 UsageEvent + 历史可查看(详见 evidence)
+- [x] 向后兼容:普通单 agent 对话(/chat/stream SSE 实测 delta+[DONE] 正常)+ Supervisor orchestrator 路径零回归(828 passed 含 multi-agent 测试全绿;依赖 H5 默认态 single)
+- [x] **feature 收尾(对照 clean-state-checklist)**:feature_list.json evidence + status=passing + progress.md Session + 文档影响评估执行 + **ADR-0002 判断(见下,plan 记录足够,不提 ADR)** + **`./scripts/sync-active-features.sh` 跑过** + **依赖解锁扫描**(priority 72 最高位,无下游 feature 等它)+ clean-state checklist 9 项全勾
+
 
 ---
 

@@ -7,7 +7,11 @@ concern that lives entirely inside this function — it should not require a
 full SSE round-trip to verify.
 """
 
+import pytest
+
 from app.agents.graph import _build_llm_kwargs
+
+pytestmark = pytest.mark.smoke
 
 
 def _base() -> dict:
