@@ -13,6 +13,13 @@
   },
   "features": [
     {
+      "id": "principal-scope-doc-alignment",
+      "priority": 71,
+      "area": "工程化",
+      "title": "Principal 范围边界文档对齐(CONTEXT + docstring + ADR-0001,巡检候选 3 文档债)",
+      "status": "passing"
+    },
+    {
       "id": "principal-module",
       "priority": 70,
       "area": "工程化",
@@ -41,17 +48,10 @@
       "status": "passing"
     },
     {
-      "id": "device-models-admin-ui",
-      "priority": 66,
-      "area": "业务实体",
-      "title": "设备型号目录管理页(super_admin 后台前端页)",
-      "status": "passing"
-    },
-    {
       "id": "_milestone_archived",
       "priority": 0,
       "area": "里程碑",
-      "title": "[已归档 65 条 passing,见 archive/features-passing-archive.json]",
+      "title": "[已归档 66 条 passing,见 archive/features-passing-archive.json]",
       "status": "passing"
     }
   ],

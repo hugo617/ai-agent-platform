@@ -19,6 +19,22 @@
   },
   "features": [
     {
+      "id": "principal-scope-doc-alignment",
+      "priority": 71,
+      "area": "工程化",
+      "title": "Principal 范围边界文档对齐(CONTEXT + docstring + ADR-0001,巡检候选 3 文档债)",
+      "user_visible_behavior": "无(纯文档对齐,零代码改零行为变更;Principal 半收口边界由 ADR-0001 钉死,CONTEXT/docstring/4 helper docstring/booking Note/4 service docstring 统一指向 ADR,口径不再冲突)",
+      "status": "passing",
+      "verification": "./init.sh 全绿 783 passed(零代码改零回归,244.76s)+ ruff clean + grep 验证「future architecture reviews」从 5 → 0 处 + ADR-0001 引用 23 处闭合",
+      "notes": "2026-07-27 第 4 次代码健康度巡检候选 3(Strong,Principal 半收口 — CONTEXT 措辞 vs 代码张力)。grill 6 决策(A 方向=文档对齐 / A1 CONTEXT 最小补丁 / B1 docstring 指向 ADR / C1 新建 ADR-0001 项目首个 / D1 单切片 / E1 维持单切片含漏 1-3)+ opus 子智能体审查 ×2(真相核查 8 判断:7 GREEN + 1 RED「AC 归属错位」+ 漏看 6 api 调用点 + customer 2 super_admin 全局读方法 / 设计审查 4 改动:1 RED principal docstring + 3 YELLOW + 漏 3 必须「4 helper docstring 同款口子」+ 漏 1/2 推荐)。HTML 报告 ~/.cache/ai-agent-platform-architecture-reviews/2026-07-27-v2.html。核心原则:清单单一真相源 = ADR-0001,其他 6 处只做指针不枚举。7 改动绑一个 commit(1 新建 ADR + 6 编辑)。/code-review 双轴:Standards 1 HARD(CONTEXT 枚举越界)+ 1 typo(ADR Date)+ Spec AC1.2 YELLOW(principal docstring 列 service 名)+ AC1.8/1.9 RED(验证/收尾待做,本步执行)→ 3 修复全完(CONTEXT 删 4 方法名展开 / principal docstring 删 4 service 名 / ADR Date 注释)。ADR supersede 流程:未来扩 Principal 必须先推翻 ADR-0001。同步修正历史留痕:AC3.5 改 4 helper docstring,# Note 注释是 AC2a.3 要求的(本任务 ADR Context 说清)。",
+      "plan": "harness/docs/plan-principal-scope-doc-alignment.md",
+      "depends_on": "",
+      "evidence": [
+        "切片 01(7 改动绑一个 commit,2026-07-28,末切片 = 单切片):① CONTEXT.md Principal 条目修订(「读写鉴权路径」+ 不点名方法 + 跳转 plan §4.2 + ADR-0001)/ ② principal.py docstring L18-22(指向 ADR + 「superseding that ADR」+ 不枚举清单)/ ③ 新建 docs/adr/0001-principal-scope-boundary.md(项目首个 ADR,Nygard 五段式 + 完整不迁清单:4 方法 + 2 super_admin 方法 + 4 service + 6 api 文件 + Superseding 流程段)/ ④ plan §4.2 表格后加 ADR 交叉引用(纯 markdown ../../docs/adr/)/ ⑤ 4 helper docstring 5 处「future architecture reviews」口子收口(permission_service ×2 + _tenant_target + data_scope)/ ⑥ booking_service 4 处 # Note 注释加 ADR 引用 / ⑦ 4 非采用 service docstring 加 Auth 段(conversation/dashboard 用 panorama 不合理由;device_model/group 用 platform-level)。验证:./init.sh 全绿 783 passed(244.76s,零回归)+ ruff clean + grep「future architecture reviews」5→0 + ADR 引用 23 处闭合。/code-review 双轴:3 修复(CONTEXT 删 4 方法名展开 / principal docstring 删 4 service 名 / ADR Date 注释),Standards 0 HARD / Spec 10/10 AC ✅。",
+        "principal-scope-doc-alignment feature 收尾(2026-07-28):巡检候选 3 文档债收官。principal-module 半收口决策(2026-07-27 EP2 回环已审查但无 ADR 兜底,5 处 docstring 留「future architecture reviews」模糊口子)→ 本 feature 提项目首个 ADR 钉死边界 + 6 处文档统一指向 ADR 单一真相源。文档影响评估:① feature_list.json ✅ / ② progress.md ✅ / ③ CONTEXT.md ✅(Principal 条目修订)/ ④ plan draft v1 → passing;新建 docs/adr/ 目录 + ADR-0001(项目首个,建立未来架构决策范式)。末切片仪式依赖解锁扫描(three-tier §4 第 7 步):无任何 feature depends_on 指向 principal-scope-doc-alignment → 无需推进。"
+      ]
+    },
+    {
       "id": "principal-module",
       "priority": 70,
       "area": "工程化",
