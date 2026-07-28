@@ -52,6 +52,12 @@ ignore = ["B008", "E501"]
 asyncio_mode = "auto"
 testpaths = ["tests", "cli/tests"]
 addopts = "-ra --strict-markers"
+# 自定义 marker(--strict-markers 已开,新 marker 必须在此注册,否则 collect 报错)
+# smoke: 开工期冒烟子集,快速确认环境/认证/内核未坏。./init.sh 默认只跑这些,
+#        收尾/PR 前用 `./init.sh full` 跑全量。
+markers = [
+    "smoke: 启动期冒烟测试(快速确认环境/认证/内核未坏,init.sh 默认只跑这些)",
+]
 
 [tool.coverage.run]
 source = ["app"]

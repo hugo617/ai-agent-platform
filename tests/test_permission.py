@@ -6,6 +6,8 @@ never see or touch resources in tenant B.
 
 import pytest
 
+pytestmark = pytest.mark.smoke
+
 
 @pytest.mark.asyncio
 async def test_owner_can_read_agents(app_client):

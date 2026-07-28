@@ -11,6 +11,8 @@ import pytest
 
 from app.core.validation_errors import localize_message
 
+pytestmark = pytest.mark.smoke
+
 # ---------------------------------------------------------------------------
 # Pure-function unit tests (§7 cases 1-5)
 # ---------------------------------------------------------------------------

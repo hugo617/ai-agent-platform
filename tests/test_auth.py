@@ -2,6 +2,8 @@
 
 import pytest
 
+pytestmark = pytest.mark.smoke
+
 
 @pytest.mark.asyncio
 async def test_health(app_client):

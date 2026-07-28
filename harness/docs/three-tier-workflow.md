@@ -133,7 +133,7 @@ frontier = 切片 05(其 blocker 切片 02/03/04 中,04 是最后一个完成的
 
 当 plan checklist 的**最后一个切片**(通常是整合验证切片,如 devices-crud-ui 的切片 07)勾选时,**强制执行 feature 收尾**:
 
-1. `./init.sh` 全绿(ruff + pytest)
+1. `./init.sh full` 全绿(ruff + 全量 pytest;收尾必须全量,开工 `./init.sh` 冒烟不算)
 2. 完整验证:`alembic upgrade head && alembic check` + `cd frontend && npm run build` + `npx oxlint`
 3. `feature_list.json`:`status` 改 `passing` + `evidence` 字段写实测结果
 4. `./scripts/sync-active-features.sh` 刷新 active 视图

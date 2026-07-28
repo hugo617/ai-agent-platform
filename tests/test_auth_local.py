@@ -15,6 +15,8 @@ import pytest
 from app.core.password import hash_password
 from app.models.tenant import User, UserTenant
 
+pytestmark = pytest.mark.smoke
+
 AUTH = {"Authorization": "Bearer fake"}
 
 

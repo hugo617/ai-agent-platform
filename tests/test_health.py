@@ -13,6 +13,8 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from httpx import ASGITransport, AsyncClient
 
+pytestmark = pytest.mark.smoke
+
 AUTH = {"Authorization": "Bearer fake"}
 
 
