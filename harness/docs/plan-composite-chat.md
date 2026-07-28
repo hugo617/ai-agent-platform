@@ -495,23 +495,23 @@ async def composite_chat(payload: CompositeRequest, user, db):
   - **token 上限三情况**:max_tokens=None → 300;=200 → 200;=1000 → 1000
 - [x] `./init.sh` 全绿(810 passed = 基线 797 + 新增 13,零回归,ruff clean)
 
-### 切片 03 — 后端 API + 计费 + 集成测试
+### 切片 03 — 后端 API + 计费 + 集成测试 ✅
 
 **What to build**:`POST /chat/composite` endpoint 上线,用户能通过 HTTP 发起复合查询。含权限门控、wallet 预检、ConversationService 加 kind/fragments 参数、`_record_composite_usage`(N+1 笔计费,接 agent_id 非 Agent 对象)。完成后 curl/CLI 能调通,返回 JSON,计费 N+1 笔 UsageEvent。
 
 **Blocked by**:切片 02(需要 `composite_query` 函数)
 
-**Status**:ready-for-agent(blocked)
+**Status**:done(2026-07-28 Session 154,PR 待开)
 
-- [ ] `POST /chat/composite` endpoint,dependencies 复用 `conversations:chat` 权限
-- [ ] Pass 1:`agent_ids` **去重保序**(`dict.fromkeys`)+ 逐 agent `get_for_tenant`(跨租户/软删均 404)+ `permission_service.require`,agent_ids 空/超 8 个 422
-- [ ] wallet 预检:非 super_admin 且 `has_balance=False` → HTTP 402(项目首例,前端需单独 catch)
-- [ ] `ConversationService.create_or_get` 加 `kind` 参数(末尾默认 single)+ **续接分支 kind 一致性校验**(H2:不符 → NotFoundError 404);`append_message` 加 `fragments` kwarg
-- [ ] composite 会话新建时 `agent_id` 填 `agents[0].id`(续接保留原值);全部 N agent 在 fragments
-- [ ] `_record_composite_usage`:新函数(不复用 `_record_usage`),接 `agent_id: str|None`;synthesize 笔 agent_id=None;except 用 `logger.exception`(不裸吞)
-- [ ] **扣费事务语义(H4)**:record + charge 配对原子,charge 失败 rollback 只影响本笔 WalletTransaction;N+1 笔串行;每笔处理前 session 无 pending;customer_id 透传
-- [ ] HTTP 集成测试(照 test_chat.py 范式,测试内自建 agent + monkeypatch composite_query):happy path 3 agent / 部分失败 / synthesize 失败 / wallet 402 / member 403 / 跨租户 404 / **软删 agent 404** / **重复 agent_ids 去重** / agent_ids 校验 422 / **续接 kind 不符 404**(single↔composite)/ fragments 持久化可读 / 计费 N+1 笔 / customer 透传 / 多轮 usage 准确 / **扣费容错(第 2 笔 charge 失败,1/3/4 笔仍入库)**
-- [ ] `./init.sh` 全绿;`alembic check` 同步
+- [x] `POST /chat/composite` endpoint,dependencies 复用 `conversations:chat` 权限
+- [x] Pass 1:`agent_ids` **去重保序**(`dict.fromkeys`)+ 逐 agent `get_for_tenant`(跨租户/软删均 404)+ `permission_service.require`,agent_ids 空/超 8 个 422
+- [x] wallet 预检:非 super_admin 且 `has_balance=False` → HTTP 402(项目首例,前端需单独 catch)
+- [x] `ConversationService.create_or_get` 加 `kind` 参数(末尾默认 single)+ **续接分支 kind 一致性校验**(H2:不符 → NotFoundError 404);`append_message` 加 `fragments` kwarg
+- [x] composite 会话新建时 `agent_id` 填 `agents[0].id`(续接保留原值);全部 N agent 在 fragments
+- [x] `_record_composite_usage`:新函数(不复用 `_record_usage`),接 `agent_id: str|None`;synthesize 笔 agent_id=None;except 用 `logger.exception`(不裸吞);code-review 修订:`_charge_usage` 共享函数的 charge 失败路径补 `logger.exception`(plan 行 287/306「不裸吞」覆盖 N+1 笔 + SSE 单笔)
+- [x] **扣费事务语义(H4)**:record + charge 配对原子,charge 失败 rollback 只影响本笔 WalletTransaction;N+1 笔串行;每笔处理前 session 无 pending;customer_id 透传
+- [x] HTTP 集成测试(照 test_chat.py 范式,测试内自建 agent + monkeypatch composite_query):happy path 3 agent / 部分失败 / synthesize 失败 / wallet 402 / member 403 / 跨租户 404 / **软删 agent 404** / **重复 agent_ids 去重** / agent_ids 校验 422 / **续接 kind 不符 404**(single↔composite)/ fragments 持久化可读 / 计费 N+1 笔 / customer 透传 / 多轮 usage 准确 / **扣费容错(第 2 笔 charge 失败,1/3/4 笔仍入库)**。实际 18 测(plan 列 14 场景 + 4 个对称/旁路用例:super_admin 旁路 wallet / 无钱包 402 / 续接 composite 200 / 续接 single 404 拆分)。**「多轮 usage 准确」由切片 02 纯函数测试 `test_composite_query_multi_round_usage_accumulates`(test_composite_chat_engine.py:400)完整覆盖**(astream_events 两轮累加防 ainvoke 漏计)—— 集成层用 fake_composite 是 test_chat.py 既定范式,此场景在纯函数层测试价值更高,文档化标准覆盖。
+- [x] `./init.sh` 全绿(828 passed = 基线 810 + 新增 18,零回归);`alembic check` 同步(本切片零 migration 改动)
 
 ### 切片 04 — 前端模式切换 + 真实验证 + ship-it 收尾
 
