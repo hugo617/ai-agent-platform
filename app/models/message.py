@@ -4,7 +4,9 @@ import uuid
 from datetime import datetime
 
 from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, Text, func
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.types import JSON
 
 from app.core.database import Base
 
@@ -54,6 +56,18 @@ class Message(Base):
         String(20), default="completed", server_default="completed"
     )
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Per-agent fragments for a composite-chat assistant message (priority 72).
+    # NULL for ordinary single-agent messages (zero serialization cost). Only
+    # the assistant turn of a ``kind=composite`` conversation fills this, with
+    # one entry per fan-out agent. The entry shape — including the token
+    # triple that is the slice-03 billing contract — is defined by the
+    # ``CompositeFragment`` schema (``app/schemas/conversation.py``); that
+    # schema is the single source of truth, this column stores its dict form.
+    # Dual-DB idiom mirrors Conversation.tags: JSONB on Postgres (so @>
+    # containment queries are indexable later), plain JSON on SQLite (tests).
+    fragments: Mapped[list | None] = mapped_column(
+        JSONB().with_variant(JSON, "sqlite"), nullable=True, default=None
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

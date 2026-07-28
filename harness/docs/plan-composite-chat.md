@@ -450,24 +450,24 @@ async def composite_chat(payload: CompositeRequest, user, db):
 > tracer-bullet 垂直切片:每切透 schema→API→test 所有层,可独立验证。对照 plan-booking-schedule-grid(6 切片)范式。
 > EP3 实施从 frontier(切片 01)接 `/implement`,逐切片推进,清 context。
 
-### 切片 01 — 后端数据层 + Schema(frontier)
+### 切片 01 — 后端数据层 + Schema(frontier)✅
 
 **What to build**:复合会话的数据承载层就绪 —— `Conversation.kind` + `Message.fragments` 字段落地,migration 含 backfill 保证旧数据 round-trip,Pydantic schema 加字段。这一层完成后数据库能存复合会话,但还没有编排逻辑(无 API、无 composite_query)。
 
 **Blocked by**:无(frontier,可立即开始)
 
-**Status**:ready-for-agent
+**Status**:done(2026-07-28 Session 152 实施完成,零 service 改 + 14 单测 + migration 手动验证通过)
 
-- [ ] `Conversation.kind` 字段添加(String16,server_default "single",无索引)
-- [ ] `Message.fragments` 字段添加(JSONB nullable,模型层 `with_variant(JSON,"sqlite")` 双 DB)
-- [ ] alembic migration:模板符合项目写法(`revision: str` 类型注解),up 含 backfill(`UPDATE ... WHERE kind IS NULL`,防御性 no-op),down 对称;**migration 层 `postgresql.JSONB` 无 variant**(照 `b2c3d4e5f6a7` tags 迁移惯例)
-- [ ] `ConversationRead.kind` 加 `Literal["single","composite"] = "single"`(默认值 + Literal 收紧)
-- [ ] `MessageRead.fragments` 加 `list[dict] | None = None`
-- [ ] 新建 `CompositeRequest` / `CompositeFragment` / `CompositeResponse` schema;fragment 必须含 input/output/total 三项 token(切片 03 计费契约)
-- [ ] **ConversationService 零改动**(切片 03 才加 kind/fragments kwarg),默认值由模型层 `default+server_default` 保证,不依赖 service 传参
-- [ ] `./init.sh` 全绿(零回归,纯加字段)
-- [ ] 单测:旧 Conversation(无 kind)经 schema round-trip 后 kind="single"
-- [ ] **migration 手动验证(写 evidence)**:docker aap-postgres 上 `alembic upgrade head` + `alembic downgrade -1` + `alembic upgrade head` 幂等无错;`SELECT COUNT(*) FROM conversations WHERE kind IS NULL` = 0(项目无 migration 自动化测试,backfill 正确性靠此手动门)
+- [x] `Conversation.kind` 字段添加(String16,server_default "single",无索引)
+- [x] `Message.fragments` 字段添加(JSONB nullable,模型层 `with_variant(JSON,"sqlite")` 双 DB)
+- [x] alembic migration:模板符合项目写法(`revision: str` 类型注解),up 含 backfill(`UPDATE ... WHERE kind IS NULL`,防御性 no-op),down 对称;**migration 层 `postgresql.JSONB` 无 variant**(照 `b2c3d4e5f6a7` tags 迁移惯例)
+- [x] `ConversationRead.kind` 加 `Literal["single","composite"] = "single"`(默认值 + Literal 收紧)
+- [x] `MessageRead.fragments` 加 `list[dict] | None = None`
+- [x] 新建 `CompositeRequest` / `CompositeFragment` / `CompositeResponse` schema;fragment 必须含 input/output/total 三项 token(切片 03 计费契约)
+- [x] **ConversationService 零改动**(切片 03 才加 kind/fragments kwarg),默认值由模型层 `default+server_default` 保证,不依赖 service 传参
+- [x] `./init.sh` 全绿(零回归,797 passed = 基线 783 + 新增 14)
+- [x] 单测:旧 Conversation(无 kind)经 schema round-trip 后 kind="single"
+- [x] **migration 手动验证(写 evidence)**:docker aap-postgres 上 `alembic upgrade head` + `alembic downgrade -1` + `alembic upgrade head` 幂等无错;`SELECT COUNT(*) FROM conversations WHERE kind IS NULL` = 0(实测 7 行旧数据全 kind='single',NULL=0)+ `alembic check` 同步("No new upgrade operations detected")+ `\d conversations` kind 列 `character varying(16) NOT NULL DEFAULT 'single'` + `\d messages` fragments 列 `jsonb` nullable
 
 ### 切片 02 — 后端编排引擎 `composite_query`(核心)
 

@@ -100,6 +100,17 @@ class Conversation(Base):
     agent_id: Mapped[str] = mapped_column(
         String(32), ForeignKey("agents.id", ondelete="CASCADE"), index=True
     )
+    # Conversation kind (composite-chat, priority 72). ``single`` is the legacy
+    # default — one agent, one turn at a time (the existing /chat/stream path).
+    # ``composite`` marks a fan-out + synthesize conversation (POST
+    # /chat/composite). For a composite conversation ``agent_id`` is the *lead*
+    # agent (agents[0]) acting as the ownership anchor; the full participant
+    # list lives in each assistant Message's ``fragments`` JSONB. No index: the
+    # "list composite-only" filter is not a current query, and per the "add
+    # indexes on demand" rule we don't pre-build one.
+    kind: Mapped[str] = mapped_column(
+        String(16), default="single", server_default="single"
+    )
     user_id: Mapped[str | None] = mapped_column(
         String(128), ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
     )
