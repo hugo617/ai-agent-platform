@@ -13,6 +13,10 @@ Permission model differs from tenant-scoped services:
 ``device_models`` is intentionally absent from ``DEFAULT_*_PERMS`` — tenant
 roles have no casbin grant for it, and reads don't consult casbin (they're
 gated by authentication alone).
+
+Auth: platform-level service (super_admin only on writes, no tenant concept),
+outside Principal's applicable domain (tenant-scoped). See ADR-0001
+(``docs/adr/0001-principal-scope-boundary.md``).
 """
 
 from datetime import UTC, datetime

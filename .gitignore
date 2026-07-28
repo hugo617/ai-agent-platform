@@ -56,6 +56,13 @@ htmlcov/
 .env.local
 .env.*.local
 
+# Node.js
+# node_modules/ is the install artifact of `npm install` (frontend/ + any
+# tooling at repo root). Never commit — it is regenerated from package-lock.json
+# and would bloat the repo / cause cross-platform churn. Covers both repo-root
+# and frontend/node_modules.
+node_modules/
+
 # Logs
 *.log
 logs/

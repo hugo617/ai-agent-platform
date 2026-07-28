@@ -14,6 +14,15 @@ Core create logic: "create-or-reuse identity, then attach a profile".
   Profile(this tenant); not exists? build Customer + Profile together.
 - Duplicate check: if this store already has a live profile for that customer,
   raise BizError(400) — one profile per store.
+
+Read paths (``list_profiles`` / ``statistics``) resolve the caller's access
+via ``self.principal.for_read`` — the same deep module booking_service /
+device_service use — so the role + tenant + scope reasoning lives in one
+place across the three services. The store write paths
+(create/update/delete_profile) still call ``permission_service.require``
+directly: they take no ``payload.tenant_id`` (no cross-tenant write surface
+for customers), so there is no writer-bypass resolution for Principal to
+absorb here.
 """
 
 from datetime import UTC, datetime, timedelta
@@ -36,9 +45,9 @@ from app.schemas.customer import (
     CustomerStatistics,
 )
 from app.schemas.group import TenantBrief
-from app.services.data_scope import DataScopeService
 from app.services.errors import BizError, NotFoundError
-from app.services.permission_service import is_cross_tenant_viewer, permission_service
+from app.services.permission_service import permission_service
+from app.services.principal import Principal
 
 
 class CustomerService:
@@ -48,6 +57,10 @@ class CustomerService:
         self.db = db
         self.customers = CustomerRepository(db)
         self.profiles = CustomerProfileRepository(db)
+        # Read paths go through Principal (role + tenant + scope reasoning
+        # centralised across booking/device/customer — see plan-principal-module
+        # §1). Holds the same db as self.db, no duplicate lifecycle.
+        self.principal = Principal(db)
 
     # ------------------------------------------------------------- helpers
 
@@ -135,18 +148,21 @@ class CustomerService:
         (active/inactive/vip/blacklist); None returns every status so the
         front-end 4-state filter is purely opt-in (default still shows all).
         """
-        is_cross_tenant = is_cross_tenant_viewer(platform_role)
-        if not is_cross_tenant:
+        access = await self.principal.for_read(
+            actor_id=actor_id, user_tenant_id=tenant_id,
+            obj=self.OBJECT, act="read", platform_role=platform_role,
+        )
+        if access.require is not None:
+            # Store role: run the casbin require. Panorama (require=None) skips
+            # it — the bypass lives in ``permission_service.check``.
             await permission_service.require(
                 actor_id,
-                tenant_id,
-                self.OBJECT,
-                "read",
+                access.effective_tenant,
+                access.require.obj,
+                access.require.act,
                 platform_role=platform_role,
             )
-        resolved = await DataScopeService(self.db).resolve(
-            actor_id, tenant_id, platform_role
-        )
+        resolved = access.scope
         kw = (search or "").strip() or None
         if kw is None:
             profiles = await self.profiles.list_for_scope(
@@ -196,17 +212,22 @@ class CustomerService:
         super_admin scope = live identities across stores (total / with-active-
         profile / last_7d_new). Mirrors the dual read pattern of ``list_profiles``.
         """
-        is_cross_tenant = is_cross_tenant_viewer(platform_role)
-        if not is_cross_tenant:
+        access = await self.principal.for_read(
+            actor_id=actor_id, user_tenant_id=tenant_id,
+            obj=self.OBJECT, act="read", platform_role=platform_role,
+        )
+        if access.require is not None:
+            # Store role: run the casbin require. Panorama (require=None) skips
+            # it — the bypass lives in ``permission_service.check``.
             await permission_service.require(
                 actor_id,
-                tenant_id,
-                self.OBJECT,
-                "read",
+                access.effective_tenant,
+                access.require.obj,
+                access.require.act,
                 platform_role=platform_role,
             )
         since_7d = datetime.now(UTC) - timedelta(days=7)
-        if is_cross_tenant:
+        if access.is_panorama:
             data = await self.customers.statistics_all_global(since_7d=since_7d)
         else:
             data = await self.profiles.statistics_for_tenant(tenant_id, since_7d=since_7d)

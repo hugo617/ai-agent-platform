@@ -80,6 +80,7 @@ from app.services.permission_service import (
     is_platform_writer,
     permission_service,
 )
+from app.services.principal import Principal
 
 # Bookings that may be rescheduled via PUT. Only ``pending`` is mutable
 # (D10): once a booking has moved past pending (cancelled / in_service /
@@ -97,6 +98,11 @@ class BookingService:
         self.repo = BookingRepository(db)
         self.devices = DeviceRepository(db)
         self.customers = CustomerProfileRepository(db)
+        # Principal absorbs the role + tenant + scope reasoning that used to be
+        # inlined as ``resolve_target_tenant`` / ``is_platform_writer`` /
+        # ``is_cross_tenant_viewer`` calls in each method. Holds the same db
+        # session object — no duplicate lifecycle (plan-principal-module.md §4.1).
+        self.principal = Principal(db)
 
     # ------------------------------------------------------------- helpers
 
@@ -248,17 +254,20 @@ class BookingService:
         as ``BookingRead`` after ``require("bookings", "read")`` (member
         passes because the default perms grant ``bookings:read``).
         """
-        if is_cross_tenant_viewer(platform_role):
+        access = await self.principal.for_read(
+            actor_id=actor_id, user_tenant_id=tenant_id,
+            obj=self.OBJECT, act="read", platform_role=platform_role,
+        )
+        if access.is_panorama:
             bookings = await self.repo.list_all_with_meta()
             return [await self._to_hq_read(b) for b in bookings]
+        assert access.require is not None  # store branch always sets it
         await permission_service.require(
-            actor_id,
-            tenant_id,
-            self.OBJECT,
-            "read",
+            actor_id, access.effective_tenant,
+            access.require.obj, access.require.act,
             platform_role=platform_role,
         )
-        bookings = await self.repo.list_for_tenant(tenant_id)
+        bookings = await self.repo.list_for_tenant(access.effective_tenant)
         return [await self._to_read(b) for b in bookings]
 
     async def get(
@@ -278,19 +287,22 @@ class BookingService:
         Tenant roles go through ``require("bookings", "read")`` +
         ``_get_live_booking`` (tenant-scoped, so a foreign booking is 404).
         """
-        if is_cross_tenant_viewer(platform_role):
+        access = await self.principal.for_read(
+            actor_id=actor_id, user_tenant_id=tenant_id,
+            obj=self.OBJECT, act="read", platform_role=platform_role,
+        )
+        if access.is_panorama:
             booking = await self.repo.get_all_with_meta(booking_id)
             if booking is None:
                 raise NotFoundError(f"预约不存在: {booking_id}")
             return await self._to_hq_read(booking)
+        assert access.require is not None  # store branch always sets it
         await permission_service.require(
-            actor_id,
-            tenant_id,
-            self.OBJECT,
-            "read",
+            actor_id, access.effective_tenant,
+            access.require.obj, access.require.act,
             platform_role=platform_role,
         )
-        booking = await self._get_live_booking(booking_id, tenant_id)
+        booking = await self._get_live_booking(booking_id, access.effective_tenant)
         return await self._to_read(booking)
 
     async def get_device_schedule(
@@ -302,6 +314,10 @@ class BookingService:
         range_end: datetime,
         platform_role: str | None = None,
     ) -> dict[date, list[BookingRead]]:
+        # Note(principal-scope): Principal 不覆盖此方法,原因:不用 helper。
+        # 纯 store 路径,只有 ``require("read")`` 一行,无 helper 可消除。迁它
+        # 只是改写法无 leverage。详见 plan-principal-module.md §4.2。
+        # 边界由 ADR-0001(docs/adr/0001-principal-scope-boundary.md)钉死,扩展需先 supersede ADR。
         """The day-grouped booking schedule for one device, in
         ``[range_start, range_end)``.
 
@@ -356,6 +372,12 @@ class BookingService:
         target_tenant_id: str | None = None,
         platform_role: str | None = None,
     ) -> list[BookingHqRead]:
+        # Note(principal-scope): Principal 不覆盖此方法,原因:panorama 变体 +
+        # 无 require。HQ viewer 用 ``resolve_target_tenant`` 解析目标店 + 故意
+        # 不跑 require(schedule-grid 是 bookings:read surface,default perms
+        # 全 grant)。跟 for_read 默认带 require 有张力。详见 plan-principal-
+        # module.md §4.2。
+        # 边界由 ADR-0001(docs/adr/0001-principal-scope-boundary.md)钉死,扩展需先 supersede ADR。
         """One store's bookings for a single calendar day, as ``BookingHqRead``
         — backs ``GET /bookings/schedule-grid`` (booking-schedule-grid slice 02).
 
@@ -430,6 +452,11 @@ class BookingService:
     async def list_my_bookings(
         self, customer_id: str | None
     ) -> list[BookingRead]:
+        # Note(principal-scope): Principal 不覆盖此方法,原因:customer
+        # principal 读路径。无 tenant 概念,按 customer_id 全局查。Principal
+        # 的 actor+tenant+platform_role 三元组不适用。详见 plan-principal-
+        # module.md §4.2。
+        # 边界由 ADR-0001(docs/adr/0001-principal-scope-boundary.md)钉死,扩展需先 supersede ADR。
         """The customer-principal's own bookings (slice 04, ``GET /me/bookings``).
 
         ``customer_id`` is read off the resolved principal by the endpoint —
@@ -472,17 +499,18 @@ class BookingService:
         target the store named by ``payload.tenant_id`` (required); store roles
         omit it (anti-forgery, see ``resolve_target_tenant``).
         """
-        effective_tenant = resolve_target_tenant(
-            tenant_id, payload.tenant_id, platform_role
+        access = await self.principal.for_write(
+            actor_id=actor_id, user_tenant_id=tenant_id,
+            payload_tenant_id=payload.tenant_id,
+            obj=self.OBJECT, act="create", platform_role=platform_role,
         )
-        if not is_platform_writer(platform_role):
+        if access.require:
             await permission_service.require(
-                actor_id,
-                effective_tenant,
-                self.OBJECT,
-                "create",
+                actor_id, access.effective_tenant,
+                access.require.obj, access.require.act,
                 platform_role=platform_role,
             )
+        effective_tenant = access.effective_tenant
         await self._assert_device_in_tenant(effective_tenant, payload.device_id)
         await self._assert_customer_in_tenant(
             effective_tenant, payload.customer_id
@@ -529,17 +557,18 @@ class BookingService:
         Platform writers target the store named by ``payload.tenant_id``;
         store roles omit it (anti-forgery).
         """
-        effective_tenant = resolve_target_tenant(
-            tenant_id, payload.tenant_id, platform_role
+        access = await self.principal.for_write(
+            actor_id=actor_id, user_tenant_id=tenant_id,
+            payload_tenant_id=payload.tenant_id,
+            obj=self.OBJECT, act="update", platform_role=platform_role,
         )
-        if not is_platform_writer(platform_role):
+        if access.require:
             await permission_service.require(
-                actor_id,
-                effective_tenant,
-                self.OBJECT,
-                "update",
+                actor_id, access.effective_tenant,
+                access.require.obj, access.require.act,
                 platform_role=platform_role,
             )
+        effective_tenant = access.effective_tenant
         booking = await self._get_live_booking(booking_id, effective_tenant)
         if booking.status not in _MUTABLE_STATUSES:
             raise BizError(
@@ -614,17 +643,18 @@ class BookingService:
         order start/end/no_show use). Aligning is left to the separate
         ``booking-action-order-unify`` feature.
         """
-        effective_tenant = resolve_target_tenant(
-            tenant_id, target_tenant_id, platform_role
+        access = await self.principal.for_write(
+            actor_id=actor_id, user_tenant_id=tenant_id,
+            payload_tenant_id=target_tenant_id,
+            obj=self.OBJECT, act="delete", platform_role=platform_role,
         )
-        if not is_platform_writer(platform_role):
+        if access.require:
             await permission_service.require(
-                actor_id,
-                effective_tenant,
-                self.OBJECT,
-                "delete",
+                actor_id, access.effective_tenant,
+                access.require.obj, access.require.act,
                 platform_role=platform_role,
             )
+        effective_tenant = access.effective_tenant
         booking = await self._get_live_booking(booking_id, effective_tenant)
         if booking.status == "cancelled":
             return True
@@ -660,6 +690,12 @@ class BookingService:
         customer_id: str | None = None,
         target_tenant_id: str | None = None,
     ) -> BookingRead:
+        # Note(principal-scope): Principal 不覆盖此方法,原因:三叉 customer
+        # principal。customer 分支走 ownership check(``booking.customer_id ==
+        # customer_id``)是业务校验,不是角色判断;Principal 的
+        # actor+tenant+platform_role 三元组对 customer 不适用。详见
+        # plan-principal-module.md §4.2。
+        # 边界由 ADR-0001(docs/adr/0001-principal-scope-boundary.md)钉死,扩展需先 supersede ADR。
         """Transition a booking to ``in_service`` (pending / confirmed →
         in_service), recording ``started_at``.
 
@@ -764,16 +800,17 @@ class BookingService:
         device-booking uses the opposite order; this slice does NOT change it
         — narrow-scope, leave cancel alone.)
         """
-        effective_tenant = resolve_target_tenant(
-            tenant_id, target_tenant_id, platform_role
+        access = await self.principal.for_write(
+            actor_id=actor_id, user_tenant_id=tenant_id,
+            payload_tenant_id=target_tenant_id,
+            obj=self.OBJECT, act="delete", platform_role=platform_role,
         )
+        effective_tenant = access.effective_tenant
         booking = await self._get_live_booking(booking_id, effective_tenant)
-        if not is_platform_writer(platform_role):
+        if access.require:
             await permission_service.require(
-                actor_id,
-                effective_tenant,
-                self.OBJECT,
-                "delete",
+                actor_id, effective_tenant,
+                access.require.obj, access.require.act,
                 platform_role=platform_role,
             )
         booking.status = booking_transition(booking.status, "end")
@@ -812,16 +849,17 @@ class BookingService:
         ``/cancel`` (a state flip carries nothing the client needs to read
         back, unlike ``start`` / ``end`` whose timestamps refresh the UI).
         """
-        effective_tenant = resolve_target_tenant(
-            tenant_id, target_tenant_id, platform_role
+        access = await self.principal.for_write(
+            actor_id=actor_id, user_tenant_id=tenant_id,
+            payload_tenant_id=target_tenant_id,
+            obj=self.OBJECT, act="delete", platform_role=platform_role,
         )
+        effective_tenant = access.effective_tenant
         booking = await self._get_live_booking(booking_id, effective_tenant)
-        if not is_platform_writer(platform_role):
+        if access.require:
             await permission_service.require(
-                actor_id,
-                effective_tenant,
-                self.OBJECT,
-                "delete",
+                actor_id, effective_tenant,
+                access.require.obj, access.require.act,
                 platform_role=platform_role,
             )
         booking.status = booking_transition(booking.status, "no_show")

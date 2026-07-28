@@ -18,8 +18,11 @@ Two methods cover the full surface:
 **Service layer should use ``Principal.for_*``.** The four internal helpers
 (``resolve_target_tenant`` / ``is_platform_writer`` / ``is_cross_tenant_viewer``
 / ``DataScopeService``) are retained as Principal's own implementation details
-plus for out-of-scope callers; adoption of Principal across other services can
-be evaluated in future architecture reviews.
+plus for the **explicitly out-of-scope callers** pinned by **ADR-0001**
+(``docs/adr/0001-principal-scope-boundary.md``) — these intentionally bypass
+Principal; **do NOT extend Principal to them without superseding that ADR**.
+The full scope decision (non-migrating methods + non-adopting services) lives
+in ``harness/docs/plan-principal-module.md`` §4.2.
 
 Invariant: ``WriteAccess.require is None ⇔ is_platform_writer(platform_role)``
 and ``ReadAccess.require is None ⇔ is_cross_tenant_viewer(platform_role)``.
