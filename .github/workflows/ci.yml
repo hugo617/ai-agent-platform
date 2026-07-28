@@ -104,6 +104,13 @@ jobs:
         # under the same lint gate as the rest of the codebase so it can't drift.
         run: ruff check app/ cli/ tests/ scripts/ alembic/ frontend/e2e/
 
+      - name: Plan status sync check
+        # Guard against the recurring doc-debt pattern where a feature lands
+        # (feature_list.json + plan checklist updated) but the plan header
+        # status line is forgotten. Fails fast if any plan-*.md status diverges
+        # from feature_list.json. See scripts/check_plan_status_sync.py.
+        run: python3 scripts/check_plan_status_sync.py
+
       - name: Pytest
         # The suite builds the full schema from the ORM models on in-memory
         # SQLite (see tests/conftest.py), so this also exercises every model

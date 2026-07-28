@@ -1,6 +1,6 @@
 # 计划:API Token 细粒度 Scope(scope 收敛闭环)
 
-> **状态**:草案 v2(经一轮对抗式审查重写,待二轮审查)
+> 状态: passing(PR #82 commit `5263116`,Session 114,2026-07-17)
 > **不在 feature_list.json 登记**:用户尚未决定立项,本文档仅为审查与讨论而生
 > **前置**:`atoa-api-token-auth`(已 passing)—— `ApiToken` 表已存在,`scopes` 字段已预留
 > **同类先例**:`plan-permission-data-scope.md`(Role.data_scope 四档)、`plan-atoa-api-token-auth.md`(PAT 地地)

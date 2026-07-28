@@ -1,6 +1,6 @@
 # 计划:设备型号目录管理页(super_admin 后台前端页)
 
-> **状态**:草案 v1(已拆 2 个实施切片,待 `/implement` 推进)
+> 状态: passing(PR #122 commit `dd7c1b0`,Session 142,2026-07-25;全 2 切片收官)
 > **feature_list.json ID**:`device-models-admin-ui`(priority 66,设备功能系列补遗)
 > **前置**:`device-models-crud`(priority 61,已 passing)—— `DeviceModel` 表 / 后端 CRUD API 全齐
 > **同类先例**:`plan-groups-api.md` + `frontend/src/pages/groups-page.tsx`(同平台级 super_admin 资源范式) / `plan-devices-crud-ui.md`(同设备系列前端范式)

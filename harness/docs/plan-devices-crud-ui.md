@@ -1,6 +1,6 @@
 # 计划:门店设备实例 CRUD + 绑定客户(租户隔离)
 
-> **状态**:草案 v2(经对抗式审查修复 3 个 🔴 + 9 个 🟡,已拆 7 个实施切片,待 `/implement` 推进)
+> 状态: passing(PR #101 commit `6105ae0`,Session 131,2026-07-23;全 7 切片收官)
 > **feature_list.json ID**:`devices-crud-ui`(priority 62,设备功能系列 2/4)
 > **前置**:`device-models-crud`(priority 61,已 passing)—— `DeviceModel` 表 / 后端 API 已落地
 > **同类先例**:`plan-customers-api.md`(租户级表 + CustomerProfile)/ `plan-groups-api.md`(attach-detach 端点)/ `plan-device-models-crud`(刚合并的范式)

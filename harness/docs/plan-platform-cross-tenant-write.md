@@ -1,7 +1,7 @@
 # 计划:总部平台角色解锁设备/预约跨店全写权限
 
 > **id**: platform-cross-tenant-write
-> **状态**: draft v1(EP2 回环产出,待 EP3 实施)
+> 状态: passing(PR #126 commit `fe06dea`,Session 146,2026-07-25;全 5 切片收官)
 > **优先级**: 67(新登记,「权限」area;`booking-state-cancel` 让位到 68 推迟)
 > **创建日期**: 2026-07-25
 > **来源**:设备/预约功能系列(61-66)收官后的平台角色权限升格需求;grill 6 决策回环产出

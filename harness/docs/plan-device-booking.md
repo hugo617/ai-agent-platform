@@ -1,7 +1,7 @@
 # 计划:设备预约订单 CRUD + 排期(不含 start/end)
 
 > **id**: `device-booking`
-> **状态**: draft v1(EP2 回环产出,grill ✅ → to-spec → to-tickets 一个回环内完成)
+> 状态: passing(PR #113 commit `5b75fb4`,Session 137,2026-07-24;全 7 切片收官)
 > **优先级**: 63(设备功能系列 3/4)
 > **创建日期**: 2026-07-23
 > **依赖**: `devices-crud-ui`(priority 62)
