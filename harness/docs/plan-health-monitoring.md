@@ -1,7 +1,7 @@
 # 计划:健康检查/监控(/ready + Prometheus metrics)
 
 > 对应 feature_list.json 的 `id`: `health-monitoring`
-> 状态: not_started
+> 状态: passing(PR #58 commit `f271f75`,Session 095,2026-07-14)
 > 优先级: 53
 > 前置: 无
 > 总纲: [`plan-mvp-completion-overview.md`](plan-mvp-completion-overview.md)

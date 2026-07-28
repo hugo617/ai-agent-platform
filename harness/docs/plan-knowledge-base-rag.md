@@ -1,7 +1,7 @@
 # 计划:知识库/RAG(激活 pgvector,文档检索增强 Agent)
 
 > 对应 feature_list.json 的 `id`: `knowledge-base-rag`
-> 状态: not_started
+> 状态: passing(PR #66 commit `ea7c1ae`,Session 105,2026-07-16)
 > 优先级: 57(V2 大投入)
 > 前置: `file-upload-storage`(56,文档上传)
 > 总纲: [`plan-mvp-completion-overview.md`](plan-mvp-completion-overview.md)

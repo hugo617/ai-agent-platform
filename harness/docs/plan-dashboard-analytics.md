@@ -1,7 +1,7 @@
 # 计划:Dashboard 数据看板(真实统计 + 趋势 + 门店/总部双视角)
 
 > 对应 feature_list.json 的 `id`: `dashboard-analytics`
-> **状态**: passing(单 commit 整体完成,PR #51 合并入 main `0b0d397`,Session 083,2026-07-14;Stage 3 后续升级 recharts)
+> 状态: passing(PR #51 commit `0b0d397`,Session 083,2026-07-14;Stage 3 后续升级 recharts)
 > 优先级: 47
 > 前置: 无(基础统计独立;消耗维度可选依赖 token-usage-tracking 43)
 > 总纲: [`plan-mvp-completion-overview.md`](plan-mvp-completion-overview.md)

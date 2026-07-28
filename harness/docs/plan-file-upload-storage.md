@@ -1,7 +1,7 @@
 # 计划:文件上传 + 对象存储抽象(头像/照片/文档,本地/S3/OSS 可切)
 
 > 对应 feature_list.json 的 `id`: `file-upload-storage`
-> 状态: not_started
+> 状态: passing(PR #62 commit `1643f2c`,Session 101,2026-07-14)
 > 优先级: 56
 > 前置: 无(本任务是地基,被 user-profile 49/tenant-branding 52/knowledge-base-rag 57 依赖)
 > 总纲: [`plan-mvp-completion-overview.md`](plan-mvp-completion-overview.md)

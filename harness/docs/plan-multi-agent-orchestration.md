@@ -1,8 +1,8 @@
 # 计划:多 Agent 编排(Supervisor 模式,LangGraph 多节点图)
 
 > 对应 feature_list.json 的 `id`: `multi-agent-orchestration`
-> 状态: in_progress(2026-07-16 开工)
-> 优先级: 58(V2 大投入,项目最后一个 not_started)
+> 状态: passing(PR #67 commit `c75593f`,Session 106,2026-07-16)
+> 优先级: 58(V2 大投入,MVP 系列收官作)
 > 前置: 无(独立模块);建议在 RAG(57 ✅ 已并入)之后做 —— specialist 可共享 `retrieve_knowledge` 工具
 > 总纲: [`plan-mvp-completion-overview.md`](plan-mvp-completion-overview.md)
 

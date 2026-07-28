@@ -24,14 +24,14 @@ disable-model-invocation: true
 
 **第 1 步:读数据**(并行读 3 个源)
 - `feature_list.json` —— 扫活跃任务(`in_progress`/`not_started`),提取 id/status/depends_on/plan 字段
-- `harness/docs/plan-mvp-completion-overview.md` —— 扫 12 个 MVP backlog 缺口(三梯队:SaaS 体面/配套/V2),提取 priority/现状/依赖
+- `harness/docs/plan-mvp-completion-overview.md` —— 历史 MVP backlog(✅ 已收口,12 feature 全 passing);仅作历史参考,**活跃 backlog 以 `feature_list.json` 真相源为准**(扫描时若 overview 顶部标「已收口」则跳过 backlog 提取)
 - `progress.md` 顶部摘要 —— 确认当前 frontier(谁在 in_progress、卡在哪)
 
 **第 2 步:分类输出选项**(3 类,用表格)
 
 | 类别 | 条件 | 数据来源 |
 |---|---|---|
-| **① 添加新开发任务**(EP1) | 用户给关键词,或从 backlog 选 | MVP backlog 12 缺口 + 现场关键词 |
+| **① 添加新开发任务**(EP1) | 用户给关键词,或从 backlog 选 | 现场关键词 + `feature_list.json` 扫 `not_started`(MVP backlog 已收口) |
 | **② 对未拆切片的任务拆切片**(EP2) | feature 状态 `not_started` + plan 字段为空 | feature_list.json 扫「未拆」 |
 | **③ 完成某任务的切片**(EP3) | feature 状态 `in_progress`/`not_started` + plan 已填 + checklist 有未勾 | feature_list.json + plan 文档 |
 

@@ -1,7 +1,7 @@
 # 计划:通知系统 + 定时任务框架(in-app 通知 + APScheduler)
 
 > 对应 feature_list.json 的 `id`: `notification-scheduler`
-> 状态: not_started
+> 状态: passing(PR #59 commit `7fe629d`,Session 097,2026-07-14)
 > 优先级: 54
 > 前置: 无(余额预警触发场景依赖 token-wallet-billing 44)
 > 总纲: [`plan-mvp-completion-overview.md`](plan-mvp-completion-overview.md)

@@ -1,7 +1,7 @@
 # 计划:全局搜索(跨 Agent/客户/对话/用户)
 
 > 对应 feature_list.json 的 `id`: `global-search`
-> 状态: not_started
+> 状态: passing(PR #56 commit `70e7fba`,Session 091,2026-07-14)
 > 优先级: 51
 > 前置: 无(对话搜索依赖 conversation-management 50,可先做其他实体)
 > 总纲: [`plan-mvp-completion-overview.md`](plan-mvp-completion-overview.md)

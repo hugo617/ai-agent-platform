@@ -1,7 +1,7 @@
 # 计划:对话管理增强(搜索/重命名/标签/收藏/置顶/批量删除)
 
 > 对应 feature_list.json 的 `id`: `conversation-management`
-> 状态: not_started
+> 状态: passing(PR #55 commit `b6b8f3c`,Session 089,2026-07-14)
 > 优先级: 50
 > 前置: 无
 > 总纲: [`plan-mvp-completion-overview.md`](plan-mvp-completion-overview.md)

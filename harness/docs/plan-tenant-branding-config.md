@@ -1,7 +1,7 @@
 # 计划:租户品牌配置(logo/名称/主题色/登录文案,白标 SaaS)
 
 > 对应 feature_list.json 的 `id`: `tenant-branding-config`
-> 状态: not_started
+> 状态: passing(PR #57 commit `9073831`,Session 093,2026-07-14)
 > 优先级: 52
 > 前置: 无(logo 上传弱依赖 file-upload 56,可先做名称/主题色/文案)
 > 总纲: [`plan-mvp-completion-overview.md`](plan-mvp-completion-overview.md)

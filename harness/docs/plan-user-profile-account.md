@@ -1,7 +1,7 @@
 # 计划:用户个人中心(改密码/改资料/我的会话)
 
 > 对应 feature_list.json 的 `id`: `user-profile-account`
-> 状态: not_started
+> 状态: passing(PR #54 commit `48f74b9`,Session 087,2026-07-14)
 > 优先级: 49
 > 前置: 无(头像上传弱依赖 file-upload 56,可先做文字字段)
 > 总纲: [`plan-mvp-completion-overview.md`](plan-mvp-completion-overview.md)

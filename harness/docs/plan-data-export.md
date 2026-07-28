@@ -1,7 +1,7 @@
 # 计划:数据导出 CSV(客户/对话/用量/审计,门店+总部级)
 
 > 对应 feature_list.json 的 `id`: `data-export`
-> 状态: not_started
+> 状态: passing(PR #60 commit `10b4ef0`,Session 099,2026-07-14)
 > 优先级: 55
 > 前置: 无(用量导出依赖 token-usage-tracking 43)
 > 总纲: [`plan-mvp-completion-overview.md`](plan-mvp-completion-overview.md)

@@ -1,7 +1,7 @@
 # 计划:审计日志查询 UI(SystemLog 暴露 API + 前端审计页)
 
 > 对应 feature_list.json 的 `id`: `audit-log-ui`
-> 状态: not_started
+> 状态: passing(PR #52 commit `6f2f23b`,Session 085,2026-07-14)
 > 优先级: 48
 > 前置: 无
 > 总纲: [`plan-mvp-completion-overview.md`](plan-mvp-completion-overview.md)

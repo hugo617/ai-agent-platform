@@ -1,7 +1,7 @@
 # 计划:复合查询会话(Fan-out + Synthesize 模式)
 
 > 对应 feature_list.json 的 `id`: `composite-chat`
-> 状态: not_started(2026-07-28 立项,PRD 草案)
+> 状态: passing(全 4 切片收官,PR #139-142,Session 152-155,2026-07-28)
 > 优先级: 72(当前 feature_list 最高为 71 = principal-scope-doc-alignment,已 passing;新设 72 占最高位)
 > 前置: 无(独立增量模块);**与 `multi-agent-orchestration`(priority 58 ✅ 已 passing)共存互补**,不改其契约
 > 总纲: 本计划是独立 feature,不隶属 plan-mvp-completion-overview.md(后者已收口)
