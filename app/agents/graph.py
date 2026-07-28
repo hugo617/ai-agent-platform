@@ -13,6 +13,7 @@ cannot bypass authorization regardless of what the LLM emits.
 """
 
 import asyncio
+import logging
 from collections.abc import AsyncIterator
 from typing import Any
 
@@ -27,8 +28,12 @@ from langchain_openai import ChatOpenAI
 from langgraph.prebuilt import create_react_agent
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.database import AsyncSessionLocal
+from app.models.agent import Agent
 from app.repositories.agent import AgentRepository
 from app.services.permission_service import permission_service
+
+logger = logging.getLogger(__name__)
 
 # Wall-clock cap on a single LLM streaming call. Prevents the SSE endpoint
 # from hanging indefinitely when the upstream provider stalls (e.g. it rejects
@@ -150,6 +155,41 @@ def _build_llm_kwargs(
     return kwargs
 
 
+async def _consume_agent_events(
+    agent: Any, inputs: dict
+) -> tuple[list[str], dict[str, int]]:
+    """Drive one ReAct agent's ``astream_events(version="v2")`` loop to completion.
+
+    Returns ``(text_chunks, usage_acc)`` for the composite fan-out path:
+    chunks are joined into a fragment snippet, usage_acc carries the summed
+    tokens across every ``on_chat_model_end`` (a ReAct turn may call the LLM
+    several times; ``ainvoke`` would only report the last round and silently
+    under-count).
+
+    NOT shared with ``stream_agent``: that path yields each chunk to the SSE
+    client *as it arrives* (typewriter effect), so it cannot batch-collect.
+    The accumulation shape looks duplicated but the semantics diverge —
+    extracting a shared helper would force ``stream_agent`` to buffer the
+    whole reply before sending the first byte, breaking its streaming contract.
+    """
+    chunks: list[str] = []
+    usage_acc = {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
+    async for event in agent.astream_events(inputs, version="v2"):
+        kind = event["event"]
+        if kind == "on_chat_model_stream":
+            chunk = event["data"].get("chunk")
+            if isinstance(chunk, AIMessageChunk) and chunk.content:
+                chunks.append(chunk.content)
+        elif kind == "on_chat_model_end":
+            output = event["data"].get("output")
+            um = getattr(output, "usage_metadata", None)
+            if um:
+                usage_acc["input_tokens"] += um.get("input_tokens", 0)
+                usage_acc["output_tokens"] += um.get("output_tokens", 0)
+                usage_acc["total_tokens"] += um.get("total_tokens", 0)
+    return chunks, usage_acc
+
+
 def build_agent(
     *,
     api_key: str,
@@ -259,6 +299,344 @@ async def stream_agent(
     # persisted on the assistant Message and in the UsageEvent ledger. Yielded
     # last, after all text chunks — callers distinguish via isinstance.
     yield {"usage": usage_acc, "model": model}
+
+
+# --------------------------------------------------------------- composite-chat (72)
+#
+# Composite query: fan-out the SAME user question to N agents in parallel,
+# then synthesize their answers into one reply. This is the "ask everyone,
+# merge" counterpart to the Supervisor's "route to the right one" — both
+# coexist (Supervisor = find the expert; Composite = merge many viewpoints).
+#
+# Why a separate path (not reusing ``stream_agent``):
+#   1. ``stream_agent`` is an SSE ``yield`` contract; N parallel streams
+#      interleaved on one socket would garble the client. ``composite_query``
+#      returns a single dict — no streaming to the caller.
+#   2. ReAct agents may call the LLM several times per turn (think → tool →
+#      think). ``ainvoke`` returns only the LAST round's ``usage_metadata``
+#      and silently under-counts multi-round token cost; ``_invoke_agent_once``
+#      uses ``astream_events(version="v2")`` to sum every ``on_chat_model_end``
+#      (same mechanism ``stream_agent`` relies on for accurate billing).
+#
+# Concurrency safety (plan §Step 5, decision A): SQLAlchemy ``AsyncSession``
+# is NOT concurrent-safe. If N agents shared the request's session and more
+# than one called the ``retrieve_knowledge`` tool simultaneously, the session
+# would raise. So each agent gets its OWN session from the factory, and the
+# ``_build_tenant_tools`` closure is rebuilt per agent against that session.
+# The main request session (``db``) is only used for the single synthesize
+# call, which has no concurrency.
+
+# Per-agent wall-clock cap for the fan-out. Generous on purpose — a ReAct
+# turn with tool calls can legitimately take 20s+ on a slow provider; we
+# don't want to abandon a working agent. The default scales with agent
+# count so a larger fan-out isn't squeezed by the same budget as a small one.
+def _default_fanout_timeout(agent_count: int) -> float:
+    return agent_count * 30 + 60
+
+
+def _fallback_synthesis(fragments: list[dict]) -> str:
+    """Render a best-effort synthesis when the synthesize LLM call fails.
+
+    Pure function (no I/O) so it is trivially unit-testable. Each completed
+    fragment becomes a section under its agent's name; each failed fragment
+    becomes a bracketed failure notice. Sections are joined by a horizontal
+    rule so the result is still readable markdown.
+    """
+    parts: list[str] = []
+    for f in fragments:
+        if f["status"] == "completed":
+            parts.append(f"## {f['agent_name']}\n{f['snippet']}")
+        else:
+            parts.append(
+                f"## {f['agent_name']}\n[此 agent 失败: {f['error']}]"
+            )
+    return "\n\n---\n\n".join(parts)
+
+
+def _synthesize_prompt(message: str, fragments: list[dict]) -> str:
+    """Build the prompt handed to the synthesize LLM (pure function).
+
+    Failed fragments contribute a bracketed notice so the synthesizer knows
+    that agent didn't answer (and can say so in the merged reply rather than
+    silently dropping it).
+    """
+    lines = [
+        "你是综合编辑。下面是多个 AI 助手对同一问题的独立回答。",
+        "请综合它们的观点,给出一份完整、不重复、保留各方要点的回答。",
+        "如果某助手失败,简要说明其未能贡献,不要伪造其内容。",
+        "",
+        f"用户问题:{message}",
+        "",
+        "各助手回答:",
+    ]
+    for f in fragments:
+        if f["status"] == "completed":
+            lines.append(f"### {f['agent_name']}\n{f['snippet']}")
+        else:
+            lines.append(
+                f"### {f['agent_name']}\n[此 agent 失败: {f['error']}]"
+            )
+    return "\n\n".join(lines)
+
+
+# Composite cost-control default: cap each agent's reply when the agent itself
+# hasn't set ``max_tokens``. N+1 LLM calls is expensive; an unbounded reply
+# per agent would balloon cost. Agents that explicitly set ``max_tokens``
+# keep their value (300 is a fallback, not a clamp).
+_COMPOSITE_DEFAULT_MAX_TOKENS = 300
+
+# Synthesize is one summary call; allow it more room than a single fragment
+# but still bounded — it's merging N answers, not generating fresh content.
+_SYNTHESIZE_MAX_TOKENS = 600
+
+
+async def _invoke_agent_once(
+    *,
+    agent: Agent,
+    user_id: str,
+    tenant_id: str,
+    api_key: str,
+    base_url: str,
+    message: str,
+) -> dict:
+    """Run ONE agent against the question and return its fragment dict.
+
+    Builds the agent's own ``ChatOpenAI`` (honoring its model / temperature /
+    max_tokens) + a fresh ``create_react_agent`` with tenant tools bound to a
+    **dedicated session** (concurrency-safe). Drives the agent via
+    ``astream_events(version="v2")`` so every ``on_chat_model_end`` usage is
+    summed — a ReAct turn may call the model several times and ``ainvoke``
+    would only report the last round. Returns synchronously (a dict), never
+    a stream — the caller fans out many of these in parallel via ``gather``.
+
+    The ``db`` (session) is opened here, not passed in: each agent MUST own
+    its session to stay concurrent-safe (plan decision A). The session is
+    used only by this agent's tool closures and is closed when the block
+    exits — agent reads commit independently of the main request session.
+
+    Returns ``{agent_id, agent_name, snippet, status, error, model,
+    input_tokens, output_tokens, total_tokens}``. ``status`` is ``"completed"``
+    on success or ``"failed"`` (with ``error`` set) if anything raised — the
+    fragment is always returned so the outer fan-out can record it.
+    """
+    # max_tokens: explicit agent config wins; otherwise the composite default
+    # caps reply length for cost control (N+1 calls is expensive).
+    max_tokens = agent.max_tokens
+    if max_tokens is None:
+        max_tokens = _COMPOSITE_DEFAULT_MAX_TOKENS
+
+    fragment: dict[str, Any] = {
+        "agent_id": agent.id,
+        "agent_name": agent.name,
+        "snippet": "",
+        "status": "failed",  # flipped to completed only on full success
+        "error": None,
+        "model": agent.model,
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "total_tokens": 0,
+    }
+
+    try:
+        llm = ChatOpenAI(**_build_llm_kwargs(
+            api_key=api_key,
+            base_url=base_url,
+            model=agent.model,
+            temperature=agent.temperature,
+            max_tokens=max_tokens,
+            top_p=agent.top_p,
+        ))
+        # Each agent gets its OWN session — AsyncSession is not concurrent-
+        # safe and N parallel ReAct turns sharing one session would corrupt.
+        # ``_build_tenant_tools`` closes over this session so the agent's
+        # RAG tool reads through it; commits are independent per agent.
+        async with AsyncSessionLocal() as session:
+            tools = _build_tenant_tools(user_id, tenant_id, session)
+            react = create_react_agent(
+                llm, tools=tools, messages_modifier=_system_msg(agent.system_prompt)
+            )
+            inputs = {"messages": [HumanMessage(content=message)]}
+            # Drive the stream to completion, summing usage across every LLM
+            # call in this turn (ReAct may invoke the model several times).
+            snippet_parts, usage_acc = await _consume_agent_events(react, inputs)
+
+        fragment.update({
+            "snippet": "".join(snippet_parts),
+            "status": "completed",
+            "error": None,
+            "input_tokens": usage_acc["input_tokens"],
+            "output_tokens": usage_acc["output_tokens"],
+            "total_tokens": usage_acc["total_tokens"],
+        })
+    except Exception as exc:  # noqa: BLE001 - isolate per-agent failures
+        # One agent's failure must NEVER take down the others. Record the
+        # error in the fragment and return it; the fan-out's per-agent
+        # try/except guarantees ``gather`` never sees an exception. Logged
+        # at error level (not silently swallowed) so a systemic provider
+        # outage surfaces in ops — a single agent flapping is expected, but
+        # ALL agents failing the same way is a signal worth investigating.
+        logger.exception(
+            "composite agent %s (%s) failed; isolated to fragment",
+            agent.id, agent.name,
+        )
+        fragment["error"] = str(exc)
+    return fragment
+
+
+async def composite_query(
+    *,
+    user_id: str,
+    tenant_id: str,
+    db: AsyncSession,
+    api_key: str,
+    base_url: str,
+    agents: list[Agent],
+    message: str,
+    synthesize_model: str | None = None,
+    fanout_timeout: float | None = None,
+) -> dict:
+    """Fan-out a question to N agents, then synthesize their answers.
+
+    Pipeline:
+      Pass 2 (fan-out) — every agent runs ``_invoke_agent_once`` in parallel
+        via ``asyncio.gather``, wrapped in ``asyncio.wait_for``. Each task
+        appends its fragment to an OUTER list (not just returns it) so that
+        if the timeout fires, already-completed fragments survive even
+        though ``gather``'s return value is lost.
+      Pass 3 (synthesize) — one LLM call merges the fragments into a single
+        synthesis. Failures degrade to ``_fallback_synthesis`` (the raw
+        fragments concatenated) so the user always gets a reply.
+
+    Returns ``{synthesis, fragments, synthesize_usage, usage_total}``:
+      - ``synthesis`` — the merged answer (or fallback concatenation)
+      - ``fragments`` — per-agent rows (status completed/failed, tokens, ...)
+      - ``synthesize_usage`` — the synthesize call's token usage (zeroed on
+        degradation); carries ``model`` so the caller can bill the N+1th row
+      - ``usage_total`` — Σ(fragments.tokens) + synthesize_usage.tokens, the
+        aggregate persisted on the assistant Message
+
+    ``synthesize_model`` overrides which model serves the merge (defaults to
+    ``agents[0].model``). ``fanout_timeout`` overrides the wall-clock cap on
+    the parallel fan-out (defaults to ``N*30+60`` seconds); kept as a param
+    so tests can shrink it — production callers should let the default run.
+    """
+    n = len(agents)
+    timeout = fanout_timeout if fanout_timeout is not None else _default_fanout_timeout(n)
+
+    # Outer container: tasks append here. On timeout the gather's return
+    # value is unreachable, but this list retains whatever completed first.
+    fragments: list[dict] = []
+
+    async def _run_one(agent: Agent) -> None:
+        # Per-agent try/except converts any exception into a failed fragment
+        # appended to ``fragments``. ``gather`` therefore never sees a raised
+        # exception and doesn't need ``return_exceptions=True`` — we want a
+        # structured fragment dict (with agent_name/error), not a raw Exception.
+        try:
+            frag = await _invoke_agent_once(
+                agent=agent, user_id=user_id, tenant_id=tenant_id,
+                api_key=api_key, base_url=base_url, message=message,
+            )
+            fragments.append(frag)
+        except Exception as exc:  # noqa: BLE001 - last-resort isolation
+            # ``_invoke_agent_once`` already converts most failures into a
+            # failed fragment; this outer guard catches anything that escapes
+            # (e.g. session factory failure before the agent runs). Logged so
+            # the rare uncaught path isn't invisible.
+            logger.exception(
+                "composite _run_one outer guard caught for agent %s", agent.id,
+            )
+            fragments.append({
+                "agent_id": agent.id, "agent_name": agent.name,
+                "snippet": "", "status": "failed", "error": str(exc),
+                "model": agent.model,
+                "input_tokens": 0, "output_tokens": 0, "total_tokens": 0,
+            })
+
+    # Fan-out. NOT ``async with asyncio.timeout(...)`` — that would cancel
+    # every task on timeout and we'd lose even the completed fragments.
+    # ``wait_for`` raises ``TimeoutError`` but the outer list already holds
+    # whatever finished; we swallow the timeout and proceed to synthesize
+    # on whatever fragments we have (fail-open).
+    try:
+        await asyncio.wait_for(
+            asyncio.gather(*[_run_one(a) for a in agents]),
+            timeout=timeout,
+        )
+    except TimeoutError:
+        # Abandoned tasks' fragments never made it into ``fragments``; the
+        # ones that did complete are kept and synthesized below. This is
+        # the fail-open contract: a slow agent doesn't poison the whole reply.
+        # Logged as a warning (not silent) — a timeout means at least one
+        # agent didn't answer, which the caller should be able to correlate
+        # in logs even though the response still succeeds.
+        logger.warning(
+            "composite fan-out timed out after %.1fs; %d/%d agents completed",
+            timeout, len(fragments), n,
+        )
+
+    # Pass 3: synthesize. The model is the explicit override, else the first
+    # agent's model (a stable, tenant-configured choice — never env fallback).
+    synth_model = synthesize_model or agents[0].model
+    synthesis: str
+    synth_input = synth_output = synth_total = 0
+    try:
+        synth_llm = ChatOpenAI(**_build_llm_kwargs(
+            api_key=api_key, base_url=base_url, model=synth_model,
+            # Synthesize is a deterministic merge, not creative generation —
+            # lower temperature than the fan-out agents (which use their own
+            # configured value) so the merged answer sticks closely to what
+            # the agents actually said rather than drifting. Plan §Step 5
+            # pins max_tokens=600 but not temperature; 0.3 mirrors StorePilot's
+            # synthesis step (the design lineage documented in the plan).
+            temperature=0.3, max_tokens=_SYNTHESIZE_MAX_TOKENS,
+        ))
+        # Single LLM call, no tools — synthesize is a pure text merge.
+        # ``ainvoke`` is safe here (one round, no multi-round undercount).
+        result = await synth_llm.ainvoke(
+            _synthesize_prompt(message, fragments)
+        )
+        synthesis = result.content if hasattr(result, "content") else str(result)
+        um = getattr(result, "usage_metadata", None)
+        if um:
+            synth_input = um.get("input_tokens", 0)
+            synth_output = um.get("output_tokens", 0)
+            synth_total = um.get("total_tokens", 0)
+    except Exception:  # noqa: BLE001 - synthesize must not fail the request
+        # Degrade: concatenate the raw fragments so the user still sees every
+        # agent's answer. usage is zeroed (no tokens consumed by a failed call
+        # we can observe); model is kept so the N+1th ledger row is consistent.
+        # Logged at error level — synthesize failing is rare and worth ops
+        # attention (all agents answered but the merge step broke).
+        logger.exception(
+            "composite synthesize failed (model=%s); degrading to fallback",
+            synth_model,
+        )
+        synthesis = _fallback_synthesis(fragments)
+
+    synthesize_usage = {
+        "input_tokens": synth_input,
+        "output_tokens": synth_output,
+        "total_tokens": synth_total,
+        "model": synth_model,
+    }
+
+    # Aggregate every fragment's tokens + the synthesize call's tokens.
+    total_in = sum(f["input_tokens"] for f in fragments) + synth_input
+    total_out = sum(f["output_tokens"] for f in fragments) + synth_output
+    total_all = sum(f["total_tokens"] for f in fragments) + synth_total
+    usage_total = {
+        "input_tokens": total_in,
+        "output_tokens": total_out,
+        "total_tokens": total_all,
+    }
+
+    return {
+        "synthesis": synthesis,
+        "fragments": fragments,
+        "synthesize_usage": synthesize_usage,
+        "usage_total": usage_total,
+    }
 
 
 # --------------------------------------------------------------- multi-agent (58)

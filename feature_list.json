@@ -24,12 +24,14 @@
       "area": "AI 编排",
       "title": "复合查询会话(Fan-out + Synthesize:并行问全部 agent 再综合)",
       "user_visible_behavior": "用户在对话页多选 N 个 agent + 一个问题 → 后端并行问全部 agent → synthesize 综合答案,结果含综合答案 + 各 agent 原始回答折叠展示;持久化为新类型会话(kind=composite),可查看历史可续问;与现有 Supervisor 编排共存互补(Supervisor=问对人单 agent 路由,Composite=综合多人见解)",
-      "status": "not_started",
+      "status": "in_progress",
       "verification": "./init.sh 全绿 + cd frontend && npm run build 0 错 + oxlint 0 warnings + alembic check 同步 + 真实 DeepSeek key 端到端(3 agent 复合查询全链路)",
       "notes": "2026-07-28 立项。设计借鉴 StorePilot 三 pass 流水线(sess_babf29ab),落到本项目复用现有基建。三轮审查(自审×2 + review-spec 7 维度)修 25 问题。10 关键决策锁定:复用 Conversation 加 kind 字段(不新建表)/ asyncio.gather 并行非 StateGraph / synthesize 复用首个 agent model / 逐 agent require 权限 fail-fast / N+1 笔 UsageEvent + wallet 预检 / chat-page 加 Switch 模式切换 / per-agent try/except 错误隔离 / Message 加 fragments JSONB(不破 role 联合类型)/ 纯 JSON 一次性返回(非 SSE)/ 维持租户级知识库。与 multi-agent-orchestration(58 ✅)共存互补,零改动其契约。4 切片:01 数据层+Schema(frontier)→ 02 编排引擎 composite_query → 03 API+计费 → 04 前端+真实验证+收尾。关键技术点:_invoke_agent_once 用 astream_events 累加多轮 usage(非 ainvoke 防漏计)/ 方案 A 每 agent 独立 session(AsyncSession 非并发安全)/ _record_composite_usage 新函数(接 agent_id 非 Agent 对象,支持 None)/ Conversation.agent_id 填 agent_ids[0] 作主 agent / migration 含 backfill 防旧数据 NULL。",
       "plan": "harness/docs/plan-composite-chat.md",
       "depends_on": "",
-      "evidence": []
+      "evidence": [
+        "切片 01(后端数据层 + Schema,frontier,2026-07-28 Session 152,PR #139 commit be79f76):Conversation 加 kind 字段(String16,default/server_default \"single\",无索引,composite 会话填 agents[0] 作主 agent 归属)+ Message 加 fragments 字段(JSONB nullable,with_variant JSON sqlite 双 DB,仅 composite assistant 轮次填充)。alembic migration aa7a88a8e643(down_revision=5565cf1e81bd):migration 层 postgresql.JSONB 无 variant(照 b2c3d4e5f6a7 tags 惯例)+ up 含 backfill UPDATE...WHERE kind IS NULL(防御性 no-op,实测匹配 0 行)+ down 对称。Schema:ConversationRead.kind 加 Literal[\"single\",\"composite\"] 收紧 + MessageRead.fragments 加 list[dict]|None + 新建 CompositeRequest/CompositeFragment/CompositeResponse(fragment 含 input/output/total token triple,切片 03 计费契约)。零 service 改(切片 03 才加 kwarg)+ 零 API 改(切片 03 才加 endpoint)。验证:./init.sh 797 passed(基线 783 + 新增 14,零回归)+ ruff clean + migration 手动验证(docker aap-postgres upgrade/downgrade/upgrade 幂等 + alembic check 同步 + SELECT COUNT WHERE kind IS NULL=0 + 列定义 character varying(16) NOT NULL DEFAULT 'single' / jsonb nullable)。14 单测覆盖:旧 Conversation round-trip → kind=\"single\" + 模型默认 + Literal 校验 + token triple round-trip + Request 校验。/code-review 双轴:Standards 0 硬违规 / Spec 0 missing。Plan §六点五 切片 01 全勾 + 标题 ✅。切片 02(composite_query 编排引擎)解锁。"
+      ]
     },
     {
       "id": "principal-scope-doc-alignment",

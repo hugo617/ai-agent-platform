@@ -469,23 +469,23 @@ async def composite_chat(payload: CompositeRequest, user, db):
 - [x] 单测:旧 Conversation(无 kind)经 schema round-trip 后 kind="single"
 - [x] **migration 手动验证(写 evidence)**:docker aap-postgres 上 `alembic upgrade head` + `alembic downgrade -1` + `alembic upgrade head` 幂等无错;`SELECT COUNT(*) FROM conversations WHERE kind IS NULL` = 0(实测 7 行旧数据全 kind='single',NULL=0)+ `alembic check` 同步("No new upgrade operations detected")+ `\d conversations` kind 列 `character varying(16) NOT NULL DEFAULT 'single'` + `\d messages` fragments 列 `jsonb` nullable
 
-### 切片 02 — 后端编排引擎 `composite_query`(核心)
+### 切片 02 — 后端编排引擎 `composite_query`(核心)✅
 
 **What to build**:复合查询的编排核心 —— `composite_query` 函数 + `_invoke_agent_once`(用 `astream_events` 累加每轮 usage,非 ainvoke)+ synthesize 阶段 + 错误隔离。纯函数 + 单元测试,不接 HTTP。完成后可通过 `await composite_query(...)` 拿到 `{synthesis, fragments, synthesize_usage, usage_total}`,但还没 endpoint 暴露。
 
 **Blocked by**:切片 01(`Message.fragments` 字段就绪,fragment 结构定义稳定)
 
-**Status**:ready-for-agent(blocked)
+**Status**:✅ 完成(2026-07-28 Session 153,非末切片)
 
-- [ ] `composite_query` 函数:签名 + 返回 dict 四键(synthesis/fragments/synthesize_usage/usage_total);**fragments 用外部 list 容器,task 内部 append**(超时 fail-open 前提)
-- [ ] `_invoke_agent_once`:为每 agent 独立 build ChatOpenAI(用该 agent 自己的 model/temperature/max_tokens)+ `astream_events` 累加每轮 `on_chat_model_end` usage + 拼接 `AIMessageChunk.content`
-- [ ] **每 agent 独立 session(方案 A 强约束)**:`session = _get_session_factory()()` 新开,传给 `_build_tenant_tools(user_id, tenant_id, session)`,不复用主 session 工具闭包
-- [ ] fan-out 用 `asyncio.gather` 包在 `asyncio.wait_for(timeout=N*30+60)` 内,per-agent try/except 把失败转 fragment **append 到外部 list**(不抛出)
-- [ ] synthesize 阶段:复用首个 agent 的 model(或请求体覆盖),失败 fragment 填 `[此 agent 失败]`,max_tokens=600
-- [ ] **synthesize 失败降级**:`synthesis` 返回 `_fallback_synthesis(fragments)`(纯函数,格式见 Step 6),synthesize_usage 填零占位
-- [ ] **超时 fail-open**:`asyncio.wait_for` 触发 TimeoutError 时 except pass,fragments 外部 list 已 append 的结果保留,继续 synthesize 降级
-- [ ] 不调用 `stream_agent`(独立路径 `_invoke_agent_once`);复用 `_build_llm_kwargs`/`_system_msg`/`_build_tenant_tools`
-- [ ] 单测覆盖:
+- [x] `composite_query` 函数:签名 + 返回 dict 四键(synthesis/fragments/synthesize_usage/usage_total);**fragments 用外部 list 容器,task 内部 append**(超时 fail-open 前提)
+- [x] `_invoke_agent_once`:为每 agent 独立 build ChatOpenAI(用该 agent 自己的 model/temperature/max_tokens)+ `astream_events` 累加每轮 `on_chat_model_end` usage + 拼接 `AIMessageChunk.content`
+- [x] **每 agent 独立 session(方案 A 强约束)**:`session = AsyncSessionLocal()` 新开(✱ code-review 修订:plan 原文写 `_get_session_factory()()`,实施时用公开名 `AsyncSessionLocal` —— PEP 562 已暴露此名供外部调用,`_get_session_factory` 是下划线私有不应跨模块引用,`scheduler.py:34` 是先例),传给 `_build_tenant_tools(user_id, tenant_id, session)`,不复用主 session 工具闭包
+- [x] fan-out 用 `asyncio.gather` 包在 `asyncio.wait_for(timeout=N*30+60)` 内,per-agent try/except 把失败转 fragment **append 到外部 list**(不抛出)
+- [x] synthesize 阶段:复用首个 agent 的 model(或请求体覆盖),失败 fragment 填 `[此 agent 失败]`,max_tokens=600
+- [x] **synthesize 失败降级**:`synthesis` 返回 `_fallback_synthesis(fragments)`(纯函数,格式见 Step 6),synthesize_usage 填零占位
+- [x] **超时 fail-open**:`asyncio.wait_for` 触发 TimeoutError 时 except(✱ code-review 修订:加 `logger.warning` 留审计痕,非裸 `pass`),fragments 外部 list 已 append 的结果保留,继续 synthesize 降级
+- [x] 不调用 `stream_agent`(独立路径 `_invoke_agent_once`);复用 `_build_llm_kwargs`/`_system_msg`/`_build_tenant_tools`(✱ code-review 修订:astream_events 累加循环提取 `_consume_agent_events` helper 服务 fan-out 路径;stream_agent 因 SSE yield 语义不同不共享,docstring 留痕)
+- [x] 单测覆盖:
   - mock LLM 跑 3 agent fan-out(全成功)
   - 1 agent 失败隔离(其他正常)
   - synthesize 失败降级(断言 `_fallback_synthesis` 输出格式)
@@ -493,7 +493,7 @@ async def composite_chat(payload: CompositeRequest, user, db):
   - **超时降级**:mock 1 agent `asyncio.sleep` + 极小 timeout,验证已完成 fragment 保留 + synthesis 降级
   - **fan-out 并行性验证**:3 agent 各 `asyncio.sleep(0.1)`,总耗时 < 0.25s(串行会 ≈0.3s)
   - **token 上限三情况**:max_tokens=None → 300;=200 → 200;=1000 → 1000
-- [ ] `./init.sh` 全绿
+- [x] `./init.sh` 全绿(810 passed = 基线 797 + 新增 13,零回归,ruff clean)
 
 ### 切片 03 — 后端 API + 计费 + 集成测试
 
