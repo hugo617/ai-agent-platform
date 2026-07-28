@@ -1,7 +1,7 @@
 # 计划:Customer(客户)后端 —— 全局身份 + 门店档案 + 跨店聚合
 
 > 对应 feature_list.json 的 `id`: `customers-api`
-> 状态: not_started
+> 状态: passing(PR #34 commit `7a0a151`,Session 049,2026-07-12)
 > 优先级: 32
 > 前置: `groups-api`(建议先做,Group 是 Customer 可选归属;MVP 阶段非硬依赖)
 

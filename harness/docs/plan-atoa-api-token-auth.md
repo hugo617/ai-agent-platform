@@ -1,7 +1,7 @@
 # 计划:AtoA 地基 —— API Token 鉴权机制（PAT 式）
 
 > 对应 feature_list.json 的 `id`: `atoa-api-token-auth`
-> 状态: not_started
+> 状态: passing(PR #21 commit `063abf4`,Session 023,2026-07-11)
 > 优先级: 19
 > 前置: 无（地基任务，所有后续 AtoA 任务依赖它）
 > AtoA 系列总览见 `progress.md` 任务规划表

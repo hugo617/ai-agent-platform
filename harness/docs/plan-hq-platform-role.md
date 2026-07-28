@@ -1,7 +1,7 @@
 # 计划:平台角色 hq_staff —— 总部业务员(各司其职)+ 跨租户只读
 
 > 对应 feature_list.json 的 `id`: `hq-platform-role`
-> 状态: not_started
+> 状态: passing(PR #36 commit `c72e377`,Session 053,2026-07-12)
 > 优先级: 34
 > 前置: `customers-api`(用 Customer 域作为跨租户只读的验证载体)
 

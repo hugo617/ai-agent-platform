@@ -1,7 +1,7 @@
 # 计划:权限矩阵后端(聚合查询 + 全量权限项端点)
 
 > 对应 feature_list.json 的 `id`: `permission-matrix-api`
-> 状态: not_started
+> 状态: passing(PR #16 commit `b1abb51`,Session 011,2026-07-10)
 > 优先级: 14
 > 前置: 无(grant/revoke 端点已在 roles.py,本任务补聚合查询)
 

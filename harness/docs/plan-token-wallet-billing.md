@@ -1,7 +1,7 @@
 # 计划:Token 钱包计费(预付钱包 + 扣减 + 充值 + 拦截)(Token 费用管理系列 2/4)
 
 > 对应 feature_list.json 的 `id`: `token-wallet-billing`
-> 状态: not_started
+> 状态: passing(PR #47 commit `2d7cf7d`,Session 077,2026-07-13)
 > 优先级: 44
 > 前置: `token-usage-tracking`(用量采集就绪,UsageEvent 表有 token 数据)
 > 系列总纲: [`plan-token-billing-overview.md`](plan-token-billing-overview.md)

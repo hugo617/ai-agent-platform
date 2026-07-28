@@ -1,7 +1,7 @@
 # 计划:对话上下文工程(token 计数 + 滑动窗口 + 历史截断)
 
 > 对应 feature_list.json 的 `id`: `context-engineering`
-> 状态: not_started
+> 状态: passing(PR #28 commit `ecd4659`,Session 037,2026-07-11)
 > 优先级: 25
 > 前置: `real-chat-llm-config` ✅(对话主链路已跑通,本任务解决"长对话必崩"的结构性缺陷)
 

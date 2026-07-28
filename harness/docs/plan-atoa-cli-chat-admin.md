@@ -1,7 +1,7 @@
 # 计划:AtoA CLI 对话 + CRUD —— 核心卖点与完整能力
 
 > 对应 feature_list.json 的 `id`: `atoa-cli-chat-admin`
-> 状态: not_started
+> 状态: passing(PR #23 commit `d480f71`,Session 026,2026-07-11)
 > 优先级: 21
 > 前置: `atoa-cli-core` ✅（CLI 骨架 + 登录 + 只读命令就绪）
 

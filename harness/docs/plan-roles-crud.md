@@ -1,7 +1,7 @@
 # 计划:角色管理 CRUD 全栈对齐(前后端 + 权限分配)
 
 > 对应 feature_list.json 的 `id`: `roles-crud`
-> 状态: not_started
+> 状态: passing(PR #11 commit `e458cbe`,Session 004,2026-07-10)
 > 参照模板: 用户管理 CRUD(`app/api/v1/users.py` + `frontend/src/pages/users-page.tsx`)
 
 ---

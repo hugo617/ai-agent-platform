@@ -1,7 +1,7 @@
 # 计划:AtoA CLI 骨架 —— agenthub 命令行工具（登录 + 只读命令）
 
 > 对应 feature_list.json 的 `id`: `atoa-cli-core`
-> 状态: not_started
+> 状态: passing(PR #22 commit `756cc83`,Session 025,2026-07-11)
 > 优先级: 20
 > 前置: `atoa-api-token-auth` ✅（API Token 鉴权机制必须先就绪，CLI 才有凭证可用）
 

@@ -1,7 +1,7 @@
 # 计划:客户维度 Token 归因(Conversation 绑 customer_id)(Token 费用管理系列 3/4)
 
 > 对应 feature_list.json 的 `id`: `customer-conversation-link`
-> 状态: not_started
+> 状态: passing(PR #48 commit `05c7106`,Session 079,2026-07-14)
 > 优先级: 45
 > 前置: `token-usage-tracking`(UsageEvent 表就绪,有 customer_id 可空列)
 > 系列总纲: [`plan-token-billing-overview.md`](plan-token-billing-overview.md)

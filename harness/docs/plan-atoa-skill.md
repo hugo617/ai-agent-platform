@@ -1,7 +1,7 @@
 # 计划:AtoA Skill 编写 —— 让任意 Agent 装上就能用（开放标准）
 
 > 对应 feature_list.json 的 `id`: `atoa-skill`
-> 状态: not_started
+> 状态: passing(PR #24 commit `0325b9b`,Session 027,2026-07-11)
 > 优先级: 22
 > 前置: `atoa-cli-chat-admin` ✅（CLI 全部能力就绪后，Skill 才有内容可教 Agent）
 

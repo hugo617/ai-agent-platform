@@ -1,7 +1,7 @@
 # 计划:AtoA 管理前端 —— API Token 管理 UI
 
 > 对应 feature_list.json 的 `id`: `atoa-admin-ui`
-> 状态: not_started
+> 状态: passing(PR #25 commit `6ce5bae`,Session 029,2026-07-11)
 > 优先级: 23
 > 前置: `atoa-api-token-auth` ✅（后端 Token 端点就绪，前端才能对接）
 

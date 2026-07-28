@@ -1,7 +1,7 @@
 # 计划:Token 计费前端看板(门店/总部两级 + 充值 + 用量明细)(Token 费用管理系列 4/4)
 
 > 对应 feature_list.json 的 `id`: `token-billing-ui`
-> 状态: not_started
+> 状态: passing(PR #49 commit `fb64b98`,Session 081,2026-07-14)
 > 优先级: 46
 > 前置: `token-usage-tracking` + `token-wallet-billing` + `customer-conversation-link`(三者完成后,本任务做前端收官)
 > 系列总纲: [`plan-token-billing-overview.md`](plan-token-billing-overview.md)

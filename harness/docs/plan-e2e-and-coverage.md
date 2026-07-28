@@ -1,7 +1,7 @@
 # 计划:E2E 测试 + 覆盖率门槛 + lint 修复
 
 > 对应 feature_list.json 的 `id`: `e2e-and-coverage`
-> 状态: not_started
+> 状态: passing(PR #20 commit `785578f`,Session 020,2026-07-11)
 > 优先级: 17(最后一个,基建任务)
 > 前置: 建议 #1-#6 完成后再做(否则 E2E 无内容可测)
 

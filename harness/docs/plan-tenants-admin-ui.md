@@ -1,7 +1,7 @@
 # 计划:门店(租户)管理前端 —— 独立门店管理页
 
 > 对应 feature_list.json 的 `id`: `tenants-admin-ui`
-> 状态: not_started
+> 状态: passing(PR #40 commit `71b443c`,Session 059?,2026-07-12)
 > 优先级: 31
 > 前置: `tenants-admin-api`(门店管理后端就绪)
 

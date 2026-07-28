@@ -1,7 +1,7 @@
 # 计划:权限矩阵前端(真实数据 + 可编辑矩阵)
 
 > 对应 feature_list.json 的 `id`: `permission-matrix-ui`
-> 状态: not_started
+> 状态: passing(PR #17 commit `d59787c`,Session 013,2026-07-10)
 > 优先级: 15
 > 前置: `permission-matrix-api`(矩阵聚合端点就绪)
 

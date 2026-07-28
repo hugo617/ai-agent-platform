@@ -1,7 +1,7 @@
 # 计划:Agent 配置 API 加固(测试补全 + 异常对齐)
 
 > 对应 feature_list.json 的 `id`: `agents-api-hardening`
-> 状态: not_started
+> 状态: passing(PR #13 commit `e4929f9`,Session 007?,2026-07-10)
 > 优先级: 11(下一个该做的)
 > 参照模板: roles-crud 的后端对齐模式 + users.py 的 `_http_exc`
 

@@ -1,7 +1,7 @@
 # 计划:聊天页 Markdown 渲染 + 核心交互(复制/停止/重新生成)
 
 > 对应 feature_list.json 的 `id`: `chat-markdown-rendering`
-> 状态: not_started
+> 状态: passing(PR #29 commit `90f3460`,Session 039,2026-07-11)
 > 优先级: 26
 > 前置: `chat-frontend` ✅(聊天页已就绪,本任务把"纯文本原型"升级为"可用的 AI 对话体验")
 

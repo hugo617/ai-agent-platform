@@ -1,7 +1,7 @@
 # 计划:Token 用量采集(用量事件层)(Token 费用管理系列 1/4)
 
 > 对应 feature_list.json 的 `id`: `token-usage-tracking`
-> 状态: not_started
+> 状态: passing(PR #46 commit `3531d5b`,Session 075,2026-07-13)
 > 优先级: 43
 > 前置: 无(本系列地基)
 > 系列总纲: [`plan-token-billing-overview.md`](plan-token-billing-overview.md)

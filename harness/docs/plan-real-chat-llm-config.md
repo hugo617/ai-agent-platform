@@ -1,7 +1,7 @@
 # 计划:真实智能体对话 + LLM 配置管理 + bug 修复
 
 > 对应 feature_list.json 的 `id`: `real-chat-llm-config`
-> 状态: not_started
+> 状态: passing(PR #19 commit `0efa4c9`,Session 018,2026-07-11)
 > 优先级: 18
 > 前置: `chat-conversation-api` ✅ + `chat-frontend` ✅(对话前后端已纳管 passing,本任务把"离线测试通过"推进到"真实可用"并补配置管理)
 

@@ -1,7 +1,7 @@
 # 计划:Customer(客户)前端 —— 门店档案 + 跨店聚合视图
 
 > 对应 feature_list.json 的 `id`: `customers-ui`
-> 状态: not_started
+> 状态: passing(PR #35 commit `c04ecb1`,Session 051,2026-07-12)
 > 优先级: 33
 > 前置: `customers-api`(Customer 后端 CRUD + 聚合端点就绪)
 

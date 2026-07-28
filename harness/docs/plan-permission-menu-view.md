@@ -1,7 +1,7 @@
 # 计划:菜单/视图权限(权限重构系列 2/4)
 
 > 对应 feature_list.json 的 `id`: `permission-menu-view`
-> 状态: not_started
+> 状态: passing(PR #43 commit `f9e8c35`,Session 069,2026-07-13)
 > 优先级: 40
 > 前置: `permission-unified-model`(目录统一后,菜单权限作为目录的一类纳入)
 > 系列总纲: [`plan-permission-redesign-overview.md`](plan-permission-redesign-overview.md)

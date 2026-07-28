@@ -1,7 +1,7 @@
 # 计划:对话前端(聊天页面 + SSE 流式对接)
 
 > 对应 feature_list.json 的 `id`: `chat-frontend`
-> 状态: not_started
+> 状态: passing(PR #15 commit `b465bdd`,Session 009?,2026-07-10)
 > 优先级: 13
 > 前置: `chat-conversation-api` ✅ 已完成(后端 SSE + 会话历史 API 已落地)
 > 参照模板: `agents-page.tsx`(数据驱动模式)

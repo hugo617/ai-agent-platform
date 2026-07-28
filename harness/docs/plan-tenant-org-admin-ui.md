@@ -1,7 +1,7 @@
 # 计划:租户/组织/成员管理前端(控制台补齐)
 
 > 对应 feature_list.json 的 `id`: `tenant-org-admin-ui`
-> 状态: not_started
+> 状态: passing(PR #18 commit `5a26355`,Session 016,2026-07-10)
 > 优先级: 16
 > 前置: 无(后端端点全齐,纯前端任务)
 

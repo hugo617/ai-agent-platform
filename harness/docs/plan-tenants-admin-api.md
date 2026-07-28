@@ -1,7 +1,7 @@
 # 计划:门店(租户)管理后端补齐 —— 平台级列表 + 编辑 + 详情
 
 > 对应 feature_list.json 的 `id`: `tenants-admin-api`
-> 状态: not_started
+> 状态: passing(PR #38 commit `63adf9f`,Session 057?,2026-07-12)
 > 优先级: 30
 > 前置: `org-cleanup`(旧 Organization 已删除,main 干净)
 

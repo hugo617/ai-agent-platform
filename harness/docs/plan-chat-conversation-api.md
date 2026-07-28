@@ -1,7 +1,7 @@
 # 计划:对话后端(DeepSeek 接入 + 会话历史 API)
 
 > 对应 feature_list.json 的 `id`: `chat-conversation-api`
-> 状态: not_started
+> 状态: passing(PR #14 commit `e702c22`,Session 008?,2026-07-10)
 > 优先级: 12
 > 前置: `agents-api-hardening`(Agent 是对话的目标)
 > 参考文档: https://api-docs.deepseek.com/zh-cn/

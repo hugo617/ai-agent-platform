@@ -1,7 +1,7 @@
 # 计划:Group(组织)前端 —— 组织管理页 + 门店挂载
 
 > 对应 feature_list.json 的 `id`: `groups-ui`
-> 状态: not_started
+> 状态: passing(PR #33 commit `59806c6`,Session 047,2026-07-12)
 > 优先级: 31
 > 前置: `groups-api`(Group 后端 CRUD + 挂载端点就绪)
 

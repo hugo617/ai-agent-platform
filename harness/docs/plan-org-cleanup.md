@@ -1,7 +1,7 @@
 # 计划:删除旧 Organization 模块(清理场地,为 Group 让路)
 
 > 对应 feature_list.json 的 `id`: `org-cleanup`
-> 状态: not_started
+> 状态: passing(PR #31 commit `89b31ae`,Session 043,2026-07-12)
 > 优先级: 29(下一个该做的)
 > 参照模板: agents-api-hardening 的「当前状态速查」模式
 

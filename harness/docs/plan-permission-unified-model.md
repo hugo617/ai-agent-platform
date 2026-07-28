@@ -1,7 +1,7 @@
 # 计划:权限目录统一 + 操作权限细化(权限重构系列 1/4)
 
 > 对应 feature_list.json 的 `id`: `permission-unified-model`
-> 状态: not_started
+> 状态: passing(PR #42 commit `5614094`,Session 067,2026-07-13)
 > 优先级: 39
 > 前置: 无(本任务是整个权限重构系列的地基)
 > 系列总纲: [`plan-permission-redesign-overview.md`](plan-permission-redesign-overview.md)

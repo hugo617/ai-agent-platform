@@ -1,7 +1,7 @@
 # 计划:全局改名为新产品
 
 > 对应 feature_list.json 的 `id`: `global-rename`
-> 状态: not_started
+> 状态: passing(PR #12 commit `770133c`,Session 006?,2026-07-10)
 > 参考: 项目指南/04-二开脚手架/01-改造清单与命名.md 第 1 步
 
 ---

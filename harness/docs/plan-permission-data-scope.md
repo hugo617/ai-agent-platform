@@ -1,7 +1,7 @@
 # 计划:数据权限(data_scope 角色级数据范围)(权限重构系列 3/4)
 
 > 对应 feature_list.json 的 `id`: `permission-data-scope`
-> 状态: not_started
+> 状态: passing(PR #44 commit `c90c7bd`,Session 071,2026-07-13)
 > 优先级: 41
 > 前置: `permission-unified-model`(目录统一后,data_scope 作为角色属性接入)
 > 系列总纲: [`plan-permission-redesign-overview.md`](plan-permission-redesign-overview.md)

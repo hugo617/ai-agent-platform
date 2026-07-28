@@ -1,7 +1,7 @@
 # 计划:权限矩阵 UI 重写(超管锁定行 + 菜单/操作分区 + data_scope 选择器)(权限重构系列 4/4)
 
 > 对应 feature_list.json 的 `id`: `permission-matrix-redesign`
-> 状态: not_started
+> 状态: passing(PR #45 commit `bb7fa2c`,Session 073,2026-07-13)
 > 优先级: 42
 > 前置: `permission-unified-model` + `permission-menu-view` + `permission-data-scope`(前三者完成后,本任务做 UI 收官)
 > 系列总纲: [`plan-permission-redesign-overview.md`](plan-permission-redesign-overview.md)

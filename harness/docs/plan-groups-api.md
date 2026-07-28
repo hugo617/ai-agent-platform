@@ -1,7 +1,7 @@
 # 计划:Group(组织)后端 —— 跨租户经营主体 + 门店归属
 
 > 对应 feature_list.json 的 `id`: `groups-api`
-> 状态: not_started
+> 状态: passing(PR #32 commit `d688a4f`,Session 045,2026-07-12)
 > 优先级: 30
 > 前置: `org-cleanup`(旧 Organization 已删除)
 

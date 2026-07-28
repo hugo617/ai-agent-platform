@@ -1,7 +1,7 @@
 # 计划:Agent 配置深度(推理参数 + prompt 变量 + 元信息)
 
 > 对应 feature_list.json 的 `id`: `agent-config-depth`
-> 状态: not_started
+> 状态: passing(PR #30 commit `9a993e8`,Session 041,2026-07-11)
 > 优先级: 27
 > 前置: `real-chat-llm-config` ✅(Agent.model 已生效;本任务把 Agent 从"只能配名字+模型+prompt"升级为"可配推理参数")
 
