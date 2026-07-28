@@ -67,8 +67,9 @@ class DataScopeService:
     branch short-circuits in Principal before this service is reached, so a
     cross-tenant viewer read makes no db round-trip. ``CustomerService`` no
     longer calls this directly (slice 03 migrated its two read methods to
-    Principal); other services can be evaluated for Principal adoption in
-    future architecture reviews.
+    Principal); any extension to additional services is intentionally blocked
+    by **ADR-0001** (``docs/adr/0001-principal-scope-boundary.md``); **do NOT
+    extend Principal without superseding that ADR**.
     """
 
     def __init__(self, db: AsyncSession) -> None:

@@ -317,6 +317,7 @@ class BookingService:
         # Note(principal-scope): Principal 不覆盖此方法,原因:不用 helper。
         # 纯 store 路径,只有 ``require("read")`` 一行,无 helper 可消除。迁它
         # 只是改写法无 leverage。详见 plan-principal-module.md §4.2。
+        # 边界由 ADR-0001(docs/adr/0001-principal-scope-boundary.md)钉死,扩展需先 supersede ADR。
         """The day-grouped booking schedule for one device, in
         ``[range_start, range_end)``.
 
@@ -376,6 +377,7 @@ class BookingService:
         # 不跑 require(schedule-grid 是 bookings:read surface,default perms
         # 全 grant)。跟 for_read 默认带 require 有张力。详见 plan-principal-
         # module.md §4.2。
+        # 边界由 ADR-0001(docs/adr/0001-principal-scope-boundary.md)钉死,扩展需先 supersede ADR。
         """One store's bookings for a single calendar day, as ``BookingHqRead``
         — backs ``GET /bookings/schedule-grid`` (booking-schedule-grid slice 02).
 
@@ -454,6 +456,7 @@ class BookingService:
         # principal 读路径。无 tenant 概念,按 customer_id 全局查。Principal
         # 的 actor+tenant+platform_role 三元组不适用。详见 plan-principal-
         # module.md §4.2。
+        # 边界由 ADR-0001(docs/adr/0001-principal-scope-boundary.md)钉死,扩展需先 supersede ADR。
         """The customer-principal's own bookings (slice 04, ``GET /me/bookings``).
 
         ``customer_id`` is read off the resolved principal by the endpoint —
@@ -692,6 +695,7 @@ class BookingService:
         # customer_id``)是业务校验,不是角色判断;Principal 的
         # actor+tenant+platform_role 三元组对 customer 不适用。详见
         # plan-principal-module.md §4.2。
+        # 边界由 ADR-0001(docs/adr/0001-principal-scope-boundary.md)钉死,扩展需先 supersede ADR。
         """Transition a booking to ``in_service`` (pending / confirmed →
         in_service), recording ``started_at``.
 

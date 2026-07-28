@@ -165,6 +165,8 @@ docstring 加交叉引用标明「Internal: called by Principal, service layer s
 | `booking.list_my_bookings` | booking_service.py:430 | **customer principal 读路径**:无 tenant 概念,按 customer_id 全局查。Principal 的三元组不适用 |
 | `booking.get_device_schedule` | booking_service.py:296 | **不用 helper**:纯 store 路径,只有 `require("read")` 一行,无 helper 可消除。迁它只是改写法无 leverage |
 
+> 🔒 本节不迁范围由 [ADR-0001](../../docs/adr/0001-principal-scope-boundary.md) 裁决,扩展 Principal 必须先 supersede 该 ADR。
+
 注释格式:`# Note(principal-scope): Principal 不覆盖此方法,原因: <X>。详见 plan-principal-module.md §4.2`。
 
 ### 4.3 实施切片(EP3 入口,4 切片 tracer-bullet)

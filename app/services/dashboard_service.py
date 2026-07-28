@@ -10,6 +10,11 @@ Trend queries carry a date window; ``days`` is clamped to a sane upper bound
 (90) so the GROUP BY date scan stays cheap (plan §风险). The (tenant_id,
 created_at) index added by the companion migration makes the store-level GROUP
 BY an index range scan.
+
+Auth: intentionally bypasses Principal (read pattern uses
+``is_cross_tenant_viewer`` for a panorama-vs-store split that doesn't fit
+Principal's panorama/scope dichotomy). See ADR-0001
+(``docs/adr/0001-principal-scope-boundary.md``).
 """
 
 from datetime import UTC, datetime, timedelta

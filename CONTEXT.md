@@ -27,7 +27,7 @@ _Avoid_: capability, grant
 _Avoid_: global role, system role
 
 **Principal**:
-当前请求的身份抽象(后端 `app/services/principal.py`)。把 Platform Role + 门店角色 + 目标租户 + Data Scope 统一解析成读/写访问边界 —— `for_write()` 返回 `WriteAccess`(effective tenant + require-or-skip),`for_read()` 返回 `ReadAccess`(effective tenant + scope + require-or-skip + is_panorama)。booking / device / customer 三 service 的鉴权决策统一走 Principal。**不是** User 实体,也不是 token claim。
+当前请求的身份抽象(后端 `app/services/principal.py`)。把 Platform Role + 门店角色 + 目标租户 + Data Scope 统一解析成读/写访问边界 —— `for_write()` 返回 `WriteAccess`(effective tenant + require-or-skip),`for_read()` 返回 `ReadAccess`(effective tenant + scope + require-or-skip + is_panorama)。booking/device/customer 三 service 的**读写鉴权路径**(写路径 + 读路径的 panorama 与 store scope 两分支)走 Principal;**少量方法因不属于角色-租户三元组**(三叉 customer / 全局读 / panorama 无 require / 纯 store require)**仍直接用 helper** —— 边界清单见 `harness/docs/plan-principal-module.md` §4.2(由 [ADR-0001](docs/adr/0001-principal-scope-boundary.md) 钉死,扩展需先 supersede ADR)。**不是** User 实体,也不是 token claim。
 _Avoid_: user(那是 User 实体), identity(那是 token claim), session(那是登录会话)
 
 ## AI 智能体与对话

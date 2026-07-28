@@ -671,11 +671,12 @@ def is_cross_tenant_viewer(platform_role: str | None) -> bool:
     """True if the role grants cross-tenant read access (super_admin or hq_staff).
 
     Internal: called by Principal (``app.services.principal.Principal.for_read``
-    branches on this to pick the panorama vs scoped path). Currently only
-    booking / device / customer services consume Principal; other services
-    (group / conversation / dashboard / device_model / permission router) still
-    call this helper directly — adoption can be evaluated in future
-    architecture reviews.
+    branches on this to pick the panorama vs scoped path). The out-of-scope
+    callers (non-adopting services like ``conversation`` / ``dashboard`` /
+    ``device_model`` / ``group`` + 6 api-layer files) are intentionally
+    retained and pinned by **ADR-0001**
+    (``docs/adr/0001-principal-scope-boundary.md``); **do NOT extend Principal
+    to them without superseding that ADR**.
     """
     return platform_role in CROSS_TENANT_VIEWER_ROLES
 
@@ -696,10 +697,11 @@ def is_platform_writer(platform_role: str | None) -> bool:
 
     Internal: called by Principal (``app.services.principal.Principal.for_write``
     sets ``require=None`` ⇔ this predicate, the invariant pinned in
-    plan-principal-module §4.0 Q3'). Currently only booking / device / customer
-    services consume Principal; ``_tenant_target.resolve_target_tenant`` still
-    calls this helper directly (Principal composes it). Adoption across other
-    services can be evaluated in future architecture reviews.
+    plan-principal-module §4.0 Q3'). ``_tenant_target.resolve_target_tenant``
+    still calls this helper directly (Principal composes it). Any extension of
+    Principal to additional services is intentionally blocked by **ADR-0001**
+    (``docs/adr/0001-principal-scope-boundary.md``); **do NOT extend Principal
+    without superseding that ADR**.
     """
     return platform_role in PLATFORM_WRITER_ROLES
 
