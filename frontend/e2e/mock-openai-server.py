@@ -17,7 +17,6 @@ from __future__ import annotations
 import json
 import time
 import uuid
-
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 REPLY = "你好！这是一个来自测试环境的模拟回复。"

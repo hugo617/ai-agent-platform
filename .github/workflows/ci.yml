@@ -75,6 +75,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Guard critical CI files exist
+        # Belt-and-suspenders: fail fast if this workflow file or the E2E mock
+        # server ever goes missing from the tree. Without this, a stray deletion
+        # could ride a stale workflow cache and stay hidden until someone wonders
+        # why a job stopped running.
+        run: |
+          for f in .github/workflows/ci.yml frontend/e2e/mock-openai-server.py; do
+            test -f "$f" || { echo "::error::critical file missing: $f"; exit 1; }
+          done
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -90,7 +100,9 @@ jobs:
           pip install -r requirements-dev.txt
 
       - name: Ruff
-        run: ruff check app/ cli/ tests/ scripts/ alembic/
+        # ``frontend/e2e/*.py`` is Python too (the mock OpenAI server) — keep it
+        # under the same lint gate as the rest of the codebase so it can't drift.
+        run: ruff check app/ cli/ tests/ scripts/ alembic/ frontend/e2e/
 
       - name: Pytest
         # The suite builds the full schema from the ORM models on in-memory
