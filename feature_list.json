@@ -1,7 +1,7 @@
 {
   "project": "ai-agent-platform",
   "description": "多租户 AI 智能体 SaaS 平台脚手架(FastAPI + React + pycasbin + LangGraph)",
-  "last_updated": "2026-07-27",
+  "last_updated": "2026-07-28",
   "harness_version": "stage1-clean-state",
   "rules": {
     "single_active_feature": true,
@@ -18,6 +18,19 @@
     "passing": "验证通过且证据已记录(不可逆)"
   },
   "features": [
+    {
+      "id": "composite-chat",
+      "priority": 72,
+      "area": "AI 编排",
+      "title": "复合查询会话(Fan-out + Synthesize:并行问全部 agent 再综合)",
+      "user_visible_behavior": "用户在对话页多选 N 个 agent + 一个问题 → 后端并行问全部 agent → synthesize 综合答案,结果含综合答案 + 各 agent 原始回答折叠展示;持久化为新类型会话(kind=composite),可查看历史可续问;与现有 Supervisor 编排共存互补(Supervisor=问对人单 agent 路由,Composite=综合多人见解)",
+      "status": "not_started",
+      "verification": "./init.sh 全绿 + cd frontend && npm run build 0 错 + oxlint 0 warnings + alembic check 同步 + 真实 DeepSeek key 端到端(3 agent 复合查询全链路)",
+      "notes": "2026-07-28 立项。设计借鉴 StorePilot 三 pass 流水线(sess_babf29ab),落到本项目复用现有基建。三轮审查(自审×2 + review-spec 7 维度)修 25 问题。10 关键决策锁定:复用 Conversation 加 kind 字段(不新建表)/ asyncio.gather 并行非 StateGraph / synthesize 复用首个 agent model / 逐 agent require 权限 fail-fast / N+1 笔 UsageEvent + wallet 预检 / chat-page 加 Switch 模式切换 / per-agent try/except 错误隔离 / Message 加 fragments JSONB(不破 role 联合类型)/ 纯 JSON 一次性返回(非 SSE)/ 维持租户级知识库。与 multi-agent-orchestration(58 ✅)共存互补,零改动其契约。4 切片:01 数据层+Schema(frontier)→ 02 编排引擎 composite_query → 03 API+计费 → 04 前端+真实验证+收尾。关键技术点:_invoke_agent_once 用 astream_events 累加多轮 usage(非 ainvoke 防漏计)/ 方案 A 每 agent 独立 session(AsyncSession 非并发安全)/ _record_composite_usage 新函数(接 agent_id 非 Agent 对象,支持 None)/ Conversation.agent_id 填 agent_ids[0] 作主 agent / migration 含 backfill 防旧数据 NULL。",
+      "plan": "harness/docs/plan-composite-chat.md",
+      "depends_on": "",
+      "evidence": []
+    },
     {
       "id": "principal-scope-doc-alignment",
       "priority": 71,
