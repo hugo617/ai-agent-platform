@@ -128,6 +128,14 @@ async def _charge_usage(
 
         await BillingService(db).charge(tenant_id, event, operator_id=None)
     except Exception:  # noqa: BLE001 - billing is best-effort
+        # logger.exception (not a bare pass): composite writes N+1 charge rows
+        # per turn, so a silent swallow would multiply a quiet billing bug
+        # across every agent + the synthesize step. The SSE path benefits too
+        # — a charge failure used to vanish without a trace. (plan §Step 7-8:
+        # "except 用 logger.exception,不裸吞".)
+        logger.exception(
+            "wallet charge failed (tenant=%s, event=%s)", tenant_id, event.id
+        )
         await db.rollback()
 
 
