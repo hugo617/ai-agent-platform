@@ -10,9 +10,12 @@ unique constraint, so this service is the sole place that guarantee is made
 :class:`LoggingService` (module ``booking_config``) with old/new values, so
 config changes are traceable (who changed which store's slot length).
 
-Mirrors :class:`LlmConfigService` structurally but drops the crypto path (no
-secrets here) and adds the audit-log call (config changes are a notable admin
-action worth logging, unlike the masked-API-key writes in the LLM path).
+Structurally parallel to :class:`LlmConfigService` but drops the crypto path
+(no secrets here) and adds the audit-log call (config changes are a notable
+admin action worth logging, unlike the masked-API-key writes in the LLM path).
+The shared read path lives in :class:`~app.repositories.two_scope.TwoScopeRepository`
+(see :doc:`ADR-0002 <../../docs/adr/0002-twoscope-config-repository>`); the
+``_upsert`` / ``get_effective`` deltas stay service-specific.
 """
 
 from __future__ import annotations

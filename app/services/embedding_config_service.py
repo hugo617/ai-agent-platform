@@ -7,8 +7,11 @@ ready to hand to ``EmbeddingService``. The read endpoints (:meth:`get_platform`,
 
 Writes go through upserts that enforce "one active row per scope" — there is
 no DB unique constraint, so this service is the sole place that guarantee is
-made (see the model docstring for why). Mirrors ``LlmConfigService`` but drops
-the available_models handling.
+made (see the model docstring for why). Structurally parallel to
+``LlmConfigService`` but drops the available_models handling. The shared read
+path lives in :class:`~app.repositories.two_scope.TwoScopeRepository` (see
+:doc:`ADR-0002 <../../docs/adr/0002-twoscope-config-repository>`); the
+``_upsert`` / ``get_effective`` deltas stay service-specific.
 """
 
 from __future__ import annotations

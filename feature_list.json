@@ -1847,7 +1847,7 @@
       "area": "工程化",
       "title": "Two-Scope Config 范式 leverage — 抽 TwoScopeRepository 基类(巡检候选 1 Top)",
       "user_visible_behavior": "无用户可见行为变化(纯后端架构重构)。app/repositories/ 的 3 个两级配置 repo(booking_config/llm_config/embedding_config)的 get_platform/get_for_tenant 读路径逐字重复,抽 TwoScopeRepository 基类统一。is_active 过滤差异(llm/embedding 有、booking 无)用基类钩子 _active_filter 吸收(booking 设 None 不过滤),零 schema 改动零死列。service 层的 _upsert(crypto/audit delta)和 get_effective 三级 fallback(返回类型 + 第三级投影差异)各 service 自留不进基类。ModelPricing(二维 key 异类)和 tenant_config(单租户异类)排除,边界由 ADR-0002 钉死。现有 service/API 测试全绿验证零行为变更。",
-      "status": "in_progress",
+      "status": "passing",
       "verification": [
         "app/repositories/two_scope.py 存在,TwoScopeRepository 基类含 _active_filter 钩子 + get_platform/get_for_tenant",
         "3 个 repo(booking/llm/embedding)改继承基类,自写 get_platform/get_for_tenant 全部删除",
@@ -1860,7 +1860,12 @@
       "notes": "第 5 次巡检(2026-07-29)Top recommendation —— 「平台默认 + 租户覆盖」两级配置范式在代码里重复 3 repo + 3 service,互相 docstring 指认「Mirrors XxxConfig」但从未提取。grill 5 决策(D1 基类只吃读路径 service 各留 _upsert delta / D2 ModelPricing 异类不纳入也不补 service / D3 is_active 差异用钩子 _active_filter 非加列 / D4 get_effective 三级 fallback 不进基类 / D5 切片 llm 做 frontier)。**经子智能体对抗式审查(opus ×2 并行:真相核查 + 业务设计)**:v1 发现 3 P0(决策3 加 is_active 死列违反铁律6 / slice3 补 ModelPricingService 是空架子 / 缺 ADR 钉边界)+ 2 P1(frontier 应改 llm / repo 层零测试覆盖需先补),全部回炉修正为 v2。**回炉收益**:零 schema 改动、零死列、零业务回归的纯架构卫生 feature(审查拦下「为对称引入死列 + 迁移风险」「为对称造空架子」「边界不落 ADR 致下次巡检 re-suggest」三类问题)。**不越界**:配置软停用(is_active 设 False)是独立 feature / ModelPricing 纳入基类是异类 / get_effective+_upsert 进基类是真业务差异,均 Out of Scope。plan:harness/docs/plan-twoscope-config.md。",
       "plan": "harness/docs/plan-twoscope-config.md",
       "depends_on": "",
-      "evidence": []
+      "evidence": [
+        "切片 1 ✅(commit 2ab3952,expand):新建 app/repositories/two_scope.py(TwoScopeRepository 基类,_active_filter 钩子默认 None + get_platform/get_for_tenant,查询语义逐字对齐 llm 现状)+ LlmConfigRepository 改继承基类(_active_filter = LlmConfig.is_active.is_(True),删自写两方法)+ 新建 tests/test_two_scope_repo.py(llm repo 四态契约:平台行/租户行/无行/is_active 过滤,态4 同时播 inactive 平台+租户行证两 scope 都过滤)。ruff clean + repo 测试四态全绿 + ./init.sh smoke 全绿。",
+        "切片 2 ✅(Session 161,migrate batch):EmbeddingConfigRepository + BookingConfigRepository 改继承基类(embedding 设 _active_filter=EmbeddingConfig.is_active.is_(True),booking 设 None 表无 is_active 列不过滤;均删自写两方法,查询语义逐字等价 SQL)。tests/test_two_scope_repo.py 补 embedding 四态 + booking 三态 + 额外 test_booking_no_active_filter_all_rows_visible(显式验证 None=不过滤契约)。/code-review 双轴 GREEN(子智能体 ×2 并行):Standards 0 硬违规 + Spec 5/5 AC 全满足。./init.sh full 840 passed(基线 828 + 新增 12 repo 契约用例,零回归,252s)。",
+        "切片 3 ✅(Session 162,末切片 contract,本次):无新源码逻辑。清理配置范式 docstring 互指债(6 处):3 repo(booking/llm/embedding)docstring 补「(见 ADR-0002)」指针 + 2 service(booking_config_service/embedding_config_service)的「Mirrors LlmConfigService」→「Structurally parallel to ... (见 ADR-0002)」+ 1 model(embedding_config.py)的「Mirrors LlmConfig」→「Structurally parallel to LlmConfig」。新建 docs/adr/0002-twoscope-config-repository.md(复刻 ADR-0001 Nygard 五段式:Context/Decision/Consequences/Superseding/References,含纳入 3 repo + 排除 ModelPricing(二维 key)/tenant_config(单租户)理由 + _active_filter 钩子理由(为何不加 is_active 列给 booking)+ get_effective/_upsert 不进基类理由)。CONTEXT.md Two-Scope Config 条目 ADR-0002 指针(grill 阶段已就位,确认)。./init.sh full 840 passed 零回归(241s)+ ruff clean + grep 配置范式互指「Mirrors.*(LlmConfig|ConfigService|ConfigRepository)」→ 0 处。",
+        "收尾条(2026-07-29 Session 162):feature status in_progress → passing。./init.sh full 全绿 840 passed(切片 1-3 累计,基线 828 + 12 repo 契约用例,零行为变更)。grep 配置范式 docstring 互指债消解。ADR-0002 钉死 TwoScopeRepository 边界(项目第 2 个 ADR,与 ADR-0001 Principal 互补,共立 Repository 层两大范式基类采纳边界)。末切片依赖解锁扫描:无 feature depends_on 指向 twoscope-config(纯重构无下游)→ 无需推进。feature 全 3 切片收官:两 docstring 互指债 + 零 repo 层测试覆盖债 消解,产出项目第 2 个 ADR 钉边界。"
+      ]
     }
   ]
 }

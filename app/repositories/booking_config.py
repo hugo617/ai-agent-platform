@@ -1,6 +1,7 @@
 """Booking-config repository.
 
-Extends :class:`~app.repositories.two_scope.TwoScopeRepository`: a row's
+Extends :class:`~app.repositories.two_scope.TwoScopeRepository` (see
+:doc:`ADR-0002 <../../docs/adr/0002-twoscope-config-repository>`): a row's
 ``tenant_id`` is *nullable* (NULL = platform-wide default, non-null = tenant
 override), so the platform-vs-tenant scope selection lives in the base class's
 ``get_platform`` / ``get_for_tenant``. ``_active_filter`` is left at its default

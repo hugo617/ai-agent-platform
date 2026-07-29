@@ -1,7 +1,7 @@
 # 计划:Two-Scope Config 范式 leverage — 抽 `TwoScopeRepository` 基类
 
 > **id**: twoscope-config
-> **状态**: in_progress(draft v2 经子智能体对抗式审查 + 主持人复核修正;EP2 回环落 plan + 登记 in_progress,待实施)
+> **状态**: passing(draft v2 经子智能体对抗式审查 + 主持人复核修正;EP2 回环落 plan + 登记 in_progress,3 切片全 ✅ 收官 2026-07-29 Session 162)
 > **优先级**: 74(新登记,「工程化」area,第 5 次巡检候选 1 Top recommendation)
 > **创建日期**: 2026-07-29
 > **最后修订**: 2026-07-29(v2:子智能体审查发现 3 P0 + 2 P1,全部坐实并回炉决策)
@@ -169,21 +169,21 @@ service 层不动 `_upsert` 写路径(crypto/audit delta 是真业务差异,各�
   - [x] `test_booking_config_api.py` 19 用例 + `test_embedding_config` 全绿(36 passed,零行为变更)
   - [x] `./init.sh full` 全绿(840 passed,基线 828 + 新增 12 repo 契约用例零回归)+ ruff clean
 
-### 切片 3:收尾验证 + ADR-0002 + docstring 清理 + feature passing(contract)
+### 切片 3:收尾验证 + ADR-0002 + docstring 清理 + feature passing(contract)✅
 
 - **What to build**:无新源码逻辑。清理三个 repo 的 docstring 互指(「Mirrors XxxConfig」→「Extends TwoScopeRepository(见 ADR-0002)」);产出 ADR-0002 钉边界;CONTEXT.md `Two-Scope Config` 条目补 ADR-0002 指针;feature 收尾。
-- **Blocked by**: 切片 2
-- **文件清单**:0 源码逻辑 + 3 docstring 改 + 1 ADR 新建 + CONTEXT.md 指针 + feature 收尾文档
+- **Blocked_by**: 切片 2
+- **文件清单**:0 源码逻辑 + 6 docstring 改(3 repo 补指针 + 2 service + 1 model 互指清解)+ 1 ADR 新建 + CONTEXT.md 指针确认 + feature 收尾文档
 - **验证命令**:`./init.sh full` 全量 + grep 验证 docstring 互指清零
 - **AC**:
-  - [ ] 三个 repo docstring 的「Mirrors XxxConfig」全部改为「Extends TwoScopeRepository(见 ADR-0002)」
-  - [ ] `docs/adr/0002-twoscope-config-repository.md` 存在,复刻 ADR-0001 五段式(Context/Decision/Consequences/Superseding),含纳入 3 repo + 排除 ModelPricing/tenant_config 理由 + `_active_filter` 钩子理由 + get_effective/_upsert 不进基类理由
-  - [ ] CONTEXT.md `Two-Scope Config` 条目加 `[ADR-0002](docs/adr/0002-...)` 指针
-  - [ ] feature_list.json status → passing,evidence 写齐(3 切片 + 收尾条)
-  - [ ] progress.md 顶部「最高优先级未完成」清空
-  - [ ] 跑 `./scripts/sync-active-features.sh` 刷新 active 视图
-  - [ ] grep「Mirrors LlmConfig / Mirrors .*Repository」→ 0 处(docstring 互指债务消解)
-  - [ ] 末切片依赖解锁扫描:无 feature depends_on 指向 twoscope-config(纯重构,无下游)→ 无需推进
+  - [x] 三个 repo docstring 的「Mirrors XxxConfig」全部改为「Extends TwoScopeRepository(见 ADR-0002)」(切片 1/2 已改继承,切片 3 补「(见 ADR-0002)」指针 + 连带清理 2 service + 1 model 的同源「Mirrors LlmConfig(Service)」互指)
+  - [x] `docs/adr/0002-twoscope-config-repository.md` 存在,复刻 ADR-0001 五段式(Context/Decision/Consequences/Superseding/References),含纳入 3 repo + 排除 ModelPricing/tenant_config 理由 + `_active_filter` 钩子理由 + get_effective/_upsert 不进基类理由
+  - [x] CONTEXT.md `Two-Scope Config` 条目加 `[ADR-0002](docs/adr/0002-...)` 指针(grill 阶段已就位,本次确认)
+  - [x] feature_list.json status → passing,evidence 写齐(3 切片 + 收尾条)
+  - [x] progress.md 顶部「最高优先级未完成」清空
+  - [x] 跑 `./scripts/sync-active-features.sh` 刷新 active 视图(0 活跃 + 5 最近 passing)
+  - [x] grep「Mirrors LlmConfig / Mirrors .*Repository」→ 0 处(docstring 互指债务消解,配置范式语义:grep「Mirrors.*(LlmConfig|ConfigService|ConfigRepository)」→ 0)
+  - [x] 末切片依赖解锁扫描:无 feature depends_on 指向 twoscope-config(纯重构,无下游)→ 无需推进
 
 ---
 
