@@ -197,16 +197,18 @@ shared.tsx(瘦身) ──→ status-meta.ts(BookingStatusBadge 用 STATUS_META)
 
 本任务是 **wide refactor**(纯 locality 搬运,零行为变更),按 [three-tier-workflow.md](./three-tier-workflow.md) §7,wide refactor 走 **EP3 单入口 + expand-contract 序列**(加新形式并存 → 分批迁移 caller → 最后清理旧形式)。
 
-### 切片 1:抽底座(status-meta.ts + date-utils.ts)
+### 切片 1:抽底座(status-meta.ts + date-utils.ts) ✅
 - **What to build**:新建 `status-meta.ts`(4 符号)+ `date-utils.ts`(5 符号),`shared.tsx` 暂时从这两个新文件 re-export(过渡期 facade,消费者 import 路径不变)。
 - **Blocked by**: 无(frontier)
 - **文件清单**:新建 2 + 改 shared.tsx(加 re-export)= 3 文件
 - **验证命令**:`cd frontend && npx vitest run && npm run build && npx oxlint && npx tsc -b`
 - **AC**:
-  - [ ] `status-meta.ts` 含 STATUS_META/MUTABLE_STATUS/ACTIONABLE_STATUS/NONE,语义注释完整
-  - [ ] `date-utils.ts` 含 startOfToday/addDays/isoDate/hhmm/dayLabel
-  - [ ] `shared.tsx` 从两个新文件 re-export,消费者零改动
-  - [ ] vitest 全绿 + build + oxlint + tsc 全绿
+  - [x] `status-meta.ts` 含 STATUS_META/MUTABLE_STATUS/ACTIONABLE_STATUS/NONE,语义注释完整 ✅(4 符号齐全,4 段语义注释逐字迁移自原 shared.tsx,新增模块级 JSDoc 头)
+  - [x] `date-utils.ts` 含 startOfToday/addDays/isoDate/hhmm/dayLabel ✅(5 符号齐全,3 段 JSDoc 逐字迁移,section 注释升格为模块头)
+  - [x] `shared.tsx` 从两个新文件 re-export,消费者零改动 ✅(import-then-export 模式:9 符号入本地作用域供内部消费 + re-export;`git diff --stat` 仅 shared.tsx tracked 改动,5 消费者零触碰)
+  - [x] vitest 全绿 + build + oxlint + tsc 全绿 ✅(vitest 65/65 pass / npm run build 绿 / oxlint 0 warning / tsc -b 干净;后端 `./init.sh full` 828 passed 零回归)
+
+> **切片 1 完成证据(2026-07-29)**:新建 status-meta.ts(4 符号)+ date-utils.ts(5 符号),shared.tsx 删本地定义改 import+re-export facade(360→290 行,-88/+24)。expand-contract 的 expand 阶段完成,消费者零改动。/code-review 双轴 APPROVE:Standards 0 硬违反(facade 是正当过渡态)/ Spec AC1-4 全满足、无 scope creep(D3 不补测/D5 re-export 未提前删/D7 deviceNameOf 未动/§4.7 范围外符号全留 shared)。非末切片,不做 feature 收尾。下一步切片 2:抽 filter.ts + schedule-grid-card.tsx + 改 5 消费者 deep import + shared 瘦身 + D5 回源。
 
 ### 切片 2:抽组件层 + 改消费者 deep import + shared 瘦身 + D5 回源
 - **What to build**:新建 `filter.ts`(4 符号)+ `schedule-grid-card.tsx`(ScheduleGridCard/ScheduleSlot/slotTone);改 5 消费者(store-view/hq-view/my-bookings-view/shared-dialog/schedule-grid)deep import 指向新文件;`fmt`/`fromDatetimeLocalValue` 回源 `@/lib/format`(4 处消费者改 import 源);`shared.tsx` 瘦身到只留 BookingStatusBadge + deviceNameOf,删除所有 re-export。

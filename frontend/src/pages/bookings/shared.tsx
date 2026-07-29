@@ -35,55 +35,28 @@ import {
 import type { Booking, BookingStatus, Device } from "@/api/types";
 import { useDeviceSchedule } from "@/hooks/queries";
 
-// 6-state status → {label, badge}. Each badge value is the literal Badge
-// variant name (``dot-warning`` / ``dot-success`` / ``dot-muted`` /
-// ``dot-destructive``), so STATUS_META reads as the plan's colour mapping
-// verbatim with no intermediate token to collapse. pending/in_service/no_show
-// pick a tinted dot; the neutral "settled" states (confirmed / done /
-// cancelled) share the muted grey dot — informational, not warning/danger.
-//
-// ``confirmed`` is a forward-compat placeholder (no /confirm endpoint yet, see
-// plan §0 D2) — the mapping is defined for completeness but unreachable in
-// this feature; a booking never enters that state here.
-export const STATUS_META: Record<
-  BookingStatus,
-  {
-    label: string;
-    badge: "dot-warning" | "dot-success" | "dot-muted" | "dot-destructive";
-  }
-> = {
-  pending: { label: "待确认", badge: "dot-warning" },
-  confirmed: { label: "已确认", badge: "dot-muted" },
-  in_service: { label: "服务中", badge: "dot-success" },
-  done: { label: "已完成", badge: "dot-muted" },
-  cancelled: { label: "已取消", badge: "dot-muted" },
-  no_show: { label: "爽约", badge: "dot-destructive" },
-};
+// Re-export the status domain model + date helpers from their new homes
+// (plan-shared-tsx-split 切片 1, expand-contract). shared.tsx still owns the
+// other shared display primitives (BookingStatusBadge / deviceNameOf) until
+// 切片 2 re-points consumers at deep imports and slims this file. Keeping the
+// re-export here means existing consumers (badges / shared-dialog / the views)
+// need zero import-path changes in this slice.
+import {
+  STATUS_META,
+  MUTABLE_STATUS,
+  ACTIONABLE_STATUS,
+  NONE,
+} from "./status-meta";
+import {
+  startOfToday,
+  addDays,
+  isoDate,
+  hhmm,
+  dayLabel,
+} from "./date-utils";
 
-// SelectValue can't render an empty string; "_none" is the sentinel for the
-// "walk-in (no customer)" option in the create/edit dialog. Mirrors the
-// devices-page bind dialog convention (chat-page.tsx:685-707 lineage).
-export const NONE = "_none";
-
-// Only ``pending`` bookings are mutable (D10) — reschedule / cancel are hidden
-// for every other state. ``confirmed`` is a forward-compat placeholder state
-// that this feature never enters, so it's intentionally NOT in the mutable set
-// (it would be cancelled via a future /confirm + /cancel flow, not here).
-export const MUTABLE_STATUS: ReadonlySet<BookingStatus> = new Set(["pending"]);
-
-// device-poweron (切片 03):the status set that still has a state-machine action
-// available. Reschedule / cancel stay gated on ``MUTABLE_STATUS`` (pending only)
-// — those are bookings edits, not lifecycle actions. ``ACTIONABLE_STATUS`` gates
-// the lifecycle menu (start / end / no-show): pending / confirmed / in_service
-// each have ≥1 action; the terminal states (done / cancelled / no_show) have
-// none and hide the menu entirely. ``confirmed`` is included defensively — the
-// state machine allows start/no-show from it, but device-booking never writes
-// ``confirmed`` so the branch is unreachable at runtime (code comment only).
-export const ACTIONABLE_STATUS: ReadonlySet<BookingStatus> = new Set([
-  "pending",
-  "confirmed",
-  "in_service",
-]);
+export { STATUS_META, MUTABLE_STATUS, ACTIONABLE_STATUS, NONE };
+export { startOfToday, addDays, isoDate, hhmm, dayLabel };
 
 /** List filter presets for the chip row. "all" = no filter. */
 export type BookingFilter =
@@ -149,46 +122,6 @@ export function deviceNameOf(
 // Re-export the format helpers the views use, so views import everything from
 // one place (cuts the number of cross-file imports per view).
 export { fromDatetimeLocalValue, fmt };
-
-// ------------------------------------------------------------- date helpers
-//
-// Local-time date math for the filter chips + schedule grid. All comparisons
-// are on calendar days (``YYYY-MM-DD``), not timestamps — a "today" filter
-// matches the whole local day, ignoring hours. Kept local (no UTC shift)
-// because a store's booking sheet is read in wall-clock time.
-
-export function startOfToday(): Date {
-  const d = new Date();
-  d.setHours(0, 0, 0, 0);
-  return d;
-}
-
-export function addDays(base: Date, days: number): Date {
-  const d = new Date(base);
-  d.setDate(d.getDate() + days);
-  return d;
-}
-
-/** ``YYYY-MM-DD`` for a Date (local). Used as the DeviceSchedule map key. */
-export function isoDate(d: Date): string {
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-}
-
-/** ``HH:mm`` from an ISO timestamp (local). Slot card time label. */
-export function hhmm(iso: string): string {
-  const d = new Date(iso);
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
-}
-
-/** ``周一 7/24`` style label for a schedule column header. ``offset`` is 0 for
- * today (rendered as "今天"). */
-export function dayLabel(d: Date, offset: number): string {
-  const weekdays = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"];
-  const prefix = offset === 0 ? "今天" : offset === 1 ? "明天" : weekdays[d.getDay()];
-  return `${prefix} ${d.getMonth() + 1}/${d.getDate()}`;
-}
 
 /** Apply a chip filter to the booking list. Time filters compare on the local
  * calendar day of ``scheduled_start_at``; status filters are an exact match. */
