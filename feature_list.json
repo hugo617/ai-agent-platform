@@ -1,7 +1,7 @@
 {
   "project": "ai-agent-platform",
   "description": "多租户 AI 智能体 SaaS 平台脚手架(FastAPI + React + pycasbin + LangGraph)",
-  "last_updated": "2026-07-28",
+  "last_updated": "2026-07-29",
   "harness_version": "stage1-clean-state",
   "rules": {
     "single_active_feature": true,
@@ -1814,6 +1814,27 @@
         "回归 ./init.sh 全绿:ruff clean + 750 passed(含 test_booking_state.py 32 passed:7 合法边 + 17 非法对 + test_cancel_only_from_pending 5 参数 + InvalidTransition subclass;test_bookings_api.py 90 passed:E1/E2/E3 + A/B/C/D/F 全章节 + P 状态机 + Q 平台写者含 Q3 cancel 跨店 + Q8 状态机守卫全绿)",
         "零行为变更硬约束守住:cancel 契约保留(204/idempotent)/ update 守 pending(D10 _MUTABLE_STATUSES 未碰)/ API 契约不变(POST /bookings/{id}/cancel 返回值/状态码/idempotency 全保留)/ 无 schema/迁移/前端改动(纯后端 deep module 收尾)"
       ]
+    },
+    {
+      "id": "bookings-shared-split",
+      "priority": 73,
+      "area": "工程化",
+      "title": "bookings/shared.tsx 按功能职责拆分(bookings-page-split 后续候选,纯 locality 重构)",
+      "user_visible_behavior": "无用户可见行为变化(纯前端代码重构)。frontend/src/pages/bookings/shared.tsx(19 个导出符号)按功能内聚度拆分:① 抽 status-meta.ts(STATUS_META/MUTABLE_STATUS/ACTIONABLE_STATUS/NONE 状态领域模型)② 抽 date-utils.ts(startOfToday/addDays/isoDate/hhmm/dayLabel 纯函数)③ 抽 filter.ts(BookingFilter/FILTER_OPTIONS/FilterChips/applyBookingFilter 列表过滤)④ 抽 schedule-grid-card.tsx(ScheduleGridCard/ScheduleSlot/slotTone,StoreView 专属)+ shared.tsx 瘦身保留(BookingStatusBadge/deviceNameOf 真共享原语)+ fmt/fromDatetimeLocalValue 回源 @/lib/format(消除便利 re-export)。现有 5 个 view 测试全绿验证零行为变更。",
+      "status": "in_progress",
+      "verification": [
+        "frontend/src/pages/bookings/status-meta.ts 存在(4 符号)+ date-utils.ts(5 符号)+ filter.ts(4 符号)+ schedule-grid-card.tsx(ScheduleGridCard/ScheduleSlot/slotTone)",
+        "frontend/src/pages/bookings/shared.tsx 瘦身到只剩 BookingStatusBadge + deviceNameOf(约 50-60 行),无 re-export",
+        "store-view/hq-view/my-bookings-view/shared-dialog 的 fmt/fromDatetimeLocalValue 改从 @/lib/format import(回源)",
+        "5 个消费者 deep import 指向新文件,无 barrel 中转",
+        "cd frontend && npx vitest run → 全绿(零行为变更,现有 store-view 6 + my-bookings-view 6 + hq-view 13 + schedule-grid + config-dialog)",
+        "cd frontend && npm run build 绿 + npx oxlint 0 warning + npx tsc -b 绿",
+        "./init.sh full 全绿(后端无改动,基线无回归)"
+      ],
+      "notes": "bookings-page-split(Session 139)/code-review 留痕登记的后续候选(progress.md:3304):'ScheduleGridCard + 其私有 date helpers(slotTone/dayLabel/hhmm 等)只被 StoreView 消费,却混在所有 view 共享的 shared.tsx,Divergent Change'。grill 7 决策(D1 按功能拆 4 文件 + shared 瘦身 / D2 瘦身保留 / D3 不补单测沿用测试跟 view 走范式 / D4 纯 deep import 无 barrel / D5 fmt+fromDatetimeLocalValue 回源 @/lib/format / D6 slotTone 归 schedule-grid-card 非 badges / D7 deviceNameOf 留 shared 避免孤儿)。**经子智能体对抗式审查**:v1(全拆 5 文件+删 shared+补单测+走 EP2)发现 3 P0(export 19 非 17 / 消费者 5 非 6 / fmt+deviceNameOf+slotTone 三盲点)+ 4 P1(D3 违反 plan 范式/slotTone 归属/import 膨胀/范围定级),全部回炉修正为 v2。**不越界**:补测是独立候选 4 / cast 处理是候选 8 / cancel 状态机是候选 2,均 Out of Scope。plan:harness/docs/plan-shared-tsx-split.md。",
+      "plan": "harness/docs/plan-shared-tsx-split.md",
+      "depends_on": "bookings-page-split",
+      "evidence": []
     }
   ]
 }
