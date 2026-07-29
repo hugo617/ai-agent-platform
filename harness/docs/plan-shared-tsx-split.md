@@ -1,7 +1,7 @@
 # 计划:bookings/shared.tsx 按功能职责拆分(Divergent Change 收债)
 
 > **id**: bookings-shared-split
-> **状态**: in_progress(EP2 回环完成:grill 7 决策 + 子智能体对抗式审查 v2 回炉 + 3 切片就绪。status: draft v2 → in_progress)
+> **状态**: passing(全 3 切片完成:切片 1 expand facade ✅ + 切片 2 contract 迁 caller+瘦身 ✅ + 切片 3 末切片收尾验证 ✅。status: draft v2 → in_progress → passing)
 > **优先级**: 73(「工程化」area,bookings-page-split 留痕的后续候选;feature_list.json 真相源)
 > **创建日期**: 2026-07-29
 > **最后修订**: 2026-07-29(v2:子智能体审查发现 3 P0 + 4 P1,全部坐实并回炉决策)
@@ -227,27 +227,29 @@ shared.tsx(瘦身) ──→ status-meta.ts(BookingStatusBadge 用 STATUS_META)
 
 > **切片 2 完成证据(2026-07-29)**:新建 filter.tsx(4 符号)+ schedule-grid-card.tsx(3 符号),5 消费者改 deep import(D4 纯 deep import 无 barrel),fmt/fromDatetimeLocalValue 回源 @/lib/format(D5,shared-dialog 合并进既有 import),shared.tsx 瘦身 290→38 行(-252 行,零 re-export,只剩 BookingStatusBadge + deviceNameOf — D2/D7)。expand-contract 的 contract 阶段完成。/code-review 双轴 APPROVE:Standards 0 硬违反(Divergent Change 已消解,提取逐字搬移无逻辑漂移,新文件注释风格对齐切片 1 sibling)+ Spec AC1-8 全满足、决策 D2/D4/D5/D6/D7 全遵守、§4.7 范围外项全未碰(无新单测/无 cast 处理/无状态机改动)、唯一偏差 filter.ts→filter.tsx 是 TS 硬约束必要偏差。非末切片(后接切片 3 末切片),不做 feature 收尾。
 
-### 切片 3:收尾验证 + feature passing
+### 切片 3:收尾验证 + feature passing ✅
 - **What to build**:无新源码,纯验证 + 文档收尾。
 - **Blocked by**: 切片 2
 - **文件清单**:0 源码 + 文档(feature_list.json evidence + progress.md 更新)
 - **验证命令**:`./init.sh full`(全量后端)+ `cd frontend && npm run build`(前端构建)
 - **AC**:
-  - [ ] `./init.sh full` 全绿(后端基线无回归)
-  - [ ] `cd frontend && npm run build` 绿
-  - [ ] feature_list.json status → passing,evidence 写齐
-  - [ ] progress.md 顶部「最高优先级未完成」更新
-  - [ ] 跑 `./scripts/sync-active-features.sh` 刷新 active 视图
-  - [ ] 对照 progress.md:1934 候选描述,确认 ScheduleGridCard smell 已消解
+  - [x] `./init.sh full` 全绿(后端基线无回归) ✅(**828 passed** 零回归,277s;ruff clean)
+  - [x] `cd frontend && npm run build` 绿 ✅(npm run build 绿,bookings-page chunk 31.29 kB 与切片 2 一致;**附** npx tsc -b exit 0 + npx oxlint 0 warning 0 error[101 文件] + npx vitest run 65/65 全绿[store-view 6 + my-bookings-view 6 + hq-view 13 + schedule-grid 11 + config-dialog 5 + format 15 + key-spec-rows 7 + queries-booking-config 2])
+  - [x] feature_list.json status → passing,evidence 写齐 ✅(status in_progress → passing,evidence 4 条:切片 1/2/3 + 收尾条)
+  - [x] progress.md 顶部「最高优先级未完成」更新 ✅(清空为「无 0 活跃任务」+ 新增「bookings-shared-split ✅ passing」条目;EP3 断点更新为「无活跃切片链」)
+  - [x] 跑 `./scripts/sync-active-features.sh` 刷新 active 视图 ✅(0 活跃 + 5 最近 passing[精简]+ 1 里程碑 = 6 条;archive 新增 68 条累计 68 条)
+  - [x] 对照 progress.md:1934 候选描述,确认 ScheduleGridCard smell 已消解 ✅(grep ScheduleGridCard/ScheduleSlot/slotTone/dayLabel/hhmm/startOfToday 在 shared.tsx 全 exit 1[已全部迁出];schedule-grid-card.tsx 单消费者仅 store-view.tsx[deep import 无 barrel];零残留[无文件从 ./shared 抓已迁出符号])
+
+> **切片 3 完成证据(2026-07-29)**:末切片,无新源码,纯验证 + 文档收尾。三轴验证全绿(后端 ./init.sh full 828 passed 零回归 / 前端 vitest 65/65 + build + tsc + oxlint 0 warning)。ScheduleGridCard Divergent Change smell 经 grep 三重确认消解(符号不在 shared / 单消费者 deep import / 零残留)。feature 收尾仪式(three-tier §4 第 1-7 步)完整执行:status passing + evidence 4 条 + sync-active 刷新 + progress.md 清空 + plan AC 全勾头部 passing + 末切片依赖解锁扫描(无下游)。bookings-shared-split feature 收官,Divergent Change smell 消解完成。
 
 ---
 
 ## 7. 验证清单(收尾对照 [clean-state-checklist.md](../clean-state-checklist.md))
 
-- [ ] WIP=1:本任务是当前唯一 in_progress(收尾时确认)
-- [ ] 零行为变更:vitest 全绿 + build chunk 大小与拆分前一致
-- [ ] 无新 TODO/FIXME(基线 2 处 Logto 占位不变)
-- [ ] import 路径全部正确(tsc -b 绿)
-- [ ] feature status passing 证据齐全(evidence)
-- [ ] sync-active-features.sh 刷新
-- [ ] progress.md:1934 候选描述消解确认
+- [x] WIP=1:本任务是当前唯一 in_progress(收尾时确认) ✅(收尾时 bookings-shared-split 是唯一 in_progress,完成后 active 视图 0 活跃)
+- [x] 零行为变更:vitest 全绿 + build chunk 大小与拆分前一致 ✅(vitest 65/65;bookings-page chunk 31.29 kB 与切片 2 一致)
+- [x] 无新 TODO/FIXME(基线 2 处 Logto 占位不变) ✅(纯 locality 搬运,无新增 TODO/FIXME)
+- [x] import 路径全部正确(tsc -b 绿) ✅(npx tsc -b exit 0)
+- [x] feature status passing 证据齐全(evidence) ✅(evidence 4 条:切片 1/2/3 + 收尾条)
+- [x] sync-active-features.sh 刷新 ✅(0 活跃 + 5 最近 passing + 1 里程碑 = 6 条)
+- [x] progress.md:1934 候选描述消解确认 ✅(grep 三重确认:符号不在 shared / 单消费者 deep import / 零残留)

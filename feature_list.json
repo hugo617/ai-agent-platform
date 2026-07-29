@@ -1821,7 +1821,7 @@
       "area": "工程化",
       "title": "bookings/shared.tsx 按功能职责拆分(bookings-page-split 后续候选,纯 locality 重构)",
       "user_visible_behavior": "无用户可见行为变化(纯前端代码重构)。frontend/src/pages/bookings/shared.tsx(19 个导出符号)按功能内聚度拆分:① 抽 status-meta.ts(STATUS_META/MUTABLE_STATUS/ACTIONABLE_STATUS/NONE 状态领域模型)② 抽 date-utils.ts(startOfToday/addDays/isoDate/hhmm/dayLabel 纯函数)③ 抽 filter.ts(BookingFilter/FILTER_OPTIONS/FilterChips/applyBookingFilter 列表过滤)④ 抽 schedule-grid-card.tsx(ScheduleGridCard/ScheduleSlot/slotTone,StoreView 专属)+ shared.tsx 瘦身保留(BookingStatusBadge/deviceNameOf 真共享原语)+ fmt/fromDatetimeLocalValue 回源 @/lib/format(消除便利 re-export)。现有 5 个 view 测试全绿验证零行为变更。",
-      "status": "in_progress",
+      "status": "passing",
       "verification": [
         "frontend/src/pages/bookings/status-meta.ts 存在(4 符号)+ date-utils.ts(5 符号)+ filter.ts(4 符号)+ schedule-grid-card.tsx(ScheduleGridCard/ScheduleSlot/slotTone)",
         "frontend/src/pages/bookings/shared.tsx 瘦身到只剩 BookingStatusBadge + deviceNameOf(约 50-60 行),无 re-export",
@@ -1834,7 +1834,12 @@
       "notes": "bookings-page-split(Session 139)/code-review 留痕登记的后续候选(progress.md:1934):'ScheduleGridCard + 其私有 date helpers(slotTone/dayLabel/hhmm 等)只被 StoreView 消费,却混在所有 view 共享的 shared.tsx,Divergent Change'。grill 7 决策(D1 按功能拆 4 文件 + shared 瘦身 / D2 瘦身保留 / D3 不补单测沿用测试跟 view 走范式 / D4 纯 deep import 无 barrel / D5 fmt+fromDatetimeLocalValue 回源 @/lib/format / D6 slotTone 归 schedule-grid-card 非 badges / D7 deviceNameOf 留 shared 避免孤儿)。**经子智能体对抗式审查**:v1(全拆 5 文件+删 shared+补单测+走 EP2)发现 3 P0(export 19 非 17 / 消费者 5 非 6 / fmt+deviceNameOf+slotTone 三盲点)+ 4 P1(D3 违反 plan 范式/slotTone 归属/import 膨胀/范围定级),全部回炉修正为 v2。**不越界**:补测是独立候选 4 / cast 处理是候选 8 / cancel 状态机是候选 2,均 Out of Scope。plan:harness/docs/plan-shared-tsx-split.md。",
       "plan": "harness/docs/plan-shared-tsx-split.md",
       "depends_on": "bookings-page-split",
-      "evidence": []
+      "evidence": [
+        "切片 1 ✅(2026-07-29 commit ae69dac):抽 status-meta.ts(4 符号:STATUS_META/MUTABLE_STATUS/ACTIONABLE_STATUS/NONE,逐字迁移 + 模块级 JSDoc)+ date-utils.ts(5 符号:startOfToday/addDays/isoDate/hhmm/dayLabel,section 注释升格为模块头);shared.tsx 改 import-then-export facade(360→290 行,消费者零改动,expand-contract 的 expand 阶段)。验证:vitest 65/65 + npm run build 绿 + oxlint 0 warning + tsc -b exit 0 + ./init.sh full 828 passed 零回归。",
+        "切片 2 ✅(2026-07-29 commit a0075d4):抽 filter.tsx(4 符号:BookingFilter/FILTER_OPTIONS/FilterChips/applyBookingFilter;.tsx 因 FilterChips 含 JSX,TS 硬约束;消费者用无扩展名 from \"./filter\" 对调用方不可见)+ schedule-grid-card.tsx(3 符号:ScheduleGridCard/ScheduleSlot/slotTone,slotTone 归此非 badges D6);改 5 消费者(store-view/hq-view/my-bookings-view/shared-dialog/schedule-grid)纯 deep import[D4 无 barrel];fmt/fromDatetimeLocalValue 回源 @/lib/format[D5,shared-dialog 合并进既有 import];shared.tsx 瘦身 290→38 行只剩 BookingStatusBadge + deviceNameOf[D2/D7],零 re-export。contract 阶段完成。验证:vitest 65/65 + npm run build 绿(bookings chunk 31.29 kB)+ oxlint 0 warning + tsc -b exit 0。",
+        "切片 3 ✅(2026-07-29 末切片,收尾验证,无新源码):./init.sh full 828 passed 零回归(277s)+ cd frontend && npx vitest run 65/65 全绿(8 文件:store-view 6 + my-bookings-view 6 + hq-view 13 + schedule-grid 11 + config-dialog 5 + format 15 + key-spec-rows 7 + queries-booking-config 2)+ npm run build 绿(bookings-page chunk 31.29 kB 与切片 2 一致)+ npx tsc -b exit 0 + npx oxlint 0 warning 0 error(101 文件)。ScheduleGridCard smell 消解确认:grep ScheduleGridCard/ScheduleSlot/slotTone/dayLabel/hhmm/startOfToday 在 shared.tsx 全 exit 1(已全部迁出);schedule-grid-card.tsx 单消费者仅 store-view.tsx(deep import 无 barrel);零残留(无文件从 ./shared 抓已迁出符号)。feature 收尾:status in_progress → passing + sync-active-features.sh 刷新 + progress.md 顶部清空 + plan §6 切片 3 AC 全勾 + 头部 status passing。末切片依赖解锁扫描:无 feature depends_on 指向本 feature → 无需推进。",
+        "feature 收尾(2026-07-29):bookings/shared.tsx Divergent Change smell 消解完成。19 个导出符号按功能内聚度归位 4 新文件 + shared 瘦身保留底座(38 行 2 符号)+ 便利 re-export 回源。全程零行为变更,5 个 view 测试全绿验证 carry 正确性。3 切片 expand-contract 序列(切片 1 expand facade / 切片 2 contract 迁 caller + 瘦身 / 切片 3 验证收尾)完整闭环。/code-review 双轴 APPROVE(切片 1/2 各过一次):Standards 0 硬违反 + Spec AC 全满足、7 决策 D1-D7 全遵守、§4.7 Out of Scope 全未碰(无新单测/无 cast 处理/无状态机改动)。"
+      ]
     }
   ]
 }
