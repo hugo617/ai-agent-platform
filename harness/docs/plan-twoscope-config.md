@@ -156,18 +156,18 @@ service 层不动 `_upsert` 写路径(crypto/audit delta 是真业务差异,各�
   - [x] 现有 `test_llm_config` 全绿(零行为变更)
   - [x] `./init.sh` smoke 全绿 + ruff clean
 
-### 切片 2:迁移 embedding + booking 改继承(migrate batch)
+### 切片 2:迁移 embedding + booking 改继承(migrate batch)✅
 
 - **What to build**:`EmbeddingConfigRepository` + `BookingConfigRepository` 改继承基类(booking 设 `_active_filter=None` 保持不过滤);删两者自写的重复方法;测试补 embedding 四态 + booking 三态(无 is_active 态)。
 - **Blocked by**: 切片 1(基类就绪)
 - **文件清单**:改 2 repo + 改 1 测试(补 embedding/booking 用例)= 3 文件
 - **验证命令**:`./init.sh full`(全量回归,基线 828 passed 零回归)
 - **AC**:
-  - [ ] `EmbeddingConfigRepository` 改继承,`_active_filter = EmbeddingConfig.is_active.is_(True)`,自写删除
-  - [ ] `BookingConfigRepository` 改继承,`_active_filter = None`(不过滤),自写删除
-  - [ ] repo 测试补 embedding 四态 + booking 三态(平台/租户/无行;无 is_active 态因表无此列)
-  - [ ] `test_booking_config_api.py` 19 用例 + `test_embedding_config` 全绿(零行为变更)
-  - [ ] `./init.sh full` 全绿(828 passed 基线零回归)+ ruff clean
+  - [x] `EmbeddingConfigRepository` 改继承,`_active_filter = EmbeddingConfig.is_active.is_(True)`,自写删除
+  - [x] `BookingConfigRepository` 改继承,`_active_filter = None`(不过滤),自写删除
+  - [x] repo 测试补 embedding 四态 + booking 三态(平台/租户/无行;无 is_active 态因表无此列)+ 额外 no-filter 语义验证
+  - [x] `test_booking_config_api.py` 19 用例 + `test_embedding_config` 全绿(36 passed,零行为变更)
+  - [x] `./init.sh full` 全绿(840 passed,基线 828 + 新增 12 repo 契约用例零回归)+ ruff clean
 
 ### 切片 3:收尾验证 + ADR-0002 + docstring 清理 + feature passing(contract)
 
