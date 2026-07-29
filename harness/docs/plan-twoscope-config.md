@@ -1,7 +1,7 @@
 # 计划:Two-Scope Config 范式 leverage — 抽 `TwoScopeRepository` 基类
 
 > **id**: twoscope-config
-> **状态**: draft v2(经子智能体对抗式审查 + 主持人复核修正)
+> **状态**: in_progress(draft v2 经子智能体对抗式审查 + 主持人复核修正;EP2 回环落 plan + 登记 in_progress,待实施)
 > **优先级**: 74(新登记,「工程化」area,第 5 次巡检候选 1 Top recommendation)
 > **创建日期**: 2026-07-29
 > **最后修订**: 2026-07-29(v2:子智能体审查发现 3 P0 + 2 P1,全部坐实并回炉决策)
@@ -143,18 +143,18 @@ service 层不动 `_upsert` 写路径(crypto/audit delta 是真业务差异,各�
 
 本任务是 **wide refactor**(纯 locality 搬运,零行为变更),按 [three-tier-workflow.md](./three-tier-workflow.md) §7,wide refactor 走 **EP3 单入口 + expand-contract 序列**。3 切片:
 
-### 切片 1:抽基类 + llm 试点 + repo 契约测试(expand)
+### 切片 1:抽基类 + llm 试点 + repo 契约测试(expand)✅
 
 - **What to build**:新建 `TwoScopeRepository` 基类(带 `_active_filter` 钩子);`LlmConfigRepository` 改继承基类 + 删自写的 `get_platform`/`get_for_tenant`;新建 `tests/test_two_scope_repo.py` 覆盖 llm repo 的四态契约(含 is_active 过滤态)。
 - **Blocked by**: 无(frontier)
 - **文件清单**:新建 2(基类 + 测试)+ 改 1(llm_config repo)= 3 文件
 - **验证命令**:`./init.sh`(ruff + pytest smoke)+ 新 repo 测试四态全绿
 - **AC**:
-  - [ ] `TwoScopeRepository` 基类存在,`_active_filter` 默认 None,get_platform/get_for_tenant 逻辑逐字对齐 llm 现状
-  - [ ] `LlmConfigRepository` 改继承基类,`_active_filter = LlmConfig.is_active.is_(True)`,自写两方法删除
-  - [ ] `tests/test_two_scope_repo.py` 覆盖 llm 四态:平台行/租户行/无行/is_active 过滤
-  - [ ] 现有 `test_llm_config` 全绿(零行为变更)
-  - [ ] `./init.sh` smoke 全绿 + ruff clean
+  - [x] `TwoScopeRepository` 基类存在,`_active_filter` 默认 None,get_platform/get_for_tenant 逻辑逐字对齐 llm 现状
+  - [x] `LlmConfigRepository` 改继承基类,`_active_filter = LlmConfig.is_active.is_(True)`,自写两方法删除
+  - [x] `tests/test_two_scope_repo.py` 覆盖 llm 四态:平台行/租户行/无行/is_active 过滤
+  - [x] 现有 `test_llm_config` 全绿(零行为变更)
+  - [x] `./init.sh` smoke 全绿 + ruff clean
 
 ### 切片 2:迁移 embedding + booking 改继承(migrate batch)
 

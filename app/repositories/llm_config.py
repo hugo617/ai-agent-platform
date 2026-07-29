@@ -1,32 +1,19 @@
 """LLM config repository.
 
-Unlike tenant-scoped repos this extends ``BaseRepository`` directly: a row's
-``tenant_id`` is *nullable* (NULL = platform-wide), so the ``get_for_tenant``
-filter would wrongly exclude platform rows. Scope selection (platform vs
-tenant) is done explicitly by the dedicated query methods below.
+Extends :class:`~app.repositories.two_scope.TwoScopeRepository`: a row's
+``tenant_id`` is *nullable* (NULL = platform-wide default, non-null = tenant
+override), so the platform-vs-tenant scope selection lives in the base class's
+``get_platform`` / ``get_for_tenant``. Only the active-row predicate is
+LlmConfig-specific, set via the ``_active_filter`` hook.
 """
 
-from sqlalchemy import select
-
 from app.models.llm_config import LlmConfig
-from app.repositories.base import BaseRepository
+from app.repositories.two_scope import TwoScopeRepository
 
 
-class LlmConfigRepository(BaseRepository[LlmConfig]):
+class LlmConfigRepository(TwoScopeRepository[LlmConfig]):
     model = LlmConfig
 
-    async def get_platform(self) -> LlmConfig | None:
-        """The active platform-wide config row (tenant_id IS NULL)."""
-        stmt = select(LlmConfig).where(
-            LlmConfig.tenant_id.is_(None), LlmConfig.is_active.is_(True)
-        )
-        result = await self.db.execute(stmt)
-        return result.scalar_one_or_none()
-
-    async def get_for_tenant(self, tenant_id: str) -> LlmConfig | None:
-        """The active tenant-level config row, if any."""
-        stmt = select(LlmConfig).where(
-            LlmConfig.tenant_id == tenant_id, LlmConfig.is_active.is_(True)
-        )
-        result = await self.db.execute(stmt)
-        return result.scalar_one_or_none()
+    # Both scopes keep one active row (inactive rows are reserved for a future
+    # soft-deactivate feature; today every row is active).
+    _active_filter = LlmConfig.is_active.is_(True)
