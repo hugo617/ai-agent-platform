@@ -1,10 +1,10 @@
 """ORM model for tenant/platform-level embedding configuration.
 
-Mirrors :class:`LlmConfig` but for the embeddings provider used by the RAG
-pipeline (priority 57). Kept as a separate table because the embeddings
-endpoint differs from the chat LLM: DeepSeek (the default chat provider) does
-NOT expose an embeddings API, so embeddings must target a different provider
-(OpenAI by default). Two scopes share one table:
+Structurally parallel to :class:`LlmConfig` but for the embeddings provider
+used by the RAG pipeline (priority 57). Kept as a separate table because the
+embeddings endpoint differs from the chat LLM: DeepSeek (the default chat
+provider) does NOT expose an embeddings API, so embeddings must target a
+different provider (OpenAI by default). Two scopes share one table:
 
   - **platform level**: ``tenant_id IS NULL`` — set by super admins, the
     fallback for any tenant without its own row.
@@ -13,8 +13,8 @@ NOT expose an embeddings API, so embeddings must target a different provider
 Uniqueness is enforced by the service-layer upsert (one active row per scope),
 not by a DB constraint — a partial unique index on ``tenant_id`` would need
 ``NULLS NOT DISTINCT`` semantics that differ between Postgres and SQLite, which
-clashes with the project's dual-DB rule (see AGENTS.md). This mirrors the
-:class:`LlmConfig` decision.
+clashes with the project's dual-DB rule (see AGENTS.md). This follows the same
+decision as :class:`LlmConfig`.
 
 Unlike :class:`LlmConfig` there is no ``available_models`` list — embeddings
 use a single model, and the vector dimension is a constant on the effective
