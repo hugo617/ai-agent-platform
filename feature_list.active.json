@@ -30,7 +30,7 @@
         "cd frontend && npm run build 绿 + npx oxlint 0 warning + npx tsc -b 绿",
         "./init.sh full 全绿(后端无改动,基线无回归)"
       ],
-      "notes": "bookings-page-split(Session 139)/code-review 留痕登记的后续候选(progress.md:3304):'ScheduleGridCard + 其私有 date helpers(slotTone/dayLabel/hhmm 等)只被 StoreView 消费,却混在所有 view 共享的 shared.tsx,Divergent Change'。grill 7 决策(D1 按功能拆 4 文件 + shared 瘦身 / D2 瘦身保留 / D3 不补单测沿用测试跟 view 走范式 / D4 纯 deep import 无 barrel / D5 fmt+fromDatetimeLocalValue 回源 @/lib/format / D6 slotTone 归 schedule-grid-card 非 badges / D7 deviceNameOf 留 shared 避免孤儿)。**经子智能体对抗式审查**:v1(全拆 5 文件+删 shared+补单测+走 EP2)发现 3 P0(export 19 非 17 / 消费者 5 非 6 / fmt+deviceNameOf+slotTone 三盲点)+ 4 P1(D3 违反 plan 范式/slotTone 归属/import 膨胀/范围定级),全部回炉修正为 v2。**不越界**:补测是独立候选 4 / cast 处理是候选 8 / cancel 状态机是候选 2,均 Out of Scope。plan:harness/docs/plan-shared-tsx-split.md。",
+      "notes": "bookings-page-split(Session 139)/code-review 留痕登记的后续候选(progress.md:1934):'ScheduleGridCard + 其私有 date helpers(slotTone/dayLabel/hhmm 等)只被 StoreView 消费,却混在所有 view 共享的 shared.tsx,Divergent Change'。grill 7 决策(D1 按功能拆 4 文件 + shared 瘦身 / D2 瘦身保留 / D3 不补单测沿用测试跟 view 走范式 / D4 纯 deep import 无 barrel / D5 fmt+fromDatetimeLocalValue 回源 @/lib/format / D6 slotTone 归 schedule-grid-card 非 badges / D7 deviceNameOf 留 shared 避免孤儿)。**经子智能体对抗式审查**:v1(全拆 5 文件+删 shared+补单测+走 EP2)发现 3 P0(export 19 非 17 / 消费者 5 非 6 / fmt+deviceNameOf+slotTone 三盲点)+ 4 P1(D3 违反 plan 范式/slotTone 归属/import 膨胀/范围定级),全部回炉修正为 v2。**不越界**:补测是独立候选 4 / cast 处理是候选 8 / cancel 状态机是候选 2,均 Out of Scope。plan:harness/docs/plan-shared-tsx-split.md。",
       "plan": "harness/docs/plan-shared-tsx-split.md",
       "depends_on": "bookings-page-split",
       "evidence": []

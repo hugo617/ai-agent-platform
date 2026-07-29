@@ -35,7 +35,7 @@
 - 其中 `ScheduleGridCard` + `ScheduleSlot` + `slotTone` + `dayLabel` 是 **StoreView 专属的私有组件树**,却和"所有 view 共享的常量"混在同一文件 —— 改 StoreView 的网格逻辑会触发这个"共享文件"的变更,违反单一职责。
 - `fmt` / `fromDatetimeLocalValue` 是从 `@/lib/format` 的**便利 re-export**(`shared.tsx:149-151` 注释明示"so views import everything from one place"),这是一个可消除的间接层 —— `config-dialog.tsx` 已经直接从 `@/lib/format` import,证明回源是正确范式。
 
-**为什么现在做**:bookings-page-split 的 /code-review 明确把这个 smell 登记为独立后续候选 `bookings-shared-split`(progress.md:3304 留痕)。composite-chat 系列(优先级 72)已于 2026-07-28 收官,feature_list 当前 0 活跃任务,这是排新需求的窗口。
+**为什么现在做**:bookings-page-split 的 /code-review 明确把这个 smell 登记为独立后续候选 `bookings-shared-split`(progress.md:1934 留痕)。composite-chat 系列(优先级 72)已于 2026-07-28 收官,feature_list 当前 0 活跃任务,这是排新需求的窗口。
 
 **以代码功能为标准的目标**:让 `shared.tsx` 里的每个符号归位到"功能单一、内聚、可独立理解"的模块,消除"改一个功能要碰一个名义上共享的文件"的 Divergent Change。
 
@@ -236,7 +236,7 @@ shared.tsx(瘦身) ──→ status-meta.ts(BookingStatusBadge 用 STATUS_META)
   - [ ] feature_list.json status → passing,evidence 写齐
   - [ ] progress.md 顶部「最高优先级未完成」更新
   - [ ] 跑 `./scripts/sync-active-features.sh` 刷新 active 视图
-  - [ ] 对照 progress.md:3304 候选描述,确认 ScheduleGridCard smell 已消解
+  - [ ] 对照 progress.md:1934 候选描述,确认 ScheduleGridCard smell 已消解
 
 ---
 
@@ -248,4 +248,4 @@ shared.tsx(瘦身) ──→ status-meta.ts(BookingStatusBadge 用 STATUS_META)
 - [ ] import 路径全部正确(tsc -b 绿)
 - [ ] feature status passing 证据齐全(evidence)
 - [ ] sync-active-features.sh 刷新
-- [ ] progress.md:3304 候选描述消解确认
+- [ ] progress.md:1934 候选描述消解确认
