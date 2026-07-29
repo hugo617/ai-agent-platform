@@ -37,10 +37,10 @@
  * As a belt-and-braces measure we still invalidate ``qk.bookings`` on target
  * switch so the panorama refreshes against the latest server state.
  *
- * The ``as BookingHqRead[]`` cast on the union return of ``useBookings()`` is
- * preserved verbatim — narrowing it (splitting into ``useBookingsHq``) is
- * candidate 8 in the 2026-07-25 architecture review, intentionally out of
- * scope here.
+ * Bookings feed: ``useBookingsAll()`` (not the store-scoped ``useBookings``) —
+ * it returns ``BookingHqRead[]`` natively, no view-boundary cast. The device
+ * feed still narrows via ``as DeviceHqRead[]`` (slice 2 of plan-union-cast-split
+ * will lift that too).
  */
 import { useMemo, useState } from "react";
 
@@ -89,7 +89,7 @@ import {
   qk,
   useAllTenants,
   useBookingConfigEffective,
-  useBookings,
+  useBookingsAll,
   useCancelBooking,
   useCreateBooking,
   useDevices,
@@ -124,7 +124,7 @@ import {
 export function HqView() {
   const toast = useToast();
   const qc = useQueryClient();
-  const { data: bookings, isLoading } = useBookings();
+  const { data: bookings, isLoading } = useBookingsAll();
   const { data: tenants } = useAllTenants();
   // HQ viewers get DeviceHqRead[] from useDevices (the same endpoint branches
   // on platform_role). We filter to the selected target so the create dialog's
@@ -134,13 +134,11 @@ export function HqView() {
   // + filtering client-side is the natural fit, no new endpoint needed).
   const { data: devices } = useDevices();
 
-  // useBookings() returns a union (Booking[] | BookingHqRead[]). The backend
-  // guarantees BookingHqRead[] for HQ roles (the same guard that routes us
-  // here), so we narrow once at the view boundary. A store viewer never reaches
-  // this component — the top-level BookingsPage branch sees to that.
-  //
-  // Note(candidate-8): split fetchBookings → fetchBookingsHq to drop this cast.
-  const list = (bookings ?? []) as BookingHqRead[];
+  // useBookingsAll() returns BookingHqRead[] natively (the union is fixed at
+  // the hook layer, plan-union-cast-split slice 1), so no narrowing cast is
+  // needed here. A store viewer never reaches this component — the top-level
+  // BookingsPage branch sees to that.
+  const list = bookings ?? [];
 
   // ---------- target tenant picker ----------
   // Platform writers MUST pick a target before any write. Empty = no write

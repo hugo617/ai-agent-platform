@@ -52,6 +52,7 @@ import {
   fetchCustomerUsage,
   fetchBooking,
   fetchBookings,
+  fetchBookingsAll,
   fetchEffectiveBookingConfig,
   fetchPlatformBookingConfig,
   fetchTenantBookingConfig,
@@ -581,8 +582,23 @@ const BOOKING_WRITE_KEYS: QueryKey[] = [
   ["schedule-grid"],
 ];
 
+// useBookings / useBookingsAll both feed off GET /bookings/ but declare
+// different narrow shapes: store roles get Booking[], HQ roles get
+// BookingHqRead[]. The endpoint branches on platform_role server-side; here
+// the union is fixed at the hook layer so callers never narrow with ``as``
+// (plan-union-cast-split §1/§4.0 D1). queryKey is shared (qk.bookings): a
+// session's platform_role is fixed so only one of the two hooks runs for a
+// given user — the two caches never coexist (plan §4.0 D5).
 export function useBookings() {
   return useQuery({ queryKey: qk.bookings, queryFn: fetchBookings });
+}
+
+/** HQ panorama bookings feed — ``BookingHqRead[]`` (store names pre-expanded).
+ * Use this in cross-tenant views (super_admin / hq_staff); the store-scoped
+ * ``useBookings`` is the within-tenant counterpart. Same queryKey as
+ * ``useBookings`` (qk.bookings) — see D5 above. */
+export function useBookingsAll() {
+  return useQuery({ queryKey: qk.bookings, queryFn: fetchBookingsAll });
 }
 
 /** One store's bookings for a single calendar day (booking-schedule-grid

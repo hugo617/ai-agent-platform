@@ -2,9 +2,10 @@
  * bookings/ MyBookingsView — customer-bound principal's own bookings list.
  *
  * Extracted from the original bookings-page.tsx (plan-bookings-page-split.md).
- * Pure locality move: zero behaviour change. The ``as Booking[]`` cast on the
- * union return of ``useMyBookings()`` is preserved verbatim — see candidate 8
- * in the 2026-07-25 architecture review (out of scope here).
+ * ``useMyBookings()`` returns ``Booking[]`` natively (GET /me/bookings is a
+ * store-scoped endpoint, never a union), so this view needs no cast — the
+ * legacy ``as Booking[]`` (a bookings-page-split leftover) was dropped in
+ * plan-union-cast-split slice 1 (D-class dead cast).
  *
  * A token carrying ``customer_id``. The GET /me/bookings endpoint (slice 04)
  * already filters server-side to the caller's own bookings — no client-side
@@ -59,8 +60,9 @@ export function MyBookingsView() {
   const startMut = useStartBooking();
   const toast = useToast();
 
-  // Note(candidate-8): useMyBookings() return shape — preserved as-is here.
-  const list = (bookings ?? []) as Booking[];
+  // useMyBookings() returns Booking[] natively (GET /me/bookings is a separate
+  // store-scoped endpoint, never a union), so no cast is needed.
+  const list = bookings ?? [];
 
   async function confirmStart(b: Booking) {
     try {

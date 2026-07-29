@@ -479,8 +479,25 @@ export async function deleteDeviceModel(id: string): Promise<void> {
 // GET /me/bookings (customer-principal own view — ``customer_id`` is read off
 // the resolved principal, never from request input, so store-staff principals
 // get 403; returns plain Booking[], no HQ panorama fields).
-export async function fetchBookings(): Promise<Booking[] | BookingHqRead[]> {
-  const { data } = await api.get<Booking[] | BookingHqRead[]>("/bookings/");
+// GET /bookings/ branches on platform_role (store roles get Booking[],
+// HQ roles get BookingHqRead[]). Rather than return a union and force callers
+// to narrow with ``as`` at every view boundary, we expose two role-specific
+// fetch functions that each declare the narrow shape for their audience. Both
+// hit the same URL; the type is fixed at this seam, with zero runtime
+// difference (a session's platform_role is fixed, so only one of the two is
+// ever called for a given user — the two caches never collide on the shared
+// ``qk.bookings`` key). See plan-union-cast-split §1/§4.0 D1.
+export async function fetchBookings(): Promise<Booking[]> {
+  const { data } = await api.get<Booking[]>("/bookings/");
+  return data;
+}
+
+/** HQ panorama variant of ``fetchBookings`` — returns ``BookingHqRead[]``
+ * (``Booking`` + tenant_name / device_name / customer_name) for the super_admin
+ * / hq_staff cross-tenant view. Same endpoint as ``fetchBookings``; the backend
+ * returns the panorama shape for HQ roles. */
+export async function fetchBookingsAll(): Promise<BookingHqRead[]> {
+  const { data } = await api.get<BookingHqRead[]>("/bookings/");
   return data;
 }
 
