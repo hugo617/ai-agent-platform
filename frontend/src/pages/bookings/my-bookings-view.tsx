@@ -44,7 +44,11 @@ import { useToast } from "@/components/ui/toast";
 import { apiErrorMessage } from "@/api/client";
 import { useMyBookings, useStartBooking } from "@/hooks/queries";
 import type { Booking } from "@/api/types";
-import { BookingStatusBadge, fmt } from "./shared";
+// Deep imports per plan-shared-tsx-split 切片 2 (D4/D5): BookingStatusBadge
+// stays in ./shared (D2 — cross-view display primitive); fmt sourced directly
+// from @/lib/format (no re-export indirection).
+import { formatDateTime as fmt } from "@/lib/format";
+import { BookingStatusBadge } from "./shared";
 
 export function MyBookingsView() {
   const { data: bookings, isLoading } = useMyBookings();

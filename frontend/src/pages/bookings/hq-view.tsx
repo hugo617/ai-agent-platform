@@ -104,7 +104,12 @@ import {
   useUpdateTenantBookingConfig,
 } from "@/hooks/queries";
 import { isSuperAdmin } from "@/lib/permission";
-import { BookingStatusBadge, fmt, isoDate, startOfToday } from "./shared";
+import { formatDateTime as fmt } from "@/lib/format";
+// Deep imports per plan-shared-tsx-split 切片 2 (D4/D5): BookingStatusBadge
+// stays in ./shared (D2 — cross-view display primitive); date helpers move to
+// ./date-utils; fmt sourced directly from @/lib/format (no re-export indirection).
+import { BookingStatusBadge } from "./shared";
+import { isoDate, startOfToday } from "./date-utils";
 import { BookingConfigDialog, DEFAULT_BOOKING_CONFIG } from "./config-dialog";
 import { ScheduleGrid } from "./schedule-grid";
 import {

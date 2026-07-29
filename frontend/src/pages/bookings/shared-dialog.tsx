@@ -60,7 +60,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { toDatetimeLocalValue } from "@/lib/format";
+import {
+  toDatetimeLocalValue,
+  fromDatetimeLocalValue,
+} from "@/lib/format";
 import type {
   Booking,
   BookingCreate,
@@ -69,12 +72,11 @@ import type {
   CustomerProfileRead,
   Device,
 } from "@/api/types";
-import {
-  ACTIONABLE_STATUS,
-  MUTABLE_STATUS,
-  NONE,
-  fromDatetimeLocalValue,
-} from "./shared";
+// Deep imports per plan-shared-tsx-split 切片 2 (D4/D5): status domain model
+// (ACTIONABLE_STATUS / MUTABLE_STATUS / NONE) sourced from ./status-meta;
+// fromDatetimeLocalValue merged into the @/lib/format import above (D5 —
+// eliminate the convenience re-export).
+import { ACTIONABLE_STATUS, MUTABLE_STATUS, NONE } from "./status-meta";
 
 // ============================================================ customer field
 //

@@ -74,15 +74,6 @@ import {
   useUpdateBooking,
 } from "@/hooks/queries";
 import {
-  BookingStatusBadge,
-  FilterChips,
-  ScheduleGridCard,
-  applyBookingFilter,
-  deviceNameOf,
-  fmt,
-  type BookingFilter,
-} from "./shared";
-import {
   BookingCancelDialog,
   BookingCreateDialog,
   BookingEditDialog,
@@ -90,6 +81,18 @@ import {
   BookingNoShowDialog,
   BookingRowMenu,
 } from "./shared-dialog";
+// Deep imports per plan-shared-tsx-split 切片 2 (D4: no barrel). The shared
+// badges (BookingStatusBadge) + deviceNameOf stay in ./shared (D2/D7); the
+// filter logic + schedule grid card live in their own modules; fmt is sourced
+// directly from @/lib/format (D5 — eliminate the convenience re-export).
+import { BookingStatusBadge, deviceNameOf } from "./shared";
+import {
+  FilterChips,
+  applyBookingFilter,
+  type BookingFilter,
+} from "./filter";
+import { ScheduleGridCard } from "./schedule-grid-card";
+import { formatDateTime as fmt } from "@/lib/format";
 
 // Exported for component tests (vitest, slice 03 store-view.test.tsx). Not
 // consumed anywhere else — the top-level ``BookingsPage`` is the public entry.

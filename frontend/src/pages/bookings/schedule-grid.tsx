@@ -32,7 +32,7 @@ import type {
   BookingStatus,
   DeviceHqRead,
 } from "@/api/types";
-import { hhmm } from "./shared";
+import { hhmm } from "./date-utils";
 import "./schedule-grid.css";
 
 /** 6-state booking lifecycle → demo CSS class suffix (P5) + Chinese tooltip

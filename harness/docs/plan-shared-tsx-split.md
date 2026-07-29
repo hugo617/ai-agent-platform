@@ -210,20 +210,22 @@ shared.tsx(瘦身) ──→ status-meta.ts(BookingStatusBadge 用 STATUS_META)
 
 > **切片 1 完成证据(2026-07-29)**:新建 status-meta.ts(4 符号)+ date-utils.ts(5 符号),shared.tsx 删本地定义改 import+re-export facade(360→290 行,-88/+24)。expand-contract 的 expand 阶段完成,消费者零改动。/code-review 双轴 APPROVE:Standards 0 硬违反(facade 是正当过渡态)/ Spec AC1-4 全满足、无 scope creep(D3 不补测/D5 re-export 未提前删/D7 deviceNameOf 未动/§4.7 范围外符号全留 shared)。非末切片,不做 feature 收尾。下一步切片 2:抽 filter.ts + schedule-grid-card.tsx + 改 5 消费者 deep import + shared 瘦身 + D5 回源。
 
-### 切片 2:抽组件层 + 改消费者 deep import + shared 瘦身 + D5 回源
+### 切片 2:抽组件层 + 改消费者 deep import + shared 瘦身 + D5 回源 ✅
 - **What to build**:新建 `filter.ts`(4 符号)+ `schedule-grid-card.tsx`(ScheduleGridCard/ScheduleSlot/slotTone);改 5 消费者(store-view/hq-view/my-bookings-view/shared-dialog/schedule-grid)deep import 指向新文件;`fmt`/`fromDatetimeLocalValue` 回源 `@/lib/format`(4 处消费者改 import 源);`shared.tsx` 瘦身到只留 BookingStatusBadge + deviceNameOf,删除所有 re-export。
 - **Blocked by**: 切片 1
 - **文件清单**:新建 2 + 改 5 消费者 + 改 shared.tsx = 8 文件
 - **验证命令**:`cd frontend && npx vitest run && npm run build && npx oxlint && npx tsc -b`
 - **AC**:
-  - [ ] `filter.ts` 含 BookingFilter/FILTER_OPTIONS/FilterChips/applyBookingFilter
-  - [ ] `schedule-grid-card.tsx` 含 ScheduleGridCard/ScheduleSlot/slotTone
-  - [ ] `shared.tsx` 只剩 BookingStatusBadge + deviceNameOf(约 50-60 行),无 re-export
-  - [ ] store-view 从 4 个文件 import(badges[shared]/filter/schedule-grid-card/@/lib/format),不再 from "./shared" 抓 ScheduleGridCard
-  - [ ] hq-view 从 badges[shared]/date-utils/@/lib/format import
-  - [ ] shared-dialog 从 status-meta/@/lib/format import
-  - [ ] schedule-grid 从 date-utils import hhmm
-  - [ ] vitest 全绿 + build + oxlint + tsc 全绿
+  - [x] `filter.ts` 含 BookingFilter/FILTER_OPTIONS/FilterChips/applyBookingFilter ✅(4 符号齐全;落地为 `filter.tsx` —— FilterChips 含 JSX,TS 硬约束要求 .tsx 扩展名,内容与 plan 一致;消费者用无扩展名 `from "./filter"` 故对调用方不可见)
+  - [x] `schedule-grid-card.tsx` 含 ScheduleGridCard/ScheduleSlot/slotTone ✅(3 符号逐字迁移;slotTone 归此非 badges — D6;依赖 status-meta + date-utils)
+  - [x] `shared.tsx` 只剩 BookingStatusBadge + deviceNameOf(约 50-60 行),无 re-export ✅(瘦身至 38 行,2 符号,零 re-export;BookingStatusBadge 从 status-meta 取 STATUS_META)
+  - [x] store-view 从 4 个文件 import(badges[shared]/filter/schedule-grid-card/@/lib/format),不再 from "./shared" 抓 ScheduleGridCard ✅(grep 确认 store-view 无已迁出符号残留)
+  - [x] hq-view 从 badges[shared]/date-utils/@/lib/format import ✅
+  - [x] shared-dialog 从 status-meta/@/lib/format import ✅(fromDatetimeLocalValue 合并进既有 @/lib/format import)
+  - [x] schedule-grid 从 date-utils import hhmm ✅
+  - [x] vitest 全绿 + build + oxlint + tsc 全绿 ✅(vitest 65/65 pass / npm run build 绿 / oxlint 0 warning / tsc -b exit 0)
+
+> **切片 2 完成证据(2026-07-29)**:新建 filter.tsx(4 符号)+ schedule-grid-card.tsx(3 符号),5 消费者改 deep import(D4 纯 deep import 无 barrel),fmt/fromDatetimeLocalValue 回源 @/lib/format(D5,shared-dialog 合并进既有 import),shared.tsx 瘦身 290→38 行(-252 行,零 re-export,只剩 BookingStatusBadge + deviceNameOf — D2/D7)。expand-contract 的 contract 阶段完成。/code-review 双轴 APPROVE:Standards 0 硬违反(Divergent Change 已消解,提取逐字搬移无逻辑漂移,新文件注释风格对齐切片 1 sibling)+ Spec AC1-8 全满足、决策 D2/D4/D5/D6/D7 全遵守、§4.7 范围外项全未碰(无新单测/无 cast 处理/无状态机改动)、唯一偏差 filter.ts→filter.tsx 是 TS 硬约束必要偏差。非末切片(后接切片 3 末切片),不做 feature 收尾。
 
 ### 切片 3:收尾验证 + feature passing
 - **What to build**:无新源码,纯验证 + 文档收尾。
