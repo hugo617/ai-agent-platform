@@ -52,12 +52,15 @@ import {
   fetchCustomerUsage,
   fetchBooking,
   fetchBookings,
+  fetchBookingsAll,
   fetchEffectiveBookingConfig,
   fetchPlatformBookingConfig,
   fetchTenantBookingConfig,
   fetchTenantBookingsByDate,
   fetchDeviceModels,
+  fetchDeviceModelsAll,
   fetchDevices,
+  fetchDevicesAll,
   fetchDeviceSchedule,
   fetchDashboardOverview,
   fetchDashboardTrends,
@@ -452,13 +455,30 @@ export function useCustomerStatistics() {
 // the cache key is the same. Writes invalidate qk.devices so the list refreshes;
 // bind/unbind also invalidate (they mutate customer_id, which the list shows).
 //
-// useDeviceModels feeds both the store create/edit dialog's model dropdown
-// (tenant users get DeviceModelPublic) and the super_admin catalogue page
-// (DeviceModelRead). The endpoint branches on platform_role; callers narrow the
-// union at render. `enabled` defaults to true — callers that want to suppress
-// the fetch (e.g. HQ read-only view) pass `enabled=false`, mirroring useAllTenants.
+// useDeviceModels feeds the store create/edit dialog's model dropdown
+// (tenant users get DeviceModelPublic); useDeviceModelsAll feeds the super_admin
+// catalogue page (DeviceModelRead). The endpoint branches on platform_role, and
+// the union is now fixed at the hook layer (plan-union-cast-split slice 2) —
+// callers no longer narrow at render. `enabled` defaults to true on
+// useDeviceModels — callers that want to suppress the fetch (e.g. HQ read-only
+// view) pass `enabled=false`, mirroring useAllTenants.
+// useDevices / useDevicesAll both feed off GET /devices/ but declare different
+// narrow shapes: store roles get Device[], HQ roles get DeviceHqRead[]. The
+// endpoint branches on platform_role server-side; here the union is fixed at
+// the hook layer so callers never narrow with ``as`` (plan-union-cast-split
+// §1/§4.0 D1). queryKey is shared (qk.devices): a session's platform_role is
+// fixed so only one of the two hooks runs for a given user — the two caches
+// never coexist (plan §4.0 D5). Mirrors useBookings/useBookingsAll (slice 1).
 export function useDevices() {
   return useQuery({ queryKey: qk.devices, queryFn: fetchDevices });
+}
+
+/** HQ panorama devices feed — ``DeviceHqRead[]`` (tenant/model/customer names
+ * pre-expanded). Use this in cross-tenant views (super_admin / hq_staff); the
+ * store-scoped ``useDevices`` is the within-tenant counterpart. Same queryKey
+ * as ``useDevices`` (qk.devices) — see D5 above. */
+export function useDevicesAll() {
+  return useQuery({ queryKey: qk.devices, queryFn: fetchDevicesAll });
 }
 
 export function useCreateDevice() {
@@ -513,11 +533,31 @@ export function useUnbindDeviceCustomer(tenantId?: string) {
   );
 }
 
+// useDeviceModels / useDeviceModelsAll both feed off GET /device-models/ but
+// declare different narrow shapes: tenant roles get DeviceModelPublic[] (the
+// {id, name, specs.form_factor} dropdown view), super_admin / hq_staff get
+// DeviceModelRead[] (full fields). The endpoint branches on platform_role
+// server-side; here the union is fixed at the hook layer so callers never
+// narrow with ``as`` (plan-union-cast-split §1/§4.0 D1 + §4.5). queryKey is
+// shared (qk.deviceModels) — only one of the two hooks runs for a given user
+// (plan §4.0 D5). The store-path dropdown projects onto ``{id, name}``
+// regardless of shape, so the store hook's narrow type flows straight into the
+// ModelOption cast-free path.
 export function useDeviceModels(enabled = true) {
   return useQuery({
     queryKey: qk.deviceModels,
     queryFn: fetchDeviceModels,
     enabled,
+  });
+}
+
+/** Super_admin / hq_staff catalogue feed — ``DeviceModelRead[]`` (full fields:
+ * unit_cost + complete specs) for the RequireSuperAdmin-guarded admin page.
+ * Same queryKey as ``useDeviceModels`` (qk.deviceModels) — see D5 above. */
+export function useDeviceModelsAll() {
+  return useQuery({
+    queryKey: qk.deviceModels,
+    queryFn: fetchDeviceModelsAll,
   });
 }
 
@@ -581,8 +621,23 @@ const BOOKING_WRITE_KEYS: QueryKey[] = [
   ["schedule-grid"],
 ];
 
+// useBookings / useBookingsAll both feed off GET /bookings/ but declare
+// different narrow shapes: store roles get Booking[], HQ roles get
+// BookingHqRead[]. The endpoint branches on platform_role server-side; here
+// the union is fixed at the hook layer so callers never narrow with ``as``
+// (plan-union-cast-split §1/§4.0 D1). queryKey is shared (qk.bookings): a
+// session's platform_role is fixed so only one of the two hooks runs for a
+// given user — the two caches never coexist (plan §4.0 D5).
 export function useBookings() {
   return useQuery({ queryKey: qk.bookings, queryFn: fetchBookings });
+}
+
+/** HQ panorama bookings feed — ``BookingHqRead[]`` (store names pre-expanded).
+ * Use this in cross-tenant views (super_admin / hq_staff); the store-scoped
+ * ``useBookings`` is the within-tenant counterpart. Same queryKey as
+ * ``useBookings`` (qk.bookings) — see D5 above. */
+export function useBookingsAll() {
+  return useQuery({ queryKey: qk.bookings, queryFn: fetchBookingsAll });
 }
 
 /** One store's bookings for a single calendar day (booking-schedule-grid

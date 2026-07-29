@@ -14,6 +14,7 @@
 | 2026-07-27 | 14 候选(Strong ×4:Principal 深模块吸收 77 处角色扇出 / permission_service 拆 3 模块(899 行)/ devices-page.tsx 1073 行拆 module / chat-page.tsx 954 行单 function 拆 panel;Worth exploring ×4:exports.py 4 row generator 吸收回 service / union endpoint cast 扩散至 7 处(candidate-8 恶化)/ schedule-grid datetime helper 收编 format.ts / settings-page ApiTokenCard 抽出;Speculative ×6:状态机残留 _MUTABLE_STATUSES / deps.py 重复 / graph.py streaming 循环 / _to_read ×12 重写 / conversation 6 metadata 方法 / queries+endpoints 按 domain 拆) | ① Principal 深模块(leverage 最大,77 处 → 1 处,顺带吸收 candidate-8) | No(用户刚启动巡检,未走 grill) | — | `~/.cache/ai-agent-platform-architecture-reviews/2026-07-27.html` |
 | 2026-07-28 | 20 候选(第 3 次 14 候选复评:1 ✅ 已解决 / 7 🟢 仍存在 / 4 🔴 恶化 / 1 ⚪ 误判 + 10 新候选;Strong ×4:候选 2 配置范式 leverage 4 TwoScopeConfig(Top)/ 候选 1 permission_service 915 行拆 / 候选 3 Principal 半收口漂移 / 候选 4 union cast 7→11+;Worth exploring ×9;Speculative ×7) | ② 候选 3 Principal 半收口(CONTEXT vs 代码张力,leverage 小但最紧迫) | Yes(候选 3) | [plan-principal-scope-doc-alignment.md](./plan-principal-scope-doc-alignment.md)(grill 6 决策:文档对齐非扩 Principal + ADR-0001 项目首个 ADR + 单一切片 7 改动 + opus 审查 ×2)+ [ADR-0001](../../docs/adr/0001-principal-scope-boundary.md) 项目首个 ADR 钉死边界 | `~/.cache/ai-agent-platform-architecture-reviews/2026-07-27-v2.html` |
 | 2026-07-29 | 12 候选(第 4 次 20 候选复评:1 ✅ 已解决[Principal 半收口] / 2 🔴 恶化[TwoScopeConfig 2→3 repo+3 service / chat.py 双轨计费 composite 引入] + 5 新候选;Strong ×4:候选 1 TwoScopeConfig 抽基类+协议(Top,从上次候选 2 恶化升级)/ 候选 2 permission_service 917 行拆 5 cluster / 候选 3 chat.py 双轨计费 TurnAccountant / 候选 4 union-cast 扩散 ~10 处;Worth exploring ×5:graph.py usage_acc ×3 / endpoints+queries 按域拆 / booking_config API 层重复契约 / booking_service 4 auth idiom(ADR 保护)/ exports.py Protocol;Speculative ×3:billing 两阶段写 / Principal safe-use 类型强制 / shared-dialog 补单测) | ① 候选 1 TwoScopeConfig 抽 TwoScopeRepository 基类(leverage 最大,3 repo+3 service 归一,ADR 风险低) | Yes(候选 1) | [plan-twoscope-config.md](./plan-twoscope-config.md)(grill 5 决策 + opus 对抗式审查 ×2[真相核查+业务设计]→ 3 P0 回炉:决策3 加 is_active 死列→改钩子 _active_filter / 删 slice3 ModelPricingService 空架子 / 补 ADR-0002 → v2 零 schema 零死列纯架构卫生 + 2 P1:frontier 改 llm + repo 契约测试先行)+ 待产出 [ADR-0002](../../docs/adr/0002-twoscope-config-repository.md)(末切片) | `~/.cache/ai-agent-platform-architecture-reviews/2026-07-29.html` |
+| 2026-07-29 | 6 候选(第 5 次 12 候选复评:1 ✅ 已解决[TwoScopeConfig → twoscope-config passing + ADR-0002] / 0 🔴 恶化 / 8 🟢 仍存在 + 2 🔵 新候选[composite_chat 单函数 / — ];Strong ×2:候选 A permission_service 拆 5 cluster(仍存在,917 行,backfill migrator 错位塞 runtime)/ 候选 B 前端 union-cast 扩散 12 处(微恶化,上次 ~10→12);Worth exploring ×3:候选 C composite_chat endpoint 5 concern 单函数(新发现)/ 候选 D graph.py usage 累加循环重复 2 处(仍存在)/ 候选 E 前端 6 大 page 零单测(仍存在,扩大);Speculative ×1:候选 F chat.py 双轨计费 record 路径(上次候选 3 降级,plan 明确要求独立防签名耦合)) | ② 候选 B 前端 union-cast 扩散(leverage 高 + 风险低:role 解析上移 hook 是纯类型重构消 12 cast 零行为变更无 ADR 风险;候选 A 虽 friction 大但 check 被 163 调用点依赖需 contract test 兜底) | Yes(候选 B) | [plan-union-cast.md](./plan-union-cast.md)(grill 8 决策:D1 拆 role-specific hook / D2 ModelOption 投影不纳入 / D3 只拆 3 个有调用的 / D4 按 domain 分 3 切片 / D5 queryKey 共享 / D6 All 后缀随 useAllTenants 先例 / D7 改 mock 名 + tsc 验证 / D8 不提 ADR)+ 登记 feature_list.json `union-cast-split` priority 75 not_started | `~/.cache/ai-agent-platform-architecture-reviews/2026-07-29-v2.html` |
 
 ---
 
@@ -140,3 +141,64 @@
 
 - 第 **70** 个 feature 完成时(当前 64,距下次 6 个)
 - 或 §1.2 触发条件任一满足(尤其 permission_service 再涨 >20%,或前端单测覆盖率仍 <10%)
+
+---
+
+## Baseline 快照(2026-07-29,第 6 次巡检)
+
+### 后端 service top 10(按行数)
+
+```
+     268 app/services/billing_service.py
+     271 app/services/agent_service.py
+     296 app/api/v1/devices.py
+     313 app/api/v1/billing.py
+     327 app/services/rbac_service.py
+     335 app/api/v1/bookings.py
+     374 app/services/customer_service.py
+     381 app/services/conversation_service.py
+     444 app/services/device_service.py
+     476 app/services/user_service.py
+     495 app/api/v1/exports.py
+     559 app/api/v1/chat.py          <-- +248 vs 上次 311(composite-chat 引入)
+     867 app/services/booking_service.py
+     917 app/services/permission_service.py    <-- 最大,+50 vs 上次 867
+```
+
+### 前端 fat files top 7(按行数)
+
+```
+     674 frontend/src/pages/bookings/hq-view.tsx
+     690 frontend/src/pages/billing-admin-page.tsx
+     719 frontend/src/pages/users-page.tsx
+     834 frontend/src/pages/customers-page.tsx
+     841 frontend/src/pages/agents-page.tsx
+    1038 frontend/src/pages/chat-page.tsx       <-- +84 vs 上次 954(composite 模式)
+    1073 frontend/src/pages/devices-page.tsx    <-- +346 vs 上次 727
+    1188 frontend/src/pages/settings-page.tsx   <-- 持平(最大 page)
+    1240 frontend/src/api/types.ts              <-- +186 vs 上次 1054
+    1466 frontend/src/api/endpoints.ts          <-- +241 vs 上次 1225
+    1505 frontend/src/hooks/queries.ts          <-- +212 vs 上次 1293
+```
+
+### 质量基线(本次巡检时点)
+
+- 后端测试:**840 passed**(+126 vs 上次 714)
+- 前端 vitest:**65 tests / 8 files**(bookings 5 view + format + key-spec-rows + config-dialog)
+- oxlint:**0 warning 0 error**
+- ruff:**All checks passed**
+- `app/` 内 TODO/FIXME/HACK/XXX:**0 处**
+- CONTEXT.md:**存在,2 条 Principal + Two-Scope Config 业务条目**
+- docs/adr/:**2 个**(0001 Principal scope boundary / 0002 TwoScopeConfig repository)
+
+### 涨幅分析(vs 2026-07-25 第 2 次)
+
+- permission_service 917 行(+50,稳定,未触发 §1.2「再涨 >20%」)
+- chat.py 559 行(+248,composite-chat feature 引入,属功能扩展非债)
+- 前端三 fat files(queries/endpoints/types)各 +186~241,主因 composite + booking_config domain
+- **前端单测覆盖率仍低**:6 大 page(settings/devices/chat/agents/customers/users,共 ~5700 行)零单测,仅 bookings/ 文件夹有覆盖 → 候选 E
+
+### 下次巡检 trigger
+
+- 第 **80** 个 feature 完成时(当前 74,距下次 6 个)
+- 或 §1.2 触发条件任一满足(尤其 union-cast 再增 >2 处,或前端大 page 单测覆盖率仍为 0)

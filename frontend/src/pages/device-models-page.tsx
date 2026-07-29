@@ -60,7 +60,7 @@ import type { DeviceModelRead } from "@/api/types";
 import {
   useCreateDeviceModel,
   useDeleteDeviceModel,
-  useDeviceModels,
+  useDeviceModelsAll,
   useUpdateDeviceModel,
 } from "@/hooks/queries";
 import { formatDateTime as fmt } from "@/lib/format";
@@ -113,13 +113,14 @@ function specSummary(specs: Record<string, unknown>): string {
 export function DeviceModelsAdminPage() {
   const toast = useToast();
 
-  // 整页在 RequireSuperAdmin 守卫内,useDeviceModels 返回的 union 在此视角
-  // 必然是 DeviceModelRead[](后端按 platform_role 分叉,super_admin 拿全字段)。
-  // narrow 用类型断言而非运行时判断 —— 守卫已是真相源,运行时校验是冗余。
-  // 不把 narrow 结果赋给中间变量:react-query 的 data 引用在不变时是稳定的,
-  // 中间 `?? []` 每次 render 生成新数组引用会让下游 useMemo(exhaustive-deps)
-  // 每次重算。改在每个 useMemo 内部 narrow,依赖稳定引用 rawModels。
-  const { data: rawModels, isLoading } = useDeviceModels();
+  // 整页在 RequireSuperAdmin 守卫内,useDeviceModelsAll 返回 DeviceModelRead[]
+  // (后端按 platform_role 分叉,super_admin / hq_staff 拿全字段;union 在 hook 层
+  // 定形,plan-union-cast-split slice 2),所以不再需要 view 边界的 ``as
+  // DeviceModelRead[]`` 断言。不把 narrow 结果赋给中间变量:react-query 的 data
+  // 引用在不变时是稳定的,中间 `?? []` 每次 render 生成新数组引用会让下游
+  // useMemo(exhaustive-deps)每次重算。改在每个 useMemo 内部 `?? []`,依赖稳定
+  // 引用 rawModels。
+  const { data: rawModels, isLoading } = useDeviceModelsAll();
 
   const createMut = useCreateDeviceModel();
   const updateMut = useUpdateDeviceModel();
@@ -146,7 +147,7 @@ export function DeviceModelsAdminPage() {
   // useMemo 避免每次 render 重算。super_admin 视角下 brands 跨全平台。
   const brandOptions = useMemo(() => {
     const set = new Set<string>();
-    for (const m of (rawModels ?? []) as DeviceModelRead[]) {
+    for (const m of rawModels ?? []) {
       if (m.brand && m.brand.trim()) set.add(m.brand.trim());
     }
     return Array.from(set).sort();
@@ -213,7 +214,7 @@ export function DeviceModelsAdminPage() {
   // client-side filter:按 name / brand / supplier 模糊匹配(大小写不敏感)。
   // device_models 预期表小,不分页不服务端搜索(对齐 groups-ui 范式)。
   const filtered = useMemo(() => {
-    const all = (rawModels ?? []) as DeviceModelRead[];
+    const all = rawModels ?? [];
     const q = query.trim().toLowerCase();
     if (!q) return all;
     return all.filter((m) =>

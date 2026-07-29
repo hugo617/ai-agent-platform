@@ -1866,6 +1866,19 @@
         "切片 3 ✅(Session 162,末切片 contract,本次):无新源码逻辑。清理配置范式 docstring 互指债(6 处):3 repo(booking/llm/embedding)docstring 补「(见 ADR-0002)」指针 + 2 service(booking_config_service/embedding_config_service)的「Mirrors LlmConfigService」→「Structurally parallel to ... (见 ADR-0002)」+ 1 model(embedding_config.py)的「Mirrors LlmConfig」→「Structurally parallel to LlmConfig」。新建 docs/adr/0002-twoscope-config-repository.md(复刻 ADR-0001 Nygard 五段式:Context/Decision/Consequences/Superseding/References,含纳入 3 repo + 排除 ModelPricing(二维 key)/tenant_config(单租户)理由 + _active_filter 钩子理由(为何不加 is_active 列给 booking)+ get_effective/_upsert 不进基类理由)。CONTEXT.md Two-Scope Config 条目 ADR-0002 指针(grill 阶段已就位,确认)。./init.sh full 840 passed 零回归(241s)+ ruff clean + grep 配置范式互指「Mirrors.*(LlmConfig|ConfigService|ConfigRepository)」→ 0 处。",
         "收尾条(2026-07-29 Session 162):feature status in_progress → passing。./init.sh full 全绿 840 passed(切片 1-3 累计,基线 828 + 12 repo 契约用例,零行为变更)。grep 配置范式 docstring 互指债消解。ADR-0002 钉死 TwoScopeRepository 边界(项目第 2 个 ADR,与 ADR-0001 Principal 互补,共立 Repository 层两大范式基类采纳边界)。末切片依赖解锁扫描:无 feature depends_on 指向 twoscope-config(纯重构无下游)→ 无需推进。feature 全 3 切片收官:两 docstring 互指债 + 零 repo 层测试覆盖债 消解,产出项目第 2 个 ADR 钉边界。"
       ]
+    },
+    {
+      "id": "union-cast-split",
+      "priority": 75,
+      "area": "工程化",
+      "title": "前端 union-cast 扩散消解 — 拆 role-specific hook(巡检候选 B Top)",
+      "user_visible_behavior": "无用户可见行为变化(纯前端类型重构)。frontend/src/api/endpoints.ts 的 5 个 role-branching hook(useDevices/useDevice/useDeviceModels/useBookings/useBooking)返回 union(Device[]|DeviceHqRead[] 等),窄化散落在 4 个 view 文件靠 12 处 as 断言强制转换。本任务把 union 消灭从「view 边界」上移到「hook 层」:每个 hook 拆成 store 版 + platform-wide 版(useDevices/useDevicesAll),内部调同一 endpoint(后端按 token role 自动分流),返回窄类型。view 直接调对应 hook,0 cast。消解 hq-view/store-view/my-bookings-view/devices-page/device-models-page 的 role 窄化 cast;as ModelOption[] 字段投影 cast 与 as DeviceStatus enum cast 不纳入(正交)。无后端改动无 schema 变化,运行时行为零变化。",
+      "status": "not_started",
+      "verification": "cd frontend && npm run build (0 类型错误) && npm test (65 全绿) && npx oxlint . (0 warning) + grep 'as Device|as DeviceHqRead|as Booking|as BookingHqRead|as DeviceModelRead[]' frontend/src/pages/ 归 0 (role 窄化 cast 消解)",
+      "notes": "第 6 次巡检 Top recommendation。grill 8 决策(D1 拆 role-specific hook / D2 ModelOption 投影不纳入 / D3 只拆 3 个有调用的 / D4 按 domain 分 3 切片 / D5 queryKey 共享 / D6 All 后缀随 useAllTenants 先例 / D7 改 mock 名 + tsc 验证 / D8 不提 ADR)。纯前端类型重构,非复杂任务不走对抗式审查。",
+      "plan": "harness/docs/plan-union-cast.md",
+      "depends_on": [],
+      "evidence": []
     }
   ]
 }

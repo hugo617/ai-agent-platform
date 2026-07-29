@@ -2,10 +2,10 @@
  * bookings/ StoreView — within-tenant booking CRUD surface.
  *
  * Extracted from the original bookings-page.tsx (plan-bookings-page-split.md).
- * Pure locality move: zero behaviour change. The ``as Booking[]`` / ``as
- * Device[]`` casts on union returns are preserved verbatim — narrowing them
- * is candidate 8 in the 2026-07-25 architecture review, intentionally out of
- * scope here.
+ * Both feeds narrow at the hook layer now (``useBookings()`` returns
+ * ``Booking[]`` and ``useDevices()`` returns ``Device[]`` natively,
+ * plan-union-cast-split slices 1 + 2), so this component has zero
+ * view-boundary casts on its data feeds.
  *
  * StoreView (device-booking slice 06) is the within-tenant CRUD surface — a
  * filterable booking list + per-device 7-day schedule grid, gating create /
@@ -61,7 +61,7 @@ import { useToast } from "@/components/ui/toast";
 import { apiErrorMessage } from "@/api/client";
 import { useAuth } from "@/components/auth/auth-context";
 import { hasPermission } from "@/lib/permission";
-import type { Booking, BookingCreate, BookingEndPayload, BookingUpdate, Device } from "@/api/types";
+import type { Booking, BookingCreate, BookingEndPayload, BookingUpdate } from "@/api/types";
 import {
   useBookings,
   useCancelBooking,
@@ -147,9 +147,13 @@ export function StoreView() {
   // devices have no ``name`` column; serial_number IS their identifier, per
   // BookingService._to_hq_read docstring). Also feeds the edit dialog's
   // read-only device field.
+  //
+  // useDevices() now returns Device[] natively (the union is fixed at the hook
+  // layer, plan-union-cast-split slice 2), so the loop takes a typed array — no
+  // ``as Device[]`` cast.
   const deviceMap = useMemo(() => {
     const m = new Map<string, string>();
-    for (const d of (devices ?? []) as Device[]) {
+    for (const d of devices ?? []) {
       m.set(d.id, d.serial_number);
     }
     return m;
@@ -175,15 +179,13 @@ export function StoreView() {
   // days from now" intuition loosely — kept as calendar-week here because a
   // store's booking sheet is read by week.
   //
-  // The narrowing cast (Booking[] | BookingHqRead[] → Booking[]) lives INSIDE
-  // the memo on purpose: a derived ``list = bookings ?? []`` would re-allocate
-  // the empty array every render and trip react-hooks/exhaustive-deps. Keeping
-  // ``bookings`` (the react-query result, stable until data changes) as the
-  // sole data dep is the clean fix.
-  //
-  // Note(candidate-8): split fetchBookings so this cast goes away.
+  // useBookings() now returns Booking[] natively (the union is fixed at the
+  // hook layer, plan-union-cast-split slice 1), so no narrowing cast is needed
+  // here. ``bookings`` (the react-query result, stable until data changes) is
+  // the sole data dep — a derived ``list = bookings ?? []`` would re-allocate
+  // the empty array every render and trip react-hooks/exhaustive-deps.
   const filtered = useMemo(
-    () => applyBookingFilter((bookings ?? []) as Booking[], filter),
+    () => applyBookingFilter(bookings ?? [], filter),
     [bookings, filter],
   );
 
@@ -353,7 +355,7 @@ export function StoreView() {
 
       {/* ---------------- schedule grid card ---------------- */}
       <ScheduleGridCard
-        devices={(devices ?? []) as Device[]}
+        devices={devices ?? []}
         selectedId={gridDeviceId}
         onSelect={setGridDeviceId}
       />
@@ -363,7 +365,7 @@ export function StoreView() {
           feed the customer dropdown. */}
       <BookingCreateDialog
         open={createOpen}
-        devices={(devices ?? []) as Device[]}
+        devices={devices ?? []}
         profiles={profiles ?? []}
         tenantId={undefined}
         isPending={createMut.isPending}

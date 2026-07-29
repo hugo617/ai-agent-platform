@@ -5,10 +5,12 @@
  * <StoreView/>``. StoreView is the within-tenant CRUD surface (slice 06);
  * HqView is the cross-tenant panorama (slice 07) — lifted from read-only to
  * write-capable in platform-cross-tenant-write slice 04 (target tenant picker
- * + row write actions + shared Dialog bodies). Both consume the same
- * ``useDevices()`` hook — the backend ``GET /devices/`` branches on
- * ``platform_role`` and returns ``Device[]`` (store) or ``DeviceHqRead[]``
- * (HQ, with tenant_name/model_name/customer_name pre-expanded server-side).
+ * + row write actions + shared Dialog bodies). StoreView consumes
+ * ``useDevices()`` (returns ``Device[]``) and HqView consumes
+ * ``useDevicesAll()`` (returns ``DeviceHqRead[]`` with tenant_name /
+ * model_name / customer_name pre-expanded server-side) — both hit the same
+ * ``GET /devices/`` endpoint, but the union is fixed at the hook layer
+ * (plan-union-cast-split slice 2), so neither view narrows with ``as``.
  *
  * Backend guard notes (see plan-devices-crud-ui.md):
  * - ``DeviceRead`` (store view) carries only ``model_id`` — no ``model_name``.
@@ -110,6 +112,7 @@ import {
   useDeleteDevice,
   useDeviceModels,
   useDevices,
+  useDevicesAll,
   useUnbindDeviceCustomer,
   useUpdateDevice,
 } from "@/hooks/queries";
@@ -130,9 +133,10 @@ const STATUS_META: Record<DeviceStatus, { label: string; badge: "success" | "war
 const NONE = "_none";
 
 // Forward declaration of the DeviceModelRead-like shape used by the model
-// dropdown. useDeviceModels returns DeviceModelPublic[] | DeviceModelRead[]
-// depending on platform_role; both have at least {id, name}, so we narrow to
-// that minimal pick for the dropdown.
+// dropdown. useDeviceModels returns DeviceModelPublic[] (store path) — the
+// model picker only needs {id, name}, so we project onto that minimal pick for
+// the dropdown (a C-class field-projection cast, NOT a role-branching cast —
+// kept out of plan-union-cast-split per decision D2).
 type ModelOption = { id: string; name: string };
 
 export function DevicesPage() {
@@ -189,7 +193,9 @@ function StoreView() {
   const canUpdate = hasPermission(me, "devices", "update");
   const canDelete = hasPermission(me, "devices", "delete");
 
-  const list = (devices ?? []) as Device[];
+  // useDevices() returns Device[] natively now (plan-union-cast-split slice 2),
+  // so no view-boundary cast.
+  const list = devices ?? [];
 
   // ---------- dialog submit handlers ----------
   // Each handler runs the mutation + surfaces the success/error toast +
@@ -411,15 +417,19 @@ function StoreView() {
 function HqView() {
   const toast = useToast();
   const qc = useQueryClient();
-  const { data: devices, isLoading } = useDevices();
+  // HQ viewers get DeviceHqRead[] from useDevicesAll (the HQ-panorama variant;
+  // the union is fixed at the hook layer, plan-union-cast-split slice 2). The
+  // store-scoped useDevices returns Device[] — wrong shape for this panorama.
+  const { data: devices, isLoading } = useDevicesAll();
   const { data: models } = useDeviceModels();
   const { data: tenants } = useAllTenants();
-  // HQ viewers get DeviceHqRead[] from useDevices. The list itself is cross-
-  // tenant (shows every store); we use ``targetDevices`` (filtered client-side
-  // to the selected target) for the create dialog's model picker so the
-  // operator sees the target store's serial namespace. (No new endpoint —
-  // reusing the cross-store feed + filtering is the natural fit.)
-  const list = (devices ?? []) as DeviceHqRead[];
+  // useDevicesAll() returns DeviceHqRead[] natively, so no view-boundary cast.
+  // The list itself is cross-tenant (shows every store); we use
+  // ``targetDevices`` (filtered client-side to the selected target) for the
+  // create dialog's model picker so the operator sees the target store's
+  // serial namespace. (No new endpoint — reusing the cross-store feed +
+  // filtering is the natural fit.)
+  const list = devices ?? [];
 
   // ---------- target tenant picker ----------
   // Required before any write (AC9). Sourced from GET /tenants/all.

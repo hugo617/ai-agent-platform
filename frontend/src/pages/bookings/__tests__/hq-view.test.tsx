@@ -22,15 +22,16 @@ import type { BookingHqRead, Tenant } from "@/api/types";
 
 // ---- mock wiring ----
 // HqView 切片 04 改造后调的 hooks:列表 + 全租户 + 写 mut + 设备列表
-// (targetDevices filter 用)。切片 04b 新增:网格数据 + 两级配置 read/write
-// hooks(useTenantBookingsByDate / useBookingConfigEffective /
-// usePlatformBookingConfig / useTenantBookingConfig /
+// (targetDevices filter 用)。设备 feed 在 plan-union-cast-split slice 2 改调
+// useDevicesAll(返 DeviceHqRead[],union 在 hook 层定形),mock 名同步更新(D7)。
+// 切片 04b 新增:网格数据 + 两级配置 read/write hooks(useTenantBookingsByDate /
+// useBookingConfigEffective / usePlatformBookingConfig / useTenantBookingConfig /
 // useUpdatePlatformBookingConfig / useUpdateTenantBookingConfig)。
 // queryClient 来自 renderWithProviders,所以 useQueryClient 不需要 mock。
 const mocks = vi.hoisted(() => ({
-  useBookings: vi.fn() as Mock,
+  useBookingsAll: vi.fn() as Mock,
   useAllTenants: vi.fn() as Mock,
-  useDevices: vi.fn() as Mock,
+  useDevicesAll: vi.fn() as Mock,
   useCreateBooking: vi.fn() as Mock,
   useUpdateBooking: vi.fn() as Mock,
   useCancelBooking: vi.fn() as Mock,
@@ -52,9 +53,9 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("@/hooks/queries", () => ({
-  useBookings: mocks.useBookings,
+  useBookingsAll: mocks.useBookingsAll,
   useAllTenants: mocks.useAllTenants,
-  useDevices: mocks.useDevices,
+  useDevicesAll: mocks.useDevicesAll,
   useCreateBooking: mocks.useCreateBooking,
   useUpdateBooking: mocks.useUpdateBooking,
   useCancelBooking: mocks.useCancelBooking,
@@ -221,7 +222,7 @@ async function pickTarget(
 // ============================================================ smoke (回归)
 describe("HqView — cross-tenant panorama smoke (regression)", () => {
   it("渲染跨店表 + 列头 + 行数据(tenant_name/device_name/customer_name)", () => {
-    mocks.useBookings.mockReturnValue({
+    mocks.useBookingsAll.mockReturnValue({
       data: [
         makeHqBooking(),
         makeHqBooking({
@@ -234,7 +235,7 @@ describe("HqView — cross-tenant panorama smoke (regression)", () => {
       isLoading: false,
     });
     mocks.useAllTenants.mockReturnValue({ data: [] });
-    mocks.useDevices.mockReturnValue({ data: [] });
+    mocks.useDevicesAll.mockReturnValue({ data: [] });
     stubWriteMutations();
 
     const { getAllByRole, getByText } = renderWithProviders(<HqView />);
@@ -257,9 +258,9 @@ describe("HqView — cross-tenant panorama smoke (regression)", () => {
   });
 
   it("空态:无预约时渲染 EmptyState + 总数 0", () => {
-    mocks.useBookings.mockReturnValue({ data: [], isLoading: false });
+    mocks.useBookingsAll.mockReturnValue({ data: [], isLoading: false });
     mocks.useAllTenants.mockReturnValue({ data: [] });
-    mocks.useDevices.mockReturnValue({ data: [] });
+    mocks.useDevicesAll.mockReturnValue({ data: [] });
     stubWriteMutations();
 
     const { getByText } = renderWithProviders(<HqView />);
@@ -271,15 +272,16 @@ describe("HqView — cross-tenant panorama smoke (regression)", () => {
     expect(getByText("跨全部门店暂无设备预约")).toBeTruthy();
   });
 
-  // 回归测试(bugfix:TDZ ReferenceError)。真实运行时 useDevices() 返回非空
-  // DeviceHqRead[](平台角色跨店 feed),targetDevices 的 .filter() 回调会真的
-  // 执行。若 targetDevices 的计算被放在 const targetTenantId 声明之前(JS 的
-  // const 不 hoist 初始值),filter 回调访问 targetTenantId 会抛
-  // "Cannot access 'targetTenantId' before initialization" → HqView 崩 → 白屏。
-  // 历史背景:本测试加入前,所有 smoke 用例都 mock useDevices→{data:[]},空数组
-  // 让 .filter 回调一次都不执行,TDZ 永不触发 → bug 漏网 8 个测试全绿但生产白屏。
-  it("useDevices 返回非空数组时不抛 TDZ ReferenceError(回归 bugfix)", () => {
-    mocks.useBookings.mockReturnValue({
+  // 回归测试(bugfix:TDZ ReferenceError)。真实运行时 useDevicesAll() 返回非空
+  // DeviceHqRead[](平台角色跨店 feed,plan-union-cast-split slice 2 改调此 hook),
+  // targetDevices 的 .filter() 回调会真的执行。若 targetDevices 的计算被放在
+  // const targetTenantId 声明之前(JS 的 const 不 hoist 初始值),filter 回调访问
+  // targetTenantId 会抛 "Cannot access 'targetTenantId' before initialization"
+  // → HqView 崩 → 白屏。
+  // 历史背景:本测试加入前,所有 smoke 用例都 mock useDevicesAll→{data:[]},
+  // 空数组让 .filter 回调一次都不执行,TDZ 永不触发 → bug 漏网 8 个测试全绿但生产白屏。
+  it("useDevicesAll 返回非空数组时不抛 TDZ ReferenceError(回归 bugfix)", () => {
+    mocks.useBookingsAll.mockReturnValue({
       data: [makeHqBooking({ id: "b-1", tenant_id: "t-1" })],
       isLoading: false,
     });
@@ -287,7 +289,7 @@ describe("HqView — cross-tenant panorama smoke (regression)", () => {
       data: [makeTenant({ id: "t-1", name: "上海徐汇店" })],
     });
     // 关键:非空 devices 数组,触发 .filter 回调执行
-    mocks.useDevices.mockReturnValue({
+    mocks.useDevicesAll.mockReturnValue({
       data: [
         { id: "d-1", tenant_id: "t-1", status: "active", name: "DEV-1" },
         { id: "d-2", tenant_id: "t-2", status: "active", name: "DEV-2" },
@@ -302,7 +304,7 @@ describe("HqView — cross-tenant panorama smoke (regression)", () => {
   });
 
   it("null fallback:tenant_name/device_name/customer_name 缺失时显示兜底文案", () => {
-    mocks.useBookings.mockReturnValue({
+    mocks.useBookingsAll.mockReturnValue({
       data: [
         makeHqBooking({
           tenant_name: null,
@@ -314,7 +316,7 @@ describe("HqView — cross-tenant panorama smoke (regression)", () => {
       isLoading: false,
     });
     mocks.useAllTenants.mockReturnValue({ data: [] });
-    mocks.useDevices.mockReturnValue({ data: [] });
+    mocks.useDevicesAll.mockReturnValue({ data: [] });
     stubWriteMutations();
 
     const { getByText } = renderWithProviders(<HqView />);
@@ -328,14 +330,14 @@ describe("HqView — cross-tenant panorama smoke (regression)", () => {
 // ============================================================ platform write (切片 04)
 describe("HqView — platform-cross-tenant-write 切片 04 write controls", () => {
   it("AC9:未选 target 时无写按钮 / 无操作列 / 提示选择目标门店", () => {
-    mocks.useBookings.mockReturnValue({
+    mocks.useBookingsAll.mockReturnValue({
       data: [makeHqBooking({ status: "pending", id: "bk_p" })],
       isLoading: false,
     });
     mocks.useAllTenants.mockReturnValue({
       data: [makeTenant({ id: "t-1", name: "上海徐汇店" })],
     });
-    mocks.useDevices.mockReturnValue({ data: [] });
+    mocks.useDevicesAll.mockReturnValue({ data: [] });
     stubWriteMutations();
 
     const { queryByText, queryByRole } = renderWithProviders(<HqView />);
@@ -352,14 +354,14 @@ describe("HqView — platform-cross-tenant-write 切片 04 write controls", () =
 
   it("AC3/AC4:选 target 后行内出现 DropdownMenu;pending 行显示开机/爽约/取消", async () => {
     const user = userEvent.setup();
-    mocks.useBookings.mockReturnValue({
+    mocks.useBookingsAll.mockReturnValue({
       data: [makeHqBooking({ status: "pending", id: "bk_p", tenant_id: "t-1" })],
       isLoading: false,
     });
     mocks.useAllTenants.mockReturnValue({
       data: [makeTenant({ id: "t-1", name: "上海徐汇店" })],
     });
-    mocks.useDevices.mockReturnValue({ data: [] });
+    mocks.useDevicesAll.mockReturnValue({ data: [] });
     stubWriteMutations();
 
     const { baseElement, getByRole, getByText } = renderWithProviders(<HqView />);
@@ -387,7 +389,7 @@ describe("HqView — platform-cross-tenant-write 切片 04 write controls", () =
 
   it("AC5:in_service 行只显示结束/爽约(不显示开机/改约/取消)", async () => {
     const user = userEvent.setup();
-    mocks.useBookings.mockReturnValue({
+    mocks.useBookingsAll.mockReturnValue({
       data: [
         makeHqBooking({
           status: "in_service",
@@ -400,7 +402,7 @@ describe("HqView — platform-cross-tenant-write 切片 04 write controls", () =
     mocks.useAllTenants.mockReturnValue({
       data: [makeTenant({ id: "t-1", name: "上海徐汇店" })],
     });
-    mocks.useDevices.mockReturnValue({ data: [] });
+    mocks.useDevicesAll.mockReturnValue({ data: [] });
     stubWriteMutations();
 
     const { baseElement, getByRole } = renderWithProviders(<HqView />);
@@ -426,7 +428,7 @@ describe("HqView — platform-cross-tenant-write 切片 04 write controls", () =
   });
 
   it("AC5:终态行(done/cancelled/no_show)无操作菜单(不渲染 trigger)", async () => {
-    mocks.useBookings.mockReturnValue({
+    mocks.useBookingsAll.mockReturnValue({
       data: [
         makeHqBooking({ status: "done", id: "bk_d", tenant_id: "t-1" }),
         makeHqBooking({ status: "cancelled", id: "bk_c", tenant_id: "t-1" }),
@@ -437,7 +439,7 @@ describe("HqView — platform-cross-tenant-write 切片 04 write controls", () =
     mocks.useAllTenants.mockReturnValue({
       data: [makeTenant({ id: "t-1", name: "上海徐汇店" })],
     });
-    mocks.useDevices.mockReturnValue({ data: [] });
+    mocks.useDevicesAll.mockReturnValue({ data: [] });
     stubWriteMutations();
 
     const { baseElement, getByRole, getByText } = renderWithProviders(<HqView />);
@@ -461,14 +463,14 @@ describe("HqView — platform-cross-tenant-write 切片 04 write controls", () =
   it("AC2/AC6:选 target 后开机动作以 tenantId 闭包触发 startBooking", async () => {
     const user = userEvent.setup();
     const startMut = makeMut();
-    mocks.useBookings.mockReturnValue({
+    mocks.useBookingsAll.mockReturnValue({
       data: [makeHqBooking({ status: "pending", id: "bk_p", tenant_id: "t-1" })],
       isLoading: false,
     });
     mocks.useAllTenants.mockReturnValue({
       data: [makeTenant({ id: "t-1", name: "上海徐汇店" })],
     });
-    mocks.useDevices.mockReturnValue({ data: [] });
+    mocks.useDevicesAll.mockReturnValue({ data: [] });
     stubWriteMutations();
     mocks.useStartBooking.mockReturnValue(startMut);
 
@@ -496,11 +498,11 @@ describe("HqView — booking-schedule-grid 切片 04b Tabs + 网格集成", () =
   // targetDevices 在 HqView 内 .filter(tenant_id===target && status==="active"),
   // 所以 devices 要含一条 target 店的 active 设备,网格才有列可渲染。
   function setupGrid() {
-    mocks.useBookings.mockReturnValue({ data: [], isLoading: false });
+    mocks.useBookingsAll.mockReturnValue({ data: [], isLoading: false });
     mocks.useAllTenants.mockReturnValue({
       data: [makeTenant({ id: "t-1", name: "上海徐汇店" })],
     });
-    mocks.useDevices.mockReturnValue({
+    mocks.useDevicesAll.mockReturnValue({
       data: [
         {
           id: "d-1",
