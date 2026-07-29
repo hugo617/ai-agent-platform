@@ -304,3 +304,16 @@ async def test_booking_no_active_filter_all_rows_visible(db_session, tenant_owne
     tenant = await repo.get_for_tenant(tenant_owner["tenant_id"])
     assert tenant is not None
     assert tenant.tenant_id == tenant_owner["tenant_id"]
+
+
+def test_booking_active_filter_hook_is_none():
+    """State 4 contract guard: ``BookingConfigRepository._active_filter`` is None.
+
+    Complements ``test_booking_no_active_filter_all_rows_visible``: that test
+    proves the *behaviour* (rows are returned unfiltered) via seeded rows; this
+    one pins the *contract* at the implementation seam. If a future change gives
+    the base ``TwoScopeRepository`` a non-None default predicate, this assertion
+    fails fast at the booking subclass rather than silently changing which rows
+    booking reads see.
+    """
+    assert BookingConfigRepository._active_filter is None
