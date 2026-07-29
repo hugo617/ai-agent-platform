@@ -39,8 +39,9 @@
  *
  * Bookings feed: ``useBookingsAll()`` (not the store-scoped ``useBookings``) —
  * it returns ``BookingHqRead[]`` natively, no view-boundary cast. The device
- * feed still narrows via ``as DeviceHqRead[]`` (slice 2 of plan-union-cast-split
- * will lift that too).
+ * feed likewise uses ``useDevicesAll()`` (returns ``DeviceHqRead[]`` natively,
+ * plan-union-cast-split slice 2) — both unions are now fixed at the hook layer,
+ * so this component has zero view-boundary casts.
  */
 import { useMemo, useState } from "react";
 
@@ -92,7 +93,7 @@ import {
   useBookingsAll,
   useCancelBooking,
   useCreateBooking,
-  useDevices,
+  useDevicesAll,
   useEndBooking,
   useNoShowBooking,
   usePlatformBookingConfig,
@@ -126,13 +127,14 @@ export function HqView() {
   const qc = useQueryClient();
   const { data: bookings, isLoading } = useBookingsAll();
   const { data: tenants } = useAllTenants();
-  // HQ viewers get DeviceHqRead[] from useDevices (the same endpoint branches
-  // on platform_role). We filter to the selected target so the create dialog's
+  // HQ viewers get DeviceHqRead[] from useDevicesAll (the HQ-panorama variant
+  // of the devices feed; the union is fixed at the hook layer, plan-union-cast-
+  // split slice 2). We filter to the selected target so the create dialog's
   // device picker only offers that store's active devices — the dialog would
   // otherwise show an empty dropdown (no target-scoped feed exists; plan
   // §4.5.5 前端 says "复用 StoreView Dialog" — reusing the cross-store feed
   // + filtering client-side is the natural fit, no new endpoint needed).
-  const { data: devices } = useDevices();
+  const { data: devices } = useDevicesAll();
 
   // useBookingsAll() returns BookingHqRead[] natively (the union is fixed at
   // the hook layer, plan-union-cast-split slice 1), so no narrowing cast is
@@ -146,19 +148,15 @@ export function HqView() {
   // (GET /tenants/all, super_admin + hq_staff authorised; plan §4.5.5 前端).
   const [targetTenantId, setTargetTenantId] = useState<string>("");
 
-  // HQ viewers get DeviceHqRead[] from useDevices (the same endpoint branches
-  // on platform_role). We filter to the selected target so the create dialog's
-  // device picker only offers that store's active devices — the dialog would
-  // otherwise show an empty dropdown (no target-scoped feed exists; plan
-  // §4.5.5 前端 says "复用 StoreView Dialog" — reusing the cross-store feed
-  // + filtering client-side is the natural fit, no new endpoint needed).
+  // useDevicesAll() returns DeviceHqRead[] natively, so the filter takes a
+  // typed array — no view-boundary ``as`` cast (plan-union-cast-split slice 2).
   //
   // MUST come after the ``const [targetTenantId, ...]`` declaration above: the
   // .filter callback reads targetTenantId, and JS ``const`` does not hoist its
   // initializer — referencing it earlier throws a TDZ ReferenceError that
   // crashes HqView (white screen on /bookings for HQ roles). Regression test:
   // "useDevices 返回非空数组时不抛 TDZ ReferenceError" in hq-view.test.tsx.
-  const targetDevices = ((devices ?? []) as DeviceHqRead[]).filter(
+  const targetDevices = (devices ?? []).filter(
     (d) => d.tenant_id === targetTenantId && d.status === "active",
   );
 

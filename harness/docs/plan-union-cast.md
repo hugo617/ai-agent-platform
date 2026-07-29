@@ -165,7 +165,7 @@
   - [x] `npm run build` 0 类型错误
   - [x] `npm test` 全绿(零行为回归)
 
-### Ticket 2: devices domain(useDevices → useDevicesAll + useDeviceModels → useDeviceModelsAll)
+### Ticket 2: devices domain(useDevices → useDevicesAll + useDeviceModels → useDeviceModelsAll) ✅
 
 - **What to build**:devices 视角的 A 类 union-cast 消解。新增 `fetchDevicesAll`/`useDevicesAll`(返回 `DeviceHqRead[]`)+ `fetchDeviceModelsAll`/`useDeviceModelsAll`(返回 `DeviceModelRead[]`)。hq-view 改调 `useDevicesAll` 消 L163(接切片1遗留);store-view 消 L152/356/366;devices-page **单文件双组件**:StoreView L192 改调 useDevices(返回窄 `Device[]`)消 cast + HqView L422 改调 `useDevicesAll` 消 cast;device-models-page 改调 `useDeviceModelsAll` 消 L149/216。devices-page 的 C 类 `as ModelOption[]`(4 处)+ `as DeviceStatus`(1 处)保持不动。
 - **Blocked by**: Ticket 1(bookings 先行验证范式 + 跨 domain 文件的 bookings 侧已收口)
@@ -182,14 +182,22 @@
   - `cd frontend && npm test`(全绿)
   - `grep -rn 'as Device\[\]\|as DeviceHqRead\[\]\|as DeviceModelRead\[\]' frontend/src/pages/`(A 类 device cast 应归 0;devices-page 的 `as ModelOption[]` 不匹此 grep,保留)
 - **AC**:
-  - [ ] `fetchDevicesAll`/`useDevicesAll` + `fetchDeviceModelsAll`/`useDeviceModelsAll` 新增,queryKey 共享
-  - [ ] hq-view 消 L163 `as DeviceHqRead[]`(接切片1遗留,bookings+devices 双侧收口)
-  - [ ] store-view 消 L152/356/366 三处 `as Device[]`(双侧收口)
-  - [ ] devices-page StoreView L192 + HqView L422 双组件 cast 消解
-  - [ ] device-models-page 消 L149/216 `as DeviceModelRead[]`(2 处)
-  - [ ] devices-page 的 `as ModelOption[]`(4 处)+ `as DeviceStatus`(1 处)C 类**保持不动**(验证未误删)
-  - [ ] `npm run build` 0 类型错误
-  - [ ] `npm test` 全绿
+  - [x] `fetchDevicesAll`/`useDevicesAll` + `fetchDeviceModelsAll`/`useDeviceModelsAll` 新增,queryKey 共享 ✅(`qk.devices` / `qk.deviceModels`,非新 key)
+  - [x] hq-view 消 L163 `as DeviceHqRead[]`(接切片1遗留,bookings+devices 双侧收口) ✅
+  - [x] store-view 消 L152/356/366 三处 `as Device[]`(双侧收口) ✅
+  - [x] devices-page StoreView L192 + HqView L422 双组件 cast 消解 ✅
+  - [x] device-models-page 消 L149/216 `as DeviceModelRead[]`(2 处) ✅
+  - [x] devices-page 的 `as ModelOption[]`(4 处)+ `as DeviceStatus`(1 处)C 类**保持不动**(验证未误删) ✅
+  - [x] `npm run build` 0 类型错误 ✅
+  - [x] `npm test` 全绿 ✅(65/65,零行为回归)
+
+  **完成证据(Session 158, 2026-07-29)**:
+  - 8 处 A 类 cast 全消(`grep -rn 'as Device\[\]\|as DeviceHqRead\[\]\|as DeviceModelRead\[\]' frontend/src/pages/` 仅匹注释,0 处代码)
+  - B 类保留(hq-view `b as Booking` / `bk as BookingHqRead` 单数 props cast)+ C 类保留(devices-page `as ModelOption[]` ×4 + `as DeviceStatus` ×1)—— grep 确认仍在
+  - 验证:`npx tsc -b` exit 0 / `npm run build` 绿 / `npx vitest run` 65/65 / `npx oxlint .` 0 warning 0 error
+  - hq-view.test.tsx mock 改名 `useDevices`→`useDevicesAll`(D7)+ it-label 同步 + 返回值断言真实渲染
+
+  **实施决策偏离 §4.5(已裁决,记入 plan)**:§4.5 原写「`fetchDeviceModels` endpoint 函数同理保留 union,新增 `fetchDeviceModelsAll`(类型上声明返回 `DeviceModelRead[]`)」。**实施时改为「窄化 `fetchDeviceModels` → `DeviceModelPublic[]` + 新增 `fetchDeviceModelsAll` → `DeviceModelRead[]`」**,镜像切片 1 `fetchBookings`→`Booking[]` + `fetchBookingsAll`→`BookingHqRead[]` 的对称范式。**理由**:① 与切片 1 完全对称,降低认知负担(同范式:store fetch 窄类型 + All 变体 HQ 窄类型,无 union 残留);② 运行时零差异(同 URL,backend 按 token role 分流,类型在 seam 处定形);③ devices-page 的 `as ModelOption[]`(C 类,D2 排除)投影 `{id,name}` 字段,`DeviceModelPublic` 本就有这俩字段,窄化对投影路径零影响;④ 消除了「fetchDeviceModels 返 union 但 fetchDevices/fetchBookings 返窄类型」的不一致。**§4.5 相应描述以本裁决为准**(plan §4.5 文字未逐字改,本注记为权威偏差记录)。
 
 ### Ticket 3: 收尾验证(A 类 cast 审计 + 文档)
 
