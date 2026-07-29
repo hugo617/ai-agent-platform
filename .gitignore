@@ -91,3 +91,6 @@ uploads/
 .skill-counters.json
 .skill-counters.log
 
+.toco
+.vscode/toco*
+.idea/toco*
