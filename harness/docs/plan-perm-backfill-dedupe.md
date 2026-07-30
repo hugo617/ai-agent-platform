@@ -1,7 +1,7 @@
-# 计划:permission backfill 参数化去重(消解逐字节镜像函数)
+# 计划:permission backfill 参数化去重(消解逐字节镜像函数)— 切片 1+2 ✅ 全完成 PR #151
 
 > **id**: `perm-backfill-dedupe`
-> **状态**: not_started v2(经 opus 对抗式审查修订,规划就绪待实施)
+> **状态**: passing(2 切片全完成,2026-07-30 Session 166;切片1 commit 6461236 + 切片2 commit 89f139e,PR #151 待合并)
 > **优先级**: 77(当前最高 passing = union-cast-split 75,本任务与 chat-page-split 76 / devices-page-split 78 同批;第 7 次巡检候选 ③)
 > **创建日期**: 2026-07-30
 > **最后修订**: 2026-07-30(v2)
@@ -174,7 +174,7 @@ opus 双轴审查(真相核查 + 设计质量)发现 v1 多处事实错误与安
 
 > **切片策略**:纯代码重构,非功能开发。按「依赖顺序」分 2 片:先合并 service 函数(核心)+ 改所有 caller(**临时保留测试绿**)→ 再合并 scripts + 测试 parametrize(收尾验证)。
 
-### Ticket 1: service 函数参数化合并 + caller 改造(**临时保留测试绿**)
+### Ticket 1: service 函数参数化合并 + caller 改造(**临时保留测试绿**) ✅
 
 - **What to build**:在 `permission_service.py` 新增 `BACKFILLABLE_OBJS` 常量 + `backfill_perm_set_for_existing_tenants(db, obj)` 函数(body 从原两函数合并,obj 用参数替换硬编码 + 开头白名单校验 + **循环变量改 `perm_obj`**);删旧 `backfill_devices_perms_for_existing_tenants` + `backfill_bookings_perms_for_existing_tenants`。所有 caller 同步改调新函数 + 传 obj。**v2 关键:测试 K chapter 临时改调新函数(`backfill_perm_set(db, "devices")`),不删** —— 保留 6 个测试绿,避免安全代码测试空窗(删 K chapter 移到 Ticket 2)。scripts 也临时改调新函数(Ticket 2 删)。
 - **Blocked by**: 无(可立即开始)
@@ -188,15 +188,17 @@ opus 双轴审查(真相核查 + 设计质量)发现 v1 多处事实错误与安
   - `pytest tests/test_devices_api.py tests/test_bookings_api.py -k "backfill" -v`(**6 测试临时改调后仍绿**,行为等价验证)
   - `./init.sh`(冒烟:全量绿,确认 caller 改造无遗漏)
 - **AC**:
-  - [ ] `backfill_perm_set_for_existing_tenants(db, obj)` 函数就位,签名含 obj: str
-  - [ ] `BACKFILLABLE_OBJS` frozenset 常量就位,含 devices + bookings
-  - [ ] 非法 obj 抛 ValueError
-  - [ ] **循环变量已改名为 `perm_obj`**(无 shadowing)
-  - [ ] 旧两函数已删,grep 无残留**定义**
-  - [ ] **6 个 K chapter 测试临时改调新函数后仍全绿**(无测试空窗)
-  - [ ] `./init.sh` 冒烟绿(无 import error / 无 NameError)
+  - [x] `backfill_perm_set_for_existing_tenants(db, obj)` 函数就位,签名含 obj: str
+  - [x] `BACKFILLABLE_OBJS` frozenset 常量就位,含 devices + bookings
+  - [x] 非法 obj 抛 ValueError
+  - [x] **循环变量已改名为 `perm_obj`**(无 shadowing)
+  - [x] 旧两函数已删,grep 无残留**定义**
+  - [x] **6 个 K chapter 测试临时改调新函数后仍全绿**(无测试空窗)
+  - [x] `./init.sh` 冒烟绿(无 import error / 无 NameError)
 
-### Ticket 2: scripts 合并 + 测试 parametrize 收尾
+> **完成证据(2026-07-30)**:`./init.sh` 冒烟绿(ruff + 42 smoke passed);`pytest -k backfill` 6 passed(devices 3 + bookings 3);两个 script dry-run 在真实 DB 上 import + 执行新函数正常;`BACKFILLABLE_OBJS = frozenset({'devices','bookings'})`;`ValueError` 对 `obj="users"` 触发验证 OK。双轴 code-review 通过(Standards 0 硬违例 / Spec 0 偏差,K6 scope guardrail 由 `if perm_obj != obj` + `if code != obj` 保持)。
+
+### Ticket 2: scripts 合并 + 测试 parametrize 收尾 ✅ commit 89f139e
 
 - **What to build**:删 `scripts/backfill_devices_perms.py` + `scripts/backfill_bookings_perms.py`,新建 `scripts/backfill_obj_perms.py`(接 `--obj` 必填 + `--dry-run`);删两个 test 文件的旧 K chapter(已被 Ticket 1 临时改调),新建 `tests/test_permission_backfill.py`(parametrize 3 场景 × 2 obj + 1 边界);feature 收尾。
 - **Blocked by**: Ticket 1
@@ -212,14 +214,14 @@ opus 双轴审查(真相核查 + 设计质量)发现 v1 多处事实错误与安
   - `./init.sh full`(全量 841 passed,零回归)
   - `grep -rn "backfill_devices_perms\|backfill_bookings_perms" app/ scripts/ tests/`(**引用**归 0,无残留旧名)
 - **AC**:
-  - [ ] 新 script `backfill_obj_perms.py --obj devices|bookings [--dry-run]` 工作
-  - [ ] argparse choices 限制 obj 为 devices/bookings
-  - [ ] `test_permission_backfill.py` 7 cases 全绿(3 场景 × 2 obj + 1 边界)
-  - [ ] 旧两 script 已删
-  - [ ] grep 旧函数名**引用**归 0(定义在 Ticket 1 已删,此处确认引用也清)
-  - [ ] `./init.sh full` 全量绿(841 passed)
-  - [ ] feature 收尾:feature_list.json status → passing + evidence + sync-active + progress.md
-  - [ ] 文档影响评估执行
+  - [x] 新 script `backfill_obj_perms.py --obj devices|bookings [--dry-run]` 工作(commit 89f139e,--obj devices --dry-run 扫 6 租户正常)
+  - [x] argparse choices 限制 obj 为 devices/bookings(--obj invalid 报 choices 错;缺 --obj 报 required 错)
+  - [x] `test_permission_backfill.py` 7 cases 全绿(3 场景 × 2 obj + 1 边界)
+  - [x] 旧两 script 已删(git rm backfill_devices_perms.py + backfill_bookings_perms.py)
+  - [x] grep 旧函数名**引用**归 0(grep backfill_devices_perms_for_existing_tenants|backfill_bookings_perms_for_existing_tenants app/scripts/tests → 0;旧 script 名同 → 0)
+  - [x] `./init.sh full` 全量绿(实测 842 passed,plan 预估 841 因基线漂移 +1,零回归)
+  - [x] feature 收尾:feature_list.json status → passing + evidence 4 条 + sync-active + progress.md(均完成,2026-07-30 Session 166)
+  - [x] 文档影响评估执行(结论:无新增/改动文档,纯后端参数化重构)
 
 ---
 

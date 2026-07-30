@@ -707,31 +707,56 @@ def is_platform_writer(platform_role: str | None) -> bool:
 
 
 # ---------------------------------------------------------------------------
-# One-shot backfill for the devices permission set (devices-crud-ui slice 02).
+# One-shot backfill for a tenant-scoped business record's permission set.
+#
+# This is the parameterized backfill (perm-backfill-dedupe): a single function
+# takes ``obj`` as a parameter and binds it through the ``BACKFILLABLE_OBJS``
+# whitelist, replacing what used to be two byte-for-byte mirror functions (one
+# per obj). Adding a new backfillable obj later only needs a whitelist entry +
+# a DEFAULT_*_PERMS row — no new function, no new script, no new test file.
 #
 # Why this lives here instead of in scripts/: the same path runs as a one-shot
-# data migration (scripts/backfill_devices_perms.py) AND from the slice-02 test
-# suite (tests/test_devices_api.py K chapter). Keeping the per-tenant logic in
-# the service module means the test exercises the real production code path —
-# the script is a thin async main() wrapper.
+# data migration (scripts/backfill_obj_perms.py --obj <obj>) AND from the
+# parametrized suite tests/test_permission_backfill.py. Keeping the per-tenant
+# logic in the service module means the tests exercise the real production code
+# path — the script is a thin async main() wrapper.
 #
-# Scope guardrail: this function ONLY touches ``(obj="devices", *)`` and
-# ``(obj="menu", act="devices")`` rows. It never grants/revokes anything else,
-# so re-running it after other permission work is always safe (idempotent and
+# Scope guardrail: this function ONLY touches ``(obj=<obj>, *)`` and
+# ``(obj="menu", act=<obj>)`` rows. It never grants/revokes anything else, so
+# re-running it after other permission work is always safe (idempotent and
 # side-effect-bounded).
+#
+# Whitelist note: the one-shot script's argparse ``choices=["devices","bookings"]``
+# is the first line of defence on the CLI path (an invalid value errors there
+# before this function is ever reached). The ``BACKFILLABLE_OBJS`` ValueError
+# below guards the NON-script callers — tests importing this directly, or any
+# other service calling it — which have no argparse gate in front.
 # ---------------------------------------------------------------------------
-async def backfill_devices_perms_for_existing_tenants(db: AsyncSession) -> dict[str, int]:
-    """Grant ``devices``/``menu:devices`` perms to every tenant's system roles.
+# Only tenant-scoped business records that ship AFTER the first tenants exist
+# need a backfill. Other objs (agents/customers/users/...) are seeded for every
+# tenant from day one by ``seed_tenant_defaults`` and so never need backfilling.
+BACKFILLABLE_OBJS: frozenset[str] = frozenset({"devices", "bookings"})
 
-    Walks the ``tenants`` table and, for each tenant, ensures owner/admin/member
-    hold the devices-related entries from ``DEFAULT_*_PERMS`` plus the
-    ``menu:devices`` entry from ``DEFAULT_MENU_PERMS``. Existing tenants created
-    before devices-crud-ui shipped are missing these; new tenants get them via
+
+async def backfill_perm_set_for_existing_tenants(
+    db: AsyncSession, obj: str
+) -> dict[str, int]:
+    """Grant ``<obj>``/``menu:<obj>`` perms to every tenant's system roles.
+
+    Parameterized from the former devices/bookings backfill mirrors. Walks the
+    ``tenants`` table and, for each tenant, ensures owner/admin/member hold the
+    ``<obj>``-related entries from ``DEFAULT_*_PERMS`` plus the ``menu:<obj>``
+    entry from ``DEFAULT_MENU_PERMS``. Existing tenants created before the obj
+    shipped are missing these; new tenants get them via
     ``seed_tenant_defaults`` automatically.
 
-    Idempotent at three layers:
+    ``obj`` MUST be in ``BACKFILLABLE_OBJS``; anything else raises ``ValueError``
+    rather than silently no-op'ing (the scope guardrail is enforced at the
+    constraint layer, not just inside the loop).
+
+    Idempotent at three layers (unchanged from the mirrors):
       * ``PermissionService._upsert_permission`` returns the existing row id
-        when the catalogue already has ``devices:<act>`` / ``menu:devices``;
+        when the catalogue already has ``<obj>:<act>`` / ``menu:<obj>``;
       * ``RolePermissionRepository.grant`` no-ops on an already-active grant;
       * ``sync_role_permissions_to_casbin`` is a full rebuild from SCD2 current
         state, so re-syncing converges.
@@ -740,10 +765,15 @@ async def backfill_devices_perms_for_existing_tenants(db: AsyncSession) -> dict[
     pairs) for the one-shot script's report. The count is "rows newly added by
     this run" — re-running on an already-backfilled tenant yields 0 per pair.
 
-    Only ``devices``/``menu:devices`` are touched. Other permissions
-    (``customers:read``, ``wallet:read``, etc.) are left untouched, which is
+    Only ``<obj>``/``menu:<obj>`` are touched. Other permissions
+    (``customers:read``, other objs' perms, etc.) are left untouched, which is
     the K6 contract in the plan.
     """
+    if obj not in BACKFILLABLE_OBJS:
+        raise ValueError(
+            f"obj must be one of {sorted(BACKFILLABLE_OBJS)}, got {obj!r}"
+        )
+
     from app.models.tenant import Tenant  # local import to avoid module cycles
     from app.repositories.rbac import RolePermissionRepository
 
@@ -767,7 +797,7 @@ async def backfill_devices_perms_for_existing_tenants(db: AsyncSession) -> dict[
 
         new_count = 0
 
-        # --- api perms: only (obj="devices", *) rows ------------------------
+        # --- api perms: only (obj=<obj>, *) rows ----------------------------
         for role_code, perms in (
             ("owner", DEFAULT_OWNER_PERMS),
             ("admin", DEFAULT_ADMIN_PERMS),
@@ -778,10 +808,13 @@ async def backfill_devices_perms_for_existing_tenants(db: AsyncSession) -> dict[
                 # Tenant doesn't have this system role (rare: member never
                 # created). Nothing to grant — skip cleanly.
                 continue
-            for obj, act in perms:
-                if obj != "devices":
-                    continue  # scope guardrail — never touch non-devices perms
-                pid = await service._upsert_permission(db, tenant.id, obj, act)
+            # Loop var is ``perm_obj`` (not ``obj``) to avoid shadowing the
+            # function parameter: the scope guardrail compares the perm's obj
+            # against the requested ``obj``, so they must stay distinct.
+            for perm_obj, act in perms:
+                if perm_obj != obj:
+                    continue  # scope guardrail — never touch other objs' perms
+                pid = await service._upsert_permission(db, tenant.id, perm_obj, act)
                 if pid not in existing_per_role[role_code]:
                     await rp_repo.grant(rid, pid, tenant.id)
                     new_count += 1
@@ -789,119 +822,14 @@ async def backfill_devices_perms_for_existing_tenants(db: AsyncSession) -> dict[
             # full rebuild from SCD2 current state — cheap and convergent).
             await service.sync_role_permissions_to_casbin(db, rid, tenant.id)
 
-        # --- menu perms: only ("menu", "devices") --------------------------
+        # --- menu perms: only ("menu", <obj>) -------------------------------
         for role_code, menu_codes in DEFAULT_MENU_PERMS.items():
             rid = role_ids.get(role_code)
             if rid is None:
                 continue
             for code in menu_codes:
-                if code != "devices":
-                    continue  # scope guardrail — only the devices menu entry
-                await service.add_policy(role_code, tenant.id, "menu", code)
-                pid = await service._upsert_permission(
-                    db, tenant.id, "menu", code, perm_type="menu"
-                )
-                if pid not in existing_per_role[role_code]:
-                    await rp_repo.grant(rid, pid, tenant.id)
-                    new_count += 1
-            await service.sync_role_permissions_to_casbin(db, rid, tenant.id)
-
-        await db.flush()
-        stats[tenant.id] = new_count
-
-    return stats
-
-
-# ---------------------------------------------------------------------------
-# One-shot backfill for the bookings permission set (device-booking slice 02).
-#
-# Structural mirror of ``backfill_devices_perms_for_existing_tenants`` — the
-# bookings object follows the identical seed/backfill lifecycle as devices
-# (both are tenant-scoped business records that mirror the customer
-# convention). The only difference is the scope guardrail obj name.
-#
-# Scope guardrail: this function ONLY touches ``(obj="bookings", *)`` and
-# ``(obj="menu", act="bookings")`` rows. It never grants/revokes anything else,
-# so re-running it after other permission work is always safe (idempotent and
-# side-effect-bounded).
-# ---------------------------------------------------------------------------
-async def backfill_bookings_perms_for_existing_tenants(db: AsyncSession) -> dict[str, int]:
-    """Grant ``bookings``/``menu:bookings`` perms to every tenant's system roles.
-
-    Walks the ``tenants`` table and, for each tenant, ensures owner/admin/member
-    hold the bookings-related entries from ``DEFAULT_*_PERMS`` plus the
-    ``menu:bookings`` entry from ``DEFAULT_MENU_PERMS``. Existing tenants created
-    before device-booking slice 02 shipped are missing these; new tenants get
-    them via ``seed_tenant_defaults`` automatically.
-
-    Idempotent at three layers (same as the devices backfill):
-      * ``PermissionService._upsert_permission`` returns the existing row id
-        when the catalogue already has ``bookings:<act>`` / ``menu:bookings``;
-      * ``RolePermissionRepository.grant`` no-ops on an already-active grant;
-      * ``sync_role_permissions_to_casbin`` is a full rebuild from SCD2 current
-        state, so re-syncing converges.
-
-    Returns a stats dict (tenant_id → count of newly-granted role×permission
-    pairs) for the one-shot script's report. The count is "rows newly added by
-    this run" — re-running on an already-backfilled tenant yields 0 per pair.
-
-    Only ``bookings``/``menu:bookings`` are touched. Other permissions
-    (``customers:read``, ``devices:read``, etc.) are left untouched, which is
-    the K6 contract in the plan.
-    """
-    from app.models.tenant import Tenant  # local import to avoid module cycles
-    from app.repositories.rbac import RolePermissionRepository
-
-    service = PermissionService()
-    rp_repo = RolePermissionRepository(db)
-
-    # Snapshot existing (role_id, permission_id) active grants once per tenant
-    # so we can count *new* grants without a second round-trip per pair. The
-    # SCD2 "active" predicate (valid_to IS NULL) lives in the repository.
-    tenants = (await db.execute(select(Tenant))).scalars().all()
-    stats: dict[str, int] = {}
-
-    for tenant in tenants:
-        role_ids = await service._role_ids_by_code(db, tenant.id)
-        # Pre-collect existing active grants per role (permission_id set) so
-        # we can tell "new" from "already granted" without N round-trips.
-        existing_per_role: dict[str, set[str]] = {}
-        for role_code, rid in role_ids.items():
-            active = await rp_repo.current_permissions(rid, tenant.id)
-            existing_per_role[role_code] = {row.permission_id for row in active}
-
-        new_count = 0
-
-        # --- api perms: only (obj="bookings", *) rows ------------------------
-        for role_code, perms in (
-            ("owner", DEFAULT_OWNER_PERMS),
-            ("admin", DEFAULT_ADMIN_PERMS),
-            ("member", DEFAULT_MEMBER_PERMS),
-        ):
-            rid = role_ids.get(role_code)
-            if rid is None:
-                # Tenant doesn't have this system role (rare: member never
-                # created). Nothing to grant — skip cleanly.
-                continue
-            for obj, act in perms:
-                if obj != "bookings":
-                    continue  # scope guardrail — never touch non-bookings perms
-                pid = await service._upsert_permission(db, tenant.id, obj, act)
-                if pid not in existing_per_role[role_code]:
-                    await rp_repo.grant(rid, pid, tenant.id)
-                    new_count += 1
-            # Casbin sync is per-role (sync_role_permissions_to_casbin is a
-            # full rebuild from SCD2 current state — cheap and convergent).
-            await service.sync_role_permissions_to_casbin(db, rid, tenant.id)
-
-        # --- menu perms: only ("menu", "bookings") --------------------------
-        for role_code, menu_codes in DEFAULT_MENU_PERMS.items():
-            rid = role_ids.get(role_code)
-            if rid is None:
-                continue
-            for code in menu_codes:
-                if code != "bookings":
-                    continue  # scope guardrail — only the bookings menu entry
+                if code != obj:
+                    continue  # scope guardrail — only the <obj> menu entry
                 await service.add_policy(role_code, tenant.id, "menu", code)
                 pid = await service._upsert_permission(
                     db, tenant.id, "menu", code, perm_type="menu"

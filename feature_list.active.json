@@ -40,20 +40,7 @@
       "priority": 77,
       "area": "工程化",
       "title": "permission backfill 参数化去重(消解逐字节镜像函数,巡检候选 ③)",
-      "user_visible_behavior": "无用户可见行为变化(纯后端代码重构)。app/services/permission_service.py 的两个 backfill 函数(backfill_devices_perms_for_existing_tenants L723 + backfill_bookings_perms_for_existing_tenants L828)逐字节相同,唯一差异是字面量 'devices' vs 'bookings'。本任务合并为 backfill_perm_set_for_existing_tenants(db, obj) 参数化函数 + BACKFILLABLE_OBJS 白名单约束;scripts/backfill_*.py 两脚本合并为 backfill_perms.py --obj;测试 K chapter 合并为 test_permission_backfill.py parametrize。防第三份镜像扩散。无 schema 变化,权限补齐行为零变化。",
-      "status": "not_started",
-      "verification": [
-        "grep -rn 'backfill_devices_perms_for_existing_tenants|backfill_bookings_perms_for_existing_tenants' app/ scripts/ tests/ → 0(无残留旧函数名)",
-        "python scripts/backfill_perms.py --obj devices --dry-run(正常)",
-        "python scripts/backfill_perms.py --obj invalid(argparse 报错)",
-        "pytest tests/test_permission_backfill.py -v(7 cases 绿:3 场景 × 2 obj + 1 边界)",
-        "./init.sh full(841 passed = 840 - 6 删 + 7 新,零回归)",
-        "ruff clean"
-      ],
-      "notes": "第 7 次巡检候选 ③(Strong + WORSENED,唯一恶化项)。grill 4 决策(D1 合并 + 改所有 caller / D2 合并 scripts / D3 测试 parametrize 抽独立文件 / D4 Literal/白名单约束防误用)。纯参数化重构非复杂任务不走对抗式审查,但 /code-review 重点审 scope guardrail 保持(K6 契约:不误改其他 obj perms)。与候选①②同批规划。实施顺序:③ 排第二(①→③→②)。",
-      "plan": "harness/docs/plan-perm-backfill-dedupe.md",
-      "depends_on": "",
-      "evidence": []
+      "status": "passing"
     },
     {
       "id": "chat-page-split",
@@ -84,17 +71,10 @@
       "status": "passing"
     },
     {
-      "id": "composite-chat",
-      "priority": 72,
-      "area": "AI 编排",
-      "title": "复合查询会话(Fan-out + Synthesize:并行问全部 agent 再综合)",
-      "status": "passing"
-    },
-    {
       "id": "_milestone_archived",
       "priority": 0,
       "area": "里程碑",
-      "title": "[已归档 71 条 passing,见 archive/features-passing-archive.json]",
+      "title": "[已归档 72 条 passing,见 archive/features-passing-archive.json]",
       "status": "passing"
     }
   ],
