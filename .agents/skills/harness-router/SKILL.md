@@ -77,22 +77,24 @@ harness/docs/plan-<feature>.md 的「实施切片」段。中途 context>60% 就
 
 **何时进回归模式**:本会话内,用户此前已走过探索流程并拿走了某任务的提示词(通常在新会话实施),现在回来说「这个任务完成了」「做完了」「合并了」「切片 X 搞定了」之类。**先验证再刷新,不要直接信用户口头报告** —— 真相源在仓库文件里。
 
-**第 1 步:定位刚完成的任务** —— 从本会话上文回忆用户上一次拿走的是哪个提示词(EP1/EP2/EP3 + 哪个 feature/切片)。若上文已 compact 掉或无法定位,直接问一句「是哪个任务?」再继续。**不要假装记得**。
+**第 1 步:同步本地 main(前置硬动作,不得跳过)** —— 进入回归验证的**第一个动作**必须是 `git fetch origin && git checkout main && git pull --ff-only`,确保本地文件状态 = 远端真实状态,再做任何 grep / ls / 文件检查。**不得假设本地状态 = 远端真实状态** —— perm-backfill 切片 2 回归曾因未同步 main,在陈旧的 feature 分支工作区 grep,误判「切片2 名不副实」(实为 PR 合并前的旧状态)。若 `git pull` 网络不可达(沙箱限制),如实告知用户「无法同步远端,本地验证可能基于陈旧状态」,降级为纯本地验证并在结论里标注此限制,不假装已同步。
 
-**第 2 步:三源交叉验证**(并行查,缺一不可)
+**第 2 步:定位刚完成的任务** —— 从本会话上文回忆用户上一次拿走的是哪个提示词(EP1/EP2/EP3 + 哪个 feature/切片)。若上文已 compact 掉或无法定位,直接问一句「是哪个任务?」再继续。**不要假装记得**。
+
+**第 3 步:三源交叉验证**(并行查,缺一不可)
 - **`feature_list.json`** —— 查该 feature 的 `status` 是否从 `in_progress`/`not_started` 变成了 `passing`;`evidence` 字段是否补了 PR 链接 + 日期。
 - **`plan-<feature>.md` 的 acceptance criteria checklist** —— 查对应切片的 `- [ ]` 是否改成了 `- [x]`;切片标题行是否追加了 `✅ PR #NN commit <hash>` 证据。**未勾 = 未完成,不得算过**。
 - **`git log --oneline -10`** —— 查是否真有对应 PR 的 merge commit / feat commit 落在 main(或当前分支)。光有本地 commit 不算,要已合并。
 
-**第 3 步:判定状态并反馈**(三选一,如实报告)
+**第 4 步:判定状态并反馈**(三选一,如实报告)
 
 | 验证结果 | 判定 | 反馈动作 |
 |---|---|---|
-| 三源都对齐(.status=passing + checklist 勾选 + **PR merged 进 main**[**末切片 `gh pr view --json mergedAt` 非 null**,非末切片可放宽至本地 commit 在 feature 分支]) | ✅ **真完成** | 进入第 4 步刷新选项 |
-| 部分对齐(如本地有 commit 但 checklist 未勾 / status 未改 / **PR 仍 OPEN 未合并**) | ⚠️ **半完成(收尾债)** | 列出具体缺哪几项,提示用户(或直接帮)补勾 checklist + 改 status + 填 evidence + 跑 `./scripts/sync-active-features.sh`。**PR 仍 OPEN**:如实说「代码在 feature 分支但未合并进 main」,不判真完成;若用户确认暂不合并,在 progress.md 记「PR #NN 待合并,分支暂留」。补完再进第 4 步 |
+| 三源都对齐(.status=passing + checklist 勾选 + **PR merged 进 main**[**末切片 `gh pr view --json mergedAt` 非 null**,非末切片可放宽至本地 commit 在 feature 分支]) | ✅ **真完成** | 进入第 5 步刷新选项 |
+| 部分对齐(如本地有 commit 但 checklist 未勾 / status 未改 / **PR 仍 OPEN 未合并**) | ⚠️ **半完成(收尾债)** | 列出具体缺哪几项,提示用户(或直接帮)补勾 checklist + 改 status + 填 evidence + 跑 `./scripts/sync-active-features.sh`。**PR 仍 OPEN**:如实说「代码在 feature 分支但未合并进 main」,不判真完成;若用户确认暂不合并,在 progress.md 记「PR #NN 待合并,分支暂留」。补完再进第 5 步 |
 | 三源都不对齐(没合并、没勾选、status 没变) | ❌ **未完成 / 未合并** | 如实说「仓库里没看到这个任务的合并痕迹」,问用户是在哪条分支 / 哪个 PR,不要替用户脑补完成 |
 
-**第 4 步:刷新可考虑事项**(只在 ✅ 真完成 或 ⚠️ 补完债 后跑)
+**第 5 步:刷新可考虑事项**(只在 ✅ 真完成 或 ⚠️ 补完债 后跑)
 - 重跑「探索流程」第 1-2 步(读数据 → 分类输出),但**聚焦变化**:
   - 刚完成的切片/feature 不再出现在选项里(已 passing)。
   - 若刚完成的是**非末切片**:同 feature 的下一个切片成为新 frontier,在 ③ 类选项里高亮它(标注「接上一个,frontier 已推进到切片 NN」)。
