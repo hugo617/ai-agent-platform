@@ -19,21 +19,7 @@
       "priority": 78,
       "area": "工程化",
       "title": "前端 devices-page 拆 store-view/hq-view(镜像 bookings/ 范式,巡检候选 ②)",
-      "user_visible_behavior": "无用户可见行为变化(纯前端结构重构)。frontend/src/pages/devices-page.tsx(1083 行单文件)拆成 devices/ 文件夹:devices-page.tsx(barrel re-export)+ index.tsx(二叉路由)+ store-view.tsx + hq-view.tsx + device-dialogs.tsx(4 共享 Dialog)+ device-status-meta.ts(纯数据)+ shared.tsx(StatusSelect/StatusBadge/customerNameOf)。完全镜像 bookings/ 已验证的拆分范式。补 store-view.test.tsx + hq-view.test.tsx 单测(目前 devices-page 零单测)。无后端改动无 schema 变化,运行时行为零变化。",
-      "status": "not_started",
-      "verification": [
-        "cd frontend && npm run build(0 类型错误)",
-        "cd frontend && npm test(65 现有 + ~10 新增 = ~75+ 全绿,零行为回归)",
-        "cd frontend && npx oxlint .(0 warning 0 error)",
-        "grep -rn 'from.*pages/devices-page' frontend/src/ | grep -v 'pages/devices/' → 0(无残留旧路径)",
-        "ls frontend/src/pages/devices/(7 文件 + __tests__/)",
-        "./init.sh full(840 passed + 前端全绿)",
-        "devices/ 文件夹结构对称于 bookings/(barrel + view + dialogs + status-meta + shared + tests)"
-      ],
-      "notes": "第 7 次巡检候选 ②(Strong + PERSISTING)。grill 5 决策(D1 完全镜像 bookings/ / D2 4 Dialog → device-dialogs.tsx / D3 helper 按职责拆 device-status-meta.ts + shared.tsx / D4 store+hq 两测试 / D5 router barrel devices-page.tsx)。纯前端 locality move,非复杂任务不走对抗式审查。与候选①③同批规划(Phase 1 批量规划)。实施顺序:② 排第三(①→③→②)。",
-      "plan": "harness/docs/plan-devices-page-split.md",
-      "depends_on": "",
-      "evidence": []
+      "status": "passing"
     },
     {
       "id": "perm-backfill-dedupe",
@@ -64,17 +50,10 @@
       "status": "passing"
     },
     {
-      "id": "bookings-shared-split",
-      "priority": 73,
-      "area": "工程化",
-      "title": "bookings/shared.tsx 按功能职责拆分(bookings-page-split 后续候选,纯 locality 重构)",
-      "status": "passing"
-    },
-    {
       "id": "_milestone_archived",
       "priority": 0,
       "area": "里程碑",
-      "title": "[已归档 72 条 passing,见 archive/features-passing-archive.json]",
+      "title": "[已归档 73 条 passing,见 archive/features-passing-archive.json]",
       "status": "passing"
     }
   ],

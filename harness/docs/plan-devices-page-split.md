@@ -1,7 +1,7 @@
 # 计划:前端 devices-page 拆 store-view / hq-view(镜像 bookings/ 范式)
 
 > **id**: `devices-page-split`
-> **状态**: not_started v2(经 opus 对抗式审查修订,规划就绪待实施)
+> **状态**: passing v2(切片 1 + 切片 2 全完成,feature 收尾完成 2026-07-30)
 > **优先级**: 78(当前最高 passing = union-cast-split 75,本任务与 chat-page-split 76 / perm-backfill-dedupe 77 同批;第 7 次巡检候选 ②)
 > **创建日期**: 2026-07-30
 > **最后修订**: 2026-07-30(v2)
@@ -200,7 +200,7 @@ opus 双轴审查(真相核查 + 设计质量)发现 v1 的 tenantId 安全测�
   - [x] **tenantId smoke 测试就位并绿**(HqView 传 tenantId 非 undefined)
   - [x] build 0 类型错误 + 83(81+2 smoke)测试零回归 + oxlint 0 warning
 
-### Ticket 2: 补完整 store-view + hq-view 单测(测试 + 收尾)
+### Ticket 2: 补完整 store-view + hq-view 单测(测试 + 收尾) ✅ 切片 2 完成
 
 - **What to build**:新建 `devices/__tests__/store-view.test.tsx` + 把 Ticket 1 的 smoke 扩展成完整 `hq-view.test.tsx`(加 spy-on-children 接缝覆盖 tenantId prop + hook closure 双路径),对齐 bookings 测试范式(renderWithProviders + mock queries)。覆盖列表渲染 + CRUD 守卫 + Dialog 弹出 + HQ 跨租户写守卫全路径。feature 收尾。
 - **Blocked by**: Ticket 1
@@ -212,13 +212,13 @@ opus 双轴审查(真相核查 + 设计质量)发现 v1 的 tenantId 安全测�
   - `cd frontend && npm run build && npm test && npx oxlint .`(全绿)
   - `./init.sh full`(全量后端 + 前端,零回归)
 - **AC**:
-  - [ ] store-view.test.tsx 覆盖列表渲染 + CRUD 守卫 + 创建 Dialog
-  - [ ] hq-view.test.tsx 覆盖 panorama 渲染 + **跨租户写守卫双路径**(Create/Edit 的 tenantId prop via spy-on-children + Bind/Delete 的 hook closure)
-  - [ ] 两测试全绿
-  - [ ] npm run build + npm test + oxlint 全绿
-  - [ ] ./init.sh full 全量绿(840 passed + 前端全绿)
-  - [ ] feature 收尾:feature_list.json status → passing + evidence + sync-active + progress.md
-  - [ ] 文档影响评估执行
+  - [x] store-view.test.tsx 覆盖列表渲染 + CRUD 守卫 + 创建 Dialog
+  - [x] hq-view.test.tsx 覆盖 panorama 渲染 + **跨租户写守卫双路径**(Create/Edit 的 tenantId prop via spy-on-children + Bind/Delete 的 hook closure)
+  - [x] 两测试全绿
+  - [x] npm run build + npm test + oxlint 全绿
+  - [x] ./init.sh full 全量绿(840 passed + 前端全绿)
+  - [x] feature 收尾:feature_list.json status → passing + evidence + sync-active + progress.md
+  - [x] 文档影响评估执行
 
 ---
 
