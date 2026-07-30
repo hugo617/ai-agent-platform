@@ -34,7 +34,7 @@ const CustomersPage = lazy(() =>
   import("@/pages/customers-page").then((m) => ({ default: m.CustomersPage })),
 );
 const DevicesPage = lazy(() =>
-  import("@/pages/devices-page").then((m) => ({ default: m.DevicesPage })),
+  import("@/pages/devices/devices-page").then((m) => ({ default: m.DevicesPage })),
 );
 const BookingsPage = lazy(() =>
   import("@/pages/bookings/bookings-page").then((m) => ({ default: m.BookingsPage })),

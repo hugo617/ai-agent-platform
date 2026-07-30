@@ -177,7 +177,7 @@ opus 双轴审查(真相核查 + 设计质量)发现 v1 的 tenantId 安全测�
 
 > **切片策略**:纯前端 locality move,非功能开发。按「依赖顺序」分 2 片:先建文件夹 + 迁移组件(expand)→ 再补测试 + router 收尾。因是机械移动,可考虑单片完成,但分 2 片利于隔离风险 + 每片独立验证。
 
-### Ticket 1: 建 devices/ 文件夹 + 迁移组件 + tenantId smoke + router(expand + migrate,**v2 前移 smoke**)
+### Ticket 1: 建 devices/ 文件夹 + 迁移组件 + tenantId smoke + router(expand + migrate,**v2 前移 smoke**) ✅ 切片 1 完成
 
 - **What to build**:新建 `devices/` 文件夹,用 git mv + 拆分把 devices-page.tsx 的内容迁到对应文件:`devices-page.tsx`(barrel)+ `index.tsx`(二叉路由)+ `store-view.tsx`(`export StoreView` + 其 modelMap)+ `hq-view.tsx`(`export HqView`)+ `device-dialogs.tsx`(4 Dialog)+ `device-status-meta.ts`(STATUS_META/STATUS_OPTIONS/NONE)+ `shared.tsx`(StatusSelect/StatusBadge/customerNameOf/ModelOption)。**v2 关键:StoreView/HqView 搬迁后必须加 `export`**(原代码是 module-level 但未 export)。改 App.tsx import 路径。删旧 `pages/devices-page.tsx`。**v2 前移 tenantId smoke**:此切片补一个最小 tenantId 回归测试(HqView 选 target → DeviceCreateDialog 收到 tenantId prop 非 undefined),避免 Ticket 1 完成时 tenantId 安全零捕获(现有 65 测试不含 devices)。
 - **Blocked by**: 无(可立即开始)
@@ -192,13 +192,13 @@ opus 双轴审查(真相核查 + 设计质量)发现 v1 的 tenantId 安全测�
   - `cd frontend && npx oxlint .`(0 warning)
   - `grep -rn "from.*pages/devices-page['\"]" frontend/src/ | grep -v "pages/devices/"`(归 0,无残留旧路径)
 - **AC**:
-  - [ ] devices/ 文件夹 7 文件就位(§10 `test -f` 清单全通过)
-  - [ ] StoreView/HqView 已加 `export`
-  - [ ] App.tsx import 指向 devices/devices-page
-  - [ ] 旧 pages/devices-page.tsx 已删
-  - [ ] 无残留旧路径 import(grep 归 0)
-  - [ ] **tenantId smoke 测试就位并绿**(HqView 传 tenantId 非 undefined)
-  - [ ] build 0 类型错误 + 65+1 测试零回归 + oxlint 0 warning
+  - [x] devices/ 文件夹 7 文件就位(§10 `test -f` 清单全通过)
+  - [x] StoreView/HqView 已加 `export`
+  - [x] App.tsx import 指向 devices/devices-page
+  - [x] 旧 pages/devices-page.tsx 已删
+  - [x] 无残留旧路径 import(grep 归 0)
+  - [x] **tenantId smoke 测试就位并绿**(HqView 传 tenantId 非 undefined)
+  - [x] build 0 类型错误 + 83(81+2 smoke)测试零回归 + oxlint 0 warning
 
 ### Ticket 2: 补完整 store-view + hq-view 单测(测试 + 收尾)
 
