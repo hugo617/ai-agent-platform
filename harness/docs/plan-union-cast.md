@@ -139,7 +139,7 @@
 
 ## 6. 切片规划(tracer-bullet,按 domain 分)
 
-### Ticket 1: bookings domain(useBookings → useBookingsAll) ✅
+### Ticket 1: bookings domain(useBookings → useBookingsAll) ✅ PR #147 commit abce938
 
 - **What to build**:bookings 视角的 A 类 union-cast 消解 + D 类死 cast 清理。新增 `fetchBookingsAll`/`useBookingsAll`(返回 `BookingHqRead[]`)。hq-view 改调 `useBookingsAll` 消 L143(A 类);store-view 改 useBookings 返回窄类型后消 L186(A 类);my-bookings-view 删 L63 多余 cast(D 类,useMyBookings 已返回 `Booking[]` 非 union,不需拆 hook)。**跨 domain 文件中间态说明**:hq-view 与 store-view 同时消费 bookings + devices 数据,本切片只改它们的 bookings 调用 + 消 booking cast,devices 调用 + device cast 留切片 2(切片间 hq-view/store-view 会暂存「bookings 已窄化、devices 仍 union」的中间态,可编译可运行,切片 2 补齐)。
 - **Blocked by**: 无(frontier 切片)
@@ -165,7 +165,7 @@
   - [x] `npm run build` 0 类型错误
   - [x] `npm test` 全绿(零行为回归)
 
-### Ticket 2: devices domain(useDevices → useDevicesAll + useDeviceModels → useDeviceModelsAll) ✅
+### Ticket 2: devices domain(useDevices → useDevicesAll + useDeviceModels → useDeviceModelsAll) ✅ PR #147 commit abce938
 
 - **What to build**:devices 视角的 A 类 union-cast 消解。新增 `fetchDevicesAll`/`useDevicesAll`(返回 `DeviceHqRead[]`)+ `fetchDeviceModelsAll`/`useDeviceModelsAll`(返回 `DeviceModelRead[]`)。hq-view 改调 `useDevicesAll` 消 L163(接切片1遗留);store-view 消 L152/356/366;devices-page **单文件双组件**:StoreView L192 改调 useDevices(返回窄 `Device[]`)消 cast + HqView L422 改调 `useDevicesAll` 消 cast;device-models-page 改调 `useDeviceModelsAll` 消 L149/216。devices-page 的 C 类 `as ModelOption[]`(4 处)+ `as DeviceStatus`(1 处)保持不动。
 - **Blocked by**: Ticket 1(bookings 先行验证范式 + 跨 domain 文件的 bookings 侧已收口)
@@ -199,7 +199,7 @@
 
   **实施决策偏离 §4.5(已裁决,记入 plan)**:§4.5 原写「`fetchDeviceModels` endpoint 函数同理保留 union,新增 `fetchDeviceModelsAll`(类型上声明返回 `DeviceModelRead[]`)」。**实施时改为「窄化 `fetchDeviceModels` → `DeviceModelPublic[]` + 新增 `fetchDeviceModelsAll` → `DeviceModelRead[]`」**,镜像切片 1 `fetchBookings`→`Booking[]` + `fetchBookingsAll`→`BookingHqRead[]` 的对称范式。**理由**:① 与切片 1 完全对称,降低认知负担(同范式:store fetch 窄类型 + All 变体 HQ 窄类型,无 union 残留);② 运行时零差异(同 URL,backend 按 token role 分流,类型在 seam 处定形);③ devices-page 的 `as ModelOption[]`(C 类,D2 排除)投影 `{id,name}` 字段,`DeviceModelPublic` 本就有这俩字段,窄化对投影路径零影响;④ 消除了「fetchDeviceModels 返 union 但 fetchDevices/fetchBookings 返窄类型」的不一致。**§4.5 相应描述以本裁决为准**(plan §4.5 文字未逐字改,本注记为权威偏差记录)。
 
-### Ticket 3: 收尾验证(A 类 cast 审计 + 文档) ✅
+### Ticket 3: 收尾验证(A 类 cast 审计 + 文档) ✅ PR #148 commit addb9eb
 
 - **What to build**:全仓 grep 审计 **A 类 role-branching 窄化 cast** 归 0(数组形式 `as Xxx[]` / `as XxxHqRead[]`),确认 B 类(props 适配,hq-view L520/523 `b as Booking` 单数形式)与 C 类(`as ModelOption[]` 投影、`as DeviceStatus` L1043 enum cast)等非 role cast 不受影响。清理残余 `Note(candidate-8)` 注释。feature 收尾。
 - **Blocked by**: Ticket 1 + Ticket 2
