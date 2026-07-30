@@ -200,7 +200,7 @@ opus 双轴审查(真相核查 + 设计质量)发现 v1 多处事实错误与设
 
   **完成证据(Ticket 1,2026-07-30 Session 165 非末切片)**:`build-working-list.ts` 抽出 `(base, userText, now?=Date.now) => Message[]`,base 浅拷贝 `.map((m)=>({...m}))` + user/assistant 两条占位(`local-user-`/`local-assistant-` 前缀 + `created_at` 走 `now()`)。handleSend 改调 `buildWorkingList(localMessages ?? history ?? [], text)` + `const assistantMsg = working[working.length - 1]` 保留流式就地 mutate 引用。`build-working-list.test.ts` 5 边界用例(空 base / 非空 base 追加 / now 注入钉死时间 / 浅拷贝非别名 / 默认 Date.now 回退),`vi.useFakeTimers()`+`vi.setSystemTime`。**验证**:`vitest run` 5/5 绿 + `tsc -b` 0 错 + `npm run build` 绿(1.96s)+ `npm test` **70/70 全绿**(65 基线 + 5 新,零行为回归)+ `oxlint` 0/0。chat-page.tsx 仍 `pages/`(未 git mv),App.tsx 未改。**/code-review 双轴**(general-purpose ×2 并行):Standards 0 硬违规 / 1 已修(`build-working-list.ts` header 注释「读两次」不准 → 改为描述各读两次+默认跨 tick语义);2 判断项留痕(① `now` 参数 test-only Speculative Generality —— 明确由 plan「近纯函数注入时钟」决策正当化保留;② `working[len-1]` positional 耦合 —— 已注释,Ticket 2/3 若追加 trailer 可评估改双返回值)/ Spec 5 AC 全满足 0 缺失 0 误 0 偏差。**非末切片**(Ticket 2/3 待做),不动 feature_list.json status。
 
-### Ticket 2: 抽 ConversationListPanel 组件 + 单测(migrate,**不 git mv**)
+### Ticket 2: 抽 ConversationListPanel 组件 + 单测(migrate,**不 git mv**) ✅
 
 - **What to build**:把列表 JSX + 右键菜单 + rename/add-tag 两个 Dialog + 相关处理器(handleDeleteConversation/toggleSelect/handleBatchDelete/openRename/submitRename/openAddTag/submitAddTag/handleRemoveTag/handleTogglePin/handleToggleStar)+ 4 个 dialog state + selectedIds + searchInput + searchCommitted + debounce effect + 清空 effect + `conversationLabel` helper 全部移到 `chat/conversation-list-panel.tsx`。**Panel 自调 `@/hooks/queries` 的 conversation 管理 hooks(D2 范式)**,父层只通过 `onSelectConversation(id)` / `onStartNew()` 两个回调接收用户选择。配套 `conversation-list-panel.test.tsx` 对齐 store-view.test 范式。此切片**行为零变化**(纯搬迁 + Panel 自调 hooks 接线)。
 - **Blocked by**: Ticket 1(共享 chat/ 文件夹已建)
@@ -214,12 +214,14 @@ opus 双轴审查(真相核查 + 设计质量)发现 v1 多处事实错误与设
   - `cd frontend && npm test`(65+ 全绿,零行为回归)
   - `cd frontend && npx oxlint .`(0 warning)
 - **AC**:
-  - [ ] ConversationListPanel 组件抽出,**自调 hooks、零 data/handler props**(仅 2 个向上回调)
-  - [ ] selectedIds + searchInput + searchCommitted + 相关 effect 全部下沉 Panel 内部
-  - [ ] ChatPage 瘦到 ~600 行(只剩 streaming 半边 + 编排)
-  - [ ] conversation-list-panel.test.tsx 覆盖渲染 + 删除 mutateAsync 被调 + Dialog 弹出
-  - [ ] build 0 类型错误 + 全测试零回归 + oxlint 0 warning
-  - [ ] **chat-page.tsx 仍在旧位置**(未 git mv,App.tsx 未改)
+  - [x] ConversationListPanel 组件抽出,**自调 hooks、零 data/handler props**(仅 2 个向上回调)
+  - [x] selectedIds + searchInput + searchCommitted + 相关 effect 全部下沉 Panel 内部
+  - [x] ChatPage 瘦到 ~600 行(只剩 streaming 半边 + 编排)
+  - [x] conversation-list-panel.test.tsx 覆盖渲染 + 删除 mutateAsync 被调 + Dialog 弹出
+  - [x] build 0 类型错误 + 全测试零回归 + oxlint 0 warning
+  - [x] **chat-page.tsx 仍在旧位置**(未 git mv,App.tsx 未改)
+
+  **完成证据(Ticket 2,2026-07-30 Session 165 非末切片)**:从 chat-page.tsx 抽出列表半边(列表 JSX + 右键菜单 + rename/add-tag 2 Dialog + 10 handler + selectedIds/searchInput/searchCommitted/2 effect + conversationLabel helper + customerNameOf 本地副本)到 `chat/conversation-list-panel.tsx`。Panel 自调 9 个会话管理 hook(useConversations/useDeleteConversation/useRenameConversation/useAddConversationTag/useRemoveConversationTag/useSetConversationPinned/useSetConversationStarred/useBatchDeleteConversations/useCustomerProfiles),零 data/mutation 下传。**双栏特化偏离(经 Spec 轴判可接受)**:chat-page 是「列表+详情」双栏、streaming 半边在父层,故 Panel 接收 2 向下只读 UI 状态(`streaming`+`activeConversationId`)+ 2 向上回调(`onSelectConversation`/`onStartNew`)+ `initialSearch`(?search= 深链播种,保「零行为变更」)。AC「仅 2 向上回调」字面被这 3 向下 prop 突破,但 Panel 仍自取 conversations、自调所有 mutation,D2「列表生命周期自含」精神未破。**code-review 双轴(Standards+Spec 并行 sub-agent)共识发现 1 处行为回归并修正**:原 `selectConversation` 的 `if(streaming) return` JS 守卫下移 Panel 后,行 `<button>` 漏 `disabled={streaming}`(原靠 JS 守卫非 disabled)→ streaming 中点会话行会中途切换(违 §4.5「零行为变更」)。修正:行 button 补 `disabled={streaming}`(与 DropdownMenuTrigger/新建按钮守卫一致)+ 补 1 回归用例锁住 + 修掉 chat-page 错误注释。测试 `conversation-list-panel.test.tsx` 11 用例(vi.hoisted mock 9 hook + renderWithProviders + user-event@14):列表渲染 + 徽章 + 空状态(无词/有词)+ 点击选择 + 删除 mutateAsync + 删除当前会话触发 onStartNew + rename/add-tag Dialog 弹出 + streaming 时 trigger/行 button disabled。**验证**:`vitest run` 11/11 绿 + `tsc -b` 0 错 + `npm run build` 绿(1.48s)+ `npm test` **81/81 全绿**(70 基线 + 11 新,零回归)+ `oxlint` 0/0。chat-page.tsx 1032→582 行(<650 AC),仍 `pages/`(未 git mv),App.tsx 未改。**非末切片**(Ticket 3 待做),不动 feature_list.json status。
 
 ### Ticket 3: 收尾验证(git mv + router barrel + customer-helpers + 全量验证)
 
