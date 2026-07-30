@@ -1,7 +1,7 @@
 # 计划:permission backfill 参数化去重(消解逐字节镜像函数)
 
 > **id**: `perm-backfill-dedupe`
-> **状态**: draft v2(经 opus 对抗式审查修订)
+> **状态**: not_started v2(经 opus 对抗式审查修订,规划就绪待实施)
 > **优先级**: 77(当前最高 passing = union-cast-split 75,本任务与 chat-page-split 76 / devices-page-split 78 同批;第 7 次巡检候选 ③)
 > **创建日期**: 2026-07-30
 > **最后修订**: 2026-07-30(v2)

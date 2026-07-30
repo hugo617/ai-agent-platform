@@ -1,7 +1,7 @@
 # 计划:前端 devices-page 拆 store-view / hq-view(镜像 bookings/ 范式)
 
 > **id**: `devices-page-split`
-> **状态**: draft v2(经 opus 对抗式审查修订)
+> **状态**: not_started v2(经 opus 对抗式审查修订,规划就绪待实施)
 > **优先级**: 78(当前最高 passing = union-cast-split 75,本任务与 chat-page-split 76 / perm-backfill-dedupe 77 同批;第 7 次巡检候选 ②)
 > **创建日期**: 2026-07-30
 > **最后修订**: 2026-07-30(v2)
