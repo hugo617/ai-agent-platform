@@ -26,7 +26,7 @@ Chapter layout (matches plan-device-booking.md slice 01 acceptance criteria):
   keeps the row; device_id stays but the device is gone).
 - K. backfill (slice 02): bring pre-existing tenants up to the bookings perm set.
   - K1 fixture: a tenant with NO bookings policies (DB + casbin)
-  - K2 run backfill_bookings_perms_for_existing_tenants
+  - K2 run backfill_perm_set_for_existing_tenants(db, "bookings")
   - K3 owner gets bookings:create/read/update/delete + menu:bookings
   - K4 member gets bookings:read + menu:bookings but NOT bookings:create
   - K5 idempotent: re-run backfill, no error, no duplicate grants
@@ -976,7 +976,7 @@ async def test_create_inverted_window_400(app_client, db_session, test_env):
 
 # ----------------------------------------- K. backfill (slice 02)
 #
-# K chapter verifies ``backfill_bookings_perms_for_existing_tenants``: the
+# K chapter verifies ``backfill_perm_set_for_existing_tenants`` (obj="bookings"):
 # function that brings pre-existing tenants (created before slice 02 shipped)
 # up to the bookings permission set. Each test stands alone (no client fixture
 # — these are pure DB + permission_service assertions) so they don't interact
@@ -1097,7 +1097,7 @@ async def test_k_backfill_grants_bookings_perms_correctly(db_session, test_env):
 
     from app.core import casbin_enforcer as casbin_mod
     from app.services.permission_service import (
-        backfill_bookings_perms_for_existing_tenants,
+        backfill_perm_set_for_existing_tenants,
         permission_service,
     )
 
@@ -1108,7 +1108,10 @@ async def test_k_backfill_grants_bookings_perms_correctly(db_session, test_env):
     with patch.object(casbin_mod, "get_enforcer", return_value=test_env.enforcer):
         # K2: run the backfill. ``db`` must be the same session the assertions
         # use so the writes are visible (test fixture shares one connection).
-        stats = await backfill_bookings_perms_for_existing_tenants(db_session)
+        # NOTE(perm-backfill-dedupe T1): temporarily calls the merged
+        # parameterized function; this K chapter is removed in T2 once
+        # tests/test_permission_backfill.py takes over.
+        stats = await backfill_perm_set_for_existing_tenants(db_session, "bookings")
 
         # The backfill should have added: owner gets 4 api + 1 menu = 5; admin
         # 3 + 1 = 4; member 1 + 1 = 2. The seeded customers:read (3) and
@@ -1146,13 +1149,13 @@ async def test_k_backfill_idempotent(db_session, test_env):
     from app.core import casbin_enforcer as casbin_mod
     from app.models.rbac import RolePermission
     from app.services.permission_service import (
-        backfill_bookings_perms_for_existing_tenants,
+        backfill_perm_set_for_existing_tenants,
     )
 
     tenant_id, _ = await _seed_backfill_target_tenant(db_session, test_env)
 
     with patch.object(casbin_mod, "get_enforcer", return_value=test_env.enforcer):
-        await backfill_bookings_perms_for_existing_tenants(db_session)
+        await backfill_perm_set_for_existing_tenants(db_session, "bookings")
         # Snapshot the post-backfill grants so we can detect drift after the
         # second run (active = valid_to IS NULL).
         before_rows = (
@@ -1167,7 +1170,7 @@ async def test_k_backfill_idempotent(db_session, test_env):
 
         # K5: run it again. Must not raise, must report zero new grants
         # (everything is already there), must not create duplicate grant rows.
-        second = await backfill_bookings_perms_for_existing_tenants(db_session)
+        second = await backfill_perm_set_for_existing_tenants(db_session, "bookings")
         assert second[tenant_id] == 0, "second run must add 0 grants"
 
         after_rows = (
@@ -1191,7 +1194,7 @@ async def test_k_backfill_preserves_other_perms(db_session, test_env):
 
     from app.core import casbin_enforcer as casbin_mod
     from app.services.permission_service import (
-        backfill_bookings_perms_for_existing_tenants,
+        backfill_perm_set_for_existing_tenants,
         permission_service,
     )
 
@@ -1208,7 +1211,7 @@ async def test_k_backfill_preserves_other_perms(db_session, test_env):
         ok = await permission_service.check("owner", tenant_id, "devices", "read")
         assert ok, "owner had devices:read before backfill"
 
-        await backfill_bookings_perms_for_existing_tenants(db_session)
+        await backfill_perm_set_for_existing_tenants(db_session, "bookings")
 
         # Post-backfill: the original perms still work AND bookings perms work.
         for role in ("owner", "admin", "member"):

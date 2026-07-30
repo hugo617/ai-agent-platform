@@ -45,7 +45,7 @@ from sqlalchemy import select  # noqa: E402
 from app.core.database import AsyncSessionLocal  # noqa: E402
 from app.models.tenant import Tenant  # noqa: E402
 from app.services.permission_service import (  # noqa: E402
-    backfill_bookings_perms_for_existing_tenants,
+    backfill_perm_set_for_existing_tenants,
 )
 
 
@@ -74,7 +74,9 @@ async def main() -> None:
             )
             return
 
-        stats = await backfill_bookings_perms_for_existing_tenants(session)
+        # NOTE(perm-backfill-dedupe T1): temporarily calls the merged
+        # parameterized function; this whole script is deleted in T2.
+        stats = await backfill_perm_set_for_existing_tenants(session, "bookings")
         await session.commit()
 
         total = sum(stats.values())

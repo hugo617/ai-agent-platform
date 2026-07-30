@@ -174,7 +174,7 @@ opus 双轴审查(真相核查 + 设计质量)发现 v1 多处事实错误与安
 
 > **切片策略**:纯代码重构,非功能开发。按「依赖顺序」分 2 片:先合并 service 函数(核心)+ 改所有 caller(**临时保留测试绿**)→ 再合并 scripts + 测试 parametrize(收尾验证)。
 
-### Ticket 1: service 函数参数化合并 + caller 改造(**临时保留测试绿**)
+### Ticket 1: service 函数参数化合并 + caller 改造(**临时保留测试绿**) ✅
 
 - **What to build**:在 `permission_service.py` 新增 `BACKFILLABLE_OBJS` 常量 + `backfill_perm_set_for_existing_tenants(db, obj)` 函数(body 从原两函数合并,obj 用参数替换硬编码 + 开头白名单校验 + **循环变量改 `perm_obj`**);删旧 `backfill_devices_perms_for_existing_tenants` + `backfill_bookings_perms_for_existing_tenants`。所有 caller 同步改调新函数 + 传 obj。**v2 关键:测试 K chapter 临时改调新函数(`backfill_perm_set(db, "devices")`),不删** —— 保留 6 个测试绿,避免安全代码测试空窗(删 K chapter 移到 Ticket 2)。scripts 也临时改调新函数(Ticket 2 删)。
 - **Blocked by**: 无(可立即开始)
@@ -188,13 +188,15 @@ opus 双轴审查(真相核查 + 设计质量)发现 v1 多处事实错误与安
   - `pytest tests/test_devices_api.py tests/test_bookings_api.py -k "backfill" -v`(**6 测试临时改调后仍绿**,行为等价验证)
   - `./init.sh`(冒烟:全量绿,确认 caller 改造无遗漏)
 - **AC**:
-  - [ ] `backfill_perm_set_for_existing_tenants(db, obj)` 函数就位,签名含 obj: str
-  - [ ] `BACKFILLABLE_OBJS` frozenset 常量就位,含 devices + bookings
-  - [ ] 非法 obj 抛 ValueError
-  - [ ] **循环变量已改名为 `perm_obj`**(无 shadowing)
-  - [ ] 旧两函数已删,grep 无残留**定义**
-  - [ ] **6 个 K chapter 测试临时改调新函数后仍全绿**(无测试空窗)
-  - [ ] `./init.sh` 冒烟绿(无 import error / 无 NameError)
+  - [x] `backfill_perm_set_for_existing_tenants(db, obj)` 函数就位,签名含 obj: str
+  - [x] `BACKFILLABLE_OBJS` frozenset 常量就位,含 devices + bookings
+  - [x] 非法 obj 抛 ValueError
+  - [x] **循环变量已改名为 `perm_obj`**(无 shadowing)
+  - [x] 旧两函数已删,grep 无残留**定义**
+  - [x] **6 个 K chapter 测试临时改调新函数后仍全绿**(无测试空窗)
+  - [x] `./init.sh` 冒烟绿(无 import error / 无 NameError)
+
+> **完成证据(2026-07-30)**:`./init.sh` 冒烟绿(ruff + 42 smoke passed);`pytest -k backfill` 6 passed(devices 3 + bookings 3);两个 script dry-run 在真实 DB 上 import + 执行新函数正常;`BACKFILLABLE_OBJS = frozenset({'devices','bookings'})`;`ValueError` 对 `obj="users"` 触发验证 OK。双轴 code-review 通过(Standards 0 硬违例 / Spec 0 偏差,K6 scope guardrail 由 `if perm_obj != obj` + `if code != obj` 保持)。
 
 ### Ticket 2: scripts 合并 + 测试 parametrize 收尾
 
