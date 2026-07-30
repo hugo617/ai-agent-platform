@@ -25,14 +25,19 @@ vi.mock("@/hooks/queries", () => ({
 
 // React Router:HqView 用 useSearchParams(client-side filter),CustomerUsageDialog
 // 用 useNavigate(「为客户咨询」深链)。renderWithProviders 不包 Router context,
-// 所以这里 mock 这两个 hook;useSearchParams 默认返回空 filter。
+// 所以这里 mock 这两个 hook;useSearchParams 默认返回空 filter,搜索测试改 setSearch。
+const routerMocks = vi.hoisted(() => ({ search: "" }));
 vi.mock("react-router-dom", async () => {
   const actual = await vi.importActual<typeof import("react-router-dom")>(
     "react-router-dom",
   );
   return {
     ...actual,
-    useSearchParams: () => [new URLSearchParams(), vi.fn()],
+    useSearchParams: () => {
+      const sp = new URLSearchParams();
+      if (routerMocks.search) sp.set("search", routerMocks.search);
+      return [sp, vi.fn()];
+    },
     useNavigate: () => vi.fn(),
   };
 });
@@ -140,5 +145,25 @@ describe("customers/HqView smoke (slice 01)", () => {
     expect(
       getByText(/跨全部门店为该客户提供 AI 服务的用量统计/),
     ).toBeTruthy();
+  });
+
+  it("search filter: ?search= narrows list by name/identity_key", () => {
+    mocks.useCustomers.mockReturnValue({
+      data: [
+        makeCustomer({ id: "c1", name: "张三", identity_key: "13800000001" }),
+        makeCustomer({ id: "c2", name: "李四", identity_key: "13900000002" }),
+      ],
+      isLoading: false,
+    });
+    mocks.useCustomerUsage.mockReturnValue({ data: undefined, isLoading: false });
+
+    routerMocks.search = "张"; // ?search=张
+
+    const { getByText, queryByText } = renderWithProviders(<HqView />);
+
+    expect(getByText("张三")).toBeTruthy(); // 匹配 name
+    expect(queryByText("李四")).toBeNull(); // 被过滤掉
+
+    routerMocks.search = ""; // reset
   });
 });

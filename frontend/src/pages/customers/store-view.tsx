@@ -137,6 +137,14 @@ export function StoreView() {
     setFormOpen(true);
   };
 
+  // buildPayload returns the parsed tags alongside the form values. NOTE: the
+  // original monolith (customers-page.tsx) had a latent bug — onSubmit bound
+  // the *whole* {...values, tags} object to a local `tags` var and passed it
+  // as payload.tags, so the backend silently stored {identity_key, name, ...,
+  // tags:{level:"vip"}} instead of just {level:"vip"}. The split keeps the
+  // buildPayload shape but onSubmit now reads `tags.tags` to pass the parsed
+  // record only. This is a deliberate behaviour fix surfaced by D4's
+  // parseTagsJson extraction; locked by store-view.test.tsx (tags assertion).
   const buildPayload = (values: FormValues) => {
     const { tags, error } = parseTagsJson(values.tags_json);
     if (error) {
