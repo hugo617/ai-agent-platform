@@ -65,7 +65,10 @@ harness/docs/plan-<feature>.md 的「实施切片」段。中途 context>60% 就
 按 acceptance criteria 实施。用 /implement 实施,完成后 /code-review,
 通过后勾选 plan checklist 对应项 + 标题追加 ✅ PR 证据。
 <若是末切片,补:因这是末切片,完成后执行 feature 收尾仪式
-(three-tier §4 第1-7步,含依赖解锁扫描)。>
+(three-tier §4 第1-8步,含依赖解锁扫描 + 分支清理)。分支清理时序:若 PR 在本会话已合并
+(`gh pr view --json mergedAt` 非 null),立即 `git checkout main && git pull` +
+`git branch -d <branch>`(+ 可选删远端);若 PR 仍 OPEN(等 CI/评审),分支清理**暂缓**,
+在 progress.md 记「PR #NN 待合并,分支暂留」,下轮 PR merged 后补跑第 8 步。>
 ```
 
 > 提示词里 `<尖括号>` 部分由探索器从数据填充。EP3 要判断是不是末切片(查 plan 依赖图,看后面还有没有未完成切片)。
@@ -85,19 +88,19 @@ harness/docs/plan-<feature>.md 的「实施切片」段。中途 context>60% 就
 
 | 验证结果 | 判定 | 反馈动作 |
 |---|---|---|
-| 三源都对齐(.status=passing + checklist 勾选 + git 有合并 commit) | ✅ **真完成** | 进入第 4 步刷新选项 |
-| 部分对齐(如 git 有 commit 但 checklist 未勾 / status 未改) | ⚠️ **半完成(收尾债)** | 列出具体缺哪几项,提示用户(或直接帮)补勾 checklist + 改 status + 填 evidence + 跑 `./scripts/sync-active-features.sh`。补完再进第 4 步 |
+| 三源都对齐(.status=passing + checklist 勾选 + **PR merged 进 main**[**末切片 `gh pr view --json mergedAt` 非 null**,非末切片可放宽至本地 commit 在 feature 分支]) | ✅ **真完成** | 进入第 4 步刷新选项 |
+| 部分对齐(如本地有 commit 但 checklist 未勾 / status 未改 / **PR 仍 OPEN 未合并**) | ⚠️ **半完成(收尾债)** | 列出具体缺哪几项,提示用户(或直接帮)补勾 checklist + 改 status + 填 evidence + 跑 `./scripts/sync-active-features.sh`。**PR 仍 OPEN**:如实说「代码在 feature 分支但未合并进 main」,不判真完成;若用户确认暂不合并,在 progress.md 记「PR #NN 待合并,分支暂留」。补完再进第 4 步 |
 | 三源都不对齐(没合并、没勾选、status 没变) | ❌ **未完成 / 未合并** | 如实说「仓库里没看到这个任务的合并痕迹」,问用户是在哪条分支 / 哪个 PR,不要替用户脑补完成 |
 
 **第 4 步:刷新可考虑事项**(只在 ✅ 真完成 或 ⚠️ 补完债 后跑)
 - 重跑「探索流程」第 1-2 步(读数据 → 分类输出),但**聚焦变化**:
   - 刚完成的切片/feature 不再出现在选项里(已 passing)。
   - 若刚完成的是**非末切片**:同 feature 的下一个切片成为新 frontier,在 ③ 类选项里高亮它(标注「接上一个,frontier 已推进到切片 NN」)。
-  - 若刚完成的是**末切片**:跑过依赖解锁扫描后,看有没有下游 feature 的 `depends_on` 因此满足 → 从 `not_started` 可转 `in_progress`;若有,在 ② 类选项里高亮新解锁的 feature。
+  - 若刚完成的是**末切片**:跑过依赖解锁扫描后,看有没有下游 feature 的 `depends_on` 因此满足 → 从 `not_started` 可转 `in_progress`;若有,在 ② 类选项里高亮新解锁的 feature。**另查分支清理**:若 PR 已 merged,确认实施会话执行了 `git checkout main && git pull` + `git branch -d`(clean-state 第 10 项);若本地仍有已合并的 feature 分支残留 → 列为收尾债,帮用户补删。PR 仍 OPEN 则分支暂留是正常的,不算债。
   - 若该系列全部收官:在 ① 类里推 backlog 下一个缺口。
 - 输出格式同探索流程第 2 步的 3 类表格,但顶部加一行 **「自上次以来的变化」摘要**(如「切片 03 ✅ PR #108 已合并 → frontier 推进到切片 04;无新解锁的下游 feature」),让用户一眼看到进度。
 
-> **关键纪律**:回归模式不是"用户说完成就完成"。仓库文件(feature_list.json + plan checklist + git log)才是真相源,用户口头报告只是触发验证的信号。验证不通过时,如实报告缺口,不要为了"显得高效"而替用户勾选/改 status。
+> **关键纪律**:回归模式不是"用户说完成就完成"。仓库文件(feature_list.json + plan checklist + **PR `mergedAt` / git log**)才是真相源,用户口头报告只是触发验证的信号。**末切片「真完成」的硬性标准:PR 已 merged 进 main(`gh pr view --json mergedAt` 非 null),本地 commit + PR OPEN 不算已合并**(three-tier §4 第 8 步)。验证不通过时,如实报告缺口,不要为了"显得高效"而替用户勾选/改 status。
 
 ---
 
@@ -142,7 +145,7 @@ harness/docs/plan-<feature>.md 的「实施切片」段。中途 context>60% 就
 | 切片实施中 | — | `/implement`(继续当前) |
 | context 接近 60% | — | `/handoff`(EP2 中断要在 progress 顶部记断点) |
 | 实施完成 | — | `/code-review` → **勾 plan checklist** → commit |
-| 末切片完成 | plan checklist 全勾 | **feature 收尾仪式**(见 three-tier §4)+ status=passing |
+| 末切片完成 | plan checklist 全勾 | **feature 收尾仪式**(见 three-tier §4 第1-8步,含依赖解锁扫描 + 分支清理)+ status=passing |
 | 复杂任务评审 | — | `/code-review`(多模型投票见下文「复杂任务判定」)|
 | bug 出现 | —(不走三层) | `/diagnosing-bugs`(流程见 `harness/docs/bug-tracking.md`)|
 | wide refactor | expand-contract 序列 | `/to-tickets`(产批次)→ EP3 单入口 `/implement` |
