@@ -14,7 +14,7 @@
 
 ---
 
-## 清单(9 项)
+## 清单(10 项)
 
 - [ ] **基础验证可用**:`./init.sh full` 跑过(`ruff check` + 全量 `pytest` 全绿;**收尾必须全量**,开工 `./init.sh` 冒烟不算)
 - [ ] **进度已记录**:`progress.md` 已追加本轮 Session 记录(目标/已完成/验证/下一步)
@@ -31,7 +31,9 @@
 - [ ] **切片 checklist 已勾选**:若本次完成(或推进)了某 `plan-<feature>.md` 的切片,
   `/code-review` 通过后、commit 前已把该切片的 acceptance criteria 从 `- [ ]` 改 `- [x]`,
   并在切片标题行追加 `✅ PR #NN commit <hash>`(切片级真相源,见
-  [`docs/three-tier-workflow.md`](docs/three-tier-workflow.md) §4/§5)。**末切片完成时,另跑 feature 收尾仪式**(evidence + status=passing + sync + **依赖解锁扫描 §4 第7步**)
+  [`docs/three-tier-workflow.md`](docs/three-tier-workflow.md) §4/§5)。**末切片完成时,另跑 feature 收尾仪式**(evidence + status=passing + sync + **依赖解锁扫描 §4 第7步 + 分支清理 §4 第8步**)
+- [ ] **无残留分支**:本 feature 的 PR 合并进 main 后(`gh pr view <NN> --json mergedAt` 确认非 null),已 `git checkout main && git pull` 切回主分支并同步,并删本地/远端 feature 分支(见
+  [`docs/three-tier-workflow.md`](docs/three-tier-workflow.md) §4 第8步)。**判定**:`git branch` 视图只剩 main(或仅当前在用的工作分支),无已合并的 feature 分支残留。**PR 仍 OPEN 时此条暂缓**,在 progress.md 记「PR #NN 待合并,分支暂留」
 
 ---
 
@@ -48,6 +50,7 @@
 | 违反铁律 | 回退改动,重走分层。铁律见 `AGENTS.md`。 |
 | 不可接手 | 把「下轮需要手动做什么」写进 progress.md 的风险段。 |
 | 切片 checklist 未勾 | 现在就勾(`/code-review` 通过的切片 acceptance criteria 改 `- [x]` + 标题追加 `✅ PR #NN commit`)。不勾 = 切片状态真相源失真,下轮 agent 会误判进度。 |
+| 残留分支 | 先 `gh pr view <NN> --json mergedAt` 确认 PR 已 merged;已 merged 则 `git checkout main && git pull` + `git branch -d <branch>`(+ 可选 `git push origin --delete <branch>`)。PR 未 merged 则**不可删**,在 progress.md 记「PR #NN 待合并,分支暂留」。 |
 
 ---
 

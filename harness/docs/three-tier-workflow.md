@@ -140,8 +140,16 @@ frontier = 切片 05(其 blocker 切片 02/03/04 中,04 是最后一个完成的
 5. `progress.md` 加 Session 记录 + 更新「当前最高优先级未完成功能」
 6. 文档影响评估(4 行格式,见 [`doc-impact-assessment.md`](./doc-impact-assessment.md))
 7. **依赖解锁扫描**(防下游 feature 卡在错误的 not_started):扫描 feature_list.json,凡 `depends_on` 指向**本 feature** 且 EP2 已完成(`plan` 字段已填)的下游 feature,其依赖现已满足 → 按 §5 规则置 `in_progress`(当前新 frontier)。例:devices-crud-ui 收尾 passing 后,device-booking(EP2 已完成 + depends_on=devices-crud-ui)应立即从 not_started 翻 in_progress。
+8. **分支清理(PRM 合并后切回 main + 删分支,保持 main 干净)**:本 feature 的 PR 已合并进 main 后(`gh pr view <NN> --json mergedAt` 确认非 null),执行三步收尾:
+   - `git checkout main && git pull` —— 切回主分支并同步远端合并结果
+   - `git branch -d <feature-branch>` —— 删本地 feature 分支(已合并安全;`-d` 会拒绝删未合并分支)
+   - `git push origin --delete <feature-branch>` —— 删远端 feature 分支(可选,若团队约定保留远端历史则跳过)
 
-> 这 7 条 = [`task-workflow.md`](./task-workflow.md) §3「完成定义 4 条」的展开。**第 7 步是依赖链自动推进的关键** —— 漏跑会导致下游 feature 的 status 字段与实际「已可实施」状态脱节,新会话 agent 误判"还没轮到"。
+   > ⚠️ **顺序铁律:先确认 PR 已 merged 再删分支**。`gh pr view <NN> --json mergedAt` 返回 null = 未合并,**绝不能删**(`-d` 会拒绝,但 `-D` 强删会丢代码)。**末切片的「PR 合并」是收尾的最后一道闸**:在 PR 合并前,前 7 步完成的只是「本地收尾」;PR 真正 merged 进 main 后,feature 才算彻底交付,此时才走第 8 步删分支。若 PR 还 OPEN(等 CI / 等评审),第 8 步**暂缓**,在 progress.md 记「PR #NN 待合并,分支暂留」。
+   >
+   > **回归验证纪律(harness-router 回归模式)**:判定某切片「真完成」时,第三源 `git log` 检查**不能只看本地 commit**,必须确认对应 PR `mergedAt` 非 null(已 merged 进 main)。光有本地 commit + PR OPEN 不算「已合并」,不得判真完成 —— 这是末切片收尾的硬性验证项。
+
+> 这 8 条 = [`task-workflow.md`](./task-workflow.md) §3「完成定义 4 条」的展开。**第 7 步是依赖链自动推进的关键** —— 漏跑会导致下游 feature 的 status 字段与实际「已可实施」状态脱节,新会话 agent 误判"还没轮到"。**第 8 步是分支卫生的关键** —— 漏跑会残留本地/远端 feature 分支,污染下次 `git branch` 视图,且易让回归验证误判「本地有 commit = 已合并」。
 
 ---
 
