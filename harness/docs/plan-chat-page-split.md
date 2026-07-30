@@ -1,10 +1,10 @@
 # 计划:前端 chat-page 拆 ConversationListPanel + buildWorkingList 纯函数
 
 > **id**: `chat-page-split`
-> **状态**: draft v2(经 opus 对抗式审查修订)
+> **状态**: ✅ passing(3 切片全完成:Ticket 1 buildWorkingList + Ticket 2 ConversationListPanel + Ticket 3 git mv 双 entry + customerNameOf 共享 helper;经 v2 修订 + 3 切片 /code-review 双轴 + 全量验证)
 > **优先级**: 76(当前最高 passing = union-cast-split 75,本任务接其位;第 7 次巡检候选 ① Top)
 > **创建日期**: 2026-07-30
-> **最后修订**: 2026-07-30(v2)
+> **最后修订**: 2026-07-30(v2 → passing)
 > **来源**: 第 7 次代码健康度巡检候选 ①(Top recommendation)+ grill 9 决策共识
 
 ---
@@ -223,7 +223,7 @@ opus 双轴审查(真相核查 + 设计质量)发现 v1 多处事实错误与设
 
   **完成证据(Ticket 2,2026-07-30 Session 165 非末切片)**:从 chat-page.tsx 抽出列表半边(列表 JSX + 右键菜单 + rename/add-tag 2 Dialog + 10 handler + selectedIds/searchInput/searchCommitted/2 effect + conversationLabel helper + customerNameOf 本地副本)到 `chat/conversation-list-panel.tsx`。Panel 自调 9 个会话管理 hook(useConversations/useDeleteConversation/useRenameConversation/useAddConversationTag/useRemoveConversationTag/useSetConversationPinned/useSetConversationStarred/useBatchDeleteConversations/useCustomerProfiles),零 data/mutation 下传。**双栏特化偏离(经 Spec 轴判可接受)**:chat-page 是「列表+详情」双栏、streaming 半边在父层,故 Panel 接收 2 向下只读 UI 状态(`streaming`+`activeConversationId`)+ 2 向上回调(`onSelectConversation`/`onStartNew`)+ `initialSearch`(?search= 深链播种,保「零行为变更」)。AC「仅 2 向上回调」字面被这 3 向下 prop 突破,但 Panel 仍自取 conversations、自调所有 mutation,D2「列表生命周期自含」精神未破。**code-review 双轴(Standards+Spec 并行 sub-agent)共识发现 1 处行为回归并修正**:原 `selectConversation` 的 `if(streaming) return` JS 守卫下移 Panel 后,行 `<button>` 漏 `disabled={streaming}`(原靠 JS 守卫非 disabled)→ streaming 中点会话行会中途切换(违 §4.5「零行为变更」)。修正:行 button 补 `disabled={streaming}`(与 DropdownMenuTrigger/新建按钮守卫一致)+ 补 1 回归用例锁住 + 修掉 chat-page 错误注释。测试 `conversation-list-panel.test.tsx` 11 用例(vi.hoisted mock 9 hook + renderWithProviders + user-event@14):列表渲染 + 徽章 + 空状态(无词/有词)+ 点击选择 + 删除 mutateAsync + 删除当前会话触发 onStartNew + rename/add-tag Dialog 弹出 + streaming 时 trigger/行 button disabled。**验证**:`vitest run` 11/11 绿 + `tsc -b` 0 错 + `npm run build` 绿(1.48s)+ `npm test` **81/81 全绿**(70 基线 + 11 新,零回归)+ `oxlint` 0/0。chat-page.tsx 1032→582 行(<650 AC),仍 `pages/`(未 git mv),App.tsx 未改。**非末切片**(Ticket 3 待做),不动 feature_list.json status。
 
-### Ticket 3: 收尾验证(git mv + router barrel + customer-helpers + 全量验证)
+### Ticket 3: 收尾验证(git mv + router barrel + customer-helpers + 全量验证) ✅
 
 - **What to build**:**git mv `pages/chat-page.tsx` → `pages/chat/chat-page.tsx`**;新建 `chat/index.tsx`(路由入口,export ChatPage)+ 把 `chat-page.tsx` 改成 barrel re-export(对齐 bookings/devices 双 entry);改 `App.tsx` import 路径 `@/pages/chat-page` → `@/pages/chat/chat-page`;抽 `customerNameOf` 到 `chat/customer-helpers.ts`(参数化 `(cid, profiles) => name`),两边改调;feature 收尾。
 - **Blocked by**: Ticket 1 + Ticket 2
@@ -238,15 +238,17 @@ opus 双轴审查(真相核查 + 设计质量)发现 v1 多处事实错误与设
   - `grep -rn "from.*chat-page" frontend/src/ | grep -v "pages/chat/"`(确认无残留旧路径 import)
   - `./init.sh full`(全量后端 + 前端,确认零回归)
 - **AC**:
-  - [ ] git mv 完成,chat-page.tsx 在 chat/ 下
-  - [ ] 双 entry 就位(chat-page.tsx barrel + index.tsx 路由)
-  - [ ] App.tsx import 指向 chat/chat-page
-  - [ ] customerNameOf 共享 helper 抽出(参数化),两边改调
-  - [ ] 无残留旧路径 import(grep 归 0)
-  - [ ] npm run build + npm test + oxlint 全绿
-  - [ ] ./init.sh full 全量绿(840 passed + 前端全绿)
-  - [ ] feature 收尾:feature_list.json status → passing + evidence + sync-active + progress.md 更新
-  - [ ] 文档影响评估执行
+  - [x] git mv 完成,chat-page.tsx 在 chat/ 下
+  - [x] 双 entry 就位(chat-page.tsx barrel + index.tsx 路由)
+  - [x] App.tsx import 指向 chat/chat-page
+  - [x] customerNameOf 共享 helper 抽出(参数化),两边改调
+  - [x] 无残留旧路径 import(grep 归 0)
+  - [x] npm run build + npm test + oxlint 全绿
+  - [x] ./init.sh full 全量绿(841 passed + 前端全绿)
+  - [x] feature 收尾:feature_list.json status → passing + evidence + sync-active + progress.md 更新
+  - [x] 文档影响评估执行
+
+  **完成证据(Ticket 3,2026-07-30 Session 165 末切片)**:`git mv pages/chat-page.tsx → pages/chat/`(git rename 检测 `chat-page.tsx => chat/index.tsx` (95%),blame 连续保留)。新建 `chat/index.tsx` 路由入口(590 行,streaming 半边 + 编排的实际逻辑)+ `chat/chat-page.tsx` 改 16 行 barrel `export { ChatPage } from "./index"`(镜像 bookings/bookings-page.tsx 双 entry 范式 D9)。App.tsx lazy import `@/pages/chat-page` → `@/pages/chat/chat-page`。新建 `chat/customer-helpers.ts`:`customerNameOf(cid: string|null|undefined, profiles: CustomerProfileRead[]) => string|null` 参数化真纯函数(D7),签名 cid 扩为含 undefined(`!cid` 短路语义等价,零行为变更),profiles 作参数传入可单测。index.tsx(header 归因 badge)+ conversation-list-panel.tsx(列表项归因)改调共享 helper,删两份本地闭包副本。**零行为变更**:customerNameOf 的 null 回退语义完全保留;Panel 仍自调 useCustomerProfiles 拿自己的 profiles。**验证**:`npm run build` 绿(1.83s,chat-page chunk 348 kB 与拆分前一致)+ `npm test` **81/81 全绿**(70 基线 + 11 panel,零回归)+ `npx oxlint .` 0/0 + grep residual `pages/chat-page` imports = 0 + `index.tsx` 590 行(<650 AC)+ grep `useMemo|useCallback` index.tsx = 0 + `./init.sh full` 后端 **841 passed**(零回归)。**/code-review 双轴**(general-purpose ×2 并行):Standards 0 硬违规(双 entry 忠实镜像 bookings、symbol-name 锚定 #5 合规、不越界)/ Spec 6/9 AC 满足(余 init.sh 已补跑 + 2 收尾后置)+ 0 scope creep;1 文档建议留痕(§10 AC item 5 `wc -l chat-page.tsx` 重命名后指向 barrel,measurement target 应 retarget index.tsx —— 非缺陷,streaming 半边 590 行 <650 实测满足);1 判断项留痕(devices-page 有第 3 份 customerNameOf,fallback 语义不同 `"-"`,属独立后续候选,不越界)。commit `4c961c2`。**末切片**,进入 feature 收尾(见下条 evidence)。
 
 ---
 

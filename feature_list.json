@@ -1914,7 +1914,7 @@
       "area": "工程化",
       "title": "前端 chat-page 拆 ConversationListPanel + buildWorkingList 纯函数(巡检候选 ① Top)",
       "user_visible_behavior": "无用户可见行为变化(纯前端结构重构)。frontend/src/pages/chat-page.tsx(1038 行单函数 ChatPage)拆成 chat/ 文件夹:chat-page.tsx(streaming 半边 ~600 行)+ conversation-list-panel.tsx(列表 + 菜单 + 2 Dialog + 4 state,自含)+ build-working-list.ts(纯函数,从 handleSend 抽出 working-list 计算)+ customer-helpers.ts(共享 customerNameOf)。一石三鸟:消解单函数膨胀 + 解锁 streaming 逻辑单测(A2 不可测债)+ 抽 buildWorkingList 纯函数。无后端改动无 schema 变化,运行时行为零变化。",
-      "status": "not_started",
+      "status": "passing",
       "verification": [
         "cd frontend && npm run build(0 类型错误)",
         "cd frontend && npm test(65 现有 + ~8 新增 = ~73+ 全绿,零行为回归)",
@@ -1923,10 +1923,35 @@
         "wc -l frontend/src/pages/chat/chat-page.tsx(< 650 行)",
         "./init.sh full(840 passed + 前端全绿)"
       ],
-      "notes": "第 7 次巡检候选 ① Top recommendation。grill 9 决策(D1 Panel + 纯函数 / D2 传 handler / D3 独立 .ts / D4 建 chat/ 文件夹 / D5 Dialog 随 Panel / D6 不动 chat panel 右半边 / D7 customerNameOf 共享 helper / D8 两测试文件 / D9 router barrel chat-page.tsx)。纯前端结构重构非复杂任务不走对抗式审查。与候选②③同批规划。实施顺序:① 排第一(Top recommendation)。buildWorkingList 解锁 A2 不可测债是选它为 Top 的关键。",
+      "notes": "第 7 次巡检候选 ① Top recommendation。grill 9 决策(D1 Panel + 纯函数 / D2 传 handler / D3 独立 .ts / D4 建 chat/ 文件夹 / D5 Dialog 随 Panel / D6 不动 chat panel 右半边 / D7 customerNameOf 共享 helper / D8 两测试文件 / D9 router barrel chat-page.tsx)。纯前端结构重构非复杂任务不走对抗式审查。与候选②③同批规划。实施顺序:① 排第一(Top recommendation)。buildWorkingList 解锁 A2 不可测债是选它为 Top 的关键。【2026-07-30 收尾】3 切片全完成(Ticket 1 c2cd439 + Ticket 2 42e8504 + Ticket 3 4c961c2),经 v2 修订 + 每切片 /code-review 双轴 + 全量验证。最终:chat/ 文件夹 6 文件(chat-page barrel + index 路由 + conversation-list-panel + build-working-list + customer-helpers + __tests__ 2 文件),对称 bookings/。chat-page 1038 行 → index.tsx 590 行 + Panel 552 行。81 前端测试全绿(65 基线 + 5 buildWorkingList + 11 panel)。后端 841 passed 零回归。",
       "plan": "harness/docs/plan-chat-page-split.md",
       "depends_on": "",
-      "evidence": []
+      "evidence": [
+        {
+          "date": "2026-07-30",
+          "slice": "Ticket 1 — buildWorkingList 近纯函数 + 5 单测",
+          "commit": "c2cd439",
+          "summary": "从 handleSend 抽出 buildWorkingList(base, userText, now?=Date.now) => Message[] 到 chat/build-working-list.ts(now 注入便于单测),base 浅拷贝 + local-user-/local-assistant- 占位。handleSend 改调,assistantMsg = working[len-1] 保留流式就地 mutate 引用。5 边界单测用 vi.useFakeTimers。验证:vitest 5/5 + tsc 0 错 + build 绿 + npm test 70/70(零回归)+ oxlint 0。chat-page.tsx 仍在旧位置(未 git mv)。非末切片,不动 status。"
+        },
+        {
+          "date": "2026-07-30",
+          "slice": "Ticket 2 — ConversationListPanel 组件 + 11 单测",
+          "commit": "42e8504",
+          "summary": "抽列表半边(列表 JSX + 右键菜单 + rename/add-tag 2 Dialog + 10 handler + selectedIds/searchInput/searchCommitted/2 effect + conversationLabel + customerNameOf 本地副本)到 chat/conversation-list-panel.tsx。Panel 自调 9 会话管理 hook(对齐 store-view D2),零 data/mutation 下传。双栏特化:接 2 向下只读 UI 状态(streaming+activeConversationId)+ 2 向上回调 + initialSearch。code-review 发现并修 1 行为回归(行 button 漏 disabled={streaming})+ 补回归用例。11 单测 vi.hoisted mock 9 hook。验证:vitest 11/11 + build 绿 + npm test 81/81(70+11)+ oxlint 0。chat-page 1032→582 行。非末切片。"
+        },
+        {
+          "date": "2026-07-30",
+          "slice": "Ticket 3 — git mv + 双 entry + customerNameOf 共享 helper(末切片)",
+          "commit": "4c961c2",
+          "summary": "git mv pages/chat-page.tsx → pages/chat/(rename 检测 chat-page.tsx=>chat/index.tsx 95%,blame 连续)。新建 chat/index.tsx 路由入口(590 行 streaming 半边)+ chat-page.tsx 改 16 行 barrel(镜像 bookings/bookings-page.tsx D9)。App.tsx import 改 @/pages/chat/chat-page。新建 chat/customer-helpers.ts:customerNameOf(cid, profiles) 参数化真纯函数(D7),cid 扩 string|null|undefined(!cid 短路等价零行为变更)。index.tsx + panel 改调共享 helper 删两份本地副本。验证:build 绿(chunk 348kB 不变)+ npm test 81/81 + oxlint 0 + grep residual=0 + index.tsx 590<650 + useMemo grep=0 + ./init.sh full 后端 841 passed。/code-review 双轴:Standards 0 硬违规 / Spec 0 scope creep。"
+        },
+        {
+          "date": "2026-07-30",
+          "slice": "feature 收尾",
+          "commit": "(本条 evidence commit)",
+          "summary": "3 切片全 passing,plan-chat-page-split.md status draft v2 → ✅ passing(标题 + Ticket 3 AC 全勾 + 完成证据回填)。feature_list.json status not_started → passing + evidence 4 条(切片 1/2/3 + 收尾条)。跑 ./scripts/sync-active-features.sh 刷新 active 视图。progress.md 顶部 frontier 清空。文档影响评估:无新增/改动文档(纯前端结构重构,AGENTS.md/项目指南/铁律均不受影响)。后置候选:devices-page 第 3 份 customerNameOf(fallback 语义不同)留独立后续 ticket,不越界。"
+        }
+      ]
     },
     {
       "id": "union-cast-split",

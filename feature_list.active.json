@@ -60,20 +60,7 @@
       "priority": 76,
       "area": "工程化",
       "title": "前端 chat-page 拆 ConversationListPanel + buildWorkingList 纯函数(巡检候选 ① Top)",
-      "user_visible_behavior": "无用户可见行为变化(纯前端结构重构)。frontend/src/pages/chat-page.tsx(1038 行单函数 ChatPage)拆成 chat/ 文件夹:chat-page.tsx(streaming 半边 ~600 行)+ conversation-list-panel.tsx(列表 + 菜单 + 2 Dialog + 4 state,自含)+ build-working-list.ts(纯函数,从 handleSend 抽出 working-list 计算)+ customer-helpers.ts(共享 customerNameOf)。一石三鸟:消解单函数膨胀 + 解锁 streaming 逻辑单测(A2 不可测债)+ 抽 buildWorkingList 纯函数。无后端改动无 schema 变化,运行时行为零变化。",
-      "status": "not_started",
-      "verification": [
-        "cd frontend && npm run build(0 类型错误)",
-        "cd frontend && npm test(65 现有 + ~8 新增 = ~73+ 全绿,零行为回归)",
-        "cd frontend && npx oxlint .(0 warning 0 error)",
-        "grep -rn 'from.*pages/chat-page' frontend/src/ | grep -v 'pages/chat/' → 0",
-        "wc -l frontend/src/pages/chat/chat-page.tsx(< 650 行)",
-        "./init.sh full(840 passed + 前端全绿)"
-      ],
-      "notes": "第 7 次巡检候选 ① Top recommendation。grill 9 决策(D1 Panel + 纯函数 / D2 传 handler / D3 独立 .ts / D4 建 chat/ 文件夹 / D5 Dialog 随 Panel / D6 不动 chat panel 右半边 / D7 customerNameOf 共享 helper / D8 两测试文件 / D9 router barrel chat-page.tsx)。纯前端结构重构非复杂任务不走对抗式审查。与候选②③同批规划。实施顺序:① 排第一(Top recommendation)。buildWorkingList 解锁 A2 不可测债是选它为 Top 的关键。",
-      "plan": "harness/docs/plan-chat-page-split.md",
-      "depends_on": "",
-      "evidence": []
+      "status": "passing"
     },
     {
       "id": "union-cast-split",
@@ -104,17 +91,10 @@
       "status": "passing"
     },
     {
-      "id": "principal-scope-doc-alignment",
-      "priority": 71,
-      "area": "工程化",
-      "title": "Principal 范围边界文档对齐(CONTEXT + docstring + ADR-0001,巡检候选 3 文档债)",
-      "status": "passing"
-    },
-    {
       "id": "_milestone_archived",
       "priority": 0,
       "area": "里程碑",
-      "title": "[已归档 70 条 passing,见 archive/features-passing-archive.json]",
+      "title": "[已归档 71 条 passing,见 archive/features-passing-archive.json]",
       "status": "passing"
     }
   ],
