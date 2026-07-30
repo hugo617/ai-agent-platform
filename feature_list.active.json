@@ -1,7 +1,7 @@
 {
   "project": "ai-agent-platform",
   "description": "多租户 AI 智能体 SaaS 平台脚手架(FastAPI + React + pycasbin + LangGraph)",
-  "last_updated": "2026-07-29",
+  "last_updated": "2026-07-30",
   "harness_version": "stage1-clean-state",
   "rules": {
     "single_active_feature": true,
@@ -14,6 +14,54 @@
     "standard_start_command": "RUN_START_COMMAND=1 ./init.sh"
   },
   "features": [
+    {
+      "id": "devices-page-split",
+      "priority": 78,
+      "area": "工程化",
+      "title": "前端 devices-page 拆 store-view/hq-view(镜像 bookings/ 范式,巡检候选 ②)",
+      "user_visible_behavior": "无用户可见行为变化(纯前端结构重构)。frontend/src/pages/devices-page.tsx(1083 行单文件)拆成 devices/ 文件夹:devices-page.tsx(barrel re-export)+ index.tsx(二叉路由)+ store-view.tsx + hq-view.tsx + device-dialogs.tsx(4 共享 Dialog)+ device-status-meta.ts(纯数据)+ shared.tsx(StatusSelect/StatusBadge/customerNameOf)。完全镜像 bookings/ 已验证的拆分范式。补 store-view.test.tsx + hq-view.test.tsx 单测(目前 devices-page 零单测)。无后端改动无 schema 变化,运行时行为零变化。",
+      "status": "not_started",
+      "verification": [
+        "cd frontend && npm run build(0 类型错误)",
+        "cd frontend && npm test(65 现有 + ~10 新增 = ~75+ 全绿,零行为回归)",
+        "cd frontend && npx oxlint .(0 warning 0 error)",
+        "grep -rn 'from.*pages/devices-page' frontend/src/ | grep -v 'pages/devices/' → 0(无残留旧路径)",
+        "ls frontend/src/pages/devices/(7 文件 + __tests__/)",
+        "./init.sh full(840 passed + 前端全绿)",
+        "devices/ 文件夹结构对称于 bookings/(barrel + view + dialogs + status-meta + shared + tests)"
+      ],
+      "notes": "第 7 次巡检候选 ②(Strong + PERSISTING)。grill 5 决策(D1 完全镜像 bookings/ / D2 4 Dialog → device-dialogs.tsx / D3 helper 按职责拆 device-status-meta.ts + shared.tsx / D4 store+hq 两测试 / D5 router barrel devices-page.tsx)。纯前端 locality move,非复杂任务不走对抗式审查。与候选①③同批规划(Phase 1 批量规划)。实施顺序:② 排第三(①→③→②)。",
+      "plan": "harness/docs/plan-devices-page-split.md",
+      "depends_on": "",
+      "evidence": []
+    },
+    {
+      "id": "perm-backfill-dedupe",
+      "priority": 77,
+      "area": "工程化",
+      "title": "permission backfill 参数化去重(消解逐字节镜像函数,巡检候选 ③)",
+      "user_visible_behavior": "无用户可见行为变化(纯后端代码重构)。app/services/permission_service.py 的两个 backfill 函数(backfill_devices_perms_for_existing_tenants L723 + backfill_bookings_perms_for_existing_tenants L828)逐字节相同,唯一差异是字面量 'devices' vs 'bookings'。本任务合并为 backfill_perm_set_for_existing_tenants(db, obj) 参数化函数 + BACKFILLABLE_OBJS 白名单约束;scripts/backfill_*.py 两脚本合并为 backfill_perms.py --obj;测试 K chapter 合并为 test_permission_backfill.py parametrize。防第三份镜像扩散。无 schema 变化,权限补齐行为零变化。",
+      "status": "not_started",
+      "verification": [
+        "grep -rn 'backfill_devices_perms_for_existing_tenants|backfill_bookings_perms_for_existing_tenants' app/ scripts/ tests/ → 0(无残留旧函数名)",
+        "python scripts/backfill_perms.py --obj devices --dry-run(正常)",
+        "python scripts/backfill_perms.py --obj invalid(argparse 报错)",
+        "pytest tests/test_permission_backfill.py -v(7 cases 绿:3 场景 × 2 obj + 1 边界)",
+        "./init.sh full(841 passed = 840 - 6 删 + 7 新,零回归)",
+        "ruff clean"
+      ],
+      "notes": "第 7 次巡检候选 ③(Strong + WORSENED,唯一恶化项)。grill 4 决策(D1 合并 + 改所有 caller / D2 合并 scripts / D3 测试 parametrize 抽独立文件 / D4 Literal/白名单约束防误用)。纯参数化重构非复杂任务不走对抗式审查,但 /code-review 重点审 scope guardrail 保持(K6 契约:不误改其他 obj perms)。与候选①②同批规划。实施顺序:③ 排第二(①→③→②)。",
+      "plan": "harness/docs/plan-perm-backfill-dedupe.md",
+      "depends_on": "",
+      "evidence": []
+    },
+    {
+      "id": "chat-page-split",
+      "priority": 76,
+      "area": "工程化",
+      "title": "前端 chat-page 拆 ConversationListPanel + buildWorkingList 纯函数(巡检候选 ① Top)",
+      "status": "passing"
+    },
     {
       "id": "union-cast-split",
       "priority": 75,
@@ -43,17 +91,10 @@
       "status": "passing"
     },
     {
-      "id": "principal-scope-doc-alignment",
-      "priority": 71,
-      "area": "工程化",
-      "title": "Principal 范围边界文档对齐(CONTEXT + docstring + ADR-0001,巡检候选 3 文档债)",
-      "status": "passing"
-    },
-    {
       "id": "_milestone_archived",
       "priority": 0,
       "area": "里程碑",
-      "title": "[已归档 70 条 passing,见 archive/features-passing-archive.json]",
+      "title": "[已归档 71 条 passing,见 archive/features-passing-archive.json]",
       "status": "passing"
     }
   ],

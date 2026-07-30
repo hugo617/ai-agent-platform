@@ -1,3 +1,15 @@
+// chat/ index.tsx — the chat page's route entry (the public page export).
+//
+// Extracted from the original pages/chat-page.tsx (plan-chat-page-split
+// Ticket 3). Pure locality move: zero behaviour change. The 583-line streaming
+// half + orchestration lives here; the conversation-list half was already
+// extracted to ConversationListPanel in Ticket 2.
+//
+// Why both ``index.tsx`` and ``chat-page.tsx``: ``index.tsx`` is the
+// conventional folder-entry name (matches the "one module per folder" intent);
+// ``chat-page.tsx`` is the named file App.tsx's lazy loader points at, kept to
+// preserve the existing "page file name = route name" convention without
+// touching the router. This mirrors the bookings/ double-entry pattern.
 import { useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useSearchParams } from "react-router-dom";
@@ -6,15 +18,9 @@ import {
   Check,
   Copy,
   MessageSquare,
-  MoreVertical,
-  Pin,
-  Plus,
   RotateCcw,
   Send,
   Square,
-  Star,
-  Tags,
-  Trash2,
   User,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -31,63 +37,26 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Checkbox } from "@/components/ui/checkbox";
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/components/ui/toast";
 import { useAuth } from "@/components/auth/auth-context";
 import { isSuperAdmin } from "@/lib/permission";
 import { MarkdownView } from "@/components/chat/markdown-view";
 import { Switch } from "@/components/ui/switch";
-import { Badge } from "@/components/ui/badge";
 import { apiErrorMessage } from "@/api/client";
 import { sendChatStream } from "@/api/endpoints";
 import { CompositeMode } from "@/pages/composite-mode";
-import type { Conversation, ConversationKind, Message } from "@/api/types";
+import type { ConversationKind, Message } from "@/api/types";
+import { buildWorkingList } from "@/pages/chat/build-working-list";
+import { ConversationListPanel } from "@/pages/chat/conversation-list-panel";
+import { customerNameOf } from "@/pages/chat/customer-helpers";
 import {
-  useAddConversationTag,
   useAgents,
-  useBatchDeleteConversations,
   useConversations,
   useCustomerProfiles,
-  useDeleteConversation,
   useMessages,
-  useRemoveConversationTag,
-  useRenameConversation,
-  useSetConversationPinned,
-  useSetConversationStarred,
 } from "@/hooks/queries";
 import { formatDateTime as fmt } from "@/lib/format";
-
-/**
- * Pick a display label for a conversation: its title, or a snippet of the
- * first user message, or a fallback. (Backend may leave title null on first
- * turn; the list should still show something legible.)
- */
-function conversationLabel(c: Conversation, firstMessage?: Message): string {
-  if (c.title) return c.title;
-  if (firstMessage?.content) {
-    const snippet = firstMessage.content.trim().slice(0, 20);
-    return snippet.length < firstMessage.content.trim().length
-      ? `${snippet}…`
-      : snippet;
-  }
-  return "新对话";
-}
 
 export function ChatPage() {
   const toast = useToast();
@@ -97,49 +66,15 @@ export function ChatPage() {
 
   const { data: agents, isLoading: agentsLoading } = useAgents();
 
-  // ---------------- conversation-management state ----------------
-  // Debounced search: a separate "committed" value drives the query, updated
-  // 300ms after the input stops changing so each keystroke doesn't fire a
-  // request. Empty string → undefined so the bare query key is reused.
-  // Seed the conversation search box from a ?search= URL param so the global-
-  // search-box "查看全部" deep link carries the term into this page. Existing
-  // URL reads (customer_id) are preserved.
-  const [searchInput, setSearchInput] = useState(
-    searchParams.get("search") ?? "",
-  );
-  const [searchCommitted, setSearchCommitted] = useState<string | undefined>(
-    searchParams.get("search")
-      ? (searchParams.get("search") as string).trim() || undefined
-      : undefined,
-  );
-  useEffect(() => {
-    const handle = setTimeout(() => {
-      const v = searchInput.trim();
-      setSearchCommitted(v.length > 0 ? v : undefined);
-    }, 300);
-    return () => clearTimeout(handle);
-  }, [searchInput]);
+  // 列表半边(列表 + 右键菜单 + rename/add-tag Dialog)已抽到 ConversationListPanel
+  // (chat-page-split Ticket 2)。本组件只留 streaming 半边 + 编排。conversations/
+  // customerProfiles 在这里仍需读:header 的「关联客户」归因 badge、composite mode
+  // 跟随会话 kind 的 effect、CompositeMode 的 history 入参,都依赖这两份数据。
+  const { data: conversations } = useConversations();
 
-  const { data: conversations, isLoading: convsLoading } = useConversations(
-    searchCommitted ? { search: searchCommitted } : undefined,
-  );
-  // Multi-select for batch operations. Cleared whenever the list refetches
-  // (mutations invalidate) — tracked via an effect on the conversations array.
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  // Clear the multi-selection only when the *set* of conversation ids actually
-  // changes (a conversation was added or removed), NOT on every background
-  // refetch. Keying on the id-join (a primitive string) means a pin/star toggle
-  // that merely reorders the list (same ids, new array reference) no longer
-  // wipes an in-progress multi-select.
-  const conversationIdSet = conversations?.map((c) => c.id).join(",") ?? "";
-  useEffect(() => {
-    setSelectedIds(new Set());
-  }, [conversationIdSet]);
-
-  // Store customer profiles for the "关联客户" picker (store users only).
-  // super_admin doesn't serve individual store customers, so we disable the
-  // query for them (the endpoint permits super_admin, but the picker is hidden
-  // via !isSuperAdmin(me) — no point fetching every store's profiles).
+  // customerProfiles 留在 ChatPage:header 的 customer picker(新建会话归因)+ 归因
+  // badge 显示都依赖它。Panel 内有它自己的一份(调 useCustomerProfiles);归因 badge
+  // 的 customerNameOf 已抽共享 helper(Ticket 3),两边共用,行为零变化。
   const { data: customerProfiles } = useCustomerProfiles(!isSuperAdmin(me));
 
   const [selectedAgentId, setSelectedAgentId] = useState<string>("");
@@ -164,25 +99,12 @@ export function ChatPage() {
   const { data: history, isLoading: historyLoading } = useMessages(
     selectedConversationId,
   );
-  const deleteConv = useDeleteConversation();
-  const renameConv = useRenameConversation();
-  const addTagMut = useAddConversationTag();
-  const removeTagMut = useRemoveConversationTag();
-  const pinMut = useSetConversationPinned();
-  const starMut = useSetConversationStarred();
-  const batchDeleteMut = useBatchDeleteConversations();
 
   const [input, setInput] = useState("");
   const [streaming, setStreaming] = useState(false);
   // Local messages layered on top of (or instead of) the loaded history while
   // a reply is being streamed, so the assistant's text appears progressively.
   const [localMessages, setLocalMessages] = useState<Message[] | null>(null);
-
-  // Rename + add-tag dialog state (one open at a time over a target conv).
-  const [renameTarget, setRenameTarget] = useState<Conversation | null>(null);
-  const [renameValue, setRenameValue] = useState("");
-  const [tagTarget, setTagTarget] = useState<Conversation | null>(null);
-  const [tagValue, setTagValue] = useState("");
 
   const abortRef = useRef<AbortController | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -210,14 +132,6 @@ export function ChatPage() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams]);
-
-  // A lookup from customer_id → display name, for showing attribution in the
-  // conversation header / list (falls back to the bare id if not loaded).
-  const customerNameOf = (cid: string | null): string | null => {
-    if (!cid) return null;
-    const p = customerProfiles?.find((x) => x.customer_id === cid);
-    return p?.customer.name ?? null;
-  };
 
   // Show loaded history unless we're streaming (then show localMessages).
   const messages = localMessages ?? history ?? [];
@@ -247,123 +161,21 @@ export function ChatPage() {
     if (conv?.kind) setMode(conv.kind);
   }, [selectedConversationId, conversations]);
 
-  const startNewConversation = () => {
-    if (streaming) return;
-    setSelectedConversationId(null);
-    setSelectedCustomerId("");
-    setLocalMessages(null);
-    setInput("");
-  };
-
+  // Panel 的向上回调:用户点某个会话或「新建对话」时,清理 streaming 半边 state。
+  // streaming 进行中时这些交互在 Panel 内已被 disabled 守卫拦截(行 button /
+  // 「新建对话」按钮 / 行菜单 trigger 均 disabled={streaming}),这里无需再判。
   const selectConversation = (id: string) => {
-    if (streaming) return;
     setSelectedConversationId(id);
     // Clear the customer picker — existing conversations keep their original
     // attribution; the picker only drives NEW conversations.
     setSelectedCustomerId("");
   };
 
-  const handleDeleteConversation = async (conv: Conversation) => {
-    if (streaming) return;
-    if (!confirm("确认删除这个会话？此操作不可撤销。")) return;
-    try {
-      await deleteConv.mutateAsync(conv.id);
-      if (selectedConversationId === conv.id) {
-        setSelectedConversationId(null);
-        setLocalMessages(null);
-      }
-      toast.success("已删除会话");
-    } catch (err) {
-      toast.error("删除失败", apiErrorMessage(err));
-    }
-  };
-
-  // ---------------- conversation-management handlers ----------------
-  const toggleSelect = (id: string) => {
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  };
-
-  const handleBatchDelete = async () => {
-    if (streaming) return;
-    if (selectedIds.size === 0) return;
-    if (!confirm(`确认删除选中的 ${selectedIds.size} 个会话？此操作不可撤销。`))
-      return;
-    const ids = Array.from(selectedIds);
-    try {
-      const res = await batchDeleteMut.mutateAsync(ids);
-      if (selectedConversationId && ids.includes(selectedConversationId)) {
-        setSelectedConversationId(null);
-        setLocalMessages(null);
-      }
-      toast.success(`已删除 ${res.deleted} 个会话`);
-    } catch (err) {
-      toast.error("批量删除失败", apiErrorMessage(err));
-    }
-  };
-
-  const openRename = (conv: Conversation) => {
-    setRenameTarget(conv);
-    setRenameValue(conv.title ?? "");
-  };
-
-  const submitRename = async () => {
-    if (!renameTarget) return;
-    const title = renameValue.trim();
-    if (!title) return;
-    try {
-      await renameConv.mutateAsync({ id: renameTarget.id, title });
-      setRenameTarget(null);
-      toast.success("已重命名");
-    } catch (err) {
-      toast.error("重命名失败", apiErrorMessage(err));
-    }
-  };
-
-  const openAddTag = (conv: Conversation) => {
-    setTagTarget(conv);
-    setTagValue("");
-  };
-
-  const submitAddTag = async () => {
-    if (!tagTarget) return;
-    const tag = tagValue.trim();
-    if (!tag) return;
-    try {
-      await addTagMut.mutateAsync({ id: tagTarget.id, tag });
-      setTagValue("");
-      toast.success("已添加标签");
-    } catch (err) {
-      toast.error("添加标签失败", apiErrorMessage(err));
-    }
-  };
-
-  const handleRemoveTag = async (conv: Conversation, tag: string) => {
-    try {
-      await removeTagMut.mutateAsync({ id: conv.id, tag });
-    } catch (err) {
-      toast.error("删除标签失败", apiErrorMessage(err));
-    }
-  };
-
-  const handleTogglePin = async (conv: Conversation) => {
-    try {
-      await pinMut.mutateAsync({ id: conv.id, pinned: !conv.is_pinned });
-    } catch (err) {
-      toast.error("操作失败", apiErrorMessage(err));
-    }
-  };
-
-  const handleToggleStar = async (conv: Conversation) => {
-    try {
-      await starMut.mutateAsync({ id: conv.id, starred: !conv.is_starred });
-    } catch (err) {
-      toast.error("操作失败", apiErrorMessage(err));
-    }
+  const startNewConversation = () => {
+    setSelectedConversationId(null);
+    setSelectedCustomerId("");
+    setLocalMessages(null);
+    setInput("");
   };
 
   const handleSend = async () => {
@@ -384,20 +196,13 @@ export function ChatPage() {
     // the trailing assistant turn into `localMessages`, and basing the next
     // send on that trimmed view means the old assistant reply is NOT re-sent
     // as context and the user turn isn't duplicated in the working list.
-    const base = (localMessages ?? history ?? []).map((m) => ({ ...m }));
-    const userMsg: Message = {
-      id: `local-user-${Date.now()}`,
-      role: "user",
-      content: text,
-      created_at: new Date().toISOString(),
-    };
-    const assistantMsg: Message = {
-      id: `local-assistant-${Date.now()}`,
-      role: "assistant",
-      content: "",
-      created_at: new Date().toISOString(),
-    };
-    const working = [...base, userMsg, assistantMsg];
+    //
+    // The list assembly (base shallow-copy + local user/assistant placeholders)
+    // lives in `buildWorkingList` so it can be unit-tested in isolation
+    // (chat-page-split Ticket 1). The streaming loop below mutates the trailing
+    // assistant placeholder in place, so we keep a reference to it.
+    const working = buildWorkingList(localMessages ?? history ?? [], text);
+    const assistantMsg = working[working.length - 1];
     setLocalMessages(working);
 
     const controller = new AbortController();
@@ -490,183 +295,17 @@ export function ChatPage() {
 
   return (
     <div className="grid gap-6 lg:grid-cols-[280px_1fr]">
-      {/* ---- conversation list ---- */}
-      <Card className="flex h-[70vh] flex-col lg:h-[calc(100vh-12rem)] lg:order-1 order-2">
-        <CardHeader className="space-y-2">
-          <div className="flex-row flex items-center justify-between">
-            <CardTitle className="text-base">会话</CardTitle>
-            <div className="flex items-center gap-1">
-              {selectedIds.size > 0 && (
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={handleBatchDelete}
-                  title="批量删除选中"
-                  disabled={streaming}
-                >
-                  <Trash2 className="h-4 w-4 text-destructive" />
-                </Button>
-              )}
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={startNewConversation}
-                title="新建对话"
-                disabled={streaming}
-              >
-                <Plus className="h-4 w-4" />
-              </Button>
-            </div>
-          </div>
-          {/* Debounced search box. Empty input clears the filter (lists all). */}
-          <Input
-            value={searchInput}
-            onChange={(e) => setSearchInput(e.target.value)}
-            placeholder="搜索标题或内容…"
-            className="h-8 text-sm"
-          />
-        </CardHeader>
-        <CardContent className="min-h-0 flex-1 overflow-y-auto p-2">
-          {convsLoading ? (
-            <div className="py-8 text-center text-sm text-muted-foreground">
-              加载中…
-            </div>
-          ) : !conversations?.length ? (
-            <div className="flex flex-col items-center gap-2 py-8 text-center">
-              <MessageSquare className="h-8 w-8 text-muted-foreground" />
-              <p className="text-sm text-muted-foreground">
-                {searchCommitted ? "没有匹配的会话" : "还没有会话，发送消息开始对话"}
-              </p>
-            </div>
-          ) : (
-            <ul className="space-y-1">
-              {conversations.map((conv) => {
-                const active = conv.id === selectedConversationId;
-                const isSelected = selectedIds.has(conv.id);
-                return (
-                  <li key={conv.id}>
-                    <div
-                      className={`group flex items-center gap-1 rounded-md px-2 py-2 text-sm transition-colors ${
-                        active
-                          ? "bg-accent text-accent-foreground"
-                          : isSelected
-                            ? "bg-accent/30"
-                            : "hover:bg-accent/50"
-                      }`}
-                    >
-                      <Checkbox
-                        checked={isSelected}
-                        onCheckedChange={() => toggleSelect(conv.id)}
-                        className="h-3.5 w-3.5 shrink-0"
-                        aria-label="选择会话"
-                      />
-                      <button
-                        className="flex min-h-[28px] flex-1 flex-col items-start truncate text-left"
-                        onClick={() => selectConversation(conv.id)}
-                        title={conversationLabel(conv)}
-                      >
-                        <span className="flex w-full items-center gap-1 truncate">
-                          {conv.is_pinned && (
-                            <Pin className="h-3 w-3 shrink-0 text-amber-500" />
-                          )}
-                          {conv.is_starred && (
-                            <Star className="h-3 w-3 shrink-0 fill-amber-400 text-amber-400" />
-                          )}
-                          <span className="truncate">
-                            {conversationLabel(conv)}
-                          </span>
-                          {conv.kind === "composite" && (
-                            <Badge
-                              variant="secondary"
-                              className="shrink-0 px-1.5 py-0 text-[10px]"
-                            >
-                              复合
-                            </Badge>
-                          )}
-                        </span>
-                        <span className="flex w-full items-center gap-1 text-[11px] text-muted-foreground">
-                          {conv.customer_id && (() => {
-                            const n = customerNameOf(conv.customer_id);
-                            return n ? (
-                              <span className="inline-flex items-center gap-0.5">
-                                <User className="h-2.5 w-2.5" />
-                                {n}
-                              </span>
-                            ) : null;
-                          })()}
-                          {fmt(conv.created_at)}
-                        </span>
-                        {/* Tag chips: click a chip to remove it. */}
-                        {conv.tags.length > 0 && (
-                          <span className="mt-0.5 flex flex-wrap gap-1">
-                            {conv.tags.map((t) => (
-                              <span
-                                key={t}
-                                className="inline-flex items-center gap-0.5 rounded bg-muted px-1.5 py-px text-[10px]"
-                              >
-                                {t}
-                                <button
-                                  type="button"
-                                  className="text-muted-foreground hover:text-foreground"
-                                  title={`删除标签 ${t}`}
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleRemoveTag(conv, t);
-                                  }}
-                                >
-                                  ×
-                                </button>
-                              </span>
-                            ))}
-                          </span>
-                        )}
-                      </button>
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <button
-                            className="inline-flex min-h-[28px] min-w-[28px] items-center justify-center opacity-0 transition-opacity group-hover:opacity-100 data-[state=open]:opacity-100"
-                            title="更多操作"
-                            disabled={streaming}
-                          >
-                            <MoreVertical className="h-3.5 w-3.5" />
-                          </button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem onClick={() => openRename(conv)}>
-                            重命名…
-                          </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => openAddTag(conv)}>
-                            <Tags className="h-3.5 w-3.5" />
-                            添加标签…
-                          </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => handleTogglePin(conv)}>
-                            <Pin className="h-3.5 w-3.5" />
-                            {conv.is_pinned ? "取消置顶" : "置顶"}
-                          </DropdownMenuItem>
-                          <DropdownMenuItem
-                            onClick={() => handleToggleStar(conv)}
-                          >
-                            <Star className="h-3.5 w-3.5" />
-                            {conv.is_starred ? "取消收藏" : "收藏"}
-                          </DropdownMenuItem>
-                          <DropdownMenuSeparator />
-                          <DropdownMenuItem
-                            className="text-destructive"
-                            onClick={() => handleDeleteConversation(conv)}
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                            删除
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </div>
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-        </CardContent>
-      </Card>
+      {/* ---- conversation list (抽到 ConversationListPanel, Ticket 2) ----
+          Panel 自调会话管理 hooks;streaming/active 是只读 UI 状态(双栏联动),
+          onSelectConversation/onStartNew 是向上通知回调。initialSearch 从 ?search=
+          URL 播种,保留全局搜索框「查看全部」深链行为。 */}
+      <ConversationListPanel
+        streaming={streaming}
+        activeConversationId={selectedConversationId}
+        initialSearch={searchParams.get("search") ?? ""}
+        onSelectConversation={selectConversation}
+        onStartNew={startNewConversation}
+      />
 
       {/* ---- chat panel ---- */}
       <Card className="flex h-[70vh] flex-col lg:h-[calc(100vh-12rem)] lg:order-2 order-1">
@@ -748,12 +387,14 @@ export function ChatPage() {
             )}
             {/* When viewing an existing conversation that's attributed to a
                 customer, show a read-only badge so the staff member knows who
-                they're serving in this chat. */}
+                they're serving in this chat. customerNameOf is the shared
+                helper (Ticket 3 / plan D7); pass this ChatPage's loaded
+                customerProfiles so the lookup is self-contained. */}
             {!isSuperAdmin(me) && selectedConversationId && (() => {
               const conv = conversations?.find(
                 (c) => c.id === selectedConversationId,
               );
-              const cname = customerNameOf(conv?.customer_id ?? null);
+              const cname = customerNameOf(conv?.customer_id, customerProfiles);
               return cname ? (
                 <span className="flex items-center gap-1 rounded-md bg-accent px-2 py-1 text-xs">
                   <User className="h-3 w-3" />
@@ -944,95 +585,6 @@ export function ChatPage() {
         )}
       </Card>
 
-      {/* ---- rename dialog ---- */}
-      <Dialog
-        open={renameTarget !== null}
-        onOpenChange={(open) => !open && setRenameTarget(null)}
-      >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>重命名会话</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-2">
-            <Label htmlFor="rename-input">标题</Label>
-            <Input
-              id="rename-input"
-              value={renameValue}
-              onChange={(e) => setRenameValue(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") submitRename();
-              }}
-              autoFocus
-            />
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setRenameTarget(null)}>
-              取消
-            </Button>
-            <Button
-              onClick={submitRename}
-              disabled={!renameValue.trim() || renameConv.isPending}
-            >
-              保存
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* ---- add-tag dialog ---- */}
-      <Dialog
-        open={tagTarget !== null}
-        onOpenChange={(open) => !open && setTagTarget(null)}
-      >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>添加标签</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-2">
-            <Label htmlFor="tag-input">标签名</Label>
-            <Input
-              id="tag-input"
-              value={tagValue}
-              onChange={(e) => setTagValue(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") submitAddTag();
-              }}
-              placeholder="如：重要、待跟进"
-              autoFocus
-            />
-            {tagTarget && tagTarget.tags.length > 0 && (
-              <div className="flex flex-wrap gap-1 pt-1">
-                {tagTarget.tags.map((t) => (
-                  <span
-                    key={t}
-                    className="inline-flex items-center gap-0.5 rounded bg-muted px-1.5 py-px text-[11px]"
-                  >
-                    {t}
-                    <button
-                      type="button"
-                      className="text-muted-foreground hover:text-foreground"
-                      onClick={() => handleRemoveTag(tagTarget, t)}
-                    >
-                      ×
-                    </button>
-                  </span>
-                ))}
-              </div>
-            )}
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setTagTarget(null)}>
-              完成
-            </Button>
-            <Button
-              onClick={submitAddTag}
-              disabled={!tagValue.trim() || addTagMut.isPending}
-            >
-              添加
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }
