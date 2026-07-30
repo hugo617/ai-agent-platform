@@ -19,12 +19,7 @@
       "priority": 80,
       "area": "工程化",
       "title": "前端 queries.ts/endpoints.ts 按 domain 切分(deep module 按 domain + barrel,第 8 次巡检候选 ③)",
-      "status": "not_started",
-      "plan": "harness/docs/plan-queries-endpoints-domain-split.md",
-      "user_visible_behavior": "零行为变更 + 零 import 路径变化(纯 locality 重构)。queries.ts(1560 行/22 section)+ endpoints.ts(1514 行/22 段)两个 god-module 按 domain 拆成 文件夹:queries/core.ts(qk 工厂 + useApiMutation 68× leverage 保留)+ 22 domain 文件,queries.ts 改 barrel export *。所有 @/hooks/queries 调用点零改动。后端零改动。",
-      "acceptance_criteria": "queries/ + endpoints/ 文件夹(core + ~22 domain)就位 + queries.ts/endpoints.ts 变 barrel(≤30 行)+ import 路径零变化(grep 调用点计数 = 拆前)+ qk 编码逐字不变 + npm build 0 错 + npm test 全绿 + tsc -b 0 错 + oxlint 0/0 + ./init.sh full 后端零回归",
-      "depends_on": [],
-      "evidence": []
+      "status": "passing"
     },
     {
       "id": "customers-page-split",
@@ -55,17 +50,10 @@
       "status": "passing"
     },
     {
-      "id": "union-cast-split",
-      "priority": 75,
-      "area": "工程化",
-      "title": "前端 union-cast 扩散消解 — 拆 role-specific hook(巡检候选 B Top)",
-      "status": "passing"
-    },
-    {
       "id": "_milestone_archived",
       "priority": 0,
       "area": "里程碑",
-      "title": "[已归档 74 条 passing,见 archive/features-passing-archive.json]",
+      "title": "[已归档 75 条 passing,见 archive/features-passing-archive.json]",
       "status": "passing"
     }
   ],
