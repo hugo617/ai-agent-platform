@@ -709,18 +709,17 @@ def is_platform_writer(platform_role: str | None) -> bool:
 # ---------------------------------------------------------------------------
 # One-shot backfill for a tenant-scoped business record's permission set.
 #
-# This is the parameterized merge of the former
-# ``backfill_devices_perms_for_existing_tenants`` and
-# ``backfill_bookings_perms_for_existing_tenants`` (devices-crud-ui /
-# device-booking slice 02). Those two were byte-for-byte mirrors differing only
-# in the obj name string; this single function takes ``obj`` as a parameter and
-# binds it through the ``BACKFILLABLE_OBJS`` whitelist.
+# This is the parameterized backfill (perm-backfill-dedupe): a single function
+# takes ``obj`` as a parameter and binds it through the ``BACKFILLABLE_OBJS``
+# whitelist, replacing what used to be two byte-for-byte mirror functions (one
+# per obj). Adding a new backfillable obj later only needs a whitelist entry +
+# a DEFAULT_*_PERMS row — no new function, no new script, no new test file.
 #
 # Why this lives here instead of in scripts/: the same path runs as a one-shot
-# data migration (scripts/backfill_*_perms.py) AND from the slice-02 test
-# suites (test_devices_api.py / test_bookings_api.py K chapter). Keeping the
-# per-tenant logic in the service module means the tests exercise the real
-# production code path — the scripts are thin async main() wrappers.
+# data migration (scripts/backfill_obj_perms.py --obj <obj>) AND from the
+# parametrized suite tests/test_permission_backfill.py. Keeping the per-tenant
+# logic in the service module means the tests exercise the real production code
+# path — the script is a thin async main() wrapper.
 #
 # Scope guardrail: this function ONLY touches ``(obj=<obj>, *)`` and
 # ``(obj="menu", act=<obj>)`` rows. It never grants/revokes anything else, so
