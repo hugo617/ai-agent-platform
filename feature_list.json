@@ -40,6 +40,40 @@
       ]
     },
     {
+      "id": "customers-page-split",
+      "priority": 79,
+      "area": "工程化",
+      "title": "前端 customers-page 拆 store-view/hq-view(镜像 bookings/devices/chat split 范式,第 8 次巡检候选 ④ Top)",
+      "status": "passing",
+      "plan": "harness/docs/plan-customers-page-split.md",
+      "user_visible_behavior": "零行为变更(纯前端结构重构)。customers-page.tsx(834 行单文件 4 组件)拆成 customers/ 文件夹:CustomersPage route → StoreView(本店 CRUD)+ HqView(跨店聚合只读)+ CustomerUsageDialog + shared.tsx。镜像已验证 3 次的 bookings/devices/chat split 范式第 4 实例,运行时行为零变化。",
+      "acceptance_criteria": "customers/ 文件夹 7 文件 + barrel + App.tsx 零改动 + npm build 0 错 + npm test 全绿(store 5-6 + hq 5-6 + parse-tags 3)+ oxlint 0/0 + ./init.sh full 后端零回归 + 零行为变更",
+      "depends_on": [],
+      "evidence": [
+        "切片1 commit 347af5f:建 customers/ 文件夹 6 文件(index/store-view/hq-view/customer-usage-dialog/shared + hq smoke)+ customers-page.tsx 改 barrel。npm test 96/96 + build + oxlint 0/0 + tsc 0 错。",
+        "切片2 commit 85a969a(末):补完整 store-view.test(5)+ hq-view.test(4)+ parse-tags.test(6)= 15 tests。store-view 含 owner 创建填表提交断言 tags 经 parseTagsJson 正确解析;hq-view 含行展开 + AI 用量 dialog;parse-tags 6 边界(合法/空白/非法/空/纯空白/undefined)。npm test 109/109 + build + tsc + oxlint 0/0 + ./init.sh full 后端 842 passed 零回归。",
+        "code-review 双轴(Standards + Spec)commit 8356c64:共识发现 buildPayload tags 字段顺带修复隐藏 bug(原 monolith 把整个 {...values,tags} 当 payload.tags 传后端 → 脏数据;新版 tags.tags 正确取纯解析结果)。补 store-view 注释显式记录此行为修正 + 补 hq-view 搜索过滤测试(hq-view 4→5 tests)。customers 16/16。",
+        "feature 收尾(three-tier §4):status not_started→passing + evidence 4 条 + sync-active 刷新 + plan draft→passing(切片 checklist 全勾)+ 文档影响评估:无新增/改动文档(纯前端结构重构)。末切片依赖解锁扫描:无 depends_on 指向本 feature(纯重构无下游)。范式:customers-page split 第 4 实例(镜像 bookings/devices/chat)。"
+      ]
+    },
+    {
+      "id": "queries-endpoints-domain-split",
+      "priority": 80,
+      "area": "工程化",
+      "title": "前端 queries.ts/endpoints.ts 按 domain 切分(deep module 按 domain + barrel,第 8 次巡检候选 ③)",
+      "status": "passing",
+      "plan": "harness/docs/plan-queries-endpoints-domain-split.md",
+      "user_visible_behavior": "零行为变更 + 零 import 路径变化(纯 locality 重构)。queries.ts(1560 行/22 section)+ endpoints.ts(1514 行/22 段)两个 god-module 按 domain 拆成 文件夹:queries/core.ts(qk 工厂 + useApiMutation 68× leverage 保留)+ 22 domain 文件,queries.ts 改 barrel export *。所有 @/hooks/queries 调用点零改动。后端零改动。",
+      "acceptance_criteria": "queries/ + endpoints/ 文件夹(core + ~22 domain)就位 + queries.ts/endpoints.ts 变 barrel(≤30 行)+ import 路径零变化(grep 调用点计数 = 拆前)+ qk 编码逐字不变 + npm build 0 错 + npm test 全绿 + tsc -b 0 错 + oxlint 0/0 + ./init.sh full 后端零回归",
+      "depends_on": [],
+      "evidence": [
+        "切片1 expand commit fb88c64:Python 脚本自动化拆分 queries.ts(1560 行/25 section)→ queries/core.ts(qk 工厂+useApiMutation export,68× leverage 保留)+ 24 domain + barrel(33 行);endpoints.ts(1514 行/29 section)→ endpoints/core.ts + 29 domain + barrel(38 行)。tsc 0 错 + npm test 110/110 + build + oxlint 0/0 + import 路径零变化(@/hooks/queries 33 + @/api/endpoints 36 调用点不变)。",
+        "切片2 contract(本次):import 路径零变化显式验证(33+36=拆前)+ qk 编码 diff 逐字一致(106 行 diff 空)+ domain 边界审计(queries 124→125 export[+1 useApiMutation 从 private 变 export]/endpoints 141→141 逐字一致)+ ./init.sh full 842 passed 零回归。",
+        "code-review 双轴(Standards + Spec)并行:0 硬违规,核心不变式(零行为变更+零 import 变化+qk 逐字一致)全达标。4 判断项处置:① endpoints/core.ts 删死 re-export(原 export{api,...} 扩张 API 表面+5 无人消费)→ export{} 占位,API 表面恢复 141→141;② 文件名修正 conversations-+-chat→conversations-chat / auth-2→auth-sessions;③ barrel 行数超 ≤30(33/38 注释撑超)→ plan AC2 修订 ≤40;④ bookings/devices 超 ≤150(207/173 内聚)→ plan AC10 记录豁免。",
+        "feature 收尾(three-tier §4):status in_progress→passing + evidence 4 条 + sync-active 刷新 + plan draft→passing + 文档影响评估:无新增/改动文档(纯前端 locality 重构)+ CONTEXT.md 无新概念不提 ADR(D6)。末切片依赖解锁扫描:无 depends_on 指向本 feature。范式:deep module 按 domain 切 + 共享 core + barrel 保 interface 不变(区别于 page-split 范式)。"
+      ]
+    },
+    {
       "id": "principal-scope-doc-alignment",
       "priority": 71,
       "area": "工程化",

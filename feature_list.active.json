@@ -15,6 +15,20 @@
   },
   "features": [
     {
+      "id": "queries-endpoints-domain-split",
+      "priority": 80,
+      "area": "工程化",
+      "title": "前端 queries.ts/endpoints.ts 按 domain 切分(deep module 按 domain + barrel,第 8 次巡检候选 ③)",
+      "status": "passing"
+    },
+    {
+      "id": "customers-page-split",
+      "priority": 79,
+      "area": "工程化",
+      "title": "前端 customers-page 拆 store-view/hq-view(镜像 bookings/devices/chat split 范式,第 8 次巡检候选 ④ Top)",
+      "status": "passing"
+    },
+    {
       "id": "devices-page-split",
       "priority": 78,
       "area": "工程化",
@@ -36,24 +50,10 @@
       "status": "passing"
     },
     {
-      "id": "union-cast-split",
-      "priority": 75,
-      "area": "工程化",
-      "title": "前端 union-cast 扩散消解 — 拆 role-specific hook(巡检候选 B Top)",
-      "status": "passing"
-    },
-    {
-      "id": "twoscope-config",
-      "priority": 74,
-      "area": "工程化",
-      "title": "Two-Scope Config 范式 leverage — 抽 TwoScopeRepository 基类(巡检候选 1 Top)",
-      "status": "passing"
-    },
-    {
       "id": "_milestone_archived",
       "priority": 0,
       "area": "里程碑",
-      "title": "[已归档 73 条 passing,见 archive/features-passing-archive.json]",
+      "title": "[已归档 75 条 passing,见 archive/features-passing-archive.json]",
       "status": "passing"
     }
   ],

@@ -1,7 +1,7 @@
 {
   "project": "ai-agent-platform",
   "description": "已 passing feature 的历史归档(完整字段保留,审计用)",
-  "count": 73,
+  "count": 75,
   "features": [
     {
       "id": "data-export",
@@ -1822,6 +1822,57 @@
         "切片 2 ✅(2026-07-29 commit a0075d4):抽 filter.tsx(4 符号:BookingFilter/FILTER_OPTIONS/FilterChips/applyBookingFilter;.tsx 因 FilterChips 含 JSX,TS 硬约束;消费者用无扩展名 from \"./filter\" 对调用方不可见)+ schedule-grid-card.tsx(3 符号:ScheduleGridCard/ScheduleSlot/slotTone,slotTone 归此非 badges D6);改 5 消费者(store-view/hq-view/my-bookings-view/shared-dialog/schedule-grid)纯 deep import[D4 无 barrel];fmt/fromDatetimeLocalValue 回源 @/lib/format[D5,shared-dialog 合并进既有 import];shared.tsx 瘦身 290→38 行只剩 BookingStatusBadge + deviceNameOf[D2/D7],零 re-export。contract 阶段完成。验证:vitest 65/65 + npm run build 绿(bookings chunk 31.29 kB)+ oxlint 0 warning + tsc -b exit 0。",
         "切片 3 ✅(2026-07-29 末切片,收尾验证,无新源码):./init.sh full 828 passed 零回归(277s)+ cd frontend && npx vitest run 65/65 全绿(8 文件:store-view 6 + my-bookings-view 6 + hq-view 13 + schedule-grid 11 + config-dialog 5 + format 15 + key-spec-rows 7 + queries-booking-config 2)+ npm run build 绿(bookings-page chunk 31.29 kB 与切片 2 一致)+ npx tsc -b exit 0 + npx oxlint 0 warning 0 error(101 文件)。ScheduleGridCard smell 消解确认:grep ScheduleGridCard/ScheduleSlot/slotTone/dayLabel/hhmm/startOfToday 在 shared.tsx 全 exit 1(已全部迁出);schedule-grid-card.tsx 单消费者仅 store-view.tsx(deep import 无 barrel);零残留(无文件从 ./shared 抓已迁出符号)。feature 收尾:status in_progress → passing + sync-active-features.sh 刷新 + progress.md 顶部清空 + plan §6 切片 3 AC 全勾 + 头部 status passing。末切片依赖解锁扫描:无 feature depends_on 指向本 feature → 无需推进。",
         "feature 收尾(2026-07-29):bookings/shared.tsx Divergent Change smell 消解完成。19 个导出符号按功能内聚度归位 4 新文件 + shared 瘦身保留底座(38 行 2 符号)+ 便利 re-export 回源。全程零行为变更,5 个 view 测试全绿验证 carry 正确性。3 切片 expand-contract 序列(切片 1 expand facade / 切片 2 contract 迁 caller + 瘦身 / 切片 3 验证收尾)完整闭环。/code-review 双轴 APPROVE(切片 1/2 各过一次):Standards 0 硬违反 + Spec AC 全满足、7 决策 D1-D7 全遵守、§4.7 Out of Scope 全未碰(无新单测/无 cast 处理/无状态机改动)。"
+      ]
+    },
+    {
+      "id": "twoscope-config",
+      "priority": 74,
+      "area": "工程化",
+      "title": "Two-Scope Config 范式 leverage — 抽 TwoScopeRepository 基类(巡检候选 1 Top)",
+      "user_visible_behavior": "无用户可见行为变化(纯后端架构重构)。app/repositories/ 的 3 个两级配置 repo(booking_config/llm_config/embedding_config)的 get_platform/get_for_tenant 读路径逐字重复,抽 TwoScopeRepository 基类统一。is_active 过滤差异(llm/embedding 有、booking 无)用基类钩子 _active_filter 吸收(booking 设 None 不过滤),零 schema 改动零死列。service 层的 _upsert(crypto/audit delta)和 get_effective 三级 fallback(返回类型 + 第三级投影差异)各 service 自留不进基类。ModelPricing(二维 key 异类)和 tenant_config(单租户异类)排除,边界由 ADR-0002 钉死。现有 service/API 测试全绿验证零行为变更。",
+      "status": "passing",
+      "verification": [
+        "app/repositories/two_scope.py 存在,TwoScopeRepository 基类含 _active_filter 钩子 + get_platform/get_for_tenant",
+        "3 个 repo(booking/llm/embedding)改继承基类,自写 get_platform/get_for_tenant 全部删除",
+        "tests/test_two_scope_repo.py 覆盖三 repo 契约(llm/embedding 四态含 is_active 过滤 / booking 三态无 is_active)",
+        "./init.sh full 全绿(828 passed 基线零回归)+ ruff clean",
+        "docs/adr/0002-twoscope-config-repository.md 存在,复刻 ADR-0001 结构(纳入 3 repo + 排除 ModelPricing/tenant_config 理由)",
+        "grep 'Mirrors LlmConfig / Mirrors .*Repository' → 0 处(docstring 互指债务消解)",
+        "CONTEXT.md Two-Scope Config 条目带 ADR-0002 指针"
+      ],
+      "notes": "第 5 次巡检(2026-07-29)Top recommendation —— 「平台默认 + 租户覆盖」两级配置范式在代码里重复 3 repo + 3 service,互相 docstring 指认「Mirrors XxxConfig」但从未提取。grill 5 决策(D1 基类只吃读路径 service 各留 _upsert delta / D2 ModelPricing 异类不纳入也不补 service / D3 is_active 差异用钩子 _active_filter 非加列 / D4 get_effective 三级 fallback 不进基类 / D5 切片 llm 做 frontier)。**经子智能体对抗式审查(opus ×2 并行:真相核查 + 业务设计)**:v1 发现 3 P0(决策3 加 is_active 死列违反铁律6 / slice3 补 ModelPricingService 是空架子 / 缺 ADR 钉边界)+ 2 P1(frontier 应改 llm / repo 层零测试覆盖需先补),全部回炉修正为 v2。**回炉收益**:零 schema 改动、零死列、零业务回归的纯架构卫生 feature(审查拦下「为对称引入死列 + 迁移风险」「为对称造空架子」「边界不落 ADR 致下次巡检 re-suggest」三类问题)。**不越界**:配置软停用(is_active 设 False)是独立 feature / ModelPricing 纳入基类是异类 / get_effective+_upsert 进基类是真业务差异,均 Out of Scope。plan:harness/docs/plan-twoscope-config.md。",
+      "plan": "harness/docs/plan-twoscope-config.md",
+      "depends_on": "",
+      "evidence": [
+        "切片 1 ✅(commit 2ab3952,expand):新建 app/repositories/two_scope.py(TwoScopeRepository 基类,_active_filter 钩子默认 None + get_platform/get_for_tenant,查询语义逐字对齐 llm 现状)+ LlmConfigRepository 改继承基类(_active_filter = LlmConfig.is_active.is_(True),删自写两方法)+ 新建 tests/test_two_scope_repo.py(llm repo 四态契约:平台行/租户行/无行/is_active 过滤,态4 同时播 inactive 平台+租户行证两 scope 都过滤)。ruff clean + repo 测试四态全绿 + ./init.sh smoke 全绿。",
+        "切片 2 ✅(Session 161,migrate batch):EmbeddingConfigRepository + BookingConfigRepository 改继承基类(embedding 设 _active_filter=EmbeddingConfig.is_active.is_(True),booking 设 None 表无 is_active 列不过滤;均删自写两方法,查询语义逐字等价 SQL)。tests/test_two_scope_repo.py 补 embedding 四态 + booking 三态 + 额外 test_booking_no_active_filter_all_rows_visible(显式验证 None=不过滤契约)。/code-review 双轴 GREEN(子智能体 ×2 并行):Standards 0 硬违规 + Spec 5/5 AC 全满足。./init.sh full 840 passed(基线 828 + 新增 12 repo 契约用例,零回归,252s)。",
+        "切片 3 ✅(Session 162,末切片 contract,本次):无新源码逻辑。清理配置范式 docstring 互指债(6 处):3 repo(booking/llm/embedding)docstring 补「(见 ADR-0002)」指针 + 2 service(booking_config_service/embedding_config_service)的「Mirrors LlmConfigService」→「Structurally parallel to ... (见 ADR-0002)」+ 1 model(embedding_config.py)的「Mirrors LlmConfig」→「Structurally parallel to LlmConfig」。新建 docs/adr/0002-twoscope-config-repository.md(复刻 ADR-0001 Nygard 五段式:Context/Decision/Consequences/Superseding/References,含纳入 3 repo + 排除 ModelPricing(二维 key)/tenant_config(单租户)理由 + _active_filter 钩子理由(为何不加 is_active 列给 booking)+ get_effective/_upsert 不进基类理由)。CONTEXT.md Two-Scope Config 条目 ADR-0002 指针(grill 阶段已就位,确认)。./init.sh full 840 passed 零回归(241s)+ ruff clean + grep 配置范式互指「Mirrors.*(LlmConfig|ConfigService|ConfigRepository)」→ 0 处。",
+        "收尾条(2026-07-29 Session 162):feature status in_progress → passing。./init.sh full 全绿 840 passed(切片 1-3 累计,基线 828 + 12 repo 契约用例,零行为变更)。grep 配置范式 docstring 互指债消解。ADR-0002 钉死 TwoScopeRepository 边界(项目第 2 个 ADR,与 ADR-0001 Principal 互补,共立 Repository 层两大范式基类采纳边界)。末切片依赖解锁扫描:无 feature depends_on 指向 twoscope-config(纯重构无下游)→ 无需推进。feature 全 3 切片收官:两 docstring 互指债 + 零 repo 层测试覆盖债 消解,产出项目第 2 个 ADR 钉边界。"
+      ]
+    },
+    {
+      "id": "union-cast-split",
+      "priority": 75,
+      "area": "工程化",
+      "title": "前端 union-cast 扩散消解 — 拆 role-specific hook(巡检候选 B Top)",
+      "user_visible_behavior": "无用户可见行为变化(纯前端类型重构)。frontend/src/api/endpoints.ts 的 5 个 role-branching hook(useDevices/useDevice/useDeviceModels/useBookings/useBooking)返回 union(Device[]|DeviceHqRead[] 等),窄化散落在 4 个 view 文件靠 12 处 as 断言强制转换。本任务把 union 消灭从「view 边界」上移到「hook 层」:每个 hook 拆成 store 版 + platform-wide 版(useDevices/useDevicesAll),内部调同一 endpoint(后端按 token role 自动分流),返回窄类型。view 直接调对应 hook,0 cast。消解 hq-view/store-view/my-bookings-view/devices-page/device-models-page 的 role 窄化 cast;as ModelOption[] 字段投影 cast 与 as DeviceStatus enum cast 不纳入(正交)。无后端改动无 schema 变化,运行时行为零变化。",
+      "status": "passing",
+      "verification": [
+        "cd frontend && npm run build(0 类型错误)",
+        "cd frontend && npm test(65 全绿,零行为回归)",
+        "cd frontend && npx oxlint .(0 warning 0 error)",
+        "grep A 类 role 窄化 cast(as Device[]|as DeviceHqRead[]|as Booking[]|as BookingHqRead[]|as DeviceModelRead[] 数组形式)在 frontend/src/pages/ 代码处归 0",
+        "grep B 类(hq-view 单数 props cast as Booking/as BookingHqRead)+ C 类(as ModelOption[]|as DeviceStatus)确认保留",
+        "grep Note(candidate-8) → 0 处"
+      ],
+      "notes": "第 6 次巡检 Top recommendation。grill 8 决策(D1 拆 role-specific hook / D2 ModelOption 投影不纳入 / D3 只拆 3 个有调用的 / D4 按 domain 分 3 切片 / D5 queryKey 共享 / D6 All 后缀随 useAllTenants 先例 / D7 改 mock 名 + tsc 验证 / D8 不提 ADR)。纯前端类型重构,非复杂任务不走对抗式审查。",
+      "plan": "harness/docs/plan-union-cast.md",
+      "depends_on": "",
+      "evidence": [
+        "切片 1 ✅(bookings domain,commit 在切片 1+2 合并 PR #147 abce938):endpoints.ts 新增 fetchBookingsAll(返回 BookingHqRead[],调同一 /bookings/ URL)+ queries.ts 新增 useBookingsAll(共享 qk.bookings,D5)+ hq-view 改调 useBookingsAll 消 L143 as BookingHqRead[] + store-view useBookings 返回窄 Booking[] 后消 L186 as Booking[] + my-bookings-view 删 L63 D 类死 cast(useMyBookings 已返 Booking[] 非 union)+ 删 my-bookings-view Note(candidate-8) 注释 + hq-view.test.tsx mock 改名 useBookings→useBookingsAll + 返回值收窄为 BookingHqRead[]。npx tsc -b exit 0 + npm run build 绿 + npm test 全绿 + npx oxlint 0 warning。",
+        "切片 2 ✅(devices domain,PR #147 commit abce938):消解 8 处 A 类 device cast —— endpoints.ts 新增 fetchDevicesAll(返 DeviceHqRead[])+ fetchDeviceModelsAll(返 DeviceModelRead[]),均调同一 URL 类型注解窄化;窄化 fetchDevices→Device[](store 视角)+ fetchDeviceModels→DeviceModelPublic[](store 视角,**偏离 §4.5** 改镜像切片 1 对称范式,4 理由记入 plan);queries.ts 新增 useDevicesAll(共享 qk.devices)+ useDeviceModelsAll(共享 qk.deviceModels);hq-view 改调 useDevicesAll 消 L161 as DeviceHqRead[](接切片1遗留,双侧收口)+ store-view 消 L152/355/365 三处 as Device[] + devices-page 双组件 StoreView L192/HqView L422 消 cast + device-models-page 改调 useDeviceModelsAll 消 L149/216 + hq-view.test.tsx mock 改名 useDevices→useDevicesAll(D7)。npx tsc -b exit 0 + npm run build 绿(2.10s)+ npm test 65/65 + oxlint 0 warning + grep A 类 device cast 代码归 0(唯一匹注释)。/code-review 双轴(general-purpose ×2 并行):Standards 0 硬违规 + 1 判断项已采纳修复(endpoints.ts 三处 section header union 注释被证伪→更新为描述 split)/ Spec 8 AC 全满足。",
+        "切片 3 ✅(末切片审计,PR #148 commit addb9eb,0 源码改动 —— grep 验证 + 收尾仪式,符合 plan「文件清单 0-1」预期):AC1 grep A 类数组 cast(as Device[]|as DeviceHqRead[]|as Booking[]|as BookingHqRead[]|as DeviceModelRead[])在 frontend/src/pages/ 代码处归 0(唯一 2 处匹 my-bookings-view L7 + store-view L153 是说明性历史注释,非待办残余,保留正确)/ AC2 B 类保留(hq-view L516 b as Booking + L519 bk as BookingHqRead 单数 props cast + 测试 as BookingHqRead mock 散在 hq-view.test.tsx L139 + schedule-grid.test.tsx L109 各 1 处,共 2 处)/ AC3 C 类保留(devices-page as ModelOption[] ×4 L172/375/462/669 + as DeviceStatus ×1 L1053)/ AC4 Note(candidate-8) grep 0 处。验证:npm run build 绿(2.06s 0 类型错误)+ npm test 65/65 全绿(8 test files 零行为回归)+ npx oxlint 0 warning 0 error(101 files 102 rules)+ CI 4/4 绿(Backend pytest+ruff / E2E Playwright / Frontend typecheck+build+lint / Migrations alembic)。",
+        "收尾条(2026-07-29 Session 158 续,PR #148 合并 commit addb9eb):feature status not_started → passing(修正切片 1+2 非末切片未更新 status 的状态 + 派生视图 active.json 同步)。union-cast 扩散消解完成:3 个 role-branching hook(useDevices/useBookings/useDeviceModels)各拆出 store 版 + All 版,union 在 hook 层消灭而非 view 边界,10 处 A 类 role 窄化 cast 全消 + 1 处 D 类死 cast 顺手清。B 类(props 适配 cast)+ C 类(字段投影/enum cast)按决策 D2/§4.5 明确排除保留原样。CI 4/4 全绿验证零回归。末切片依赖解锁扫描(three-tier §4 第 7 步):无 feature depends_on 指向 union-cast-split → 无需推进。无 ADR(决策 D8,plan 记录足够,纯前端类型重构非范式基类)。第 6 次巡检 Top recommendation 收官,union-cast 从第 5 次 ~10→第 6 次 12 处的恶化趋势终止并归零。"
       ]
     }
   ]
