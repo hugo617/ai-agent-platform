@@ -6,6 +6,7 @@
 //
 // 范式沿用 devices/__tests__/hq-view.test.tsx 切片 1 smoke 前移范式。
 import { describe, expect, it, vi, type Mock } from "vitest";
+import userEvent from "@testing-library/user-event";
 import { renderWithProviders } from "@/test/test-utils";
 import { HqView } from "../hq-view";
 import type { CustomerRead } from "@/api/types";
@@ -50,6 +51,7 @@ function makeCustomer(overrides: Partial<CustomerRead> = {}): CustomerRead {
         status: "active",
         last_visit_at: "2026-07-20T00:00:00Z",
         remark: "常客",
+        tags: {},
         tenant: { id: "t1", name: "朝阳店" },
       },
     ],
@@ -85,5 +87,58 @@ describe("customers/HqView smoke (slice 01)", () => {
     const { getByText } = renderWithProviders(<HqView />);
 
     expect(getByText("暂无客户")).toBeTruthy();
+  });
+
+  it("row expand: click row toggles profile details sub-row", async () => {
+    const user = userEvent.setup();
+    mocks.useCustomers.mockReturnValue({
+      data: [
+        makeCustomer({
+          profiles: [
+            {
+              id: "p1",
+              status: "vip",
+              last_visit_at: "2026-07-20T00:00:00Z",
+              remark: "常客",
+              tags: {},
+              tenant: { id: "t1", name: "朝阳店" },
+            },
+          ],
+        }),
+      ],
+      isLoading: false,
+    });
+    mocks.useCustomerUsage.mockReturnValue({ data: undefined, isLoading: false });
+
+    const { queryByText, getByText } = renderWithProviders(<HqView />);
+
+    // 初始:明细未展开(「跨店档案明细」标题不渲染)
+    expect(queryByText(/跨店档案明细/)).toBeNull();
+
+    // 点行(chevron 区域)展开
+    await user.click(getByText("张三"));
+    expect(getByText(/跨店档案明细/)).toBeTruthy();
+    expect(getByText("朝阳店")).toBeTruthy();
+    expect(getByText("VIP")).toBeTruthy(); // profile status badge
+  });
+
+  it("AI usage button: click sets usageTarget (storeScoped=false), opens dialog", async () => {
+    const user = userEvent.setup();
+    mocks.useCustomers.mockReturnValue({
+      data: [makeCustomer()],
+      isLoading: false,
+    });
+    mocks.useCustomerUsage.mockReturnValue({ data: undefined, isLoading: false });
+
+    const { getByText } = renderWithProviders(<HqView />);
+
+    await user.click(getByText("AI 用量"));
+
+    // CustomerUsageDialog 打开,标题含「AI 服务 · 张三」
+    expect(getByText(/AI 服务 · 张三/)).toBeTruthy();
+    // storeScoped=false → DialogDescription 为「跨全部门店为该客户提供 AI 服务的用量统计」
+    expect(
+      getByText(/跨全部门店为该客户提供 AI 服务的用量统计/),
+    ).toBeTruthy();
   });
 });
