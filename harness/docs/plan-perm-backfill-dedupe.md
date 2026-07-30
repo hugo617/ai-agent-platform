@@ -1,7 +1,7 @@
-# 计划:permission backfill 参数化去重(消解逐字节镜像函数)— 切片 1 ✅ PR #151
+# 计划:permission backfill 参数化去重(消解逐字节镜像函数)— 切片 1+2 ✅ 全完成 PR #151
 
 > **id**: `perm-backfill-dedupe`
-> **状态**: not_started v2(经 opus 对抗式审查修订,规划就绪待实施)
+> **状态**: passing(2 切片全完成,2026-07-30 Session 166;切片1 commit 6461236 + 切片2 commit 89f139e,PR #151 待合并)
 > **优先级**: 77(当前最高 passing = union-cast-split 75,本任务与 chat-page-split 76 / devices-page-split 78 同批;第 7 次巡检候选 ③)
 > **创建日期**: 2026-07-30
 > **最后修订**: 2026-07-30(v2)
@@ -198,7 +198,7 @@ opus 双轴审查(真相核查 + 设计质量)发现 v1 多处事实错误与安
 
 > **完成证据(2026-07-30)**:`./init.sh` 冒烟绿(ruff + 42 smoke passed);`pytest -k backfill` 6 passed(devices 3 + bookings 3);两个 script dry-run 在真实 DB 上 import + 执行新函数正常;`BACKFILLABLE_OBJS = frozenset({'devices','bookings'})`;`ValueError` 对 `obj="users"` 触发验证 OK。双轴 code-review 通过(Standards 0 硬违例 / Spec 0 偏差,K6 scope guardrail 由 `if perm_obj != obj` + `if code != obj` 保持)。
 
-### Ticket 2: scripts 合并 + 测试 parametrize 收尾
+### Ticket 2: scripts 合并 + 测试 parametrize 收尾 ✅ commit 89f139e
 
 - **What to build**:删 `scripts/backfill_devices_perms.py` + `scripts/backfill_bookings_perms.py`,新建 `scripts/backfill_obj_perms.py`(接 `--obj` 必填 + `--dry-run`);删两个 test 文件的旧 K chapter(已被 Ticket 1 临时改调),新建 `tests/test_permission_backfill.py`(parametrize 3 场景 × 2 obj + 1 边界);feature 收尾。
 - **Blocked by**: Ticket 1
@@ -214,14 +214,14 @@ opus 双轴审查(真相核查 + 设计质量)发现 v1 多处事实错误与安
   - `./init.sh full`(全量 841 passed,零回归)
   - `grep -rn "backfill_devices_perms\|backfill_bookings_perms" app/ scripts/ tests/`(**引用**归 0,无残留旧名)
 - **AC**:
-  - [ ] 新 script `backfill_obj_perms.py --obj devices|bookings [--dry-run]` 工作
-  - [ ] argparse choices 限制 obj 为 devices/bookings
-  - [ ] `test_permission_backfill.py` 7 cases 全绿(3 场景 × 2 obj + 1 边界)
-  - [ ] 旧两 script 已删
-  - [ ] grep 旧函数名**引用**归 0(定义在 Ticket 1 已删,此处确认引用也清)
-  - [ ] `./init.sh full` 全量绿(841 passed)
-  - [ ] feature 收尾:feature_list.json status → passing + evidence + sync-active + progress.md
-  - [ ] 文档影响评估执行
+  - [x] 新 script `backfill_obj_perms.py --obj devices|bookings [--dry-run]` 工作(commit 89f139e,--obj devices --dry-run 扫 6 租户正常)
+  - [x] argparse choices 限制 obj 为 devices/bookings(--obj invalid 报 choices 错;缺 --obj 报 required 错)
+  - [x] `test_permission_backfill.py` 7 cases 全绿(3 场景 × 2 obj + 1 边界)
+  - [x] 旧两 script 已删(git rm backfill_devices_perms.py + backfill_bookings_perms.py)
+  - [x] grep 旧函数名**引用**归 0(grep backfill_devices_perms_for_existing_tenants|backfill_bookings_perms_for_existing_tenants app/scripts/tests → 0;旧 script 名同 → 0)
+  - [x] `./init.sh full` 全量绿(实测 842 passed,plan 预估 841 因基线漂移 +1,零回归)
+  - [x] feature 收尾:feature_list.json status → passing + evidence 4 条 + sync-active + progress.md(均完成,2026-07-30 Session 166)
+  - [x] 文档影响评估执行(结论:无新增/改动文档,纯后端参数化重构)
 
 ---
 
