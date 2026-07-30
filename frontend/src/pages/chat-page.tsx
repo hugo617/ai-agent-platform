@@ -58,6 +58,7 @@ import { apiErrorMessage } from "@/api/client";
 import { sendChatStream } from "@/api/endpoints";
 import { CompositeMode } from "@/pages/composite-mode";
 import type { Conversation, ConversationKind, Message } from "@/api/types";
+import { buildWorkingList } from "@/pages/chat/build-working-list";
 import {
   useAddConversationTag,
   useAgents,
@@ -384,20 +385,13 @@ export function ChatPage() {
     // the trailing assistant turn into `localMessages`, and basing the next
     // send on that trimmed view means the old assistant reply is NOT re-sent
     // as context and the user turn isn't duplicated in the working list.
-    const base = (localMessages ?? history ?? []).map((m) => ({ ...m }));
-    const userMsg: Message = {
-      id: `local-user-${Date.now()}`,
-      role: "user",
-      content: text,
-      created_at: new Date().toISOString(),
-    };
-    const assistantMsg: Message = {
-      id: `local-assistant-${Date.now()}`,
-      role: "assistant",
-      content: "",
-      created_at: new Date().toISOString(),
-    };
-    const working = [...base, userMsg, assistantMsg];
+    //
+    // The list assembly (base shallow-copy + local user/assistant placeholders)
+    // lives in `buildWorkingList` so it can be unit-tested in isolation
+    // (chat-page-split Ticket 1). The streaming loop below mutates the trailing
+    // assistant placeholder in place, so we keep a reference to it.
+    const working = buildWorkingList(localMessages ?? history ?? [], text);
+    const assistantMsg = working[working.length - 1];
     setLocalMessages(working);
 
     const controller = new AbortController();

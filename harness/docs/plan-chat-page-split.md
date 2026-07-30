@@ -179,7 +179,7 @@ opus 双轴审查(真相核查 + 设计质量)发现 v1 多处事实错误与设
 
 > **切片策略**:本任务是**纯前端结构重构**,非功能开发,不切垂直全栈切片。按「依赖顺序 + 风险隔离」分 3 片:先抽无依赖的近纯函数(可立即单测)→ 再抽 Panel(依赖纯函数无,但依赖 ChatPage state 边界厘清)→ 最后收尾(git mv + router + 清理 + 全量验证)。
 
-### Ticket 1: 抽 buildWorkingList 近纯函数 + 单测(expand,**不 git mv**)
+### Ticket 1: 抽 buildWorkingList 近纯函数 + 单测(expand,**不 git mv**) ✅
 
 - **What to build**:从 `handleSend` 内的 working-list 计算段(`const base = (localMessages ?? history ?? []).map(...)` → userMsg → assistantMsg → working)抽出 `buildWorkingList(base, userText, now?)` 近纯函数到 `chat/build-working-list.ts`(暂建 chat/ 文件夹),`handleSend` 改调它。配套 `build-working-list.test.ts` 覆盖 5 边界 case(用 `vi.useFakeTimers()`)。此切片**不改任何调用方行为**(handleSend 内部改调近纯函数,输入输出等价)。**v2 关键:不 git mv chat-page.tsx**(仍在旧位置 `pages/chat-page.tsx`,handleSend 改调新纯函数,跨目录 import 路径 `./chat/build-working-list` 成立);git mv + App.tsx 改在 Ticket 3。
 - **Blocked by**: 无(可立即开始)
@@ -192,11 +192,13 @@ opus 双轴审查(真相核查 + 设计质量)发现 v1 多处事实错误与设
   - `cd frontend && npm run build`(0 类型错误)
   - `cd frontend && npm test`(65+ 现有全绿,零行为回归)
 - **AC**:
-  - [ ] `buildWorkingList` 近纯函数抽出,签名 `(base: Message[], userText: string, now?: () => number) => Message[]`,`now` 默认 `Date.now`
-  - [ ] handleSend 改调近纯函数,逻辑等价(working-list 计算不变)
-  - [ ] 5 边界 case 单测全绿(用 fake timers)
-  - [ ] build 0 类型错误 + 现有 65 测试零回归
-  - [ ] **chat-page.tsx 仍在旧位置**(未 git mv,App.tsx 未改)
+  - [x] `buildWorkingList` 近纯函数抽出,签名 `(base: Message[], userText: string, now?: () => number) => Message[]`,`now` 默认 `Date.now`
+  - [x] handleSend 改调近纯函数,逻辑等价(working-list 计算不变)
+  - [x] 5 边界 case 单测全绿(用 fake timers)
+  - [x] build 0 类型错误 + 现有 65 测试零回归
+  - [x] **chat-page.tsx 仍在旧位置**(未 git mv,App.tsx 未改)
+
+  **完成证据(Ticket 1,2026-07-30 Session 165 非末切片)**:`build-working-list.ts` 抽出 `(base, userText, now?=Date.now) => Message[]`,base 浅拷贝 `.map((m)=>({...m}))` + user/assistant 两条占位(`local-user-`/`local-assistant-` 前缀 + `created_at` 走 `now()`)。handleSend 改调 `buildWorkingList(localMessages ?? history ?? [], text)` + `const assistantMsg = working[working.length - 1]` 保留流式就地 mutate 引用。`build-working-list.test.ts` 5 边界用例(空 base / 非空 base 追加 / now 注入钉死时间 / 浅拷贝非别名 / 默认 Date.now 回退),`vi.useFakeTimers()`+`vi.setSystemTime`。**验证**:`vitest run` 5/5 绿 + `tsc -b` 0 错 + `npm run build` 绿(1.96s)+ `npm test` **70/70 全绿**(65 基线 + 5 新,零行为回归)+ `oxlint` 0/0。chat-page.tsx 仍 `pages/`(未 git mv),App.tsx 未改。**/code-review 双轴**(general-purpose ×2 并行):Standards 0 硬违规 / 1 已修(`build-working-list.ts` header 注释「读两次」不准 → 改为描述各读两次+默认跨 tick语义);2 判断项留痕(① `now` 参数 test-only Speculative Generality —— 明确由 plan「近纯函数注入时钟」决策正当化保留;② `working[len-1]` positional 耦合 —— 已注释,Ticket 2/3 若追加 trailer 可评估改双返回值)/ Spec 5 AC 全满足 0 缺失 0 误 0 偏差。**非末切片**(Ticket 2/3 待做),不动 feature_list.json status。
 
 ### Ticket 2: 抽 ConversationListPanel 组件 + 单测(migrate,**不 git mv**)
 
