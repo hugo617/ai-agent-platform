@@ -1,4 +1,4 @@
-# 计划:permission backfill 参数化去重(消解逐字节镜像函数)
+# 计划:permission backfill 参数化去重(消解逐字节镜像函数)— 切片 1 ✅ PR #151
 
 > **id**: `perm-backfill-dedupe`
 > **状态**: not_started v2(经 opus 对抗式审查修订,规划就绪待实施)
