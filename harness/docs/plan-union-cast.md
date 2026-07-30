@@ -1,7 +1,7 @@
 # 计划:前端 union-cast 扩散消解 — 拆 role-specific hook
 
 > **id**: `union-cast-split`
-> **状态**: draft v1
+> **状态**: passing(全 3 切片完成,2026-07-29)
 > **优先级**: 75(当前最高 passing = twoscope-config 74,本任务接其位)
 > **创建日期**: 2026-07-29
 > **来源**: 第 6 次代码健康度巡检候选 B(Top recommendation)+ grill 8 决策共识
@@ -199,7 +199,7 @@
 
   **实施决策偏离 §4.5(已裁决,记入 plan)**:§4.5 原写「`fetchDeviceModels` endpoint 函数同理保留 union,新增 `fetchDeviceModelsAll`(类型上声明返回 `DeviceModelRead[]`)」。**实施时改为「窄化 `fetchDeviceModels` → `DeviceModelPublic[]` + 新增 `fetchDeviceModelsAll` → `DeviceModelRead[]`」**,镜像切片 1 `fetchBookings`→`Booking[]` + `fetchBookingsAll`→`BookingHqRead[]` 的对称范式。**理由**:① 与切片 1 完全对称,降低认知负担(同范式:store fetch 窄类型 + All 变体 HQ 窄类型,无 union 残留);② 运行时零差异(同 URL,backend 按 token role 分流,类型在 seam 处定形);③ devices-page 的 `as ModelOption[]`(C 类,D2 排除)投影 `{id,name}` 字段,`DeviceModelPublic` 本就有这俩字段,窄化对投影路径零影响;④ 消除了「fetchDeviceModels 返 union 但 fetchDevices/fetchBookings 返窄类型」的不一致。**§4.5 相应描述以本裁决为准**(plan §4.5 文字未逐字改,本注记为权威偏差记录)。
 
-### Ticket 3: 收尾验证(A 类 cast 审计 + 文档)
+### Ticket 3: 收尾验证(A 类 cast 审计 + 文档) ✅
 
 - **What to build**:全仓 grep 审计 **A 类 role-branching 窄化 cast** 归 0(数组形式 `as Xxx[]` / `as XxxHqRead[]`),确认 B 类(props 适配,hq-view L520/523 `b as Booking` 单数形式)与 C 类(`as ModelOption[]` 投影、`as DeviceStatus` L1043 enum cast)等非 role cast 不受影响。清理残余 `Note(candidate-8)` 注释。feature 收尾。
 - **Blocked by**: Ticket 1 + Ticket 2
@@ -212,13 +212,22 @@
   - `grep -rn 'Note(candidate-8)' frontend/src/`(注释全清)
   - `cd frontend && npm run build && npm test && npx oxlint .`
 - **AC**:
-  - [ ] A 类 role 窄化 cast(数组形式)在 `frontend/src/pages/` 归 0
-  - [ ] B 类 props cast(hq-view L520 `b as Booking` / L523 `bk as BookingHqRead` 单数形式)**保留**(grep 确认仍在,验证未误删)
-  - [ ] C 类投影/enum cast(`as ModelOption[]` / `as DeviceStatus`)不受影响(grep 确认仍在)
-  - [ ] `Note(candidate-8)` 注释全清
-  - [ ] `npm run build` 0 类型错误 + `npm test` 全绿 + oxlint 0 warning
-  - [ ] feature 收尾:feature_list.json status → passing + evidence + sync-active + progress.md 更新
-  - [ ] 文档影响评估执行
+  - [x] A 类 role 窄化 cast(数组形式)在 `frontend/src/pages/` 归 0 ✅
+  - [x] B 类 props cast(hq-view L520 `b as Booking` / L523 `bk as BookingHqRead` 单数形式)**保留**(grep 确认仍在,验证未误删) ✅(实际行号 L516/519,微移;另测试文件 `as BookingHqRead` mock 构造散在 hq-view.test.tsx L139 + schedule-grid.test.tsx L109 各 1 处,共 2 处)
+  - [x] C 类投影/enum cast(`as ModelOption[]` / `as DeviceStatus`)不受影响(grep 确认仍在) ✅
+  - [x] `Note(candidate-8)` 注释全清 ✅(grep 0 处)
+  - [x] `npm run build` 0 类型错误 + `npm test` 全绿 + oxlint 0 warning ✅(build 2.06s / 65/65 / oxlint 0 warning 0 error)
+  - [x] feature 收尾:feature_list.json status → passing + evidence + sync-active + progress.md 更新 ✅
+  - [x] 文档影响评估执行 ✅
+
+  **完成证据(Session 158 续, 2026-07-29)**:
+  - 末切片审计(0 源码改动 —— grep 验证 + 收尾仪式,符合 plan「文件清单 0-1,可能仅清理注释」预期)
+  - AC1 grep `as Device[]|as DeviceHqRead[]|as Booking[]|as BookingHqRead[]|as DeviceModelRead[]` 在 `frontend/src/pages/` **代码处归 0**(唯一 2 处匹 my-bookings-view L7 + store-view L153 是说明性历史注释,非 `Note(candidate-8)` 待办残余,保留正确)
+  - AC2 B 类保留:hq-view L516 `booking={b as Booking}` + L519 `onEdit={(bk) => setEditTarget(bk as BookingHqRead)}`(plan 写 520/523,实际微移到 516/519,语义不变)+ 测试文件 `as BookingHqRead` mock 构造散在 hq-view.test.tsx L139 + schedule-grid.test.tsx L109 各 1 处(共 2 处,非全部在 hq-view.test)
+  - AC3 C 类保留:devices-page `as ModelOption[]`×4(L172/375/462/669)+ `as DeviceStatus`×1(L1053)
+  - AC4 `Note(candidate-8)` grep 0 处(切片 1 已删 my-bookings-view 那处,切片 2 无新增)
+  - AC5 验证:`npm run build` 绿(2.06s,0 类型错误)/ `npm test` **65/65 全绿**(零行为回归,8 test files)/ `npx oxlint .` **0 warning 0 error**(101 files 102 rules)
+  - 行号偏差说明:plan §1 A 类清单写 hq-view L143/L163、store-view L152/186/356/366、devices-page L192/422、device-models-page L149/216 是切片前快照;切片 1/2 实施时随 import/注释增删行号微移,但 cast 全部消解(本切片审计确认 0 残留)
 
 ---
 

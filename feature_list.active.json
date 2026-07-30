@@ -19,13 +19,7 @@
       "priority": 75,
       "area": "工程化",
       "title": "前端 union-cast 扩散消解 — 拆 role-specific hook(巡检候选 B Top)",
-      "user_visible_behavior": "无用户可见行为变化(纯前端类型重构)。frontend/src/api/endpoints.ts 的 5 个 role-branching hook(useDevices/useDevice/useDeviceModels/useBookings/useBooking)返回 union(Device[]|DeviceHqRead[] 等),窄化散落在 4 个 view 文件靠 12 处 as 断言强制转换。本任务把 union 消灭从「view 边界」上移到「hook 层」:每个 hook 拆成 store 版 + platform-wide 版(useDevices/useDevicesAll),内部调同一 endpoint(后端按 token role 自动分流),返回窄类型。view 直接调对应 hook,0 cast。消解 hq-view/store-view/my-bookings-view/devices-page/device-models-page 的 role 窄化 cast;as ModelOption[] 字段投影 cast 与 as DeviceStatus enum cast 不纳入(正交)。无后端改动无 schema 变化,运行时行为零变化。",
-      "status": "not_started",
-      "verification": "cd frontend && npm run build (0 类型错误) && npm test (65 全绿) && npx oxlint . (0 warning) + grep 'as Device|as DeviceHqRead|as Booking|as BookingHqRead|as DeviceModelRead[]' frontend/src/pages/ 归 0 (role 窄化 cast 消解)",
-      "notes": "第 6 次巡检 Top recommendation。grill 8 决策(D1 拆 role-specific hook / D2 ModelOption 投影不纳入 / D3 只拆 3 个有调用的 / D4 按 domain 分 3 切片 / D5 queryKey 共享 / D6 All 后缀随 useAllTenants 先例 / D7 改 mock 名 + tsc 验证 / D8 不提 ADR)。纯前端类型重构,非复杂任务不走对抗式审查。",
-      "plan": "harness/docs/plan-union-cast.md",
-      "depends_on": [],
-      "evidence": []
+      "status": "passing"
     },
     {
       "id": "twoscope-config",
@@ -56,17 +50,10 @@
       "status": "passing"
     },
     {
-      "id": "principal-module",
-      "priority": 70,
-      "area": "工程化",
-      "title": "抽 Principal 深模块吸收后端跨 service 的角色扇出(巡检候选 1)",
-      "status": "passing"
-    },
-    {
       "id": "_milestone_archived",
       "priority": 0,
       "area": "里程碑",
-      "title": "[已归档 69 条 passing,见 archive/features-passing-archive.json]",
+      "title": "[已归档 70 条 passing,见 archive/features-passing-archive.json]",
       "status": "passing"
     }
   ],
