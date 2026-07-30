@@ -69,6 +69,7 @@ import {
   useSetConversationPinned,
   useSetConversationStarred,
 } from "@/hooks/queries";
+import { customerNameOf } from "@/pages/chat/customer-helpers";
 import { formatDateTime as fmt } from "@/lib/format";
 
 interface ConversationListPanelProps {
@@ -166,15 +167,6 @@ export function ConversationListPanel({
   const [renameValue, setRenameValue] = useState("");
   const [tagTarget, setTagTarget] = useState<Conversation | null>(null);
   const [tagValue, setTagValue] = useState("");
-
-  // customer_id → 显示名,用于列表项的归因显示(找不到则回退 null 不显示)。
-  // 注意:chat panel header 也有一份同款(plan D7 说 Ticket 3 才抽共享 helper,
-  // 本切片两边各留一份,行为零变化)。
-  const customerNameOf = (cid: string | null): string | null => {
-    if (!cid) return null;
-    const p = customerProfiles?.find((x) => x.customer_id === cid);
-    return p?.customer.name ?? null;
-  };
 
   // ---------------- handlers(原样搬迁,只改跨层写为回调通知)----------------
   const toggleSelect = (id: string) => {
@@ -376,7 +368,7 @@ export function ConversationListPanel({
                         </span>
                         <span className="flex w-full items-center gap-1 text-[11px] text-muted-foreground">
                           {conv.customer_id && (() => {
-                            const n = customerNameOf(conv.customer_id);
+                            const n = customerNameOf(conv.customer_id, customerProfiles);
                             return n ? (
                               <span className="inline-flex items-center gap-0.5">
                                 <User className="h-2.5 w-2.5" />

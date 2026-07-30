@@ -1,3 +1,15 @@
+// chat/ index.tsx — the chat page's route entry (the public page export).
+//
+// Extracted from the original pages/chat-page.tsx (plan-chat-page-split
+// Ticket 3). Pure locality move: zero behaviour change. The 583-line streaming
+// half + orchestration lives here; the conversation-list half was already
+// extracted to ConversationListPanel in Ticket 2.
+//
+// Why both ``index.tsx`` and ``chat-page.tsx``: ``index.tsx`` is the
+// conventional folder-entry name (matches the "one module per folder" intent);
+// ``chat-page.tsx`` is the named file App.tsx's lazy loader points at, kept to
+// preserve the existing "page file name = route name" convention without
+// touching the router. This mirrors the bookings/ double-entry pattern.
 import { useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useSearchParams } from "react-router-dom";
@@ -37,6 +49,7 @@ import { CompositeMode } from "@/pages/composite-mode";
 import type { ConversationKind, Message } from "@/api/types";
 import { buildWorkingList } from "@/pages/chat/build-working-list";
 import { ConversationListPanel } from "@/pages/chat/conversation-list-panel";
+import { customerNameOf } from "@/pages/chat/customer-helpers";
 import {
   useAgents,
   useConversations,
@@ -60,8 +73,8 @@ export function ChatPage() {
   const { data: conversations } = useConversations();
 
   // customerProfiles 留在 ChatPage:header 的 customer picker(新建会话归因)+ 归因
-  // badge 显示都依赖它。Panel 内有它自己的一份(plan §4.5 + §4.0 D7:Ticket 3 才抽
-  // 共享 customerNameOf,本切片两边各留一份,行为零变化)。
+  // badge 显示都依赖它。Panel 内有它自己的一份(调 useCustomerProfiles);归因 badge
+  // 的 customerNameOf 已抽共享 helper(Ticket 3),两边共用,行为零变化。
   const { data: customerProfiles } = useCustomerProfiles(!isSuperAdmin(me));
 
   const [selectedAgentId, setSelectedAgentId] = useState<string>("");
@@ -119,14 +132,6 @@ export function ChatPage() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams]);
-
-  // A lookup from customer_id → display name, for showing attribution in the
-  // conversation header (falls back to the bare id if not loaded).
-  const customerNameOf = (cid: string | null): string | null => {
-    if (!cid) return null;
-    const p = customerProfiles?.find((x) => x.customer_id === cid);
-    return p?.customer.name ?? null;
-  };
 
   // Show loaded history unless we're streaming (then show localMessages).
   const messages = localMessages ?? history ?? [];
@@ -382,12 +387,14 @@ export function ChatPage() {
             )}
             {/* When viewing an existing conversation that's attributed to a
                 customer, show a read-only badge so the staff member knows who
-                they're serving in this chat. */}
+                they're serving in this chat. customerNameOf is the shared
+                helper (Ticket 3 / plan D7); pass this ChatPage's loaded
+                customerProfiles so the lookup is self-contained. */}
             {!isSuperAdmin(me) && selectedConversationId && (() => {
               const conv = conversations?.find(
                 (c) => c.id === selectedConversationId,
               );
-              const cname = customerNameOf(conv?.customer_id ?? null);
+              const cname = customerNameOf(conv?.customer_id, customerProfiles);
               return cname ? (
                 <span className="flex items-center gap-1 rounded-md bg-accent px-2 py-1 text-xs">
                   <User className="h-3 w-3" />

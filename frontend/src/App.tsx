@@ -25,7 +25,7 @@ const AgentsPage = lazy(() =>
   import("@/pages/agents-page").then((m) => ({ default: m.AgentsPage })),
 );
 const ChatPage = lazy(() =>
-  import("@/pages/chat-page").then((m) => ({ default: m.ChatPage })),
+  import("@/pages/chat/chat-page").then((m) => ({ default: m.ChatPage })),
 );
 const GroupsPage = lazy(() =>
   import("@/pages/groups-page").then((m) => ({ default: m.GroupsPage })),
