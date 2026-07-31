@@ -11,16 +11,18 @@ import { cn } from "@/lib/utils";
  *   hero/CTA cards (e.g. the Dashboard quick-action tile). The ring is drawn
  *   with a ``::before`` pseudo-element so it doesn't disturb the inner layout.
  *
- * Both variants sit on the ``card`` elevation tier (``shadow-card``): a near-
- * hairline shadow that lets content stay the focus (B3 "data first, hairline
- * chrome"). Floating surfaces use ``shadow-overlay`` instead — see dialog /
- * dropdown-menu / select / toast.
+ * Both variants sit on the ``surface`` elevation tier (``shadow-surface``): a
+ * near-hairline shadow that lets content stay the focus (B3 "data first,
+ * hairline chrome"). Floating surfaces use ``shadow-overlay`` instead — see
+ * dialog / dropdown-menu / select / toast. (Tier is named ``surface`` not
+ * ``card``: the latter collides with the ``colors.card`` token — Tailwind's
+ * auto-generated ``shadow-card`` color utility would override the size one.)
  */
 const cardVariants = cva("rounded-lg border bg-card text-card-foreground", {
   variants: {
     variant: {
-      default: "shadow-card",
-      glow: "shadow-card ring-1 ring-primary/20 glow-border",
+      default: "shadow-surface",
+      glow: "shadow-surface ring-1 ring-primary/20 glow-border",
     },
   },
   defaultVariants: {
