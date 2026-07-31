@@ -95,17 +95,11 @@ class UserService:
         if not is_super_admin:
             await permission_service.require(actor_id, tenant_id, self.OBJECT, "read")
 
+        user = await self._resolve_user(user_id, tenant_id, is_super_admin)
         if is_super_admin:
-            user = await self.users.get(user_id)
-            if user is None or user.is_deleted:
-                raise NotFoundError(f"用户 {user_id} 不存在")
             tenant_info = await self.list_repo.batch_tenant_info([user_id])
             return await self._read_all(user, tenant_info)
-        else:
-            user = await self.list_repo.get(tenant_id, user_id)
-            if user is None:
-                raise NotFoundError(f"用户 {user_id} 不在该租户中")
-            return await self._read(tenant_id, user)
+        return await self._read(tenant_id, user)
 
     async def statistics(
         self,
@@ -119,6 +113,47 @@ class UserService:
         return UserStatistics(
             **await self.list_repo.statistics(tenant_id, super_admin=is_super_admin)
         )
+
+    async def _resolve_user(
+        self, user_id: str, tenant_id: str, is_super_admin: bool
+    ) -> User:
+        """Look up a single user for get/update/delete/change_status/reset_password.
+
+        Single source of truth for the super_admin-vs-store lookup fork:
+
+        - super_admin reads globally via ``self.users.get`` (cross-tenant) and
+          the soft-deleted guard is explicit here (``UserRepository.get`` is the
+          raw ``db.get`` with no ``is_deleted`` predicate).
+        - store roles read tenant-scoped via ``self.list_repo.get``, whose
+          ``_base`` query already carries ``User.is_deleted.is_(False)`` — so
+          a soft-deleted user simply fails to resolve and falls into the
+          NotFoundError branch below (no separate guard needed).
+
+        SECURITY PROPERTY — the two NotFoundError messages are intentionally
+        DIFFERENT and must not be unified:
+
+        - super_admin path → ``"用户 {user_id} 不存在"`` (the actor is trusted to
+          see global existence).
+        - store path → ``"用户 {user_id} 不在该租户中"`` (deliberate existence
+          ambiguity: a store actor must NOT learn that the user lives in
+          another tenant — the message only ever says "not in this tenant").
+
+        Do not DRY these two messages into one: that would leak cross-tenant
+        existence to store roles and break multi-tenant isolation.
+
+        Note: the per-method ``permission_service.require(...)`` call is NOT
+        part of this seam — its action (read/update/delete) varies by caller, so
+        it stays inline in each public method. This seam only owns the lookup.
+        """
+        if is_super_admin:
+            user = await self.users.get(user_id)
+            if user is None or user.is_deleted:
+                raise NotFoundError(f"用户 {user_id} 不存在")
+            return user
+        user = await self.list_repo.get(tenant_id, user_id)
+        if user is None:
+            raise NotFoundError(f"用户 {user_id} 不在该租户中")
+        return user
 
     async def _read(self, tenant_id: str, user: User) -> UserRead:
         # Re-fetch via a fresh select so all columns (incl. server defaults like
@@ -254,14 +289,7 @@ class UserService:
             await permission_service.require(actor_id, tenant_id, self.OBJECT, "update")
 
         # Super admin looks up globally (cross-tenant); tenant admins are scoped.
-        if is_super_admin:
-            user = await self.users.get(user_id)
-            if user is None or user.is_deleted:
-                raise NotFoundError(f"用户 {user_id} 不存在")
-        else:
-            user = await self.list_repo.get(tenant_id, user_id)
-            if user is None:
-                raise NotFoundError(f"用户 {user_id} 不在该租户中")
+        user = await self._resolve_user(user_id, tenant_id, is_super_admin)
 
         old = _snapshot(user)
         changes: dict[str, Any] = {}
@@ -342,17 +370,12 @@ class UserService:
 
         # Super admin soft-deletes the global User and tears down membership
         # across ALL tenants; a tenant admin only operates within their tenant.
+        user = await self._resolve_user(user_id, tenant_id, is_super_admin)
         if is_super_admin:
-            user = await self.users.get(user_id)
-            if user is None or user.is_deleted:
-                raise NotFoundError(f"用户 {user_id} 不存在")
             affected_tenants = [
                 m.tenant_id for m in await self.memberships.list_for_user(user_id)
             ]
         else:
-            user = await self.list_repo.get(tenant_id, user_id)
-            if user is None:
-                raise NotFoundError(f"用户 {user_id} 不在该租户中")
             affected_tenants = [tenant_id]
 
         old = _snapshot(user)
@@ -395,14 +418,7 @@ class UserService:
             await permission_service.require(actor_id, tenant_id, self.OBJECT, "update")
         if status not in VALID_STATUSES:
             raise BizError(f"无效的状态: {status}")
-        if is_super_admin:
-            user = await self.users.get(user_id)
-            if user is None or user.is_deleted:
-                raise NotFoundError(f"用户 {user_id} 不存在")
-        else:
-            user = await self.list_repo.get(tenant_id, user_id)
-            if user is None:
-                raise NotFoundError(f"用户 {user_id} 不在该租户中")
+        user = await self._resolve_user(user_id, tenant_id, is_super_admin)
         old = user.status
         user.status = status
         user.updated_by = actor_id
@@ -439,14 +455,7 @@ class UserService:
         is_super_admin = platform_role == "super_admin"
         if not is_super_admin:
             await permission_service.require(actor_id, tenant_id, self.OBJECT, "update")
-        if is_super_admin:
-            user = await self.users.get(user_id)
-            if user is None or user.is_deleted:
-                raise NotFoundError(f"用户 {user_id} 不存在")
-        else:
-            user = await self.list_repo.get(tenant_id, user_id)
-            if user is None:
-                raise NotFoundError(f"用户 {user_id} 不在该租户中")
+        user = await self._resolve_user(user_id, tenant_id, is_super_admin)
         user.password = hash_password(payload.new_password)
         user.password_updated_at = datetime.now(UTC)
         user.updated_by = actor_id
