@@ -21,6 +21,29 @@
   },
   "features": [
     {
+      "id": "user-service-lookup-seam",
+      "priority": 84,
+      "area": "工程化",
+      "title": "UserService super_admin lookup seam 抽取(_resolve_user,5 处 lookup glue 收敛,第 9 次巡检候选 ① Top)",
+      "user_visible_behavior": "无直接用户可见行为变化(纯后端 service 内部重构)。user_service.py 的 get/update/delete/change_status/reset_password 5 方法逐字节重复的 lookup glue(is_super_admin 判断 + super_admin 走 global get + is_deleted 守卫 / store 走 tenant-scoped get + 分流 NotFoundError 文案)收敛到一个私有方法 _resolve_user(user_id, tenant_id, is_super_admin) -> User。两条 NotFoundError 文案逐字保留(super_admin→'不存在' / store→'不在该租户中',保多租户存在性模糊 security property)。require 不进 seam(action 因方法而异)。list/statistics 不进 seam(无 lookup 三元组)。零行为变更,零 interface 变化,零 ADR 张力(ADR-0001 钉 user_service 不进 Principal,本 feature 是内部深化)。",
+      "status": "passing",
+      "verification": [
+        "app/services/user_service.py 新增私有 _resolve_user(self, user_id, tenant_id, is_super_admin: bool) -> User,docstring 钉死文案分流 security property",
+        "get/update/delete/change_status/reset_password 5 方法改调 _resolve_user,删各自 lookup+is_deleted 守卫+NotFoundError 内联块",
+        "5 方法的 require 调用逐字保留(D1,require 不进 seam);list/statistics 不改(D5)",
+        "新增 tests/test_user_service.py:_resolve_user 两分支(super_admin global+is_deleted 守卫 / store tenant-scoped)+ 两条 NotFoundError 文案逐字断言(钉死 D3 security property)",
+        "./init.sh full 849 passed(842 baseline + 7 新,零回归,零行为变更)+ ruff clean",
+        "grep lookup 三元组(is_deleted 守卫)在 user_service.py 命中 = 1 处(只在 _resolve_user 内);is_super_admin = platform_role == super_admin 仍 7 处(D5 不动 list/statistics)"
+      ],
+      "notes": "2026-07-31 立项。第 9 次架构巡检 Top recommendation(候选 1,Strong)。纯后端 service 内部重构,零行为变更零 ADR 张力。grill 6 决策(D1 lookup-only 不吃 require / D2 传 is_super_admin bool / D3 文案内部分流保留 security property / D4 只返回 User 不碰读法分流 / D5 覆盖 5 方法 list+statistics 不进 / D6 seam docstring 钉文案理由 + delete 软删注释保留)。EP2 单回环 plan 含 1 切片(expand-contract 单切片 = 末切片):_resolve_user 抽取 + 5 方法改调 + service 层直接测试。LOC 预警:leverage 重构 LOC 可能不降反升(seam docstring + 测试),价值是 locality + leverage + security property 钉死非 LOC 削减(对齐 Principal feature 先例)。",
+      "plan": "harness/docs/plan-user-service-lookup-seam.md",
+      "depends_on": "",
+      "evidence": [
+        "切片 01(_resolve_user 抽取 + 5 方法改调 + service 层直接测试,末切片,2026-08-01 Session 182,commit 1281494):app/services/user_service.py 抽私有 _resolve_user(self, user_id, tenant_id, is_super_admin: bool) -> User,收敛 get/update/delete/change_status/reset_password 5 方法逐字节重复的 lookup glue。seam 内部逻辑逐字等价原 5 处:if is_super_admin: self.users.get(全局 db.get 无 is_deleted 谓词)+ 显式 'user is None or user.is_deleted' 守卫 + raise '用户 {id} 不存在';else: self.list_repo.get(tenant_id, user_id)(其 _base query 已带 User.is_deleted.is_(False))+ raise '用户 {id} 不在该租户中'。docstring 钉死 D3 security property(两条文案故意不同,store 路径存在性模糊防跨租户存在泄露,不得 DRY 统一)+ 说明 require 不进 seam 理由(D1 action 因方法而异)。delete 跨店软删注释原位保留(D6,讲后续 affected_tenants 非 lookup)。新增 tests/test_user_service.py(7 tests,contract test 范式参考 test_principal.py / test_two_scope_repo.py):super_admin 三态(活→返回 User / 软删→NotFoundError '不存在' / 不存在→NotFoundError '不存在')+ store 三态(成员→返回 User / 非成员→NotFoundError '不在该租户中' / 跨租户存在但在本租户不可见→NotFoundError '不在该租户中',钉死存在性模糊)+ 文案逐字断言 str(exc.value) == '...' + invariant 测试 test_resolve_user_error_messages_are_intentionally_distinct 钉死两文案故意不同防 DRY 误改。严格遵守 D1-D6:D1 require 不进 seam(5 方法 require 逐字内联)/ D2 传 bool / D3 文案逐字保留 / D4 只返回 User 不碰读法分流 / D5 list+statistics 不改 / D6 delete 软删注释保留。验证:grep 'user is None or user.is_deleted' = 1 处(只在 seam)+ grep 'is_super_admin = platform_role == super_admin' 仍 7 处(list/statistics/5 方法,D5)+ ruff clean + ./init.sh full 849 passed(842 baseline + 7 新,零回归,零行为变更,40 HTTP 端到端测试 test_users_api/test_users_crud 全绿)。/code-review 双轴(general-purpose ×2 并行):Standards 0 硬违规 0 阻塞判断项(依赖单向 ✓ 多租户隔离 ✓ store 分支靠 list_repo._base Repository 层过滤 / 软删除语义 ✓ / 文案逐字 ✓ / require 保留 ✓ / D5 不动 ✓);Spec AC 1-10 全满足 0 缺失 0 越界 0 错位(changeset 恰好 2 代码文件对齐 plan §4.1 影响面)。Plan 切片 01 标题 ✅ + AC 全勾。",
+        "feature 收尾(末切片,2026-08-01 Session 182):user-service-lookup-seam status in_progress → passing。依赖解锁扫描:priority 84 为 feature_list.json 最高位,无下游 feature depends_on user-service-lookup-seam(纯重构无下游)→ 无需推进。文档影响评估:feature_list.json evidence ✅ + progress.md ✅(顶部 frontier 清空 + 本条记录)+ plan-user-service-lookup-seam.md draft v1 → passing(切片 01 标题 ✅ + AC 全勾);不动 AGENTS.md/项目指南(纯 service 内部重构,铁律均不受影响)。clean-state-checklist 全勾:基础验证 ✅(849 passed)+ 进度记录 ✅ + 状态真实 ✅(passing 绑定 849 passed + grep 实测)+ active 视图同步 ✅(sync-active-features.sh 跑过)+ 无半成品 ✅(WIP=1,单切片完成)+ 无调试残留 ✅ + 架构铁律 ✅(依赖单向合规,seam 只调 Repository 层)+ 可无缝接手 ✅ + 切片 checklist ✅。"
+      ]
+    },
+    {
       "id": "composite-chat",
       "priority": 72,
       "area": "AI 编排",
