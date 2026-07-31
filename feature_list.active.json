@@ -15,26 +15,6 @@
   },
   "features": [
     {
-      "id": "design-system-token-foundation",
-      "priority": 81,
-      "area": "前端设计系统",
-      "title": "设计系统收口 — Feature A:semantic token 基建(--success/--warning/--danger/--info 四 token 双色值 + ui/ 组件库内部映射)",
-      "user_visible_behavior": "无直接用户可见行为变化(纯前端 token 基建)。在 index.css :root + .dark 各新增 4 个语义色 HSL token(--success/--warning/--danger/--info,B3 定稿值:亮 152 76% 36% / 35 92% 50% / 0 84% 60% / 189 90% 42%;暗 152 64% 48% / 38 95% 58% / 0 80% 64% / 189 80% 55%)+ tailwind.config.js theme.extend.colors 暴露 success/warning/danger/info(各 DEFAULT+foreground)。随后把 ui/ 组件库内部(badge dot 状态色 / toast 状态 icon / avatar 语义 ring)的语义性硬编码原色映射到新 token(emerald→success / amber→warning / rose→danger / cyan→info)。avatar 8 色环(设计性多色)+ chart-1..5(数据可视化多色)+ destructive 既有命名保留不动。业务页硬编码色留给 Feature B。暗色协同:token 自带暗色变体,一次性消除「硬编码色暗色下靠原色硬撑」风险。",
-      "status": "in_progress",
-      "verification": [
-        "src/index.css :root + .dark 各含 --success/--warning/--danger/--info 四 token + 各 -foreground,HSL 值逐字 = B3 定稿",
-        "tailwind.config.js theme.extend.colors 含 success/warning/danger/info(各 DEFAULT+foreground,照 destructive 范式)",
-        "ui/badge.tsx + ui/toast.tsx 内语义性硬编码原色 grep = 0(ui/avatar.tsx 仅映射语义 ring,8 色环保留)",
-        "四 token 亮/暗变体前景(0 0% 100%)对底色 WCAG AA 对比度 >= 4.5:1(手算+记录)",
-        "cd frontend && npm run build 0 类型错误 + npx oxlint 0/0 + npm test 全绿",
-        "对照 design-demos/B3.html,四 token 渲染色与 B3 定稿视觉一致(亮/暗双模式)"
-      ],
-      "notes": "2026-07-31 立项。设计系统收口系列 Feature A(地基),B(color-sweep)依赖本 feature 的 token,C(spacing-card)与本 feature 正交。系列总纲 plan-frontend-design-system-overview.md(EP1 grill + huashu-design B3 变体定稿)。7 个 grill 决策 + B3 语义色 HSL 值固化为本 feature token 定义依据。执行顺序 A→B→C(WIP=1)。EP2 单回环 plan 含 2 切片:01 token 基建(CSS+tailwind,frontier)→ 02 ui/ 组件库内部映射+收尾。danger 与 destructive 并存:danger 是新语义 token,destructive 是 shadcn 既有命名保留不迁移。",
-      "plan": "harness/docs/plan-design-system-token-foundation.md",
-      "depends_on": "",
-      "evidence": []
-    },
-    {
       "id": "design-system-color-sweep",
       "priority": 82,
       "area": "前端设计系统",
@@ -73,6 +53,13 @@
       "evidence": []
     },
     {
+      "id": "design-system-token-foundation",
+      "priority": 81,
+      "area": "前端设计系统",
+      "title": "设计系统收口 — Feature A:semantic token 基建(--success/--warning/--danger/--info 四 token 双色值 + ui/ 组件库内部映射)",
+      "status": "passing"
+    },
+    {
       "id": "queries-endpoints-domain-split",
       "priority": 80,
       "area": "工程化",
@@ -101,17 +88,10 @@
       "status": "passing"
     },
     {
-      "id": "chat-page-split",
-      "priority": 76,
-      "area": "工程化",
-      "title": "前端 chat-page 拆 ConversationListPanel + buildWorkingList 纯函数(巡检候选 ① Top)",
-      "status": "passing"
-    },
-    {
       "id": "_milestone_archived",
       "priority": 0,
       "area": "里程碑",
-      "title": "[已归档 75 条 passing,见 archive/features-passing-archive.json]",
+      "title": "[已归档 76 条 passing,见 archive/features-passing-archive.json]",
       "status": "passing"
     }
   ],
