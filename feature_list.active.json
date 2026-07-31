@@ -1,7 +1,7 @@
 {
   "project": "ai-agent-platform",
   "description": "多租户 AI 智能体 SaaS 平台脚手架(FastAPI + React + pycasbin + LangGraph)",
-  "last_updated": "2026-07-31",
+  "last_updated": "2026-08-01",
   "harness_version": "stage1-clean-state",
   "rules": {
     "single_active_feature": true,
@@ -14,6 +14,13 @@
     "standard_start_command": "RUN_START_COMMAND=1 ./init.sh"
   },
   "features": [
+    {
+      "id": "member-service-direct-tests",
+      "priority": 85,
+      "area": "工程化",
+      "title": "MemberService 直接测试(SCD2 + casbin 双写契约,第 9 次巡检候选 ④)",
+      "status": "passing"
+    },
     {
       "id": "user-service-lookup-seam",
       "priority": 84,
@@ -43,17 +50,10 @@
       "status": "passing"
     },
     {
-      "id": "queries-endpoints-domain-split",
-      "priority": 80,
-      "area": "工程化",
-      "title": "前端 queries.ts/endpoints.ts 按 domain 切分(deep module 按 domain + barrel,第 8 次巡检候选 ③)",
-      "status": "passing"
-    },
-    {
       "id": "_milestone_archived",
       "priority": 0,
       "area": "里程碑",
-      "title": "[已归档 79 条 passing,见 archive/features-passing-archive.json]",
+      "title": "[已归档 80 条 passing,见 archive/features-passing-archive.json]",
       "status": "passing"
     }
   ],
