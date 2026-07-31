@@ -61,7 +61,7 @@ function txIcon(type: string) {
   if (type === "recharge" || type === "refund")
     return <ArrowUpCircle className="h-4 w-4 text-success" />;
   if (type === "consume")
-    return <ArrowDownCircle className="h-4 w-4 text-rose-500" />;
+    return <ArrowDownCircle className="h-4 w-4 text-danger" />;
   return <Activity className="h-4 w-4 text-muted-foreground" />;
 }
 
@@ -215,7 +215,7 @@ export function BillingPage() {
           <CounterCard
             title="累计消耗"
             value={fmtTokens(wallet.total_consumed)}
-            icon={<ArrowDownCircle className="h-4 w-4 text-rose-500" />}
+            icon={<ArrowDownCircle className="h-4 w-4 text-danger" />}
           />
           <CounterCard
             title="钱包状态"
@@ -340,7 +340,7 @@ export function BillingPage() {
                       <TableCell
                         className={cn(
                           "font-mono tabular-nums",
-                          isIncoming ? "text-success" : "text-rose-600",
+                          isIncoming ? "text-success" : "text-danger",
                         )}
                       >
                         {isIncoming ? "+" : ""}
