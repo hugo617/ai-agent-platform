@@ -245,7 +245,7 @@ Feature A 建好 `--success`/`--warning`/`--danger`/`--info` 四 token 后,**业
   - **三元条件色**:如 `isIncoming ? "text-emerald-600" : "text-rose-600"` → 只改 emerald 半边为 `text-success`,rose 半边留给切片 03(不越界)
   - **dark: 清理规则**:本切片 success 用例均为单色无手写 `dark:` 冗余变体,故无删除动作;**切片 02 amber 大量 `dark:text-amber-*` 冗余变体时落地清理规则**(映射后 token 自带暗色变体,手写 dark: 变体冗余应删)
 
-### 切片 02 — warning 语义收口:amber → `warning`(跨页) ✅ commit <待回填>
+### 切片 02 — warning 语义收口:amber → `warning`(跨页) ✅ commit 07b3b95
 
 **What it delivers**:所有表达「警告/余额预警/提醒」的 amber 在所有业务页统一变成 `warning` token,手写的 `dark:text-amber-*` 冗余变体删除(token 接管暗色)。
 
