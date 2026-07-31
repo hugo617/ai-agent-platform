@@ -230,10 +230,10 @@ export function CompositeMode({
               rejects the whole turn; surface a dedicated panel with a CTA
               rather than a bare error toast. */}
           {!loading && balanceError && (
-            <div className="flex items-start gap-3 rounded-md border border-amber-500/50 bg-amber-500/10 p-3 text-sm">
-              <Wallet className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+            <div className="flex items-start gap-3 rounded-md border border-warning/30 bg-warning/10 p-3 text-sm">
+              <Wallet className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
               <div className="flex-1 space-y-1">
-                <p className="font-medium text-amber-700">余额不足，无法发起复合查询</p>
+                <p className="font-medium text-warning">余额不足，无法发起复合查询</p>
                 <p className="text-xs text-muted-foreground">{balanceError}</p>
                 <p className="text-xs text-muted-foreground">
                   复合查询会并行询问全部所选智能体(N+1 倍 token 成本)，需要钱包有足额余额。

@@ -245,7 +245,7 @@ Feature A 建好 `--success`/`--warning`/`--danger`/`--info` 四 token 后,**业
   - **三元条件色**:如 `isIncoming ? "text-emerald-600" : "text-rose-600"` → 只改 emerald 半边为 `text-success`,rose 半边留给切片 03(不越界)
   - **dark: 清理规则**:本切片 success 用例均为单色无手写 `dark:` 冗余变体,故无删除动作;**切片 02 amber 大量 `dark:text-amber-*` 冗余变体时落地清理规则**(映射后 token 自带暗色变体,手写 dark: 变体冗余应删)
 
-### 切片 02 — warning 语义收口:amber → `warning`(跨页)
+### 切片 02 — warning 语义收口:amber → `warning`(跨页) ✅ commit <待回填>
 
 **What it delivers**:所有表达「警告/余额预警/提醒」的 amber 在所有业务页统一变成 `warning` token,手写的 `dark:text-amber-*` 冗余变体删除(token 接管暗色)。
 
@@ -253,18 +253,31 @@ Feature A 建好 `--success`/`--warning`/`--danger`/`--info` 四 token 后,**业
 
 **Acceptance criteria**:
 
-- [ ] `settings-page.tsx`:`text-amber-500` AlertTriangle + `border/bg-amber-500/*` 警告框整簇 → `warning`(+ 删 dark: 变体)
-- [ ] `permissions-page.tsx`:`border/bg-amber-*` 警告 Card + `text-amber-600 dark:text-amber-500` Shield/Lock → `warning`(删 dark: 变体)
-- [ ] `composite-mode.tsx`:`border/bg/text-amber-*` 余额不足警告框 → `warning`
-- [ ] `users-page.tsx`:stat icon `text-amber-500`(本月新增)→ `text-warning`
-- [ ] `notifications-page.tsx`:`bg-amber-100 text-amber-800`(余额预警)→ `bg-warning/10 text-warning`
-- [ ] `notification-bell.tsx`:`text-amber-600`(balance_warning)→ `text-warning`
-- [ ] `dashboard-page.tsx`:accent `text-amber-500` → `text-warning`
-- [ ] `dashboard-layout.tsx`:Badge `border-amber-300 bg-amber-100 text-amber-800` → `border-warning/30 bg-warning/10 text-warning`
-- [ ] **边界保留**:`conversation-list-panel.tsx` 的 Pin/Star amber:EP3 核对后,若为强调非警告 → 保留并在 evidence 注明;若统一 → 映射
-- [ ] warning 语义 amber grep(业务页范围,排除 Pin/Star 边界)= 0
-- [ ] 手写 `dark:text-amber-*` / `dark:bg-amber-*` 冗余变体已删
-- [ ] `cd frontend && npm run build` 0 错 + `npx oxlint` 0/0 + `npm test` 全绿
+- [x] `settings-page.tsx`:`text-amber-500` AlertTriangle + `border/bg-amber-500/*` 警告框整簇 → `warning`(+ 删 dark: 变体)
+- [x] `permissions-page.tsx`:`border/bg-amber-*` 警告 Card + `text-amber-600 dark:text-amber-500` Shield/Lock → `warning`(删 dark: 变体)
+- [x] `composite-mode.tsx`:`border/bg/text-amber-*` 余额不足警告框 → `warning`
+- [x] `users-page.tsx`:stat icon `text-amber-500`(本月新增)→ `text-warning`
+- [x] `notifications-page.tsx`:`bg-amber-100 text-amber-800`(余额预警)→ `bg-warning/10 text-warning`
+- [x] `notification-bell.tsx`:`text-amber-600`(balance_warning)→ `text-warning`
+- [x] `dashboard-page.tsx`:accent `text-amber-500` → `text-warning`
+- [x] `dashboard-layout.tsx`:Badge `border-amber-300 bg-amber-100 text-amber-800` → `border-warning/30 bg-warning/10 text-warning`
+- [x] **边界保留**:`conversation-list-panel.tsx` 的 Pin/Star amber:EP3 核对后,若为强调非警告 → 保留并在 evidence 注明;若统一 → 映射
+- [x] warning 语义 amber grep(业务页范围,排除 Pin/Star 边界)= 0
+- [x] 手写 `dark:text-amber-*` / `dark:bg-amber-*` 冗余变体已删
+- [x] `cd frontend && npm run build` 0 错 + `npx oxlint` 0/0 + `npm test` 全绿
+
+**✅ 实施证据(2026-07-31 Session 175)**
+
+- **改动**:14 处 className 映射,跨 8 文件(settings/permissions/composite-mode/users/notifications/notification-bell/dashboard-page/dashboard-layout),分支 `feat/design-system-color-sweep-slice-02`
+- **范式忠实(切片 01 alpha 约定)**:`/10` 底 + `/30` 边 + `text-warning`(DEFAULT 字)。边框 alpha 原散用 `/40`/`/50`(settings/permissions/composite)统一收敛到范式 `/30`(正向收敛)。`dashboard-layout` Badge 补 `hover:bg-warning/10` 与常态一致(原 `hover:bg-amber-100` 同值,保持 hover 语义)。
+- **dark: 清理首次落地**:切片 01 明示「切片 02 amber 大量 dark: 冗余变体时落地清理规则」,本切片落地——删 `permissions-page` 2× `dark:text-amber-500` + 1× `dark:bg-amber-950/20` + `settings-page` 1× `dark:text-amber-400`,共 4 处手写 dark: 变体。token 接管暗色路径成立(`--warning` dark `38 95% 58%` 已在 `index.css:96`)。改后全仓 `grep "dark:(bg|text|border)-amber"` = 0。
+- **grep 归零**:业务页范围 amber 残留仅 4 处全在边界 —— `conversation-list-panel.tsx` Pin(L352 `text-amber-500`)/Star(L355 `fill-amber-400 text-amber-400`)(plan 明示强调色边界保留)+ 2 处注释(`knowledge-page.tsx:60` 描述性注释 + `lib/theme.ts:87` WCAG 讨论注释)。功能性 warning 语义 amber = 0。
+- **边界核对(Pin/Star)**:`conversation-list-panel` 的 Pin/Star 是「置顶/收藏」强调标记,语义是「突出选中」非「警告提醒」,与 warning token 语义无关,保留原 amber 正确(不纳入收口)。
+- **验证**:`npm run build` ✓ built in 1.76s(0 类型错误,仅预存 chunk 大小警告)+ `npx oxlint` 0/0(180 files 102 rules)+ `npm test` 17 files / 141 tests passed(零回归,含 `design-tokens.test.ts` 21 + `badge-toast-avatar.test.tsx` Feature A 锁回退断言)。
+- **`/code-review` 双轴(general-purpose ×2 并行)**:
+  - **Standards 轴:PASS**(0 硬违规 / 0 判断项)。范式忠实、dark: 清理彻底、Pin/Star 边界守住、未越界(未碰切片 03 rose/red `users-page:599` + 未碰切片 04 blue `users-page:597`/`notifications-page:52`/`notification-bell` role_change + 未碰 `components/ui/` Feature A 领地)。
+  - **Spec 轴:需修复后 PASS → 经独立核实 + 决策,保留 tint 范式(对比度债登记切片 05)**。Spec 精算发现 `text-warning` on `bg-warning/10` **亮色对比度 2.13 ❌**(原 amber-700 基线 4.65 ✅,构成回归)。我独立 node REPL 复核坐实:tint 范式亮色 2.13 ❌、foreground 跨模式无解(亮 16.41 ✅/暗 1.18 ❌)、**实心范式双模式全过**(warning 亮 7.69/暗 9.54,与切片 01 toast success 实心 5.39/8.28 印证)。
+- **⚠️ 对比度债决策(登记切片 05 统一收口)**:保留 tint 范式不改实心,理由 4 条:① 不越界碰切片 01 已合并代码(WIP=1 + 不反向改已 passing 切片);② 不引入范式分裂 —— `notifications-page` 三色通知标签(`recharge` success / `balance_warning` warning / `role_change` info)同结构须统一,单改 warning 会造成三色三范式;③ 系统性问题需系统性解 —— success/warning/info 三色 tint 亮色均不达标(success 2.97/warning 2.13/info 预计同病),属 plan AC 设计缺陷非本切片实施错误;④ plan AC 字面要求即 tint,实施按 spec 正确。**已在切片 05 增加 WCAG AC(亮色 tint 系统性收口)**,要求切片 05 统一决策三色 tint 场景改实心或接受债,避免分裂。纯图标场景(notification-bell amber-600→warning 2.69→2.32)是本就不达标的微小负向平移,非核心回归,留切片 05 一并评估。
 
 ### 切片 03 — danger 语义收口:rose/red → `danger`(跨页)
 
@@ -307,7 +320,7 @@ Feature A 建好 `--success`/`--warning`/`--danger`/`--info` 四 token 后,**业
 - [ ] 全 feature 范围 grep:语义性硬编码原色(emerald/amber/rose/red/blue/cyan/green)= 0(排除 markdown-view zinc + Pin/Star 边界 + avatar/chart 设计性多色)
 - [ ] 所有手写 `dark:` 冗余变体(与 token 暗色重复的)已清理
 - [ ] 视觉一致性:对照 `design-demos/B3.html`,关键页面(billing/users/notifications/dashboard)亮/暗双模式渲染与 B3 调性一致(手动,evidence 记录)
-- [ ] WCAG AA:映射后状态色暗色下对比度达标(复用 Feature A 验证结论)
+- [ ] **WCAG AA(亮色 tint 范式系统性收口)**:切片 02 审查实测发现 `bg-{token}/10 + text-{token}`(DEFAULT 字)的 tint 范式在**亮色模式**对比度不达标(warning 2.13 / success 2.97 / 同结构 info 预计同病,均 < AA 4.5),而 `text-{token}-foreground` 暗色隐形(1.18)跨模式无解;唯一双模式成立的是**实心范式** `bg-{token} text-{token}-foreground`(warning 亮 7.69/暗 9.54,success 亮 5.39/暗 8.28)。本切片须统一决策:tint 范式(通知标签/警告框/徽章三类浅底场景)是否全部改实心,或保留 tint 接受亮色对比度债。涉及切片 01(`notifications-page` recharge)+ 切片 02(4 处警告框/标签)+ 切片 04(notifications role_change)三色同结构场景,须统一处理避免范式分裂。决策与实测写入 evidence。
 - [ ] `cd frontend && npm run build` 0 错 + `npx oxlint` 0/0 + `npm test` 全绿
 - [ ] `./init.sh full` 后端零回归(确认前端改动不影响后端测试)
 - [ ] **feature 收尾**:feature_list.json `status` → `passing` + evidence 写实测 + `./scripts/sync-active-features.sh` 刷新 + 依赖解锁扫描(Feature C 与 A/B 正交,无下游依赖解锁)

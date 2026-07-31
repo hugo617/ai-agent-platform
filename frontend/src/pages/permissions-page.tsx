@@ -161,9 +161,9 @@ export function PermissionsPage() {
           通过 permission_service.check 的 bypass 拥有全部权限,不进矩阵 roles,
           这里只是让超管权限「可见可理解」。非超管登录不显示(超管是平台概念)。 */}
       {isSuperAdmin(me) && (
-        <Card className="border-amber-500/40 bg-amber-50/50 dark:bg-amber-950/20">
+        <Card className="border-warning/30 bg-warning/10">
           <CardContent className="flex items-center gap-3 py-4">
-            <Shield className="h-5 w-5 text-amber-600 dark:text-amber-500" />
+            <Shield className="h-5 w-5 text-warning" />
             <div className="flex-1">
               <div className="flex items-center gap-2">
                 <span className="font-semibold">超级管理员</span>
@@ -312,7 +312,7 @@ export function PermissionsPage() {
             <span>拒绝</span>
           </div>
           <div className="flex items-center gap-2">
-            <Lock className="h-4 w-4 text-amber-600 dark:text-amber-500" />
+            <Lock className="h-4 w-4 text-warning" />
             <span>锁定(超管平台级,不可配置)</span>
           </div>
           {canManage && (

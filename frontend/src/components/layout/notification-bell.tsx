@@ -35,7 +35,7 @@ const TYPE_META: Record<
   string,
   { icon: React.ComponentType<{ className?: string }>; accent: string }
 > = {
-  balance_warning: { icon: AlertTriangle, accent: "text-amber-600" },
+  balance_warning: { icon: AlertTriangle, accent: "text-warning" },
   recharge: { icon: Coins, accent: "text-success" },
   role_change: { icon: UserCog, accent: "text-blue-600" },
   usage_report: { icon: ScrollText, accent: "text-purple-600" },

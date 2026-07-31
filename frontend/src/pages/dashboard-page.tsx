@@ -162,7 +162,7 @@ function StoreView() {
       icon: Contact,
       title: "客户管理",
       hint: "维护客户档案与标签",
-      accent: "text-amber-500",
+      accent: "text-warning",
     },
     {
       to: "/knowledge",
