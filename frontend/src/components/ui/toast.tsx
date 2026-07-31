@@ -125,7 +125,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
             key={t.id}
             className={cn(
               // slide-in-up enter animation (CSS keyframe, no motion lib).
-              "pointer-events-auto animate-slide-in-up rounded-md border p-4 shadow-lg",
+              "pointer-events-auto animate-slide-in-up rounded-md border p-4 shadow-overlay",
               t.variant === "success" &&
                 "border-transparent bg-success text-success-foreground",
               t.variant === "destructive" &&

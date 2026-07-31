@@ -89,6 +89,25 @@ export default {
         md: "calc(var(--radius) - 2px)",
         sm: "calc(var(--radius) - 4px)",
       },
+      // Elevation semantics — two named layers so "which shadow for which
+      // surface" is a concept, not an implicit convention. Both values are
+      // character-for-character identical to Tailwind's defaults (shadow-sm /
+      // shadow-lg), so mapping existing surfaces onto them is a zero-visual
+      // change; the naming just makes the hierarchy explicit (Feature C 切片 01).
+      //   - ``surface``: the content-card layer — a near-hairline shadow. Backs
+      //     <Card> (default + glow). Equivalent to ``shadow-sm``. (Named
+      //     ``surface``, not ``card``: a ``card`` key collides with the
+      //     ``colors.card`` token — Tailwind emits a ``shadow-card`` *color*
+      //     utility that shadows the size utility, turning the 5%-black drop
+      //     into a solid-white one. See plan v1→v2 summary.)
+      //   - ``overlay``: the floating layer — dialogs, dropdowns, selects,
+      //     toasts. Lifts the surface above the page. Equivalent to
+      //     ``shadow-lg``. (select/dropdown-content previously used shadow-md;
+      //     unifying onto overlay lifts them to one consistent floating tier.)
+      boxShadow: {
+        surface: "0 1px 2px 0 rgb(0 0 0 / 0.05)",
+        overlay: "0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1)",
+      },
       // Animations — four CSS keyframe families backing the motion budget
       // (plan §6: most motion is CSS; motion lib is reserved for 4 specific
       // cases). These are utilities like `animate-fade-in`, `animate-shimmer`.

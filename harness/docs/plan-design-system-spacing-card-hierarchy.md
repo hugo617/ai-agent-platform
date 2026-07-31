@@ -13,7 +13,16 @@
 
 | v(N-1) 问题 | 严重度 | vN 处理 |
 |---|---|---|
-| _(首版,无修订)_ | — | — |
+| v1 命名 `boxShadow.card` 与 `colors.card` 命名空间碰撞 | 高(视觉 bug) | v2:卡片层语义名 `card` → `surface`(`shadow-surface`/`shadow-overlay`)。详见 §4.5① 与 §9。 |
+| v1 §4.6/§10 措辞「Card 与浮层零行为变更」对 select/dropdown-content 不成立 | 中(措辞不实) | v2:区分记录——Card 230 处真零变化;dialog/toast 零变化(原 shadow-lg);**select/dropdown-content 是有意抬升**(原 shadow-md→overlay=shadow-lg,plan 本就要求的统一)。 |
+
+### v2 变更详情(切片 01 实施期发现)
+
+**命名碰撞复盘(2026-07-31,切片 01 EP3)**:原 plan §4.5① 钦定 `boxShadow` 键名 `card`/`overlay`。实施后 `/code-review` Spec 子轴发现:`colors.card` 已存在(亮 `0 0% 100%`/暗 `222.2 84% 4.9%`),Tailwind 据此为 `shadow-{color}` 颜色工具类**预生成** `.shadow-card{--tw-shadow-color:hsl(var(--card))}`,该规则在 size 工具类规则之后,同特异性后者胜出 → `--tw-shadow-color` 被设为 card 背景色(亮色=纯白)。**Playwright 实测确认**:改前 `shadow-card` 渲染 `rgb(255,255,255) 0px 1px 2px` ≠ `shadow-sm` 的 `rgba(0,0,0,0.05) ...`,230 处 `<Card` 阴影从 5%黑变纯白(视觉破坏)。`overlay` 无 `colors.overlay` 故无碰撞。
+
+**决策(用户 2026-07-31 选定)**:卡片层语义名 `card` → **`surface`**(`shadow-surface`)。理由:① `surface` 不与任何 color token 碰撞;② 语义仍贴切(「卡片这类内容表面层」);③ 保 plan 意图(命名层级概念),只换词。`overlay` 保持不变。改名后 Playwright 复测:`shadow-surface === shadow-sm` 为 TRUE,230 处 Card 真零视觉变化坐实。
+
+**措辞订正**:`shadow-overlay` 值逐字等价 `shadow-lg`,故 dialog/toast(原 shadow-lg)真零变化;但 select/dropdown-content 原用 `shadow-md`,统一到 overlay 是**有意抬升**(切片 01 acceptance 第 218 行本就要求 `shadow-md`/`shadow-lg`→`shadow-overlay`),非「零行为变更」。§4.6/§10 相关措辞据此订正。
 
 ---
 
@@ -88,12 +97,14 @@ Feature A/B 收口了颜色,但**布局层级的视觉一致性**仍有两个缺
 ```js
 // tailwind.config.js theme.extend
 boxShadow: {
-  card: "0 1px 2px 0 rgb(0 0 0 / 0.05)",      // 等价 shadow-sm,Card 层
+  surface: "0 1px 2px 0 rgb(0 0 0 / 0.05)",      // 等价 shadow-sm,Card 层
   overlay: "0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1)",  // 等价 shadow-lg,浮层层
 }
 ```
 
-> **B3 调性对齐**:B3「数据为尊,UI chrome 退到 1px hairline」——Card 层用极弱阴影(`shadow-card` 近 hairline),浮层用 `shadow-overlay` 拉出层级。命名让这个调性显式化。
+> **v2 命名注**:原 v1 钦定键名 `card`,但与 `colors.card` 命名空间碰撞(Tailwind 预生成 `shadow-card` color 工具类覆盖 size 工具类,实测 Card 阴影变纯白),v2 改为 `surface`(详见 §0 v2 详情)。`overlay` 无碰撞,保持不变。
+
+> **B3 调性对齐**:B3「数据为尊,UI chrome 退到 1px hairline」——Card 层用极弱阴影(`shadow-surface` 近 hairline),浮层用 `shadow-overlay` 拉出层级。命名让这个调性显式化。
 
 **② 字号任意值收口(顺手项,总纲决策 5)**
 
@@ -124,9 +135,9 @@ boxShadow: {
 ### 4.6 验收硬标准(来自总纲,客观可验)
 
 1. **字号任意值归零**:`text-[NNpx]` grep = 0(11 处全映射)
-2. **卡片层级语义化**:`card.tsx` + 浮层组件引用语义 shadow 名(`shadow-card`/`shadow-overlay`),不再裸用 `shadow-sm`/`shadow-lg`(ui/ 内组件统一)
+2. **卡片层级语义化**:`card.tsx` + 浮层组件引用语义 shadow 名(`shadow-surface`/`shadow-overlay`,v2 命名见 §0),不再裸用 `shadow-sm`/`shadow-lg`(ui/ 内组件统一)
 3. **npm test 全绿 + npm run build 0 错 + oxlint 0/0**
-4. **零行为变更**:Card 层阴影视觉 = 原 `shadow-sm`;浮层视觉 = 原 `shadow-lg`;字号 `text-2xs` 渲染 = 原 `text-[10px]`
+4. **视觉变化(v2 订正措辞)**:Card 层阴影视觉 = 原 `shadow-sm`(`shadow-surface` 逐字等价,230 处真零变化);dialog/toast 零变化(`shadow-overlay`≡`shadow-lg`,原本即 shadow-lg);**select/dropdown-content 是有意抬升**(原 `shadow-md`→`shadow-overlay`≡`shadow-lg`,切片 01 acceptance 要求的统一,非零变化);字号 `text-2xs` 渲染 = 原 `text-[10px]`(切片 02)
 
 ---
 
@@ -169,18 +180,19 @@ boxShadow: {
 
 | 风险 | 严重度 | 缓解 |
 |---|---|---|
-| Card 默认 shadow 改动影响 230 处 `<Card` 视觉 | 高 | §4.5① `shadow-card` 值**等价 `shadow-sm`**(逐字相同 box-shadow),保零视觉变化;EP3 切片 01 验收强制 230 处视觉比对 |
-| 浮层组件改 shadow 名后视觉微变 | 中 | `shadow-overlay` 值等价原 `shadow-lg`;逐组件比对 |
+| Card 默认 shadow 改动影响 230 处 `<Card` 视觉 | 高 | §4.5① `shadow-surface`(v2 命名)值**逐字等价 `shadow-sm`**;切片 01 已 Playwright 实测 `shadow-surface===shadow-sm` 为 TRUE,230 处真零变化坐实 |
+| **命名碰撞:`boxShadow.card` vs `colors.card`**(v2 新增) | 高 | v1 命名 `card` 实测触发 Tailwind 预生成 `shadow-card` color 工具类覆盖 size,Card 阴影变纯白。**v2 已闭环**:改名 `surface`(用户 2026-07-31 选定),无 `colors.surface` 故无碰撞;实测复验通过。详见 §0 v2 详情 |
+| 浮层组件改 shadow 名后视觉微变 | 中 | dialog/toast 用 `shadow-overlay`(≡原 `shadow-lg`,零变化);**select/dropdown-content 原 `shadow-md`→`shadow-overlay`(≡`shadow-lg`)是有意抬升**(切片 01 acceptance 要求的浮层统一,非零变化)|
 | `text-2xs` 扩展后 11px 处映射 xs(12px)视觉放大 | 中 | §4.5② 选项 1:11px→xs 可接受;10px→2xs 保一致。EP3 视觉比对,若 11px 处不可接受则也走 2xs |
-| 层级命名(`card`/`overlay`)与团队心智不符 | 低 | EP3 实施时若团队偏好别的命名(如 `surface`/`floating`),在本 plan 补 v2 摘要 |
+| 层级命名(`surface`/`overlay`)与团队心智不符 | 低 | v1 已因碰撞改 `card`→`surface`;若团队偏好别的命名,再补 vN 摘要 |
 
 ---
 
 ## 10. 验收标准(同步 feature_list.json verification)
 
 1. `text-[NNpx]` grep = 0(11 处字号任意值全映射)
-2. `tailwind.config.js` 含 `boxShadow` 语义命名(`card`/`overlay`)或等价 CSS 变量方案;`card.tsx` + 浮层组件引用语义名
-3. 230 处 `<Card` 视觉零变化(`shadow-card` 值等价 `shadow-sm`)
+2. `tailwind.config.js` 含 `boxShadow` 语义命名(`surface`/`overlay`,v2 命名见 §0)或等价 CSS 变量方案;`card.tsx` + 浮层组件引用语义名
+3. 230 处 `<Card` 视觉零变化(`shadow-surface` 值逐字等价 `shadow-sm`,切片 01 已 Playwright 实测为 TRUE)
 4. `cd frontend && npm run build` 0 类型错误 + `npx oxlint` 0/0 + `npm test` 全绿
 5. 对照 `design-demos/B3.html`,卡片层级与 B3「数据为尊 + hairline chrome」调性一致
 
@@ -199,25 +211,27 @@ boxShadow: {
 ### 切片依赖图
 
 ```
-切片 01(卡片层级语义化:shadow card/overlay + Card/浮层引用)── 无 blocker,frontier
+切片 01(卡片层级语义化:shadow surface/overlay + Card/浮层引用)✅ ── 无 blocker,frontier(已完成)
    └──→ 切片 02(字号任意值收口:text-2xs 扩展 + 11 处映射 + feature 收尾)── blocked by 01
 ```
 
 > **切片策略**:切片 01 是层级语义基建(改 Card + 浮层,影响面大需先稳),切片 02 是字号收口(独立小改,01 之后做避免 context 切换)。两片都是「垂直闭环」:01 = 层级 token 落地 + 所有相关组件引用 + 视觉零变化验证;02 = 字号扩展 + 11 处归零 + 视觉验证。
 
-### 切片 01 — 卡片层级语义化:`shadow-card`/`shadow-overlay` + Card/浮层引用(frontier)
+### 切片 01 — 卡片层级语义化:`shadow-surface`/`shadow-overlay` + Card/浮层引用(frontier)✅
 
-**What it delivers**:从组件库使用者视角,「Card 层 / 浮层层」的阴影有了语义命名——新组件一眼知道用 `shadow-card`(弱阴影,内容卡)还是 `shadow-overlay`(强阴影,浮层)。Card 与现有浮层组件统一引用语义名,230 处 `<Card` 视觉零变化。
+> **完成证据**:feat 分支 `feat/design-system-card-hierarchy-slice01`,merge commit 见 git log(2026-07-31)。`shadow-surface`(v2 命名,原 `card` 因碰撞改名见 §0)+ `shadow-overlay` 落地;Playwright 实测 `shadow-surface===shadow-sm` / `shadow-overlay===shadow-lg` 均 TRUE;build ✓ + oxlint 0/0 + npm test 141/141。`/code-review` 双轴:Standards clean、Spec 满足(命名碰撞已 v2 闭环)。
+
+**What it delivers**:从组件库使用者视角,「Card 层 / 浮层层」的阴影有了语义命名——新组件一眼知道用 `shadow-surface`(弱阴影,内容卡)还是 `shadow-overlay`(强阴影,浮层)。Card 与现有浮层组件统一引用语义名,230 处 `<Card` 视觉零变化(Playwright 实测坐实)。
 
 **Blocked by**: 无(可立即开始;本 feature 与 A/B 正交,不依赖 token)
 
 **Acceptance criteria**:
 
-- [ ] `tailwind.config.js` `theme.extend.boxShadow` 含 `card`(值等价 `shadow-sm`:`0 1px 2px 0 rgb(0 0 0 / 0.05)`)+ `overlay`(值等价 `shadow-lg`)
-- [ ] `src/components/ui/card.tsx`:`default` variant 的 `shadow-sm` → `shadow-card`;`glow` variant 评估是否也用 `shadow-card` 基底
-- [ ] 浮层组件引用 `shadow-overlay`:`dialog.tsx`(`shadow-lg`→`shadow-overlay`)、`dropdown-menu.tsx`(`shadow-md`/`shadow-lg`→`shadow-overlay`)、`select.tsx`(`shadow-md`→`shadow-overlay`)、`toast.tsx`(`shadow-lg`→`shadow-overlay`)
-- [ ] 230 处 `<Card` 视觉零变化验证:抽查 3-5 个页面(dashboard/users/billing)Card 渲染与改前一致(手动比对,evidence 记录)
-- [ ] `cd frontend && npm run build` 0 错 + `npx oxlint` 0/0 + `npm test` 全绿
+- [x] `tailwind.config.js` `theme.extend.boxShadow` 含 `surface`(值等价 `shadow-sm`:`0 1px 2px 0 rgb(0 0 0 / 0.05)`)+ `overlay`(值等价 `shadow-lg`)— v2:键名 `card`→`surface`(碰撞,见 §0)
+- [x] `src/components/ui/card.tsx`:`default` variant 的 `shadow-sm` → `shadow-surface`;`glow` variant 评估结论 = **也用 `shadow-surface` 基底**(两者同属 Card 层,glow 额外 ring/glow-border 不变)
+- [x] 浮层组件引用 `shadow-overlay`:`dialog.tsx`(`shadow-lg`→`shadow-overlay`)、`dropdown-menu.tsx`(`shadow-md`/`shadow-lg`→`shadow-overlay`)、`select.tsx`(`shadow-md`→`shadow-overlay`)、`toast.tsx`(`shadow-lg`→`shadow-overlay`)
+- [x] 230 处 `<Card` 视觉零变化验证:Playwright 实测 `shadow-surface === shadow-sm` 为 TRUE(等价 `rgba(0,0,0,0.05)` 弱阴影);无任何 `<Card>` 叠加裸 shadow 覆盖,230 处全跟随 cardVariants
+- [x] `cd frontend && npm run build` 0 错 + `npx oxlint` 0/0 + `npm test` 141/141 全绿
 
 ### 切片 02 — 字号任意值收口:`text-2xs` 扩展 + 11 处映射(末切片,feature 收尾)
 
