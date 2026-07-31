@@ -241,7 +241,7 @@ info:    { DEFAULT: "hsl(var(--info))",    foreground: "hsl(var(--info-foregroun
    └──→ 切片 02(ui/ 组件库内部映射 + 验收)── blocked by 01
 ```
 
-### 切片 01 — semantic token 基建:`index.css` + `tailwind.config.js`(frontier)✅ commit c28ecd3
+### 切片 01 — semantic token 基建:`index.css` + `tailwind.config.js`(frontier)✅ commit ffe4a8a
 
 **What it delivers**:从组件库使用者视角,`bg-success` / `text-warning` / `border-danger` / `bg-info` 这类 className 立即可用,且在亮/暗模式下自动切换为 B3 定稿的双色值。这是「四 token 存在且可消费」的最小可验证路径——token 落地 + Tailwind 暴露,任何下游(切片 02 + Feature B)都能引用。
 
