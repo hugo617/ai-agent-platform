@@ -1,8 +1,8 @@
 # 计划:MemberService 直接测试(SCD2 + casbin 双写契约)
 
 > **id**: member-service-direct-tests
-> **状态**: draft v1
-> **优先级**: 85(待登记 feature_list.json)
+> **状态**: ✅ passing
+> **优先级**: 85
 > **创建日期**: 2026-08-01
 > **来源**: 第 9 次架构巡检候选 ④(Worth exploring)
 
@@ -98,7 +98,7 @@
 
 本 feature 规模小(1 测试文件新增,源码零改),单切片即可:
 
-### 切片 01 — `test_member_service.py` SCD2+casbin 双写契约测试(单切片 = 末切片)
+### 切片 01 — `test_member_service.py` SCD2+casbin 双写契约测试(单切片 = 末切片)✅ commit 479e24b
 
 **What it delivers**:新增 `tests/test_member_service.py`,service 层 contract test 覆盖 4 方法的双写契约 + 边界,隔离 member_service 的 SCD2+casbin 双写。
 
@@ -106,21 +106,28 @@
 
 **Acceptance criteria**:
 
-- [ ] 新增 `tests/test_member_service.py`,用 `test_env` fixture + `factory()` 构造 `MemberService`,`patch.object(casbin_mod, "get_enforcer", return_value=test_env.enforcer)` 注入隔离 enforcer(范式参考 conftest.py L273 等多处 + test_principal.py)
-- [ ] **list 契约**:owner 调 list → 返回 seed 的 owner membership(MemberRead:user_id/role/joined_at);空 tenant → 返回 []
-- [ ] **add 契约(双写一致)**:add 新成员(role=admin)→ DB `memberships.current_role(user, tenant)` 返回 admin AND casbin `enforcer.has_role_for_user_in_domain(user, "role:admin", tenant)` 为 True
-- [ ] **add 的 get_or_create 路径**:add 一个 payload.email 对应的不存在 user → User 被创建(get_or_create)+ membership 建立
-- [ ] **update_role 契约(双写一致)**:owner 把成员 role 从 member 改 admin → DB current_role 返回 admin AND casbin 旧 role 消失(`has_role_for_user_in_domain(user, "role:member", tenant)` 为 False)AND 新 role 出现(admin True)
-- [ ] **update_role 边界**:update 一个非成员 → NotFoundError("user {id} is not a member of this tenant")
-- [ ] **remove 契约(双写一致)**:remove 成员 → DB current_role 返回 None(成员已移除)AND casbin grouping 删除(`has_role_for_user_in_domain` 对所有 role 为 False)
-- [ ] **remove 的 SCD2 历史保留**:remove 后,查 UserTenant 历史(valid_to 已关闭的旧行)仍物理存在(软删非硬删)—— 可通过 repo 层查原始行或断言 `is_deleted`/`valid_to` 语义
-- [ ] **remove 的 self-guard**:owner remove 自己 → BizError("cannot remove yourself")
-- [ ] **remove 边界**:remove 一个非成员 → NotFoundError
-- [ ] **不测实现细节**(D1):不断言 assign_role / set_role_for_user_in_domain 的调用次数或顺序;只断言最终 DB + casbin 可观察状态
-- [ ] **member_service 源码零改动**(D4):grep `git diff app/services/member_service.py` 为空
-- [ ] `./init.sh full` 全量 passed(基线 + 新测试数,零回归)
-- [ ] ruff clean
-- [ ] **feature 收尾**:feature_list.json `status` → `passing` + evidence 写实测 + `./scripts/sync-active-features.sh` 刷新 + 依赖解锁扫描(纯加测无下游)+ 分支清理 + **plan 顶部状态行同步 passing**(避免重蹈 spacing-card-hierarchy 的 CI 债)
+- [x] 新增 `tests/test_member_service.py`,用 `test_env` fixture + `factory()` 构造 `MemberService`,`patch.object(casbin_mod, "get_enforcer", return_value=test_env.enforcer)` 注入隔离 enforcer(范式参考 conftest.py L273 等多处 + test_principal.py)
+- [x] **list 契约**:owner 调 list → 返回 seed 的 owner membership(MemberRead:user_id/role/joined_at);空 tenant → 返回 [](空租户分支经 Spec 轴 review 反馈补 `test_list_empty_tenant_returns_empty_list`:owner 以 `platform_role="super_admin"` 走 check 的 super_admin bypass,list 新建空 Tenant → [])
+- [x] **add 契约(双写一致)**:add 新成员(role=admin)→ DB `memberships.current_role(user, tenant)` 返回 admin AND casbin `enforcer.has_role_for_user_in_domain(user, "role:admin", tenant)` 为 True(casbin Python SDK 无 `has_role_for_user_in_domain`,用 `_has_role()` 包装 `get_roles_for_user_in_domain` 判断,忠实实现 grouping 状态断言契约精神)
+- [x] **add 的 get_or_create 路径**:add 一个 payload.email 对应的不存在 user → User 被创建(get_or_create)+ membership 建立(`test_add_get_or_create_creates_missing_user` 断言 User 被创建且 email 转发)
+- [x] **update_role 契约(双写一致)**:owner 把成员 role 从 member 改 admin → DB current_role 返回 admin AND casbin 旧 role 消失 AND 新 role 出现(`test_update_role_dual_writes_db_and_casbin_old_role_gone_new_appears` 三重断言)
+- [x] **update_role 边界**:update 一个非成员 → NotFoundError("user {id} is not a member of this tenant")(byte-for-byte 断言)
+- [x] **remove 契约(双写一致)**:remove 成员 → DB current_role 返回 None AND casbin grouping 删除(`get_roles_for_user_in_domain(...) == []`,比单 role 检查更强 —— 断言所有 role 都剥)
+- [x] **remove 的 SCD2 历史保留**:remove 后 raw UserTenant 行(绕过 current_role 的 valid_to 过滤)物理仍存在,且 `valid_to is not None`(`test_remove_preserves_scd2_history_row`)
+- [x] **remove 的 self-guard**:owner remove 自己 → BizError("cannot remove yourself")(byte-for-byte 断言)
+- [x] **remove 边界**:remove 一个非成员 → NotFoundError(byte-for-byte 断言)
+- [x] **不测实现细节**(D1):不断言 assign_role / set_role_for_user_in_domain 的调用次数或顺序;只断言最终 DB + casbin 可观察状态(零 mock 调用断言)
+- [x] **member_service 源码零改动**(D4):`git diff main...HEAD -- app/services/member_service.py` 为空
+- [x] `./init.sh full` 全量 passed(859 passed = 基线 849 + 新增 10,零回归)
+- [x] ruff clean
+- [x] **feature 收尾**:feature_list.json `status` → `passing` + evidence 写实测 + `./scripts/sync-active-features.sh` 刷新 + 依赖解锁扫描(纯加测无下游)+ 分支清理 + **plan 顶部状态行同步 passing**(避免重蹈 spacing-card-hierarchy 的 CI 债)
+
+**完成证据**(2026-08-01):
+- 10 contract tests 全绿:`pytest tests/test_member_service.py` 10 passed
+- `./init.sh full` 全量 859 passed(基线 849 + 新增 10)+ ruff clean
+- 双轴 `/code-review` APPROVE:Standards 0 硬违反(D1/D4/多租户隔离全合规,范式对齐 test_principal.py + test_scd2_history.py);Spec 核心 AC 全忠实(list 空租户分支经反馈补 super_admin bypass 路径后 AC 字面满足)
+- casbin SDK gap:plan AC 文本的 `has_role_for_user_in_domain` 在 casbin Python 不存在,用 `_has_role()` 包装 `get_roles_for_user_in_domain` 判断(集中单辅助 + docstring 说明),Spec 轴确认不构成偏差
+- 源码零改,测试一开始就绿(除 API 笔误)—— 双写契约现状正确,无 bug 暴露,无需 xfail/TODO
 
 ---
 

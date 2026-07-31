@@ -8,7 +8,7 @@
 - **标准启动路径(开工冒烟)**: `./init.sh`(装依赖 + ruff + `pytest -m smoke`,~15s,确认起点没坏)
 - **标准验证路径(收尾全量)**: `./init.sh full`(装依赖 + ruff + 全量 pytest,~5min,确认没回归)
 - **完整验证路径**(需 docker): `alembic upgrade head && alembic check` + `cd frontend && npm run build`
-- **当前最高优先级未完成功能**: **`member-service-direct-tests`(p85,in_progress)— MemberService 直接测试(SCD2+casbin 双写契约,第 9 次巡检候选 ④)**。`user-service-lookup-seam`(p84)已 ✅ passing(Session 182,_resolve_user 抽取 + test_user_service.py 7 tests,建立 service 层直接测试范式)。本次续做巡检候选 ④(member_service 零直接测试债)。**EP2 单回环已完成(Session 183)**:`/grill-with-docs` 4 决策(D1 只测外部契约不测内部调用 / D2 service 层直接测非 HTTP / D3 覆盖 4 方法契约+边界 / D4 不改 member_service 源码)+ `/to-spec` 落 `plan-member-service-direct-tests.md`(单切片 = 末切片)+ feature_list.json 登记 + sync-active 刷新(1 活跃)。**feature 性质**:纯加测,零行为变更零 ADR 风险。**核心契约**:SCD2 DB 写 + casbin grouping 双写一致(add/update/remove 后 DB membership 与 casbin 同步)+ 边界(NotFoundError 非成员 / BizError 自删守卫 / SCD2 历史保留软删)。**CI 债教训**:收尾必须同步 plan 顶部状态行(参考 spacing-card-hierarchy 的 check_plan_status_sync.py 失败,Session 183 已修 commit af9f056)。**下一步:EP3 `/implement` 切片 01**(test_member_service.py,test_env fixture 真 DB+真 casbin,frontier 无 blocker)。最近 passing:user-service-lookup-seam(84)/design-system-spacing-card-hierarchy(83,C)/design-system-color-sweep(82,B)/design-system-token-foundation(81,A)/queries-endpoints-domain-split(80)/customers-page-split(79)/devices-page-split(78)/perm-backfill-dedupe(77)/chat-page-split(76)/union-cast-split(75)/twoscope-config(74)/bookings-shared-split(73)/composite-chat(72)/principal-scope-doc-alignment(71)/principal-module(70)。
+- **当前最高优先级未完成功能**: **无 frontier(member-service-direct-tests p85 已 ✅ passing,2026-08-01 Session 184)。待用户排新需求。** 第 9 次巡检候选 ①+④ 均已收官(user-service-lookup-seam p84 + member-service-direct-tests p85),service 层直接测试范式建立并复用。最近 passing:member-service-direct-tests(85)/user-service-lookup-seam(84)/design-system-spacing-card-hierarchy(83,C)/design-system-color-sweep(82,B)/design-system-token-foundation(81,A)/queries-endpoints-domain-split(80)/customers-page-split(79)/devices-page-split(78)/perm-backfill-dedupe(77)/chat-page-split(76)/union-cast-split(75)/twoscope-config(74)/bookings-shared-split(73)/composite-chat(72)/principal-scope-doc-alignment(71)/principal-module(70)。
 - **queries-endpoints-domain-split ✅ passing(2026-07-30 Session 170,全 2 切片完成)**:第 8 次巡检候选 ③ Strong —— queries.ts(1560 行/25 section)+ endpoints.ts(1514 行/29 section)两个 god-module 按 domain 拆成文件夹,deep module 按 domain 切 + 共享 core + barrel 保 interface 不变(区别于 page-split 范式)。**完整切片链**:**切片 1 ✅ commit fb88c64**(expand):Python 脚本自动化拆分 → queries/core.ts(qk 工厂 + useApiMutation export,68× leverage 保留)+ 24 domain + barrel(33 行);endpoints/core.ts + 29 domain + barrel(38 行)。tsc 0 错 + npm test 110/110 + build + oxlint 0/0 + import 路径零变化(@/hooks/queries 33 + @/api/endpoints 36 调用点不变)。**切片 2 ✅ contract**(本次):import 路径零变化显式验证 + qk 编码 diff 逐字一致(106 行 diff 空)+ domain 边界审计(queries 124→125 export[+1 useApiMutation private→export]/endpoints 141→141 逐字一致)+ ./init.sh full 842 passed 零回归。**/code-review 双轴**(general-purpose ×2 并行):**0 硬违规**,核心不变式(零行为变更 + 零 import 变化 + qk 逐字一致)全达标。**4 判断项处置**:① endpoints/core.ts 删死 re-export(原 export{api,...} 扩张 API 表面+5 无人消费,Standards 轴发现)→ export{} 占位,API 表面恢复 141→141;② 文件名修正 conversations-+-chat→conversations-chat / auth-2→auth-sessions;③ barrel 行数超 ≤30(33/38 注释撑超)→ plan AC2 修订 ≤40;④ bookings/devices 超 ≤150(207/173 内聚)→ plan AC10 记录豁免。**code-review 的价值**:Standards 轴发现 endpoints/core.ts 死 re-export 扩张公共面(避免 @/api/endpoints API 表面意外膨胀);Spec 轴确认 useApiMutation 可见性扩大无害(67=67 调用守恒无误用)。**feature 核心**:两个缓涨 god-module(queries 1505→1560/endpoints 1466→1514)按 domain 归位,leverage(useApiMutation 68× + qk 工厂)保留在 core,locality(22+ section 靠 grep 不靠目录)修复。barrel export * 接管,33+36 调用点零改动。范式:deep module 按 domain 切 + 共享 core + barrel(第 8 次巡检第 6 次 not-shallow 判决重评为 Strong 的兑现)。
 - **customers-page-split ✅ passing(2026-07-30 Session 170,全 2 切片完成)**:第 8 次巡检候选 ④ Top —— customers-page.tsx(834 行单文件 4 组件)拆 store-view/hq-view,镜像 bookings/devices/chat split 范式第 4 实例。**完整切片链**:**切片 1 ✅ commit 347af5f**:建 customers/ 文件夹 6 文件(index.tsx 双路 route + store-view.tsx 本店 CRUD + hq-view.tsx 跨店聚合只读 + customer-usage-dialog.tsx AI 用量+Metric + shared.tsx statusBadge+schema+常量+parseTagsJson 纯函数 D4)+ customers-page.tsx 改 barrel(re-export from customers/index,App.tsx 零改动)+ hq-view.test smoke 2 tests。**切片 2 ✅ 末切片**(commit 85a969a + code-review 8356c64):补完整 store-view.test(5 tests:列表渲染 + 空态 + member 只读守卫 + owner 创建填表提交**断言 tags 经 parseTagsJson 正确解析** + 删除菜单)+ hq-view.test(5 tests:跨店表渲染 + 空态 + 行展开 profile 明细 + AI 用量 dialog storeScoped=false + 搜索过滤)+ parse-tags.test(6 tests,D4 纯函数 3 边界 + 空白/undefined)。**/code-review 双轴**(general-purpose ×2 并行):**Standards 0 硬违规**(范式忠实镜像 + symbol-name 锚定 + 测试隔离正确 hasPermission 真实实现 + permissions string[] 格式 + 依赖方向清晰);**1 判断项已文档化**(buildPayload tags 字段顺带修复隐藏 bug —— 原 monolith 把整个 {...values,tags} 当 payload.tags 传后端 → 脏数据,新版 tags.tags 正确取纯解析结果;补 store-view 注释显式记录,locked by test 断言)。**Spec** 9 AC 全满足;1 偏差已修(hq-view 测试数 4→5 补搜索过滤)。**code-review 的价值**:双轴独立交叉验证同一隐藏 bug(高置信),发现「零行为变更」宣称下的正向修复并文档化,避免 git blame 困惑。**验证**(plan §10 AC 全绿):npm test **110/110**(94 baseline + 16 customers[5 store+5 hq+6 parse])+ npm run build 0 错 + tsc -b 0 错 + oxlint 0/0 + grep 'pages/customers-page' 外部 import 仅 App.tsx barrel + **./init.sh full 842 passed**(零回归,纯前端)。**feature 收尾仪式(three-tier §4 第1-8步)**:① ./init.sh full 842 passed + 前端 110/110 + build + oxlint 全绿 ✅ / ② feature_list.json status `not_started → passing` + evidence 4 条 ✅ / ③ sync-active 刷新(1 活跃 queries-endpoints + 5 最近 passing)✅ / ④ progress.md 顶部 frontier 指向 ③ queries-endpoints ✅ / ⑤ clean-state-checklist ✅ / ⑥ 文档影响评估:**无新增/改动文档**(纯前端结构重构,AGENTS.md/项目指南/铁律均不受影响)/ ⑦ **末切片依赖解锁扫描**:无任何 feature depends_on 指向 customers-page-split(纯重构无下游)→ 无需推进 / ⑧ 分支清理:refactor/customers-page-split-t1 待 PR 合并后删。**feature 核心**:customers-page 834 行单文件拆成 customers/ 文件夹 7 文件(双 entry barrel + 双路 route + store/hq 双视图 + usage dialog + shared + 3 测试)。完全镜像 bookings/devices/chat 已验证范式,运行时行为零变化(除 tags 字段隐藏 bug 正向修复)。customers-page 从零单测大 page → 有完整单测覆盖。store/hq 双视图范式第 4 实例,leverage 验证最强。
 - **规则死循环修复(2026-07-30 Session 168)— 清三笔债**:用户问「切片 02 为什么没合并到主分支」。排查发现 sess_c9895f7d 确立的「末切片分支清理」规则**自己卡在未合并的功能分支**上(`docs/harness-branch-cleanup-rule` = commit `ce9d64e`),从未进 main → 下游 agent 读到旧 7 步版本 → 切片 2 漏掉合并。规则要求合并,但规则自己没合并(self-referential trap)。**三笔债依次清完**:① **债1 规则合并** —— `ce9d64e` 单 commit 是纯规则改动(4 文档 +27/-11,zero 代码),从干净分支 `chore/merge-branch-cleanup-rule` cherry-pick,progress.md 部分因被后续事实超越保留 main 现状,3 核心规则文件(three-tier §4 第8步 + clean-state 第10项 + harness-router SKILL 4 处)落 main(merge commit `5c2b9cd`)。② **债2 切片2 合并** —— `refactor/devices-page-split-t2`(be7c223)本地 `git merge --no-ff` 进 main(merge commit `529bf29`,因沙箱网络不可达 GitHub push 超时,用户选「本地直接合 main」,远端推送待网络恢复)。分支基底是规则合并前的 0e1cd46,但未碰规则文件,三方合并干净无冲突,规则完整保留 main 版本未覆盖。**第8步分支清理执行**:删 `refactor/devices-page-split-t2` + `docs/harness-branch-cleanup-rule` + `chore/merge-branch-cleanup-rule` 三条已合并分支(`-d` 安全删,非 `-D`),本地 `git branch` 只剩 main。验证:前端 **94/94 全绿**(store-view 5 + hq-view 8)+ 后端冒烟绿。feature_list status=passing + evidence 4 条(已在 be7c223 内完成,合并后生效)。③ **债3 闭环项** —— sess_c989 自标注「回归纪律第3条同步 main 已记 progress.md 但未固化进 SKILL 回归第1步」,本次补齐:harness-router SKILL 回归流程**新增第1步「同步本地 main」(前置硬动作)**,原第1-4步顺延为第2-5步,交叉引用同步更新(commit `d3b3703`)。**三笔债清完 = 规则死循环修复闭环**:规则进 main → 下次末切片 agent 能读到第8步 → 不再漏合并。~~**待用户动作**(网络恢复后):`git push origin main`(本地 ahead origin/main **5 commits**)~~ **✅ 已验证无债(2026-07-30 Session 169 回归)**:`gh api repos/hugo617/ai-agent-platform/branches/main` 实测远端 main HEAD = `4ceafe6` = 本地 main HEAD(byte-for-byte 一致),5 关键 commit(`4ceafe6`/`d3b3703`/`529bf29`/`5c2b9cd`/`be7c223`)均在远端,OPEN PR = 0,远端分支只剩 main。即推送在 Session 168 之后某时刻已成功(当时 `git push` github.com:443 超时,但后台/后续已完成),原「待推送」债已不存在。注:`git fetch`/`git push`(github.com:443)本会话仍超时,但 `gh`/`gh api`(api.github.com)可达 —— 后续若需本地 git 同步,以 `gh api` 验真为准或待网络恢复。
@@ -2693,3 +2693,65 @@ plan `harness/docs/plan-design-system-color-sweep.md` 切片 05 —— Feature B
 | `feature_list.json` + 派生视图 | ✅ 已更新 | 末切片,status `not_started → passing` + evidence 5 条(切片01-05 各一条,含 WCAG 精算实测)+ sync-active 刷新(1 活跃 C + 5 最近 passing)|
 
 > 判断依据:切片 05 是纯前端 className 调整(3 处警告框 text-warning→text-foreground 实质修复 + 2 处标签 tint 决策注释),后端零改动,无架构约定变更,无新表/迁移。WCAG tint 对比度系统性修复是视觉可读性决策(场景区分:标签忠于 B3 接受债 / 警告框改前景达标),已记入 evidence + plan 切片05 AC inline。**feature 完整收官**:Feature B(业务页色扫荡)✅ passing,Feature C(spacing-card,与 A/B 正交)成为系列最后一片 frontier。下一步 EP3 `/implement` Feature C 切片 01(卡片层级语义化 frontier,与 A/B 正交可独立做)。**系列进度:① A ✅ / ② B ✅ / ③ C 待做(收官)**。
+
+---
+
+## Session 184(2026-08-01):member-service-direct-tests EP3 切片 01(SCD2+casbin 双写契约直测 + feature 收尾,末切片收官)
+
+plan `harness/docs/plan-member-service-direct-tests.md` 切片 01 = 末切片。第 9 次架构巡检候选 ④(Worth exploring)。纯加测 feature:新增 `tests/test_member_service.py`,service 层 contract test 覆盖 `MemberService` 4 方法(list/add/update_role/remove)的 SCD2 DB 写 + casbin grouping 双写一致契约 + 边界。源码零改(D4),复用候选① `user-service-lookup-seam` 建立的 service 层直接测试范式。
+
+### 入口:EP3 切片 01(末切片)
+
+前置 EP2 单回环已完成(Session 183:grill 4 决策 + plan + feature_list 登记 + active 刷新)。本次从 frontier 接 `/implement`。开工流程:冒烟 49 passed,起点干净。开 `feat/member-service-direct-tests` 分支。
+
+### /implement 实施(10 contract tests,纯加测 D4 源码零改)
+
+新增 `tests/test_member_service.py`,范式参考 `test_principal.py`(test_env fixture 真 SQLite + 真 casbin enforcer,`patch.object(casbin_mod, "get_enforcer", return_value=test_env.enforcer)` 注入)+ `test_scd2_history.py`(SCD2 历史保留 raw row 断言)。`_enforcer_patch(test_env)` 辅助封装注入;`_has_role(enforcer, user, role, tenant)` 辅助处理 casbin Python SDK gap。
+
+**casbin SDK gap 处理**:plan AC 文本写 `enforcer.has_role_for_user_in_domain(...)`,但 casbin Python SDK **无此方法**(只有 `has_role_for_user(user, role)` 不带 domain,在 RBAC-with-domains 模型下会忽略 domain matcher)。正确替代:用 `role in enforcer.get_roles_for_user_in_domain(user, tenant)` 判断。集中到 `_has_role()` 单辅助函数 + docstring 说明 SDK gap。Spec 轴 review 确认忠实实现「断言 grouping 状态」契约精神,API 名称差异不构成偏差。
+
+**契约覆盖(10 tests)**:
+- list 契约:`test_list_returns_seeded_owner_membership`(owner list → seed owner membership 的 MemberRead)+ `test_list_empty_tenant_returns_empty_list`(空租户 super_admin bypass 路径 → [],Spec 轴 review 反馈补)
+- add 双写一致:`test_add_new_member_dual_writes_db_and_casbin`(DB current_role=admin AND casbin grouping=admin)+ `test_add_get_or_create_creates_missing_user`(get_or_create 创建缺失 User,email 转发)
+- update_role 双写一致:`test_update_role_dual_writes_db_and_casbin_old_role_gone_new_appears`(member→admin:DB admin + casbin 旧 member 消失新 admin 出现)+ `test_update_role_non_member_raises_not_found`(NotFoundError byte-for-byte)
+- remove 双写一致 + SCD2 历史保留 + self-guard + 边界:`test_remove_dual_writes_db_and_casbin_strips_all_roles`(DB current_role=None + casbin get_roles_for_user_in_domain=[])+ `test_remove_preserves_scd2_history_row`(raw UserTenant 行物理仍在 valid_to 全设,软删非硬删)+ `test_remove_self_guard_raises_biz_error`(BizError "cannot remove yourself" byte-for-byte)+ `test_remove_non_member_raises_not_found`(NotFoundError byte-for-byte)
+
+**D1 合规**:零 mock 调用断言(grep 无 assert_called/call_count/spy),只断言外部可观察状态(DB current_role + casbin grouping + 异常 str)。**D4 合规**:`git diff main...HEAD -- app/services/member_service.py` 为空(纯加测)。
+
+### /code-review 双轴(general-purpose ×2 并行)
+
+- **Standards 轴:APPROVE,0 硬违反**。D1(无 mock 调用断言)/ D4(member_service.py diff 0 行)/ 多租户隔离(test_env + patch.object 注入,未越界全局 enforcer)/ 测试范式对齐 test_principal.py + test_scd2_history.py / `_has_role` SDK gap 处理合理 —— 全合规。仅 1 轻微 Duplicated Code 判断项(内联 setup 9 次,对齐 test_principal.py 既有风格,不改)。
+- **Spec 轴:APPROVE,核心 9 AC 全忠实**。casbin API 名称偏差(_has_role 包装)不构成偏差(忠实 grouping 状态断言契约精神);notification 在真 DB 正常创建不构成问题(plan §8 OOS 不测 notification,但 update_role 触发的 NotificationService.create 在 test_env create_all 的真表上正常写,不报错)。**唯一部分实现**:list「空 tenant → []」—— 原以 docstring 说明跳过(多租户隔离下 owner principal 不可达空租户),Spec 轴判「可接受的 spec 偏差,但 AC 字面未满足」并指出补救方案。
+
+**补救落地(Spec 轴反馈)**:补 `test_list_empty_tenant_returns_empty_list` —— owner 以 `platform_role="super_admin"` 走 `permission_service.check` 的 super_admin bypass(permission_service.py super_admin 直接 return True),list 新建的空 Tenant → 返回 []。AC 字面满足,10/10 passed。
+
+### 验证(plan §10 + 切片 01 AC 全绿)
+
+- ✅ `pytest tests/test_member_service.py` **10/10 passed**
+- ✅ `./init.sh full` 全量 **859 passed**(基线 849 + 新增 10,零回归,~6min)+ ruff clean
+- ✅ D4 源码零改:`git diff main...HEAD -- app/services/member_service.py` 空
+- ✅ D1 零 mock 调用断言
+- ✅ 源码零改,测试一开始就绿(双写契约现状正确,无 bug 暴露,无需 xfail/TODO)
+
+### feature 收尾仪式(three-tier §4 第 1-8 步)
+
+1. ✅ `./init.sh full` 859 passed + ruff clean 全绿
+2. ✅ feature_list.json status `in_progress → passing` + evidence 5 条(切片 01 契约覆盖 / D1+D4 合规实测 / init.sh full 实测 / casbin SDK gap 处理 / 双轴 review APPROVE)
+3. ✅ `./scripts/sync-active-features.sh` 刷新(0 活跃 + 5 最近 passing[member-service 新进]+ 归档 80 条)
+4. ✅ progress.md 顶部 frontier 清空(member-service ✅ passing,待用户排新需求)
+5. ✅ clean-state-checklist 对照
+6. ✅ 文档影响评估(见下)
+7. ✅ **末切片依赖解锁扫描**:无 feature depends_on member-service-direct-tests(计数 0)—— 纯加测无下游,无需推进
+8. ⏳ **分支清理**:`feat/member-service-direct-tests` 待 `--no-ff` 合并 main + push + 删分支(收尾⑧执行)
+- ✅ **plan 状态行同步**:`plan-member-service-direct-tests.md` 顶部 `draft v1 → ✅ passing` + 切片 01 标题 ✅ commit + 15 AC 全勾选(含 inline 完成证据)。`check_plan_status_sync.py` 报告「全仓 plan 状态行与 feature_list.json 一致」—— 避免重蹈 spacing-card-hierarchy 的 CI 债。
+
+### Session 184 文档影响评估(member-service-direct-tests 切片 01 末切片)
+
+| 文档 | 是否需更新 | 本 Session 动作 |
+|---|---|---|
+| `项目指南/02-后端架构/*` | ❌ 无影响 | 纯加测(新增测试文件),源码零改;四层架构 + 多租户隔离 + RBAC SCD2 文档完全覆盖现状,测试只是把文档钉的「双写契约」落到可执行断言 |
+| `harness/docs/plan-member-service-direct-tests.md` | ✅ 已更新 | 顶部 status `draft v1 → ✅ passing` + 切片 01 标题追加 `✅ commit 479e24b` + 15 AC 全勾选(含 inline 完成证据:casbin SDK gap 处理 + list 空租户补救 + 双轴 review) |
+| `progress.md` | ✅ 已更新 | 顶部 frontier「member-service in_progress」→「无 frontier(p85 ✅ passing,待用户排新需求)」+ Session 184 完整记录(/implement + 双轴 review + feature 收尾仪式)+ 本文档影响评估 |
+| `feature_list.json` + 派生视图 | ✅ 已更新 | 末切片,status `in_progress → passing` + evidence 5 条(契约覆盖 / D1+D4 合规 / init.sh full 实测 / casbin SDK gap / 双轴 APPROVE)+ sync-active 刷新(0 活跃 + 5 最近 passing)|
+
+> 判断依据:切片 01 是纯后端加测(新增 1 测试文件,源码零改),无架构约定变更,无新表/迁移/前端改动。casbin SDK gap(has_role_for_user_in_domain 不存在)是测试断言层的 API 适配,不影响 member_service 源码或权限模型契约。**feature 完整收官**:第 9 次巡检候选 ④ ✅ passing,候选 ①(user-service-lookup-seam)+ ④(member-service-direct-tests)双双收官,service 层直接测试范式建立并复用。下一步:待用户排新需求(frontier 清空)。
