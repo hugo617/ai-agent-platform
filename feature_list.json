@@ -1,7 +1,7 @@
 {
   "project": "ai-agent-platform",
   "description": "多租户 AI 智能体 SaaS 平台脚手架(FastAPI + React + pycasbin + LangGraph)",
-  "last_updated": "2026-07-31",
+  "last_updated": "2026-08-01",
   "harness_version": "stage1-clean-state",
   "rules": {
     "single_active_feature": true,
@@ -20,6 +20,27 @@
     "passing": "验证通过且证据已记录(不可逆)"
   },
   "features": [
+    {
+      "id": "member-service-direct-tests",
+      "priority": 85,
+      "area": "工程化",
+      "title": "MemberService 直接测试(SCD2 + casbin 双写契约,第 9 次巡检候选 ④)",
+      "user_visible_behavior": "无直接用户可见行为变化(纯加测,源码零改动)。新增 tests/test_member_service.py,service 层 contract test 覆盖 MemberService 4 方法(list/add/update_role/remove)的 SCD2 DB 写 + casbin grouping 双写一致契约 + 边界(NotFoundError 非成员 / BizError 自删守卫 / SCD2 历史保留软删)。用 test_env fixture 真 SQLite + 真 casbin enforcer(patch.object 注入),不用 mock,范式参考 test_principal.py。隔离 member_service 双写契约与 user_service 解耦,定位 casbin sync 漂移 bug 时能定位到 member_service。",
+      "status": "in_progress",
+      "verification": [
+        "新增 tests/test_member_service.py:test_env fixture + factory() 构造 MemberService + patch.object(casbin_mod, get_enforcer, return_value=test_env.enforcer) 注入隔离 enforcer",
+        "add/update/remove 双写一致:DB memberships.current_role 与 casbin enforcer.has_role_for_user_in_domain 同步(add 加 / update 改旧消新出 / remove 全删)",
+        "边界:update/remove 非成员 NotFoundError + remove 自删 BizError(cannot remove yourself)",
+        "SCD2 历史保留:remove 后旧 UserTenant 行 valid_to 关闭但物理存在(软删非硬删)",
+        "不测实现细节(D1):不断言 assign_role/set_role_for_user_in_domain 调用次数顺序,只断言最终 DB+casbin 可观察状态",
+        "member_service 源码零改动(D4):git diff app/services/member_service.py 为空",
+        "./init.sh full 全量 passed(基线 + 新测试数,零回归)+ ruff clean + plan 状态行同步 passing(避免重蹈 spacing-card-hierarchy CI 债)"
+      ],
+      "notes": "2026-08-01 立项。第 9 次架构巡检候选 ④(Worth exploring)。纯加测 feature,零行为变更零 ADR 风险。grill 4 决策(D1 只测外部契约不测内部调用 / D2 service 层直接测非 HTTP / D3 覆盖 4 方法契约+边界 / D4 不改 member_service 源码发现 bug 另起 feature)。EP2 单回环 plan 含 1 切片(单切片=末切片)。复用 user-service-lookup-seam(候选①)建立的 service 层直接测试范式。CI 债教训:收尾必须同步 plan 顶部状态行(参考 spacing-card-hierarchy 的 check_plan_status_sync.py 失败)。",
+      "plan": "harness/docs/plan-member-service-direct-tests.md",
+      "depends_on": "",
+      "evidence": []
+    },
     {
       "id": "user-service-lookup-seam",
       "priority": 84,
