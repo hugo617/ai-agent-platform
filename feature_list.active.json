@@ -19,19 +19,7 @@
       "priority": 83,
       "area": "前端设计系统",
       "title": "设计系统收口 — Feature C:间距与卡片层级规范(shadow card/overlay 语义命名 + 字号任意值 text-[10px] 收口)",
-      "user_visible_behavior": "无直接用户可见行为变化(纯前端 token/className 收口,视觉一致)。两个收口:① 卡片层级语义化——Card 层(shadow-sm,230 处 <Card 依赖)与浮层层(dialog/dropdown/select/toast 的 shadow-lg/md)的阴影层级已有但未命名,在 tailwind.config.js theme.extend.boxShadow 加 card(等价 shadow-sm)/overlay(等价 shadow-lg)语义名,Card + 浮层组件统一引用,让「层级」从代码隐含变命名概念(对齐 B3 数据为尊+hairline chrome 调性)。② 字号任意值收口(顺手项,决策 5)——11 处 text-[10px]/text-[11px] 散落(layout/notification-bell/command-menu/permissions/composite-mode/conversation-list-panel),扩展 text-2xs(10px)+ 归 text-xs(11px→12px 近似),全站 text-[NNpx] grep 归零。间距/圆角任意值实测为 0 无需收口。不推全站字号 token 化(决策 5 边界)。",
-      "status": "not_started",
-      "verification": [
-        "text-[NNpx] grep(全 frontend/src)= 0(11 处字号任意值全映射:text-[10px]→text-2xs / text-[11px]→text-xs)",
-        "tailwind.config.js theme.extend.boxShadow 含 card(等价 shadow-sm)+ overlay(等价 shadow-lg);card.tsx + 浮层组件(dialog/dropdown-menu/select/toast)引用语义名",
-        "230 处 <Card 视觉零变化(shadow-card 值逐字等价 shadow-sm)",
-        "cd frontend && npm run build 0 类型错误 + npx oxlint 0/0 + npm test 全绿",
-        "对照 design-demos/B3.html,卡片层级与 B3「数据为尊+hairline chrome」调性一致"
-      ],
-      "notes": "2026-07-31 立项。设计系统收口系列 Feature C,与 A/B 正交(不依赖 token,可独立做)。实测现状:Card 已有 cardVariants cva 体系(default: shadow-sm + glow variant),层级隐含存在只差语义命名;shadow 用法集中在 ui/(Card shadow-sm / 浮层 shadow-lg-md);间距/圆角/shadow 任意值均为 0(只有字号任意值 11 处)。EP2 单回环 plan 含 2 切片:01 卡片层级语义化(frontier,shadow card/overlay + Card/浮层引用 + 230 处视觉零变化验证)→ 02 字号任意值收口(text-2xs 扩展 + 11 处映射 + 收尾)。本 feature 是系列正交收尾,收尾时若 A+B 已 passing 则同步更新总纲系列状态为 ✅ 全部完成。",
-      "plan": "harness/docs/plan-design-system-spacing-card-hierarchy.md",
-      "depends_on": "",
-      "evidence": []
+      "status": "passing"
     },
     {
       "id": "design-system-color-sweep",
@@ -62,17 +50,10 @@
       "status": "passing"
     },
     {
-      "id": "devices-page-split",
-      "priority": 78,
-      "area": "工程化",
-      "title": "前端 devices-page 拆 store-view/hq-view(镜像 bookings/ 范式,巡检候选 ②)",
-      "status": "passing"
-    },
-    {
       "id": "_milestone_archived",
       "priority": 0,
       "area": "里程碑",
-      "title": "[已归档 77 条 passing,见 archive/features-passing-archive.json]",
+      "title": "[已归档 78 条 passing,见 archive/features-passing-archive.json]",
       "status": "passing"
     }
   ],

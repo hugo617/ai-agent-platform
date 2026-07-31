@@ -233,7 +233,9 @@ boxShadow: {
 - [x] 230 处 `<Card` 视觉零变化验证:Playwright 实测 `shadow-surface === shadow-sm` 为 TRUE(等价 `rgba(0,0,0,0.05)` 弱阴影);无任何 `<Card>` 叠加裸 shadow 覆盖,230 处全跟随 cardVariants
 - [x] `cd frontend && npm run build` 0 错 + `npx oxlint` 0/0 + `npm test` 141/141 全绿
 
-### 切片 02 — 字号任意值收口:`text-2xs` 扩展 + 11 处映射(末切片,feature 收尾)
+### 切片 02 — 字号任意值收口:`text-2xs` 扩展 + 11 处映射(末切片,feature 收尾)✅
+
+> **完成证据**(Session 180,commit aa01a7a):`tailwind.config.js theme.extend.fontSize` 加 `'2xs':['10px',{lineHeight:'14px'}]`(注释范式对齐切片 01 boxShadow 块 header+bullet);11 处散落映射全归零(实测 6 处 10px + 5 处 11px,含本表下方表格漏记的 `conversation-list-panel:369` text-[11px])。`text-[NNpx]` grep(全 frontend/src)= 0(grep exit 1 无匹配);编译产物 `.text-2xs{font-size:10px;line-height:14px}` 逐字等价原 `text-[10px]`;`npm run build` 0 错 + `npx oxlint` 0/0 + `npm test` 141/141;`./init.sh full` 842 passed 后端零回归。`/code-review` 双轴:Standards clean(注释风格 nit 已修)、Spec clean(无越界/无缺失)。
 
 **What it delivers**:从开发视角,全站不再有 `text-[NNpx]` 任意值绕过——10px 有命名刻度 `text-2xs`,11px 归 `text-xs`,11 处全部走 Tailwind 刻度体系。
 
@@ -241,16 +243,16 @@ boxShadow: {
 
 **Acceptance criteria**:
 
-- [ ] `tailwind.config.js` `theme.extend.fontSize` 含 `'2xs': ['10px', { lineHeight: '14px', ... }]`(参考 Tailwind `xs`=12px/16px 的 lineHeight 比例)
-- [ ] `dashboard-layout.tsx:149` `text-[10px]` → `text-2xs`
-- [ ] `notification-bell.tsx:88` `text-[10px]` → `text-2xs`;`:143` `text-[11px]` → `text-xs`
-- [ ] `command-menu.tsx:135` `text-[10px]` → `text-2xs`
-- [ ] `permissions-page.tsx:214,404` `text-[10px]` ×2 → `text-2xs`
-- [ ] `composite-mode.tsx:412` `text-[11px]` → `text-xs`
-- [ ] `conversation-list-panel.tsx:363,387,514` `text-[10px]`×2 → `text-2xs`、`text-[11px]` → `text-xs`(注意 `:363` 是 px-1.5 py-0 内的,`:387/:514` 是 px-1.5 py-px badge 内的)
-- [ ] `text-[NNpx]` grep(全 frontend/src)= 0
-- [ ] 视觉验证:`text-2xs` 渲染 = 原 `text-[10px]`;11px→xs 处视觉可接受(手动,evidence 记录)
-- [ ] `cd frontend && npm run build` 0 错 + `npx oxlint` 0/0 + `npm test` 全绿
-- [ ] `./init.sh full` 后端零回归(确认前端改动不影响后端测试)
-- [ ] **feature 收尾**:feature_list.json `status` → `passing` + evidence 写实测 + `./scripts/sync-active-features.sh` 刷新 + 依赖解锁扫描(本 feature 无下游依赖,A/B 已 passing 则系列收官,overview 追加「系列状态:✅ 全部完成」)
-- [ ] **系列收官检查**:若 Feature A + B 均已 passing,在本 feature 收尾时同步更新总纲 [`plan-frontend-design-system-overview.md`](./plan-frontend-design-system-overview.md) 的「系列状态」段为 ✅ 全部完成(three-tier §5 规则 ④)
+- [x] `tailwind.config.js` `theme.extend.fontSize` 含 `'2xs': ['10px', { lineHeight: '14px', ... }]`(参考 Tailwind `xs`=12px/16px 的 lineHeight 比例)— lineHeight 14px(14/10=1.4,贴近 xs 16/12≈1.33 的比例;spec checklist 权威值)
+- [x] `dashboard-layout.tsx:149` `text-[10px]` → `text-2xs`
+- [x] `notification-bell.tsx:88` `text-[10px]` → `text-2xs`;`:143` `text-[11px]` → `text-xs`
+- [x] `command-menu.tsx:135` `text-[10px]` → `text-2xs`
+- [x] `permissions-page.tsx:214,404` `text-[10px]` ×2 → `text-2xs`(实际行号 217,407,行号漂移)
+- [x] `composite-mode.tsx:412` `text-[11px]` → `text-xs`(实际行号 415,漂移)
+- [x] `conversation-list-panel.tsx:363,387,514` `text-[10px]`×2 → `text-2xs`、`text-[11px]` → `text-xs`(注意 `:363` 是 px-1.5 py-0 内的,`:387/:514` 是 px-1.5 py-px badge 内的)— **额外发现**:本表漏记 `:369` 一处 `text-[11px]`(customer-name span),一并映射 → `text-xs`(实测以 grep 为准)
+- [x] `text-[NNpx]` grep(全 frontend/src)= 0 — grep exit 1 无匹配,确认归零
+- [x] 视觉验证:`text-2xs` 渲染 = 原 `text-[10px]`;11px→xs 处视觉可接受(手动,evidence 记录)— 编译产物 CSS 实测 `.text-2xs{font-size:10px;line-height:14px}` 逐字等价原 `text-[10px]`(只补 lineHeight 14px ≈ xs 比例,视觉无放大);11px→xs(12px)差 1px,副文本/badge 不可见
+- [x] `cd frontend && npm run build` 0 错 + `npx oxlint` 0/0 + `npm test` 全绿 — build ✓(0 类型错误)/ oxlint 0 warnings 0 errors / npm test 141/141
+- [x] `./init.sh full` 后端零回归(确认前端改动不影响后端测试)— 842 passed,0 失败(331s)
+- [x] **feature 收尾**:feature_list.json `status` → `passing` + evidence 写实测 + `./scripts/sync-active-features.sh` 刷新 + 依赖解锁扫描(本 feature 无下游依赖,A/B 已 passing 则系列收官,overview 追加「系列状态:✅ 全部完成」)— 依赖解锁扫描:无下游;A+B passing → 系列收官
+- [x] **系列收官检查**:若 Feature A + B 均已 passing,在本 feature 收尾时同步更新总纲 [`plan-frontend-design-system-overview.md`](./plan-frontend-design-system-overview.md) 的「系列状态」段为 ✅ 全部完成(three-tier §5 规则 ④)— 已更新
