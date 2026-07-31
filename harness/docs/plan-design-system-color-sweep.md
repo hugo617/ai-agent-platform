@@ -214,7 +214,7 @@ Feature A 建好 `--success`/`--warning`/`--danger`/`--info` 四 token 后,**业
 
 > **切片策略说明**:本 feature 不按「页面」切片(会横向切片化),而按「色系/语义」切片——每片把一种语义(emerald→success)跨所有页面收口到底。这样每片是「一个语义全站闭环」的垂直切片,grep 归零可单片验证。切片 01 是 frontier(success 语义,覆盖最多 emerald/green 用例),02-04 并行 blocked by 01(共享映射范式 + alpha 约定),05 收尾聚合。
 
-### 切片 01 — success 语义收口:emerald/green → `success`(跨页,frontier)
+### 切片 01 — success 语义收口:emerald/green → `success`(跨页,frontier) ✅
 
 **What it delivers**:从使用者视角,所有表达「成功/达成/收入/充值到账」的绿色(emerald/green)在所有业务页统一变成 `success` token,亮/暗自动切换。这是建立「色系→语义」映射范式的首片,后续 warning/danger/info 复用其 alpha 约定与 dark: 清理规则。
 
@@ -222,17 +222,28 @@ Feature A 建好 `--success`/`--warning`/`--danger`/`--info` 四 token 后,**业
 
 **Acceptance criteria**:
 
-- [ ] `settings-page.tsx`:`text-green-600` Check 图标 → `text-success`;`bg-emerald-500 text-white` active 态 → `bg-success text-success-foreground`
-- [ ] `permissions-page.tsx`:`bg-emerald-500`(granted 标记 ×2)→ `bg-success`
-- [ ] `billing-page.tsx`:`text-emerald-500` ArrowUp(收入 ×2)+ `text-emerald-600`(交易方向)→ `text-success`
-- [ ] `billing-admin-page.tsx`:`text-emerald-500` Coins → `text-success`
-- [ ] `users-page.tsx`:stat icon `text-emerald-500`(活跃)→ `text-success`
-- [ ] `notifications-page.tsx`:`bg-emerald-100 text-emerald-800`(充值到账)→ `bg-success/10 text-success`
-- [ ] `notification-bell.tsx`:`text-emerald-600`(recharge)→ `text-success`
-- [ ] `dashboard-page.tsx`:accent `text-emerald-500` → `text-success`
-- [ ] success 语义 emerald/green grep(业务页范围)= 0
-- [ ] `cd frontend && npm run build` 0 错 + `npx oxlint` 0/0 + `npm test` 全绿
-- [ ] **建立范式文档**(evidence 记录):alpha 约定(`/10` 底 / `/30` 边框 / DEFAULT 字)+ dark: 冗余清理规则,供切片 02-04 复用
+- [x] `settings-page.tsx`:`text-green-600` Check 图标 → `text-success`;`bg-emerald-500 text-white` active 态 → `bg-success text-success-foreground`
+- [x] `permissions-page.tsx`:`bg-emerald-500`(granted 标记 ×2)→ `bg-success`
+- [x] `billing-page.tsx`:`text-emerald-500` ArrowUp(收入 ×2)+ `text-emerald-600`(交易方向)→ `text-success`
+- [x] `billing-admin-page.tsx`:`text-emerald-500` Coins → `text-success`
+- [x] `users-page.tsx`:stat icon `text-emerald-500`(活跃)→ `text-success`
+- [x] `notifications-page.tsx`:`bg-emerald-100 text-emerald-800`(充值到账)→ `bg-success/10 text-success`
+- [x] `notification-bell.tsx`:`text-emerald-600`(recharge)→ `text-success`
+- [x] `dashboard-page.tsx`:accent `text-emerald-500` → `text-success`
+- [x] success 语义 emerald/green grep(业务页范围)= 0
+- [x] `cd frontend && npm run build` 0 错 + `npx oxlint` 0/0 + `npm test` 全绿
+- [x] **建立范式文档**(evidence 记录):alpha 约定(`/10` 底 / `/30` 边框 / DEFAULT 字)+ dark: 冗余清理规则,供切片 02-04 复用
+
+**✅ 实施证据(2026-07-31 Session 174)**
+
+- **改动**:12 处 className 映射,跨 8 文件(settings/permissions/billing/billing-admin/users/notifications/notification-bell/dashboard)
+- **grep 归零**:`grep -rE "emerald|green-" --include="*.tsx" src/` 业务页范围 = 0(残留全在边界文件:`components/ui/avatar.tsx:30` avatar 8 色环 + `badge-toast-avatar.test.tsx` Feature A 锁回退断言)
+- **验证**:`npm run build` ✓ built in 1.97s(0 类型错误)+ `npx oxlint` 0 warnings/0 errors + `npm test` 17 files / 141 tests passed(含 `design-tokens.test.ts` 21 + `badge-toast-avatar.test.tsx` 锁回退)
+- **范式文档(供切片 02-04 复用)**:
+  - **浅底深字**:`-100`/`-800` 组合 → `bg-{token}/10`(底)+ `text-{token}`(DEFAULT 字);如需边框 `border-{token}/30`。本切片 `notifications-page.tsx` recharge `bg-emerald-100 text-emerald-800` → `bg-success/10 text-success` 落地此范式
+  - **active/实心态**:`bg-{原色}-500 text-white` → `bg-{token} text-{token}-foreground`。本切片 `settings-page.tsx` active + `permissions-page.tsx` 图例/按钮 ×2 落地
+  - **三元条件色**:如 `isIncoming ? "text-emerald-600" : "text-rose-600"` → 只改 emerald 半边为 `text-success`,rose 半边留给切片 03(不越界)
+  - **dark: 清理规则**:本切片 success 用例均为单色无手写 `dark:` 冗余变体,故无删除动作;**切片 02 amber 大量 `dark:text-amber-*` 冗余变体时落地清理规则**(映射后 token 自带暗色变体,手写 dark: 变体冗余应删)
 
 ### 切片 02 — warning 语义收口:amber → `warning`(跨页)
 

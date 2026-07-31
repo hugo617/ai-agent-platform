@@ -59,7 +59,7 @@ const TX_TYPE_LABEL: Record<string, string> = {
 
 function txIcon(type: string) {
   if (type === "recharge" || type === "refund")
-    return <ArrowUpCircle className="h-4 w-4 text-emerald-500" />;
+    return <ArrowUpCircle className="h-4 w-4 text-success" />;
   if (type === "consume")
     return <ArrowDownCircle className="h-4 w-4 text-rose-500" />;
   return <Activity className="h-4 w-4 text-muted-foreground" />;
@@ -210,7 +210,7 @@ export function BillingPage() {
           <CounterCard
             title="累计充值"
             value={fmtTokens(wallet.total_recharged)}
-            icon={<ArrowUpCircle className="h-4 w-4 text-emerald-500" />}
+            icon={<ArrowUpCircle className="h-4 w-4 text-success" />}
           />
           <CounterCard
             title="累计消耗"
@@ -340,7 +340,7 @@ export function BillingPage() {
                       <TableCell
                         className={cn(
                           "font-mono tabular-nums",
-                          isIncoming ? "text-emerald-600" : "text-rose-600",
+                          isIncoming ? "text-success" : "text-rose-600",
                         )}
                       >
                         {isIncoming ? "+" : ""}

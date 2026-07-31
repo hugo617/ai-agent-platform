@@ -1058,7 +1058,7 @@ function ApiTokenCard() {
                   aria-label="复制"
                 >
                   {copied ? (
-                    <Check className="h-4 w-4 text-green-600" />
+                    <Check className="h-4 w-4 text-success" />
                   ) : (
                     <Copy className="h-4 w-4" />
                   )}
@@ -1166,7 +1166,7 @@ function ScopePicker({
                     aria-pressed={on}
                     className={`inline-flex items-center gap-1 rounded px-2 py-1 text-xs transition-colors ${
                       on
-                        ? "bg-emerald-500 text-white"
+                        ? "bg-success text-success-foreground"
                         : "bg-muted text-muted-foreground hover:bg-muted/80"
                     }`}
                   >

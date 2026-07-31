@@ -300,7 +300,7 @@ export function PermissionsPage() {
         </CardHeader>
         <CardContent className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
           <div className="flex items-center gap-2">
-            <span className="flex h-5 w-5 items-center justify-center rounded bg-emerald-500 text-white">
+            <span className="flex h-5 w-5 items-center justify-center rounded bg-success text-success-foreground">
               <Check className="h-3 w-3" />
             </span>
             <span>允许</span>
@@ -349,7 +349,7 @@ function PermCell({
         aria-label={granted ? "允许(点击撤销)" : "拒绝(点击授予)"}
         className={cn(
           "inline-flex h-6 w-6 items-center justify-center rounded text-white transition-colors",
-          granted ? "bg-emerald-500" : "bg-muted text-muted-foreground",
+          granted ? "bg-success" : "bg-muted text-muted-foreground",
           editable &&
             !busy &&
             "cursor-pointer hover:ring-2 hover:ring-primary/40",

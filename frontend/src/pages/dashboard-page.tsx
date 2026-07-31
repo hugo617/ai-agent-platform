@@ -155,7 +155,7 @@ function StoreView() {
       icon: MessageSquare,
       title: "开始对话",
       hint: "测试智能体的实际表现",
-      accent: "text-emerald-500",
+      accent: "text-success",
     },
     {
       to: "/customers",
