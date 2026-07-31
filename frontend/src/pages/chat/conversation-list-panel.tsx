@@ -360,13 +360,13 @@ export function ConversationListPanel({
                           {conv.kind === "composite" && (
                             <Badge
                               variant="secondary"
-                              className="shrink-0 px-1.5 py-0 text-[10px]"
+                              className="shrink-0 px-1.5 py-0 text-2xs"
                             >
                               复合
                             </Badge>
                           )}
                         </span>
-                        <span className="flex w-full items-center gap-1 text-[11px] text-muted-foreground">
+                        <span className="flex w-full items-center gap-1 text-xs text-muted-foreground">
                           {conv.customer_id && (() => {
                             const n = customerNameOf(conv.customer_id, customerProfiles);
                             return n ? (
@@ -384,7 +384,7 @@ export function ConversationListPanel({
                             {conv.tags.map((t) => (
                               <span
                                 key={t}
-                                className="inline-flex items-center gap-0.5 rounded bg-muted px-1.5 py-px text-[10px]"
+                                className="inline-flex items-center gap-0.5 rounded bg-muted px-1.5 py-px text-2xs"
                               >
                                 {t}
                                 <button
@@ -511,7 +511,7 @@ export function ConversationListPanel({
                 {tagTarget.tags.map((t) => (
                   <span
                     key={t}
-                    className="inline-flex items-center gap-0.5 rounded bg-muted px-1.5 py-px text-[11px]"
+                    className="inline-flex items-center gap-0.5 rounded bg-muted px-1.5 py-px text-xs"
                   >
                     {t}
                     <button

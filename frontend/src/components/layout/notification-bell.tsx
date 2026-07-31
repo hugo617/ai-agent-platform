@@ -85,7 +85,7 @@ export function NotificationBell() {
         <Button variant="ghost" size="icon" className="relative">
           <Bell className="h-5 w-5" />
           {count > 0 && (
-            <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-medium text-destructive-foreground">
+            <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-2xs font-medium text-destructive-foreground">
               {count > 99 ? "99+" : count}
             </span>
           )}
@@ -140,7 +140,7 @@ export function NotificationBell() {
                   <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">
                     {item.content}
                   </p>
-                  <p className="mt-0.5 text-[11px] text-muted-foreground/70">
+                  <p className="mt-0.5 text-xs text-muted-foreground/70">
                     {relativeTime(item.created_at)}
                   </p>
                 </div>

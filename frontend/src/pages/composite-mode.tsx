@@ -412,7 +412,7 @@ function FragmentsList({
               <span className="flex items-center gap-2 truncate">
                 <span className="truncate font-medium">{frag.agent_name}</span>
                 {frag.total_tokens != null && (
-                  <span className="shrink-0 text-[11px] text-muted-foreground">
+                  <span className="shrink-0 text-xs text-muted-foreground">
                     {frag.total_tokens} tokens
                   </span>
                 )}
