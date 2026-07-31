@@ -162,7 +162,7 @@ export function BillingAdminPage() {
         <SummaryCard
           title="全平台累计消耗"
           value={fmtTokens(totalConsumed)}
-          icon={<Coins className="h-4 w-4 text-rose-500" />}
+          icon={<Coins className="h-4 w-4 text-danger" />}
         />
       </div>
 
