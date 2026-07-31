@@ -15,6 +15,13 @@
   },
   "features": [
     {
+      "id": "user-service-lookup-seam",
+      "priority": 84,
+      "area": "工程化",
+      "title": "UserService super_admin lookup seam 抽取(_resolve_user,5 处 lookup glue 收敛,第 9 次巡检候选 ① Top)",
+      "status": "passing"
+    },
+    {
       "id": "design-system-spacing-card-hierarchy",
       "priority": 83,
       "area": "前端设计系统",
@@ -43,17 +50,10 @@
       "status": "passing"
     },
     {
-      "id": "customers-page-split",
-      "priority": 79,
-      "area": "工程化",
-      "title": "前端 customers-page 拆 store-view/hq-view(镜像 bookings/devices/chat split 范式,第 8 次巡检候选 ④ Top)",
-      "status": "passing"
-    },
-    {
       "id": "_milestone_archived",
       "priority": 0,
       "area": "里程碑",
-      "title": "[已归档 78 条 passing,见 archive/features-passing-archive.json]",
+      "title": "[已归档 79 条 passing,见 archive/features-passing-archive.json]",
       "status": "passing"
     }
   ],

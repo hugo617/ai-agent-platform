@@ -1,7 +1,7 @@
 {
   "project": "ai-agent-platform",
   "description": "已 passing feature 的历史归档(完整字段保留,审计用)",
-  "count": 78,
+  "count": 79,
   "features": [
     {
       "id": "data-export",
@@ -1970,6 +1970,23 @@
         "切片 2(末切片,本次 Session):补完整 store-view + hq-view 单测。新建 store-view.test.tsx(5 tests:列表渲染 + 空态 + member 只读守卫 + owner 创建 Dialog 填表提交触发 useCreateDevice[断言 store path payload 无 tenant_id] + 行内菜单)+ git mv smoke→hq-view.test.tsx 扩展到 8 tests(原 2 Create prop smoke + 新 1 Edit tenantId prop via spy-on-children + 2 panorama 渲染 + 2 hook closure 构造[useDeleteDevice/useBindDeviceCustomer/useUnbindDeviceCustomer 以 targetTenantId 调用] + 1 删除触发[deleteMut.mutateAsync 真调,对齐 bookings L491 闭包生效范式])。/code-review 双轴(Standards 0 硬违例,1 注释自指已修;Spec AC1-2 全满足,2 防御性增强已采纳补 store 提交 + hq 删除触发闭合 plan §5 全文)。验证:npm test 94/94 + npm run build 0 错 + oxlint 0/0 + plan Ticket 2 AC 全勾 + 标题 ✅。",
         "收尾全量验证(末切片):./init.sh full 842 passed(零回归,后端零改动)+ 前端 npm test 94/94 + npm run build 绿 + oxlint 0 warning 0 error + grep 'pages/devices-page' 残留旧路径 → 0 + devices/ 文件夹 7 文件 + __tests__/(store-view.test.tsx + hq-view.test.tsx)对称 bookings/。",
         "feature 核心:devices-page 1083 行单文件拆成 devices/ 文件夹 7 文件(双 entry barrel + 二叉路由 + store/hq 双视图 + 4 共享 Dialog + 纯数据 status-meta + 共享显示原语 shared)+ __tests__/ 补 13 测试(store 5 + hq 8)。完全镜像 bookings/ 已验证范式,运行时行为零变化。tenantId 跨租户写守卫双路径全覆盖(Create/Edit prop via spy-on-children + Bind/Delete hook closure,空窗消除)。"
+      ]
+    },
+    {
+      "id": "customers-page-split",
+      "priority": 79,
+      "area": "工程化",
+      "title": "前端 customers-page 拆 store-view/hq-view(镜像 bookings/devices/chat split 范式,第 8 次巡检候选 ④ Top)",
+      "status": "passing",
+      "plan": "harness/docs/plan-customers-page-split.md",
+      "user_visible_behavior": "零行为变更(纯前端结构重构)。customers-page.tsx(834 行单文件 4 组件)拆成 customers/ 文件夹:CustomersPage route → StoreView(本店 CRUD)+ HqView(跨店聚合只读)+ CustomerUsageDialog + shared.tsx。镜像已验证 3 次的 bookings/devices/chat split 范式第 4 实例,运行时行为零变化。",
+      "acceptance_criteria": "customers/ 文件夹 7 文件 + barrel + App.tsx 零改动 + npm build 0 错 + npm test 全绿(store 5-6 + hq 5-6 + parse-tags 3)+ oxlint 0/0 + ./init.sh full 后端零回归 + 零行为变更",
+      "depends_on": [],
+      "evidence": [
+        "切片1 commit 347af5f:建 customers/ 文件夹 6 文件(index/store-view/hq-view/customer-usage-dialog/shared + hq smoke)+ customers-page.tsx 改 barrel。npm test 96/96 + build + oxlint 0/0 + tsc 0 错。",
+        "切片2 commit 85a969a(末):补完整 store-view.test(5)+ hq-view.test(4)+ parse-tags.test(6)= 15 tests。store-view 含 owner 创建填表提交断言 tags 经 parseTagsJson 正确解析;hq-view 含行展开 + AI 用量 dialog;parse-tags 6 边界(合法/空白/非法/空/纯空白/undefined)。npm test 109/109 + build + tsc + oxlint 0/0 + ./init.sh full 后端 842 passed 零回归。",
+        "code-review 双轴(Standards + Spec)commit 8356c64:共识发现 buildPayload tags 字段顺带修复隐藏 bug(原 monolith 把整个 {...values,tags} 当 payload.tags 传后端 → 脏数据;新版 tags.tags 正确取纯解析结果)。补 store-view 注释显式记录此行为修正 + 补 hq-view 搜索过滤测试(hq-view 4→5 tests)。customers 16/16。",
+        "feature 收尾(three-tier §4):status not_started→passing + evidence 4 条 + sync-active 刷新 + plan draft→passing(切片 checklist 全勾)+ 文档影响评估:无新增/改动文档(纯前端结构重构)。末切片依赖解锁扫描:无 depends_on 指向本 feature(纯重构无下游)。范式:customers-page split 第 4 实例(镜像 bookings/devices/chat)。"
       ]
     }
   ]

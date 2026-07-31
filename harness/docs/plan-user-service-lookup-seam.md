@@ -1,8 +1,8 @@
-# 计划:UserService super_admin lookup seam 抽取(UserLocator)
+# ✅ 计划:UserService super_admin lookup seam 抽取(UserLocator)
 
 > **id**: user-service-lookup-seam
-> **状态**: draft v1
-> **优先级**: 84(待登记 feature_list.json)
+> **状态**: ✅ passing(2026-08-01 Session 182,切片 01 = 末切片完成)
+> **优先级**: 84
 > **创建日期**: 2026-07-31
 > **来源**: 第 9 次架构巡检 Top recommendation(候选 1,Strong)
 
@@ -113,28 +113,30 @@ seam docstring 钉死「文案分流 = 多租户存在性模糊 security propert
 
 本 feature 规模小(1 文件源码改 + 1 测试新增),按 expand-contract 单切片即可:
 
-### 切片 01 — `_resolve_user` 抽取 + 5 方法改调 + service 层直接测试(单切片 = 末切片)
+### 切片 01 ✅ — `_resolve_user` 抽取 + 5 方法改调 + service 层直接测试(单切片 = 末切片)
 
 **What it delivers**:5 处 lookup glue 收敛到 `_resolve_user`,附 service 层直接测试钉死两分支行为 + 文案分流 security property。
 
 **Blocked by**: 无(frontier)
 
+**完成**:2026-08-01 Session 182,commit 1281494,`./init.sh full` 849 passed(842 baseline + 7 新)零回归。
+
 **Acceptance criteria**:
 
-- [ ] `app/services/user_service.py` 新增私有方法 `_resolve_user(self, user_id, tenant_id, is_super_admin: bool) -> User`,docstring 钉死文案分流理由(D3 security property + D6)
-- [ ] `_resolve_user` 内部逻辑:`if is_super_admin: self.users.get(user_id) + is_deleted 守卫 + raise "不存在" else: self.list_repo.get(tenant_id, user_id) + raise "不在该租户中"`(逐字等价原 5 处)
-- [ ] `get` / `update` / `delete` / `change_status` / `reset_password` 5 方法改调 `_resolve_user(user_id, tenant_id, is_super_admin)`,删除各自的 lookup + is_deleted 守卫 + NotFoundError 内联块(D5)
-- [ ] 5 方法的 `if not is_super_admin: require(...)` 逐字保留(D1,require 不进 seam)
-- [ ] `list` / `statistics` 不改(D5,无 lookup 三元组)
-- [ ] delete 的跨店软删注释保留(上移到 delete 方法内适当位置,D6)
-- [ ] 新增 `tests/test_user_service.py`:直接测 `_resolve_user` 两分支
-  - super_admin 分支:`self.users.get` 命中 + is_deleted=True → NotFoundError "不存在";命中 + is_deleted=False → 返回 User
-  - store 分支:`self.list_repo.get` 命中 → 返回 User;None → NotFoundError "不在该租户中"
-  - 文案断言:两条文案逐字断言(防未来 DRY 误改,钉死 D3 security property)
-- [ ] `./init.sh full` 842 passed(零回归,零行为变更)
-- [ ] ruff clean
-- [ ] grep `is_super_admin = platform_role == "super_admin"` 在 user_service.py 仍命中 7 处(list/statistics/update 的 role 分支等仍需算 is_super_admin,D5 不动它们)—— 但 lookup + is_deleted 守卫 + NotFoundError 的三元组 grep 命中 = 1 处(只在 `_resolve_user` 内)
-- [ ] **feature 收尾**:feature_list.json `status` → `passing` + evidence 写实测 + `./scripts/sync-active-features.sh` 刷新 + 依赖解锁扫描(纯重构无下游)+ 分支清理
+- [x] `app/services/user_service.py` 新增私有方法 `_resolve_user(self, user_id, tenant_id, is_super_admin: bool) -> User`,docstring 钉死文案分流理由(D3 security property + D6)
+- [x] `_resolve_user` 内部逻辑:`if is_super_admin: self.users.get(user_id) + is_deleted 守卫 + raise "不存在" else: self.list_repo.get(tenant_id, user_id) + raise "不在该租户中"`(逐字等价原 5 处)
+- [x] `get` / `update` / `delete` / `change_status` / `reset_password` 5 方法改调 `_resolve_user(user_id, tenant_id, is_super_admin)`,删除各自的 lookup + is_deleted 守卫 + NotFoundError 内联块(D5)
+- [x] 5 方法的 `if not is_super_admin: require(...)` 逐字保留(D1,require 不进 seam)
+- [x] `list` / `statistics` 不改(D5,无 lookup 三元组)
+- [x] delete 的跨店软删注释保留(原位,讲后续 affected_tenants 非 lookup,D6)
+- [x] 新增 `tests/test_user_service.py`:直接测 `_resolve_user` 两分支(7 tests)
+  - super_admin 分支:`self.users.get` 命中 + is_deleted=True → NotFoundError "不存在";命中 + is_deleted=False → 返回 User;不存在 → NotFoundError "不存在"
+  - store 分支:`self.list_repo.get` 命中 → 返回 User;None → NotFoundError "不在该租户中";跨租户存在但在本租户不可见 → NotFoundError "不在该租户中"(钉死存在性模糊)
+  - 文案断言:两条文案逐字断言 + invariant 测试钉死两文案故意不同(防未来 DRY 误改,钉死 D3 security property)
+- [x] `./init.sh full` 849 passed(842 baseline + 7 新,零回归,零行为变更)
+- [x] ruff clean
+- [x] grep `is_super_admin = platform_role == "super_admin"` 在 user_service.py 仍命中 7 处(list/statistics/5 方法 D5 不动它们)—— lookup + is_deleted 守卫的三元组 grep 命中 = 1 处(只在 `_resolve_user` 内)
+- [x] **feature 收尾**:feature_list.json `status` → `passing` + evidence 写实测 + `./scripts/sync-active-features.sh` 刷新(0 活跃)+ 依赖解锁扫描(纯重构无下游)+ 分支清理
 
 ---
 
