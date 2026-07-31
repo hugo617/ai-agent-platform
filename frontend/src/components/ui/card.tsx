@@ -10,12 +10,17 @@ import { cn } from "@/lib/utils";
  *   sweeps the card edge (Magic UI style). Off by default; used sparingly on
  *   hero/CTA cards (e.g. the Dashboard quick-action tile). The ring is drawn
  *   with a ``::before`` pseudo-element so it doesn't disturb the inner layout.
+ *
+ * Both variants sit on the ``card`` elevation tier (``shadow-card``): a near-
+ * hairline shadow that lets content stay the focus (B3 "data first, hairline
+ * chrome"). Floating surfaces use ``shadow-overlay`` instead — see dialog /
+ * dropdown-menu / select / toast.
  */
 const cardVariants = cva("rounded-lg border bg-card text-card-foreground", {
   variants: {
     variant: {
-      default: "shadow-sm",
-      glow: "shadow-sm ring-1 ring-primary/20 glow-border",
+      default: "shadow-card",
+      glow: "shadow-card ring-1 ring-primary/20 glow-border",
     },
   },
   defaultVariants: {
