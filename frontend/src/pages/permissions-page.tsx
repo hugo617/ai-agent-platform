@@ -159,11 +159,14 @@ export function PermissionsPage() {
 
       {/* 超管锁定行:平台级全权信息展示,不可配置(plan §Step3)。后端 super_admin
           通过 permission_service.check 的 bypass 拥有全部权限,不进矩阵 roles,
-          这里只是让超管权限「可见可理解」。非超管登录不显示(超管是平台概念)。 */}
+          这里只是让超管权限「可见可理解」。非超管登录不显示(超管是平台概念)。
+          切片 05 WCAG 收口:大面积警告 Card 保留 bg-warning/10 浅橙底(语义),
+          icon 从 text-warning(亮色 2.13 < AA)改 text-foreground(双模式 AA),
+          正文已是默认前景达标。 */}
       {isSuperAdmin(me) && (
         <Card className="border-warning/30 bg-warning/10">
           <CardContent className="flex items-center gap-3 py-4">
-            <Shield className="h-5 w-5 text-warning" />
+            <Shield className="h-5 w-5 text-foreground" />
             <div className="flex-1">
               <div className="flex items-center gap-2">
                 <span className="font-semibold">超级管理员</span>

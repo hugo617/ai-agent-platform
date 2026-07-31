@@ -1,7 +1,7 @@
 {
   "project": "ai-agent-platform",
   "description": "已 passing feature 的历史归档(完整字段保留,审计用)",
-  "count": 76,
+  "count": 77,
   "features": [
     {
       "id": "data-export",
@@ -1919,6 +1919,32 @@
           "summary": "3 切片全 passing,plan-chat-page-split.md status draft v2 → ✅ passing(标题 + Ticket 3 AC 全勾 + 完成证据回填)。feature_list.json status not_started → passing + evidence 4 条(切片 1/2/3 + 收尾条)。跑 ./scripts/sync-active-features.sh 刷新 active 视图。progress.md 顶部 frontier 清空。文档影响评估:无新增/改动文档(纯前端结构重构,AGENTS.md/项目指南/铁律均不受影响)。后置候选:devices-page 第 3 份 customerNameOf(fallback 语义不同)留独立后续 ticket,不越界。"
         }
       ]
+    },
+    {
+      "id": "perm-backfill-dedupe",
+      "priority": 77,
+      "area": "工程化",
+      "title": "permission backfill 参数化去重(消解逐字节镜像函数,巡检候选 ③)",
+      "user_visible_behavior": "无用户可见行为变化(纯后端代码重构)。app/services/permission_service.py 的两个 backfill 函数(backfill_devices_perms_for_existing_tenants L723 + backfill_bookings_perms_for_existing_tenants L828)逐字节相同,唯一差异是字面量 'devices' vs 'bookings'。本任务合并为 backfill_perm_set_for_existing_tenants(db, obj) 参数化函数 + BACKFILLABLE_OBJS 白名单约束;scripts/backfill_devices_perms.py + backfill_bookings_perms.py 两脚本合并为 backfill_obj_perms.py --obj;测试 K chapter 合并为 test_permission_backfill.py parametrize。防第三份镜像扩散。无 schema 变化,权限补齐行为零变化。",
+      "status": "passing",
+      "verification": [
+        "grep -rn 'backfill_devices_perms_for_existing_tenants|backfill_bookings_perms_for_existing_tenants' app/ scripts/ tests/ → 0(无残留旧函数名)",
+        "python scripts/backfill_obj_perms.py --obj devices --dry-run(正常)",
+        "python scripts/backfill_obj_perms.py --obj invalid(argparse 报错)",
+        "pytest tests/test_permission_backfill.py -v(7 cases 绿:3 场景 × 2 obj + 1 边界)",
+        "./init.sh full(842 passed,基线 + 7 新 parametrize 测试,零回归)",
+        "ruff clean"
+      ],
+      "notes": "第 7 次巡检候选 ③(Strong + WORSENED,唯一恶化项)。grill 4 决策(D1 合并 + 改所有 caller / D2 合并 scripts / D3 测试 parametrize 抽独立文件 / D4 Literal/白名单约束防误用)。纯参数化重构非复杂任务不走对抗式审查,但 /code-review 重点审 scope guardrail 保持(K6 契约:不误改其他 obj perms)。与候选①②同批规划。实施顺序:③ 排第二(①→③→②)。",
+      "plan": "harness/docs/plan-perm-backfill-dedupe.md",
+      "depends_on": "",
+      "evidence": [
+        "切片 1 commit 6461236 — service 两函数合并为 backfill_perm_set_for_existing_tenants(db,obj) + BACKFILLABLE_OBJS 白名单 + 循环变量 perm_obj(无 shadowing);6 个 K chapter 临时改调新函数保留测试绿。pytest -k backfill: 6 passed;./init.sh 冒烟绿。",
+        "切片 2 commit 89f139e — scripts 合并(删 2 旧 + 新 backfill_obj_perms.py --obj 必填)+ 测试 parametrize(删 2 K chapter + 新 test_permission_backfill.py 7 cases);期望值从 DEFAULT_*_PERMS 动态算;helper _OTHER_OBJ + 断言 other_obj!=obj 保证 K6 不变式。",
+        "三层去重验证归 0:grep backfill_devices_perms_for_existing_tenants|backfill_bookings_perms_for_existing_tenants app/scripts/tests → 0;grep 旧 script 名 backfill_devices_perms|backfill_bookings_perms app/scripts/tests → 0。",
+        "末切片全量验证:./init.sh full 842 passed(零回归)+ alembic check 无新迁移 + npm build 成功 + oxlint 0 warning 0 error + ruff clean;双轴 code-review 通过(Standards 0 硬违例/Spec 8 AC 全绿)。"
+      ],
+      "last_modified": "2026-07-30"
     }
   ]
 }
