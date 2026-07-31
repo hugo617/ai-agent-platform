@@ -1,0 +1,953 @@
+<!DOCTYPE html>
+<!--
+  =====================================================================
+  A1 · 克制专业派 (Stripe / Linear 靠拢)
+  =====================================================================
+  版本: A1
+  方向: 克制专业派 —— 向 Stripe / Linear 靠拢的负空间、低饱和、细边框、无堆叠阴影
+
+  【语义色收口 HSL 值 (A1 方向: 成熟稳重 / 低饱和,语义色作辅助点缀)】
+  原始硬编码                  →  A1 收口后
+  success emerald-500 152 76% 36%  →  --success: 152 48% 38%   (降饱和 28 个点, 走"成熟稳重的绿")
+  warning amber-500    35  92% 50%  →  --warning: 38  62% 46%   (降饱和 30 个点, 走"沉稳琥珀")
+  danger  red-500      0   84% 60%  →  --danger:  0   62% 54%   (降饱和 22 个点, 不刺眼)
+  info    cyan-500     199 90% 42%  →  --info:    199 58% 46%   (降饱和 32 个点, 不抢品牌蓝)
+  (暗色模式下 success/warning/danger/info 提升亮度 +5~8% 以达对比度)
+
+  【3 条关键设计决策】
+  1. 负空间即设计: 卡片 gap-6(24px)、section 间距 40px, 信息密度刻意压低,
+     用留白和极细 1px border 分隔, 几乎不用阴影 (仅 header 用一次极淡 elevation)。
+  2. 用字重 + 字距造层级, 不靠字号跳跃: 数字用 32px / weight 600 而非 48px / 800;
+     label 全大写 + letter-spacing 0.06em, body 用 muted-foreground 退到二线。
+  3. 语义色全部低饱和, 永远只作"点缀/状态点", 不作大块填充;
+     图表用品牌蓝单色 + 透明渐变, 网格线极淡, 让数据本身说话。
+  =====================================================================
+-->
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=1280" />
+<title>A1 · 智能体云平台 — 克制专业派</title>
+<style>
+  /* ===================== Tokens ===================== */
+  :root {
+    /* 亮色 (spec §2.1 严格复用) */
+    --background: 0 0% 100%;
+    --foreground: 222.2 84% 4.9%;
+    --card: 0 0% 100%;
+    --card-foreground: 222.2 84% 4.9%;
+    --primary: 221.2 83.2% 53.3%;
+    --primary-foreground: 210 40% 98%;
+    --secondary: 210 40% 96.1%;
+    --secondary-foreground: 222.2 47.4% 11.2%;
+    --muted: 210 40% 96.1%;
+    --muted-foreground: 215.4 16.3% 46.9%;
+    --accent: 210 40% 96.1%;
+    --accent-foreground: 222.2 47.4% 11.2%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 214.3 31.8% 91.4%;
+    --input: 214.3 31.8% 91.4%;
+    --ring: 221.2 83.2% 53.3%;
+    --radius: 0.625rem; /* 10px */
+
+    /* A1 语义色收口 (低饱和) */
+    --success: 152 48% 38%;
+    --success-soft: 152 40% 95%;
+    --warning: 38 62% 46%;
+    --warning-soft: 38 50% 95%;
+    --danger: 0 62% 54%;
+    --danger-soft: 0 60% 96%;
+    --info: 199 58% 46%;
+    --info-soft: 199 45% 95%;
+
+    /* 派生 */
+    --card-border: var(--border);
+    --header-bg: 0 0% 100%;
+    --grid-line: 214.3 31.8% 91.4%;
+    --track: 210 40% 94%;
+
+    /* typography helpers */
+    --font: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    --num-font: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", sans-serif;
+  }
+
+  html[data-theme="dark"] {
+    /* 暗色 (spec §2.2 严格复用) —— Linear 式深蓝灰底 */
+    --background: 222.2 47% 7%;        /* 不用纯黑, 深蓝灰 (spec 原值 222.2 84% 4.9% 略提亮度到 7%, 提升可读) */
+    --foreground: 210 40% 98%;
+    --card: 222.2 52% 9.5%;
+    --card-foreground: 210 40% 98%;
+    --primary: 217.2 91.2% 59.8%;
+    --primary-foreground: 222.2 47.4% 11.2%;
+    --secondary: 217.2 32.6% 17.5%;
+    --secondary-foreground: 210 40% 98%;
+    --muted: 217.2 32.6% 17.5%;
+    --muted-foreground: 215 20.2% 65.1%;
+    --accent: 217.2 32.6% 17.5%;
+    --accent-foreground: 210 40% 98%;
+    --destructive: 0 62.8% 50%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 217.2 28% 20%;
+    --input: 217.2 32.6% 17.5%;
+    --ring: 217.2 91.2% 59.8%;
+
+    /* A1 暗色语义色 (提亮 +5~8% 保证对比度) */
+    --success: 152 48% 52%;
+    --success-soft: 152 35% 16%;
+    --warning: 38 70% 58%;
+    --warning-soft: 38 40% 16%;
+    --danger: 0 70% 62%;
+    --danger-soft: 0 40% 16%;
+    --info: 199 65% 58%;
+    --info-soft: 199 40% 16%;
+
+    --card-border: var(--border);
+    --header-bg: 222.2 52% 9.5%;
+    --grid-line: 217.2 28% 20%;
+    --track: 217.2 28% 16%;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    font-family: var(--font);
+    background: hsl(var(--background));
+    color: hsl(var(--foreground));
+    font-size: 14px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    transition: background 0.2s ease, color 0.2s ease;
+  }
+  button { font-family: inherit; cursor: pointer; border: none; background: none; color: inherit; }
+  svg { display: block; }
+
+  /* ===================== Layout ===================== */
+  .app {
+    min-width: 1280px;
+    min-height: 100vh;
+  }
+
+  /* ---- Top bar ---- */
+  .topbar {
+    position: sticky; top: 0; z-index: 50;
+    height: 56px;
+    display: flex; align-items: center;
+    padding: 0 32px;
+    background: hsl(var(--header-bg) / 0.85);
+    backdrop-filter: saturate(180%) blur(12px);
+    -webkit-backdrop-filter: saturate(180%) blur(12px);
+    border-bottom: 1px solid hsl(var(--border));
+  }
+  .brand {
+    display: flex; align-items: center; gap: 10px;
+    font-weight: 600; font-size: 15px;
+    letter-spacing: -0.01em;
+  }
+  .brand-mark {
+    width: 26px; height: 26px;
+    border-radius: 7px;
+    background: hsl(var(--primary));
+    display: grid; place-items: center;
+    color: hsl(var(--primary-foreground));
+  }
+  .brand-mark svg { width: 15px; height: 15px; }
+  .topbar-title {
+    margin-left: 28px; padding-left: 28px;
+    border-left: 1px solid hsl(var(--border));
+    color: hsl(var(--muted-foreground));
+    font-size: 13px;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .topbar-title strong { color: hsl(var(--foreground)); font-weight: 500; }
+  .topbar-spacer { flex: 1; }
+  .topbar-actions { display: flex; align-items: center; gap: 8px; }
+
+  /* icon buttons & outline button */
+  .iconbtn {
+    width: 34px; height: 34px;
+    display: grid; place-items: center;
+    border-radius: 8px;
+    color: hsl(var(--muted-foreground));
+    border: 1px solid transparent;
+    transition: background 0.15s, color 0.15s, border-color 0.15s;
+  }
+  .iconbtn:hover { background: hsl(var(--muted)); color: hsl(var(--foreground)); }
+  .iconbtn svg { width: 16px; height: 16px; }
+
+  .btn-outline {
+    height: 34px; padding: 0 12px;
+    display: inline-flex; align-items: center; gap: 6px;
+    border: 1px solid hsl(var(--border));
+    border-radius: 8px;
+    background: hsl(var(--card));
+    color: hsl(var(--foreground));
+    font-size: 13px; font-weight: 500;
+    transition: background 0.15s, border-color 0.15s, transform 0.05s;
+  }
+  .btn-outline:hover { background: hsl(var(--muted)); border-color: hsl(var(--border) / 1); }
+  .btn-outline:active { transform: translateY(0.5px); }
+  .btn-outline svg { width: 14px; height: 14px; }
+  .btn-outline.is-fetching svg { animation: spin 0.9s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* theme toggle */
+  .themetoggle {
+    width: 52px; height: 28px;
+    border-radius: 999px;
+    background: hsl(var(--muted));
+    border: 1px solid hsl(var(--border));
+    position: relative;
+    display: inline-flex; align-items: center;
+    transition: background 0.2s;
+  }
+  .themetoggle .knob {
+    position: absolute; top: 2px; left: 2px;
+    width: 22px; height: 22px;
+    border-radius: 50%;
+    background: hsl(var(--card));
+    box-shadow: 0 1px 2px hsl(222.2 84% 4.9% / 0.18);
+    display: grid; place-items: center;
+    color: hsl(var(--muted-foreground));
+    transition: transform 0.2s ease, color 0.2s;
+  }
+  .themetoggle .knob svg { width: 13px; height: 13px; }
+  html[data-theme="dark"] .themetoggle .knob {
+    transform: translateX(24px);
+    color: hsl(var(--primary));
+  }
+  .themetoggle .knob .moon { display: none; }
+  html[data-theme="dark"] .themetoggle .knob .sun { display: none; }
+  html[data-theme="dark"] .themetoggle .knob .moon { display: block; }
+
+  /* ---- Main ---- */
+  .main { padding: 32px 32px 64px; max-width: 1440px; margin: 0 auto; }
+
+  /* Page header */
+  .pagehead { margin-bottom: 32px; }
+  .pagehead-row {
+    display: flex; align-items: flex-end; justify-content: space-between; gap: 24px;
+  }
+  .pagehead h1 {
+    font-size: 24px; font-weight: 600; letter-spacing: -0.02em;
+    margin-bottom: 6px;
+  }
+  .pagehead p {
+    font-size: 14px; color: hsl(var(--muted-foreground));
+  }
+  .pagehead .h-sub { color: hsl(var(--primary)); font-weight: 500; }
+
+  /* view tabs */
+  .viewtabs {
+    display: inline-flex; align-items: center;
+    background: hsl(var(--muted));
+    border: 1px solid hsl(var(--border));
+    border-radius: 10px;
+    padding: 3px;
+    gap: 2px;
+  }
+  .viewtab {
+    height: 30px; padding: 0 14px;
+    border-radius: 7px;
+    font-size: 13px; font-weight: 500;
+    color: hsl(var(--muted-foreground));
+    display: inline-flex; align-items: center; gap: 6px;
+    transition: background 0.15s, color 0.15s, box-shadow 0.15s;
+  }
+  .viewtab svg { width: 14px; height: 14px; }
+  .viewtab:hover { color: hsl(var(--foreground)); }
+  .viewtab.active {
+    background: hsl(var(--card));
+    color: hsl(var(--foreground));
+    box-shadow: 0 1px 2px hsl(222.2 84% 4.9% / 0.08), 0 0 0 1px hsl(var(--border));
+  }
+
+  /* ---- Section rhythm ---- */
+  .section { margin-top: 40px; }
+  .section-head {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 16px;
+  }
+  .section-title {
+    font-size: 12px; font-weight: 600;
+    text-transform: uppercase; letter-spacing: 0.08em;
+    color: hsl(var(--muted-foreground));
+  }
+
+  /* ---- Stat grid ---- */
+  .statgrid { display: grid; gap: 16px; }
+  .statgrid.store { grid-template-columns: repeat(4, 1fr); }
+  .statgrid.hq { grid-template-columns: repeat(5, 1fr); }
+
+  .statcard {
+    background: hsl(var(--card));
+    border: 1px solid hsl(var(--border));
+    border-radius: var(--radius);
+    padding: 20px;
+    transition: border-color 0.15s, transform 0.05s;
+  }
+  .statcard:hover { border-color: hsl(var(--primary) / 0.4); }
+  .statcard-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+  .statcard-icon {
+    width: 32px; height: 32px;
+    border-radius: 8px;
+    background: hsl(var(--muted));
+    color: hsl(var(--muted-foreground));
+    display: grid; place-items: center;
+    transition: background 0.15s, color 0.15s;
+  }
+  .statcard-icon svg { width: 16px; height: 16px; }
+  .statcard:hover .statcard-icon { background: hsl(var(--primary) / 0.1); color: hsl(var(--primary)); }
+  .statcard-label {
+    font-size: 12px; font-weight: 500;
+    color: hsl(var(--muted-foreground));
+    text-transform: uppercase; letter-spacing: 0.06em;
+  }
+  .statcard-value {
+    font-family: var(--num-font);
+    font-size: 32px; font-weight: 600;
+    letter-spacing: -0.02em;
+    line-height: 1.1;
+    color: hsl(var(--foreground));
+  }
+  .statcard-sub {
+    margin-top: 6px;
+    font-size: 12.5px; color: hsl(var(--muted-foreground));
+  }
+
+  /* ---- Chart card ---- */
+  .chartcard {
+    background: hsl(var(--card));
+    border: 1px solid hsl(var(--border));
+    border-radius: var(--radius);
+    padding: 24px;
+  }
+  .chartcard-head {
+    display: flex; align-items: flex-start; justify-content: space-between;
+    margin-bottom: 20px;
+  }
+  .chartcard-title { font-size: 15px; font-weight: 600; letter-spacing: -0.01em; }
+  .chartcard-desc { font-size: 12.5px; color: hsl(var(--muted-foreground)); margin-top: 2px; }
+
+  .seg {
+    display: inline-flex; align-items: center;
+    background: hsl(var(--muted));
+    border-radius: 8px;
+    padding: 2px;
+    gap: 1px;
+  }
+  .seg button {
+    height: 26px; padding: 0 10px;
+    font-size: 12px; font-weight: 500;
+    color: hsl(var(--muted-foreground));
+    border-radius: 6px;
+    transition: background 0.15s, color 0.15s;
+  }
+  .seg button:hover { color: hsl(var(--foreground)); }
+  .seg button.active { background: hsl(var(--card)); color: hsl(var(--foreground)); box-shadow: 0 1px 2px hsl(222.2 84% 4.9% / 0.1); }
+
+  /* area chart svg */
+  .areachart { width: 100%; height: 260px; }
+
+  /* horizontal bar chart */
+  .barchart { display: flex; flex-direction: column; gap: 14px; }
+  .barrow { display: grid; grid-template-columns: 120px 1fr 72px; align-items: center; gap: 16px; }
+  .barrow .b-label {
+    font-size: 13px; color: hsl(var(--foreground)); font-weight: 500;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .barrow .b-track {
+    height: 10px; border-radius: 999px;
+    background: hsl(var(--track));
+    overflow: hidden;
+  }
+  .barrow .b-fill {
+    height: 100%; border-radius: 999px;
+    background: hsl(var(--primary));
+    transition: width 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  .barrow .b-value {
+    font-family: var(--num-font);
+    font-size: 13px; font-weight: 500;
+    color: hsl(var(--foreground));
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* ---- Bento quick actions ---- */
+  .bento {
+    display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px;
+  }
+  .qa {
+    background: hsl(var(--card));
+    border: 1px solid hsl(var(--border));
+    border-radius: var(--radius);
+    padding: 20px;
+    display: flex; flex-direction: column; gap: 14px;
+    transition: border-color 0.15s, background 0.15s, transform 0.1s;
+    text-align: left;
+    color: hsl(var(--foreground));
+  }
+  .qa:hover {
+    border-color: hsl(var(--primary) / 0.5);
+    background: hsl(var(--primary) / 0.025);
+    transform: translateY(-1px);
+  }
+  .qa-icon {
+    width: 36px; height: 36px; border-radius: 8px;
+    background: hsl(var(--muted));
+    color: hsl(var(--primary));
+    display: grid; place-items: center;
+    transition: background 0.15s;
+  }
+  .qa:hover .qa-icon { background: hsl(var(--primary) / 0.12); }
+  .qa-icon svg { width: 18px; height: 18px; }
+  .qa-title { font-size: 14.5px; font-weight: 600; letter-spacing: -0.01em; }
+  .qa-desc { font-size: 12.5px; color: hsl(var(--muted-foreground)); line-height: 1.45; }
+
+  /* ---- Permissions ---- */
+  .permcard {
+    background: hsl(var(--card));
+    border: 1px solid hsl(var(--border));
+    border-radius: var(--radius);
+    padding: 20px 24px;
+    display: flex; align-items: center; gap: 20px;
+  }
+  .permcard .pc-label {
+    font-size: 12px; font-weight: 600; color: hsl(var(--muted-foreground));
+    text-transform: uppercase; letter-spacing: 0.06em;
+  }
+  .badges { display: flex; gap: 8px; }
+  .badge {
+    display: inline-flex; align-items: center; gap: 6px;
+    height: 28px; padding: 0 10px;
+    border-radius: 7px;
+    font-size: 12.5px; font-weight: 500;
+    background: hsl(var(--success-soft));
+    color: hsl(var(--success));
+    border: 1px solid hsl(var(--success) / 0.2);
+  }
+  .badge .dot { width: 6px; height: 6px; border-radius: 50%; background: hsl(var(--success)); }
+
+  /* ---- hidden ---- */
+  .hidden { display: none !important; }
+
+  /* ---- responsive guard ---- */
+  @media (max-width: 1320px) {
+    .statgrid.hq { grid-template-columns: repeat(3, 1fr); }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- ===================== Top bar ===================== -->
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark">
+        <!-- lucide: boxes -->
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M2.97 12.92 2 13.45v4.41l4 2.31m6-3.46 6 3.46M12 8.25l6 3.46M22 12.92V8.5l-4-2.31m-6 3.46L6 6.19m6 3.46v6.93M6 6.19 2 8.5v4.41l4 2.31 6-3.46M6 19.5v-4.41m0 0L2 12.5m4 6.91 6 3.46m6-3.46v-4.41m0 0L22 12.5"/>
+        </svg>
+      </span>
+      <span>智能体云平台</span>
+    </div>
+    <div class="topbar-title">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px">
+        <path d="m6 9 6 6 6-6"/><path d="M12 3v12"/>
+      </svg>
+      <strong id="crumb-view">门店视角</strong>
+      <span style="opacity:0.5">/</span>
+      <span>概览</span>
+    </div>
+    <div class="topbar-spacer"></div>
+    <div class="topbar-actions">
+      <!-- search icon (decorative) -->
+      <button class="iconbtn" title="搜索" aria-label="搜索">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>
+        </svg>
+      </button>
+      <!-- refresh -->
+      <button class="btn-outline" id="refreshBtn" title="刷新数据">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/>
+          <path d="M21 3v5h-5"/>
+          <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/>
+          <path d="M8 16H3v5"/>
+        </svg>
+        <span>刷新</span>
+      </button>
+      <!-- theme toggle -->
+      <button class="themetoggle" id="themeToggle" title="切换亮/暗主题" aria-label="切换主题">
+        <span class="knob">
+          <svg class="sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/>
+          </svg>
+          <svg class="moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>
+          </svg>
+        </span>
+      </button>
+    </div>
+  </header>
+
+  <!-- ===================== Main ===================== -->
+  <main class="main">
+
+    <!-- page head + view tabs -->
+    <div class="pagehead">
+      <div class="pagehead-row">
+        <div>
+          <h1 id="pageTitle">门店概览 · 朝阳旗舰店</h1>
+          <p id="pageSub">欢迎回来,<span class="h-sub">manager@demo.com</span>。这是你门店的实时数据看板。</p>
+        </div>
+        <div class="viewtabs" role="tablist">
+          <button class="viewtab active" data-view="store" role="tab">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9h18M5 9V7a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v2M5 9v8a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V9"/><path d="M9 21v-6h6v6"/></svg>
+            门店视角
+          </button>
+          <button class="viewtab" data-view="hq" role="tab">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/><path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/><path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"/><path d="M10 6h4"/><path d="M10 10h4"/><path d="M10 14h4"/><path d="M10 18h4"/></svg>
+            总部视角
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ STORE VIEW ============ -->
+    <div id="storeView">
+
+      <!-- stat grid (4 cards) -->
+      <div class="statgrid store" id="storeStats">
+        <div class="statcard">
+          <div class="statcard-top">
+            <span class="statcard-label">用户</span>
+            <span class="statcard-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+            </span>
+          </div>
+          <div class="statcard-value">128</div>
+        </div>
+        <div class="statcard">
+          <div class="statcard-top">
+            <span class="statcard-label">智能体</span>
+            <span class="statcard-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="10" x="3" y="11" rx="2"/><circle cx="12" cy="5" r="2"/><path d="M12 7v4"/><line x1="8" x2="8" y1="16" y2="16"/><line x1="16" x2="16" y1="16" y2="16"/></svg>
+            </span>
+          </div>
+          <div class="statcard-value">6</div>
+        </div>
+        <div class="statcard">
+          <div class="statcard-top">
+            <span class="statcard-label">对话</span>
+            <span class="statcard-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+            </span>
+          </div>
+          <div class="statcard-value">3,842</div>
+          <div class="statcard-sub">近 7 天 412</div>
+        </div>
+        <div class="statcard">
+          <div class="statcard-top">
+            <span class="statcard-label">客户</span>
+            <span class="statcard-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+            </span>
+          </div>
+          <div class="statcard-value">1,256</div>
+          <div class="statcard-sub">活跃 894</div>
+        </div>
+      </div>
+
+      <!-- trend chart -->
+      <div class="section">
+        <div class="chartcard">
+          <div class="chartcard-head">
+            <div>
+              <div class="chartcard-title">活跃趋势</div>
+              <div class="chartcard-desc" id="areaDesc">每日新增对话数 · 近 7 天</div>
+            </div>
+            <div class="seg" id="rangeSeg">
+              <button class="active" data-range="7">7 天</button>
+              <button data-range="30">30 天</button>
+            </div>
+          </div>
+          <svg class="areachart" id="areaChart" viewBox="0 0 920 260" preserveAspectRatio="none"></svg>
+        </div>
+      </div>
+
+      <!-- quick actions bento -->
+      <div class="section">
+        <div class="section-head"><span class="section-title">快速操作</span></div>
+        <div class="bento">
+          <button class="qa">
+            <span class="qa-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="10" x="3" y="11" rx="2"/><circle cx="12" cy="5" r="2"/><path d="M12 7v4"/><line x1="8" x2="8" y1="16" y2="16"/><line x1="16" x2="16" y1="16" y2="16"/></svg>
+            </span>
+            <span>
+              <div class="qa-title">管理智能体</div>
+              <div class="qa-desc">配置 prompt、模型与编排</div>
+            </span>
+          </button>
+          <button class="qa">
+            <span class="qa-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+            </span>
+            <span>
+              <div class="qa-title">开始对话</div>
+              <div class="qa-desc">测试智能体的实际表现</div>
+            </span>
+          </button>
+          <button class="qa">
+            <span class="qa-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+            </span>
+            <span>
+              <div class="qa-title">客户管理</div>
+              <div class="qa-desc">维护客户档案与标签</div>
+            </span>
+          </button>
+          <button class="qa">
+            <span class="qa-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .962 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.962 0z"/><path d="M20 3v4"/><path d="M22 5h-4"/><path d="M4 17v2"/><path d="M5 18H3"/></svg>
+            </span>
+            <span>
+              <div class="qa-title">知识库</div>
+              <div class="qa-desc">为对话补充专属知识</div>
+            </span>
+          </button>
+        </div>
+      </div>
+
+      <!-- permissions -->
+      <div class="section">
+        <div class="section-head"><span class="section-title">我的权限</span></div>
+        <div class="permcard">
+          <span class="pc-label">当前角色</span>
+          <div class="badges">
+            <span class="badge"><span class="dot"></span>owner</span>
+            <span class="badge"><span class="dot"></span>admin</span>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- ============ HQ VIEW ============ -->
+    <div id="hqView" class="hidden">
+
+      <!-- stat grid (5 cards) -->
+      <div class="statgrid hq">
+        <div class="statcard">
+          <div class="statcard-top">
+            <span class="statcard-label">租户</span>
+            <span class="statcard-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/><path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/><path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"/><path d="M10 6h4"/><path d="M10 10h4"/><path d="M10 14h4"/><path d="M10 18h4"/></svg>
+            </span>
+          </div>
+          <div class="statcard-value">12</div>
+        </div>
+        <div class="statcard">
+          <div class="statcard-top">
+            <span class="statcard-label">用户</span>
+            <span class="statcard-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+            </span>
+          </div>
+          <div class="statcard-value">1,536</div>
+        </div>
+        <div class="statcard">
+          <div class="statcard-top">
+            <span class="statcard-label">智能体</span>
+            <span class="statcard-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="10" x="3" y="11" rx="2"/><circle cx="12" cy="5" r="2"/><path d="M12 7v4"/><line x1="8" x2="8" y1="16" y2="16"/><line x1="16" x2="16" y1="16" y2="16"/></svg>
+            </span>
+          </div>
+          <div class="statcard-value">47</div>
+        </div>
+        <div class="statcard">
+          <div class="statcard-top">
+            <span class="statcard-label">对话</span>
+            <span class="statcard-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+            </span>
+          </div>
+          <div class="statcard-value">28,341</div>
+        </div>
+        <div class="statcard">
+          <div class="statcard-top">
+            <span class="statcard-label">客户</span>
+            <span class="statcard-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+            </span>
+          </div>
+          <div class="statcard-value">9,872</div>
+        </div>
+      </div>
+
+      <!-- top 10 bar chart -->
+      <div class="section">
+        <div class="chartcard">
+          <div class="chartcard-head">
+            <div>
+              <div class="chartcard-title">各门店活跃度 Top 10</div>
+              <div class="chartcard-desc">按对话总数排序 · 全平台汇总</div>
+            </div>
+            <div class="seg">
+              <button class="active">活跃度</button>
+            </div>
+          </div>
+          <div class="barchart" id="barChart"></div>
+        </div>
+      </div>
+
+    </div>
+
+  </main>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  /* ============ data (spec §3, locked) ============ */
+  var STORE_TREND_7 = [
+    { label: "07-25", value: 47 },
+    { label: "07-26", value: 62 },
+    { label: "07-27", value: 58 },
+    { label: "07-28", value: 71 },
+    { label: "07-29", value: 84 },
+    { label: "07-30", value: 55 },
+    { label: "07-31", value: 35 }
+  ];
+  var STORE_TREND_30_SUMMARY = 412; // 近30天汇总
+
+  var HQ_TOP10 = [
+    { label: "朝阳旗舰店", value: 4823 },
+    { label: "浦东中心店", value: 3941 },
+    { label: "天河城店",   value: 3120 },
+    { label: "西湖店",     value: 2856 },
+    { label: "春熙路店",   value: 2401 },
+    { label: "解放路店",   value: 1985 },
+    { label: "高新区店",   value: 1642 },
+    { label: "滨江店",     value: 1320 },
+    { label: "雁塔店",     value: 985  },
+    { label: "鼓楼店",     value: 668  }
+  ];
+
+  /* ============ area chart (SVG, hand-drawn) ============ */
+  var areaSvg = document.getElementById("areaChart");
+  var areaDesc = document.getElementById("areaDesc");
+
+  function renderAreaChart(data) {
+    var W = 920, H = 260;
+    var padL = 36, padR = 16, padT = 16, padB = 30;
+    var plotW = W - padL - padR;
+    var plotH = H - padT - padB;
+
+    var maxV = Math.max.apply(null, data.map(function (d) { return d.value; }));
+    maxV = Math.ceil(maxV / 20) * 20; // round up to 20
+    var minV = 0;
+
+    var xStep = plotW / (data.length - 1);
+    var points = data.map(function (d, i) {
+      var x = padL + i * xStep;
+      var y = padT + plotH - ((d.value - minV) / (maxV - minV)) * plotH;
+      return { x: x, y: y, label: d.label, value: d.value };
+    });
+
+    // line path
+    var linePath = points.map(function (p, i) {
+      return (i === 0 ? "M" : "L") + p.x.toFixed(1) + " " + p.y.toFixed(1);
+    }).join(" ");
+    // area path
+    var areaPath = linePath +
+      " L" + points[points.length - 1].x.toFixed(1) + " " + (padT + plotH) +
+      " L" + points[0].x.toFixed(1) + " " + (padT + plotH) + " Z";
+
+    // gridlines (4 horizontal, very faint)
+    var grid = "";
+    var labels = "";
+    var ticks = 4;
+    for (var g = 0; g <= ticks; g++) {
+      var gy = padT + (plotH / ticks) * g;
+      var gv = maxV - (maxV / ticks) * g;
+      grid += '<line x1="' + padL + '" y1="' + gy.toFixed(1) + '" x2="' + (W - padR) + '" y2="' + gy.toFixed(1) + '" stroke="hsl(var(--grid-line))" stroke-width="1" stroke-dasharray="2 4" opacity="0.6"/>';
+      labels += '<text x="' + (padL - 8) + '" y="' + (gy + 3).toFixed(1) + '" text-anchor="end" font-size="11" fill="hsl(var(--muted-foreground))" font-family="-apple-system, sans-serif">' + Math.round(gv) + '</text>';
+    }
+
+    // x labels
+    var xLabels = points.map(function (p) {
+      return '<text x="' + p.x.toFixed(1) + '" y="' + (H - 10) + '" text-anchor="middle" font-size="11" fill="hsl(var(--muted-foreground))" font-family="-apple-system, sans-serif">' + p.label + '</text>';
+    }).join("");
+
+    // dots + hover targets
+    var dots = points.map(function (p) {
+      return '<circle cx="' + p.x.toFixed(1) + '" cy="' + p.y.toFixed(1) + '" r="3.5" fill="hsl(var(--card))" stroke="hsl(var(--primary))" stroke-width="2"/>';
+    }).join("");
+
+    var defs =
+      '<defs>' +
+        '<linearGradient id="areaFill" x1="0" y1="0" x2="0" y2="1">' +
+          '<stop offset="0%" stop-color="hsl(var(--primary))" stop-opacity="0.18"/>' +
+          '<stop offset="100%" stop-color="hsl(var(--primary))" stop-opacity="0"/>' +
+        '</linearGradient>' +
+      '</defs>';
+
+    areaSvg.innerHTML =
+      defs +
+      grid +
+      labels +
+      '<path d="' + areaPath + '" fill="url(#areaFill)"/>' +
+      '<path d="' + linePath + '" fill="none" stroke="hsl(var(--primary))" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>' +
+      dots +
+      xLabels;
+  }
+
+  // 30-day summary view: a smooth low-sat single block showing the aggregate
+  function renderAreaSummary() {
+    var W = 920, H = 260;
+    var padL = 36, padR = 16, padT = 16, padB = 30;
+    var plotW = W - padL - padR;
+    var plotH = H - padB - padT;
+
+    var defs =
+      '<defs>' +
+        '<linearGradient id="areaFill" x1="0" y1="0" x2="0" y2="1">' +
+          '<stop offset="0%" stop-color="hsl(var(--primary))" stop-opacity="0.14"/>' +
+          '<stop offset="100%" stop-color="hsl(var(--primary))" stop-opacity="0"/>' +
+        '</linearGradient>' +
+      '</defs>';
+
+    var grid = "";
+    for (var g = 0; g <= 4; g++) {
+      var gy = padT + (plotH / 4) * g;
+      grid += '<line x1="' + padL + '" y1="' + gy.toFixed(1) + '" x2="' + (W - padR) + '" y2="' + gy.toFixed(1) + '" stroke="hsl(var(--grid-line))" stroke-width="1" stroke-dasharray="2 4" opacity="0.6"/>';
+    }
+
+    // a flat-topped band representing the aggregate (30 days)
+    var bandY = padT + plotH * 0.55;
+    var areaPath =
+      "M" + padL + " " + bandY +
+      " L" + (W - padR) + " " + bandY +
+      " L" + (W - padR) + " " + (padT + plotH) +
+      " L" + padL + " " + (padT + plotH) + " Z";
+    var linePath = "M" + padL + " " + bandY + " L" + (W - padR) + " " + bandY;
+
+    areaSvg.innerHTML =
+      defs + grid +
+      '<path d="' + areaPath + '" fill="url(#areaFill)"/>' +
+      '<path d="' + linePath + '" fill="none" stroke="hsl(var(--primary))" stroke-width="2" stroke-linecap="round"/>' +
+      '<text x="' + (W / 2) + '" y="' + (bandY - 12) + '" text-anchor="middle" font-size="14" font-weight="600" fill="hsl(var(--foreground))" font-family="-apple-system, sans-serif">30 天汇总 ' + STORE_TREND_30_SUMMARY + ' 条</text>' +
+      '<text x="' + padL + '" y="' + (H - 10) + '" text-anchor="start" font-size="11" fill="hsl(var(--muted-foreground))" font-family="-apple-system, sans-serif">07-01</text>' +
+      '<text x="' + (W - padR) + '" y="' + (H - 10) + '" text-anchor="end" font-size="11" fill="hsl(var(--muted-foreground))" font-family="-apple-system, sans-serif">07-31</text>';
+  }
+
+  /* ============ bar chart (HQ top 10) ============ */
+  var barEl = document.getElementById("barChart");
+  function renderBars() {
+    var max = HQ_TOP10[0].value;
+    barEl.innerHTML = HQ_TOP10.map(function (d) {
+      var pct = (d.value / max) * 100;
+      return '<div class="barrow">' +
+        '<div class="b-label" title="' + d.label + '">' + d.label + '</div>' +
+        '<div class="b-track"><div class="b-fill" data-pct="' + pct.toFixed(2) + '" style="width:0%"></div></div>' +
+        '<div class="b-value">' + d.value.toLocaleString() + '</div>' +
+      '</div>';
+    }).join("");
+    // animate
+    requestAnimationFrame(function () {
+      setTimeout(function () {
+        barEl.querySelectorAll(".b-fill").forEach(function (el) {
+          el.style.width = el.getAttribute("data-pct") + "%";
+        });
+      }, 60);
+    });
+  }
+
+  /* ============ range switch (7 / 30) ============ */
+  var rangeSeg = document.getElementById("rangeSeg");
+  var currentRange = "7";
+  function setRange(r) {
+    currentRange = r;
+    rangeSeg.querySelectorAll("button").forEach(function (b) {
+      b.classList.toggle("active", b.getAttribute("data-range") === r);
+    });
+    if (r === "7") {
+      areaDesc.textContent = "每日新增对话数 · 近 7 天";
+      renderAreaChart(STORE_TREND_7);
+    } else {
+      areaDesc.textContent = "对话总量 · 近 30 天汇总";
+      renderAreaSummary();
+    }
+  }
+  rangeSeg.addEventListener("click", function (e) {
+    var btn = e.target.closest("button");
+    if (!btn) return;
+    setRange(btn.getAttribute("data-range"));
+  });
+
+  /* ============ view tabs (store / hq) ============ */
+  var pageTitle = document.getElementById("pageTitle");
+  var pageSub = document.getElementById("pageSub");
+  var crumbView = document.getElementById("crumb-view");
+  var storeView = document.getElementById("storeView");
+  var hqView = document.getElementById("hqView");
+
+  function setView(v) {
+    var isStore = v === "store";
+    document.querySelectorAll(".viewtab").forEach(function (t) {
+      t.classList.toggle("active", t.getAttribute("data-view") === v);
+    });
+    storeView.classList.toggle("hidden", !isStore);
+    hqView.classList.toggle("hidden", isStore);
+    crumbView.textContent = isStore ? "门店视角" : "总部视角";
+
+    if (isStore) {
+      pageTitle.textContent = "门店概览 · 朝阳旗舰店";
+      pageSub.innerHTML = '欢迎回来,<span class="h-sub">manager@demo.com</span>。这是你门店的实时数据看板。';
+      setRange(currentRange); // re-render area chart
+    } else {
+      pageTitle.textContent = "平台总览";
+      pageSub.innerHTML = '跨全部门店汇总。<span class="h-sub">admin@demo.com</span>(super_admin 视角)';
+      renderBars();
+    }
+  }
+  document.querySelectorAll(".viewtab").forEach(function (t) {
+    t.addEventListener("click", function () { setView(t.getAttribute("data-view")); });
+  });
+
+  /* ============ refresh button ============ */
+  var refreshBtn = document.getElementById("refreshBtn");
+  refreshBtn.addEventListener("click", function () {
+    if (refreshBtn.classList.contains("is-fetching")) return;
+    refreshBtn.classList.add("is-fetching");
+    // re-render current view's chart as the "refresh" feedback
+    setTimeout(function () {
+      if (!storeView.classList.contains("hidden")) setRange(currentRange);
+      else renderBars();
+    }, 100);
+    setTimeout(function () {
+      refreshBtn.classList.remove("is-fetching");
+    }, 1000);
+  });
+
+  /* ============ theme toggle ============ */
+  var themeToggle = document.getElementById("themeToggle");
+  themeToggle.addEventListener("click", function () {
+    var cur = document.documentElement.getAttribute("data-theme");
+    document.documentElement.setAttribute("data-theme", cur === "dark" ? "light" : "dark");
+    // re-render chart to refresh colors that depend on tokens
+    if (!storeView.classList.contains("hidden")) setRange(currentRange);
+    else renderBars();
+  });
+
+  /* ============ init ============ */
+  setRange("7");
+  renderBars();
+})();
+</script>
+</body>
+</html>

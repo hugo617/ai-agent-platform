@@ -1,0 +1,711 @@
+<!doctype html>
+<!--
+  ============================================================================
+  B3 · 数据可视化质感(强对比 chart 色 + 高密度网格)
+  ----------------------------------------------------------------------------
+  设计方向:让「数据」成为视觉主角,UI chrome 退到 1px hairline,数据发光。
+            向 Observable / Grafana 的「数据为尊 / 数据驾驶舱」靠拢。
+
+  语义色收口(用于数据状态编码,HSL):
+    --success : 152 76% 36%   (绿 · 正向/峰值/达成)
+    --warning :  35 92% 50%   (琥珀 · 提醒/谷值)
+    --danger  :   0 84% 60%   (红 · 危险)
+    --info    : 189 90% 42%   (青 · 信息)
+  chart-1..5(spec §2.4 合法数据可视化色,每色承载数据维度):
+    chart-1 221 83% 53% (蓝)  chart-2 142 76% 36% (绿)
+    chart-3  24 95% 53% (橙)  chart-4 280 87% 60% (紫)  chart-5 199 89% 48% (青)
+
+  3 条关键设计决策:
+    1. 数据为尊:导航/卡片框退到 1px hairline,图表区无填色只有可见网格线,
+       所有关键数字 tabular-nums + 大字号高字重,成为页面唯一视觉锚点。
+    2. chart-1..5 语义化绑定:每个统计指标分配一个 chart 色(图标染色 + 真实
+       mini 序列),Top10 横向条形按数值热力着色(单色 chart-1 明度梯度),
+       面积图峰值/谷值用 success/warning 语义标注 —— 每色都承载信息,非装饰。
+    3. 高密度驾驶舱网格:12 栏 CSS Grid,统计卡压缩为紧凑单行,腾出最大宽度
+       给带参考线/峰值谷值标注点/精确坐标刻度的精致 SVG 图表,图上方挂
+       「数据摘要带」(总和/均值/峰值/Top3 占比 —— 全部 spec 真实数据算出)。
+  ============================================================================
+-->
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=1280">
+<title>B3 · 数据可视化质感 — 智能体云平台</title>
+<style>
+  :root{
+    /* spec §2.1 亮色 token */
+    --background:0 0% 100%;
+    --foreground:222.2 84% 4.9%;
+    --card:0 0% 100%;
+    --primary:221.2 83.2% 53.3%;
+    --primary-foreground:210 40% 98%;
+    --secondary:210 40% 96.1%;
+    --muted:210 40% 96.1%;
+    --muted-foreground:215.4 16.3% 46.9%;
+    --destructive:0 84.2% 60.2%;
+    --border:214.3 31.8% 91.4%;
+    --radius:0.625rem;
+    /* 语义色收口 */
+    --success:152 76% 36%;
+    --warning:35 92% 50%;
+    --danger:0 84% 60%;
+    --info:189 90% 42%;
+    /* chart-1..5 */
+    --chart-1:221.2 83.2% 53.3%;
+    --chart-2:142.1 76.2% 36.3%;
+    --chart-3:24.6 95% 53.1%;
+    --chart-4:280 87% 60%;
+    --chart-5:199 89% 48%;
+    /* 数据可视化派生:网格线 / 坐标轴(低对比但清晰可见) */
+    --grid:214 26% 89%;
+    --axis:215 16% 62%;
+    --panel:0 0% 100%;
+    --hairline:214.3 31.8% 91.4%;
+    --glow:0 0% 0%;
+  }
+  html[data-theme="dark"]{
+    /* spec §2.2 暗色 token */
+    --background:222.2 84% 4.9%;
+    --foreground:210 40% 98%;
+    --card:222.2 84% 4.9%;
+    --primary:217.2 91.2% 59.8%;
+    --primary-foreground:222.2 47.4% 11.2%;
+    --secondary:217.2 32.6% 17.5%;
+    --muted:217.2 32.6% 17.5%;
+    --muted-foreground:215 20.2% 65.1%;
+    --destructive:0 62.8% 30.6%;
+    --border:217.2 32.6% 17.5%;
+    /* 暗底下语义色/图表色保持高辨识度(略提亮度) */
+    --success:152 64% 48%;
+    --warning:38 95% 58%;
+    --danger:0 80% 64%;
+    --info:189 80% 55%;
+    --chart-1:217.2 91.2% 59.8%;
+    --chart-2:142 64% 50%;
+    --chart-3:26 95% 58%;
+    --chart-4:280 85% 66%;
+    --chart-5:199 85% 55%;
+    /* 暗底网格线/坐标轴 */
+    --grid:217 32% 15%;
+    --axis:215 18% 48%;
+    --panel:222 60% 7%;
+    --hairline:217.2 32% 16%;
+    --glow:217.2 91.2% 59.8%;
+  }
+
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    min-width:1280px;
+    background:hsl(var(--background));
+    color:hsl(var(--foreground));
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+    font-size:14px;line-height:1.45;
+    -webkit-font-smoothing:antialiased;
+    transition:background .25s ease,color .25s ease;
+  }
+  .num{font-variant-numeric:tabular-nums;font-feature-settings:"tnum";}
+
+  /* ---------- topbar:极简 chrome ---------- */
+  .topbar{
+    position:sticky;top:0;z-index:20;
+    display:flex;align-items:center;gap:24px;
+    height:56px;padding:0 32px;
+    background:hsl(var(--background) / .82);
+    backdrop-filter:saturate(140%) blur(8px);
+    border-bottom:1px solid hsl(var(--hairline));
+  }
+  .logo{display:flex;align-items:center;gap:10px;font-weight:700;font-size:15px;letter-spacing:.01em;}
+  .logo .mark{width:22px;height:22px;border-radius:6px;background:hsl(var(--chart-1));display:grid;place-items:center;
+    box-shadow:0 0 0 1px hsl(var(--chart-1)/.3), 0 0 18px hsl(var(--chart-1)/.35);}
+  .logo .mark svg{width:14px;height:14px;color:#fff;}
+  .crumb{color:hsl(var(--muted-foreground));font-size:13px;display:flex;align-items:center;gap:8px;}
+  .crumb b{color:hsl(var(--foreground));font-weight:600;}
+  .topbar .spacer{flex:1;}
+  .icon-btn{
+    width:34px;height:34px;display:grid;place-items:center;border-radius:8px;
+    border:1px solid hsl(var(--hairline));background:transparent;color:hsl(var(--foreground));
+    cursor:pointer;transition:.15s;
+  }
+  .icon-btn:hover{background:hsl(var(--muted));border-color:hsl(var(--border));}
+  .icon-btn svg{width:17px;height:17px;}
+  .btn-outline{
+    display:inline-flex;align-items:center;gap:8px;height:34px;padding:0 14px;border-radius:8px;
+    border:1px solid hsl(var(--hairline));background:transparent;color:hsl(var(--foreground));
+    font-size:13px;font-weight:500;cursor:pointer;transition:.15s;font-family:inherit;
+  }
+  .btn-outline:hover{background:hsl(var(--muted));border-color:hsl(var(--border));}
+  .btn-outline svg{width:15px;height:15px;}
+  .btn-outline.spinning svg{animation:spin 1s linear;}
+  @keyframes spin{from{transform:rotate(0)}to{transform:rotate(720deg)}}
+
+  /* ---------- view tabs ---------- */
+  .tabs-row{
+    display:flex;align-items:center;gap:0;
+    max-width:1440px;margin:0 auto;padding:20px 32px 0;
+    border-bottom:1px solid hsl(var(--hairline));
+  }
+  .tab{
+    position:relative;padding:10px 16px;font-size:13.5px;font-weight:600;color:hsl(var(--muted-foreground));
+    background:none;border:none;cursor:pointer;font-family:inherit;letter-spacing:.01em;transition:.15s;
+  }
+  .tab:hover{color:hsl(var(--foreground));}
+  .tab.active{color:hsl(var(--foreground));}
+  .tab.active::after{
+    content:"";position:absolute;left:12px;right:12px;bottom:-1px;height:2px;
+    background:hsl(var(--chart-1));border-radius:2px;
+    box-shadow:0 0 10px hsl(var(--chart-1)/.6);
+  }
+  .tab .badge{display:inline-block;margin-left:6px;padding:1px 6px;border-radius:5px;font-size:11px;font-weight:600;
+    background:hsl(var(--muted));color:hsl(var(--muted-foreground));}
+  .tab.active .badge{background:hsl(var(--chart-1)/.16);color:hsl(var(--chart-1));}
+  .tabs-meta{margin-left:auto;font-size:12px;color:hsl(var(--muted-foreground));display:flex;align-items:center;gap:6px;padding-bottom:10px;}
+  .live-dot{width:7px;height:7px;border-radius:50%;background:hsl(var(--success));box-shadow:0 0 8px hsl(var(--success)/.8);animation:pulse 1.8s infinite;}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+
+  /* ---------- container ---------- */
+  .container{max-width:1440px;margin:0 auto;padding:22px 32px 56px;}
+  .page-head{display:flex;align-items:flex-end;justify-content:space-between;gap:24px;margin-bottom:18px;}
+  .page-head h1{margin:0;font-size:22px;font-weight:700;letter-spacing:-.01em;display:flex;align-items:center;gap:10px;}
+  .page-head h1 .tag{font-size:12px;font-weight:600;color:hsl(var(--chart-1));background:hsl(var(--chart-1)/.12);
+    padding:3px 8px;border-radius:6px;letter-spacing:.02em;}
+  .page-head p{margin:6px 0 0;color:hsl(var(--muted-foreground));font-size:13px;}
+  .head-tools{display:flex;align-items:center;gap:8px;}
+
+  /* ---------- stat grid (high density) ---------- */
+  .stat-grid-store{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;}
+  .stat-grid-hq{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;}
+  .stat{
+    position:relative;padding:14px 16px 13px;border-radius:10px;
+    border:1px solid hsl(var(--hairline));background:hsl(var(--panel));
+    overflow:hidden;transition:.15s;
+  }
+  .stat:hover{border-color:hsl(var(--border));transform:translateY(-1px);}
+  .stat .top{display:flex;align-items:center;justify-content:space-between;gap:8px;}
+  .stat .label{display:flex;align-items:center;gap:8px;font-size:11.5px;font-weight:600;letter-spacing:.06em;
+    text-transform:uppercase;color:hsl(var(--muted-foreground));}
+  .stat .ico{width:26px;height:26px;border-radius:7px;display:grid;place-items:center;background:transparent;}
+  .stat .ico svg{width:17px;height:17px;}
+  .stat .value{font-size:30px;font-weight:700;line-height:1.05;margin:10px 0 4px;letter-spacing:-.02em;}
+  .stat .sub{font-size:11.5px;color:hsl(var(--muted-foreground));display:flex;align-items:center;gap:6px;}
+  .stat .mini{flex-shrink:0;}
+  .stat .spark{width:74px;height:24px;display:block;}
+
+  /* color bind per metric (chart-1..5) */
+  .c1 .ico svg{color:hsl(var(--chart-1));} .c1 .ico{background:hsl(var(--chart-1)/.12);}
+  .c2 .ico svg{color:hsl(var(--chart-2));} .c2 .ico{background:hsl(var(--chart-2)/.14);}
+  .c3 .ico svg{color:hsl(var(--chart-3));} .c3 .ico{background:hsl(var(--chart-3)/.14);}
+  .c4 .ico svg{color:hsl(var(--chart-4));} .c4 .ico{background:hsl(var(--chart-4)/.14);}
+  .c5 .ico svg{color:hsl(var(--chart-5));} .c5 .ico{background:hsl(var(--chart-5)/.14);}
+
+  .sub-pill{display:inline-flex;align-items:center;gap:4px;padding:1px 7px;border-radius:5px;font-weight:600;font-size:11px;}
+  .sub-pill.up{color:hsl(var(--success));background:hsl(var(--success)/.12);}
+  .sub-pill.warn{color:hsl(var(--warning));background:hsl(var(--warning)/.14);}
+
+  /* ---------- chart card ---------- */
+  .row-split{display:grid;grid-template-columns:4fr 1fr;gap:12px;margin-top:12px;align-items:stretch;}
+  .chart-card{
+    border:1px solid hsl(var(--hairline));border-radius:10px;background:hsl(var(--panel));
+    padding:16px 18px 14px;
+  }
+  .chart-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;}
+  .chart-title{font-size:14px;font-weight:700;letter-spacing:.01em;display:flex;align-items:center;gap:8px;}
+  .chart-title svg{width:15px;height:15px;color:hsl(var(--chart-1));}
+  .seg{display:inline-flex;border:1px solid hsl(var(--hairline));border-radius:8px;overflow:hidden;}
+  .seg button{background:transparent;border:none;font-family:inherit;font-size:12px;font-weight:600;color:hsl(var(--muted-foreground));
+    padding:5px 12px;cursor:pointer;transition:.15s;}
+  .seg button:hover{color:hsl(var(--foreground));}
+  .seg button.on{background:hsl(var(--chart-1)/.14);color:hsl(var(--chart-1));}
+
+  /* data summary band */
+  .sumband{
+    display:flex;gap:0;margin:6px 0 4px;border-top:1px dashed hsl(var(--hairline));border-bottom:1px dashed hsl(var(--hairline));
+    padding:8px 0;
+  }
+  .sumband .cell{flex:1;padding:0 14px;border-right:1px solid hsl(var(--hairline));}
+  .sumband .cell:first-child{padding-left:2px;}
+  .sumband .cell:last-child{border-right:none;}
+  .sumband .k{font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;color:hsl(var(--muted-foreground));font-weight:600;}
+  .sumband .v{font-size:16px;font-weight:700;margin-top:2px;}
+  .sumband .v .u{font-size:11px;font-weight:500;color:hsl(var(--muted-foreground));margin-left:3px;}
+  .sumband .v.peak{color:hsl(var(--success));}
+  .sumband .v.trough{color:hsl(var(--warning));}
+  .sumband .v.acc{color:hsl(var(--chart-1));}
+
+  .chart-svg{width:100%;height:auto;display:block;}
+  /* axis/grid text */
+  .ax-tick{fill:hsl(var(--axis));font-size:10.5px;font-family:inherit;}
+  .grid-line{stroke:hsl(var(--grid));stroke-width:1;}
+  .axis-line{stroke:hsl(var(--axis));stroke-width:1;}
+  .ref-line{stroke:hsl(var(--axis));stroke-width:1.2;stroke-dasharray:4 4;}
+  .bar-track{fill:hsl(var(--muted) / .55);}
+
+  /* ---------- side: quick actions + perms ---------- */
+  .side{display:flex;flex-direction:column;gap:12px;}
+  .qa-card,.perm-card{border:1px solid hsl(var(--hairline));border-radius:10px;background:hsl(var(--panel));padding:14px 16px;}
+  /* qa-card 撑满右栏剩余高度,让操作纵向均布填满,与左栏图表等高 */
+  .qa-card{flex:1;display:flex;flex-direction:column;}
+  .side-title{font-size:13px;font-weight:700;margin:0 0 12px;display:flex;align-items:center;gap:8px;}
+  .side-title svg{width:15px;height:15px;color:hsl(var(--muted-foreground));}
+  /* 一列纵向:一行一个操作项;space-between 让 4 项纵向均布填满 */
+  .bento{display:flex;flex-direction:column;gap:8px;flex:1;justify-content:space-between;}
+  /* 单行横向布局:图标在左,标题+提示在右(原竖向叠放改横排,更紧凑) */
+  .qa{display:flex;flex-direction:row;align-items:center;gap:9px;padding:9px 10px;border-radius:8px;border:1px solid hsl(var(--hairline));
+    background:transparent;cursor:pointer;transition:.15s;font-family:inherit;text-align:left;}
+  .qa:hover{border-color:hsl(var(--chart-1)/.5);background:hsl(var(--chart-1)/.06);transform:translateY(-1px);}
+  .qa .qa-ico{width:26px;height:26px;flex-shrink:0;border-radius:6px;display:grid;place-items:center;background:hsl(var(--muted));}
+  .qa:hover .qa-ico{background:hsl(var(--chart-1)/.16);}
+  .qa .qa-ico svg{width:14px;height:14px;color:hsl(var(--foreground));transition:.15s;}
+  .qa:hover .qa-ico svg{color:hsl(var(--chart-1));}
+  .qa .qa-txt{display:flex;flex-direction:column;gap:0px;min-width:0;flex:1;}
+  .qa .qa-t{font-size:12.5px;font-weight:600;}
+  .qa .qa-h{font-size:10.5px;color:hsl(var(--muted-foreground));line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+
+  .perm-row{display:flex;flex-wrap:wrap;gap:8px;}
+  .badge{display:inline-flex;align-items:center;gap:6px;padding:5px 10px;border-radius:7px;font-size:12px;font-weight:600;
+    background:hsl(var(--success)/.14);color:hsl(var(--success));border:1px solid hsl(var(--success)/.3);}
+  .badge svg{width:13px;height:13px;}
+  .perm-note{font-size:11.5px;color:hsl(var(--muted-foreground));margin:10px 0 0;}
+
+  /* panel visibility */
+  .panel{display:none;}
+  .panel.on{display:block;animation:fade .25s ease;}
+  @keyframes fade{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+
+  .foot{margin-top:22px;color:hsl(var(--muted-foreground));font-size:11px;display:flex;justify-content:space-between;
+    border-top:1px solid hsl(var(--hairline));padding-top:12px;}
+
+  /* tooltip hover on data points */
+  .pt{cursor:pointer;}
+  .pt:hover circle{filter:drop-shadow(0 0 6px currentColor);}
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="logo">
+    <span class="mark"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 4 7v10l8 5 8-5V7z"/><path d="M12 22V12"/><path d="M4 7l8 5 8-5"/></svg></span>
+    智能体云平台
+  </div>
+  <div class="crumb">控制台 <span style="opacity:.5">/</span> <b id="crumbView">门店概览</b></div>
+  <div class="spacer"></div>
+  <button class="icon-btn" id="themeBtn" title="切换主题" aria-label="切换主题"></button>
+  <button class="btn-outline" id="refreshBtn">
+    <svg id="refreshIco" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>
+    刷新
+  </button>
+</header>
+
+<div class="tabs-row">
+  <button class="tab active" data-view="store">门店视角 <span class="badge">Store</span></button>
+  <button class="tab" data-view="hq">总部视角 <span class="badge">HQ</span></button>
+  <div class="tabs-meta"><span class="live-dot"></span>实时同步 · 2 min 前更新</div>
+</div>
+
+<div class="container">
+
+  <!-- ============ STORE PANEL ============ -->
+  <section id="panel-store" class="panel on">
+    <div class="page-head">
+      <div>
+        <h1>门店概览 · 朝阳旗舰店 <span class="tag">Store View</span></h1>
+        <p>欢迎回来,manager@demo.com。这是你门店的实时数据看板。</p>
+      </div>
+    </div>
+
+    <div class="stat-grid-store">
+      <div class="stat c1">
+        <div class="top">
+          <div class="label"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></span>用户</div>
+        </div>
+        <div class="value num">128</div>
+        <div class="sub">本店注册用户</div>
+      </div>
+      <div class="stat c2">
+        <div class="top">
+          <div class="label"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="10" x="3" y="11" rx="2"/><circle cx="12" cy="5" r="2"/><path d="M12 7v4"/><line x1="8" x2="8" y1="16" y2="16"/><line x1="16" x2="16" y1="16" y2="16"/></svg></span>智能体</div>
+        </div>
+        <div class="value num">6</div>
+        <div class="sub">已部署 / 运行中</div>
+      </div>
+      <div class="stat c3">
+        <div class="top">
+          <div class="label"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></span>对话</div>
+          <svg class="spark" id="sparkConv" viewBox="0 0 100 28" preserveAspectRatio="none"></svg>
+        </div>
+        <div class="value num">3,842</div>
+        <div class="sub">近 7 天 <span class="sub-pill up">+412</span></div>
+      </div>
+      <div class="stat c4">
+        <div class="top">
+          <div class="label"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></span>客户</div>
+          <svg class="spark" id="sparkCust" viewBox="0 0 100 28" preserveAspectRatio="none"></svg>
+        </div>
+        <div class="value num">1,256</div>
+        <div class="sub">活跃 <b class="num" style="color:hsl(var(--chart-4))">894</b> · 占比 71%</div>
+      </div>
+    </div>
+
+    <div class="row-split">
+      <div class="chart-card">
+        <div class="chart-head">
+          <div class="chart-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.25.25 0 0 1-.48 0L9.24 2.18a.25.25 0 0 0-.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2"/></svg>对话活跃趋势</div>
+          <div class="seg" id="rangeSeg">
+            <button class="on" data-range="7">7 天</button>
+            <button data-range="30">30 天</button>
+          </div>
+        </div>
+        <div class="sumband" id="sumband-store"></div>
+        <svg class="chart-svg" id="areaChart" viewBox="0 0 820 340" preserveAspectRatio="none" aria-label="7 天对话活跃趋势"></svg>
+      </div>
+
+      <div class="side">
+        <div class="qa-card">
+          <h3 class="side-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>快速操作</h3>
+          <div class="bento">
+            <button class="qa"><span class="qa-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="10" x="3" y="11" rx="2"/><circle cx="12" cy="5" r="2"/><path d="M12 7v4"/></svg></span><span class="qa-txt"><span class="qa-t">管理智能体</span><span class="qa-h">配置 prompt、模型与编排</span></span></button>
+            <button class="qa"><span class="qa-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></span><span class="qa-txt"><span class="qa-t">开始对话</span><span class="qa-h">测试智能体的实际表现</span></span></button>
+            <button class="qa"><span class="qa-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></span><span class="qa-txt"><span class="qa-t">客户管理</span><span class="qa-h">维护客户档案与标签</span></span></button>
+            <button class="qa"><span class="qa-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3z"/></svg></span><span class="qa-txt"><span class="qa-t">知识库</span><span class="qa-h">为对话补充专属知识</span></span></button>
+          </div>
+        </div>
+        <div class="perm-card">
+          <h3 class="side-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/></svg>我的权限</h3>
+          <div class="perm-row">
+            <span class="badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m9 12 2 2 4-4"/><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/></svg>owner</span>
+            <span class="badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m9 12 2 2 4-4"/><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/></svg>admin</span>
+          </div>
+          <p class="perm-note">拥有本门店全部数据与管理权限。</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ HQ PANEL ============ -->
+  <section id="panel-hq" class="panel">
+    <div class="page-head">
+      <div>
+        <h1>平台总览 <span class="tag">HQ View</span></h1>
+        <p>跨全部门店汇总。admin@demo.com(super_admin 视角)</p>
+      </div>
+    </div>
+
+    <div class="stat-grid-hq">
+      <div class="stat c1"><div class="top"><div class="label"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/><path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/><path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"/><path d="M10 6h4"/><path d="M10 10h4"/><path d="M10 14h4"/><path d="M10 18h4"/></svg></span>租户</div></div><div class="value num">12</div><div class="sub">活跃租户</div></div>
+      <div class="stat c2"><div class="top"><div class="label"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></span>用户</div></div><div class="value num">1,536</div><div class="sub">全平台累计</div></div>
+      <div class="stat c3"><div class="top"><div class="label"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="10" x="3" y="11" rx="2"/><circle cx="12" cy="5" r="2"/><path d="M12 7v4"/></svg></span>智能体</div></div><div class="value num">47</div><div class="sub">跨 12 租户</div></div>
+      <div class="stat c4"><div class="top"><div class="label"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></span>对话</div></div><div class="value num">28,341</div><div class="sub">累计会话</div></div>
+      <div class="stat c5"><div class="top"><div class="label"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></span>客户</div></div><div class="value num">9,872</div><div class="sub">服务客户</div></div>
+    </div>
+
+    <div class="row-split">
+      <div class="chart-card">
+        <div class="chart-head">
+          <div class="chart-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 16V9"/><path d="M12 16v-5"/><path d="M17 16V7"/></svg>各门店活跃度 Top 10</div>
+          <div class="seg"><button class="on">活跃度</button><button>对话数</button></div>
+        </div>
+        <div class="sumband" id="sumband-hq"></div>
+        <svg class="chart-svg" id="barChart" viewBox="0 0 880 470" preserveAspectRatio="none" aria-label="门店活跃度 Top 10"></svg>
+      </div>
+
+      <div class="side">
+        <!-- HQ 快速操作入口(平台管理向,区别于门店视角的本职操作)-->
+        <div class="qa-card">
+          <h3 class="side-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>平台快速操作</h3>
+          <div class="bento">
+            <button class="qa"><span class="qa-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/><path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/><path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"/><path d="M10 6h4"/><path d="M10 10h4"/><path d="M10 14h4"/><path d="M10 18h4"/></svg></span><span class="qa-txt"><span class="qa-t">租户管理</span><span class="qa-h">新建租户 · 跨租户配置</span></span></button>
+            <button class="qa"><span class="qa-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></span><span class="qa-txt"><span class="qa-t">用户与角色</span><span class="qa-h">平台账号 · 权限矩阵</span></span></button>
+            <button class="qa"><span class="qa-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" x2="8" y1="13" y2="13"/><line x1="16" x2="8" y1="17" y2="17"/><line x1="10" x2="8" y1="9" y2="9"/></svg></span><span class="qa-txt"><span class="qa-t">审计日志</span><span class="qa-h">跨租户记录 · 合规追溯</span></span></button>
+            <button class="qa"><span class="qa-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg></span><span class="qa-txt"><span class="qa-t">计费与配额</span><span class="qa-h">租户钱包 · 用量定价</span></span></button>
+          </div>
+        </div>
+        <!-- 平台权限卡(与门店右栏「我的权限」对称)-->
+        <div class="perm-card">
+          <h3 class="side-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/></svg>平台权限</h3>
+          <div class="perm-row">
+            <span class="badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m9 12 2 2 4-4"/><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/></svg>super_admin</span>
+          </div>
+          <p class="perm-note">平台级全权 · 跨租户读写 · 后端 bypass 不可删减。</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <div class="foot">
+    <span>agenthub · 智能体云平台 · B3 数据可视化质感</span>
+    <span>数据基准 2026-07-31 · 7 日窗口 07-25 → 07-31</span>
+  </div>
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  // ---------- icons ----------
+  var SUN='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg>';
+  var MOON='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>';
+
+  // ---------- theme ----------
+  var root=document.documentElement;
+  var themeBtn=document.getElementById('themeBtn');
+  function setTheme(t){
+    root.setAttribute('data-theme',t);
+    themeBtn.innerHTML = (t==='dark')?SUN:MOON;
+  }
+  setTheme(root.getAttribute('data-theme')||'dark');
+  themeBtn.addEventListener('click',function(){
+    var cur=root.getAttribute('data-theme');
+    setTheme(cur==='dark'?'light':'dark');
+  });
+
+  // ---------- refresh ----------
+  var refreshBtn=document.getElementById('refreshBtn');
+  refreshBtn.addEventListener('click',function(){
+    refreshBtn.classList.add('spinning');
+    setTimeout(function(){refreshBtn.classList.remove('spinning');},1000);
+  });
+
+  // ---------- view tabs ----------
+  var tabs=document.querySelectorAll('.tab');
+  var panelStore=document.getElementById('panel-store');
+  var panelHQ=document.getElementById('panel-hq');
+  var crumbView=document.getElementById('crumbView');
+  tabs.forEach(function(tb){
+    tb.addEventListener('click',function(){
+      tabs.forEach(function(t){t.classList.remove('active');});
+      tb.classList.add('active');
+      var v=tb.getAttribute('data-view');
+      if(v==='store'){panelStore.classList.add('on');panelHQ.classList.remove('on');crumbView.textContent='门店概览';}
+      else{panelHQ.classList.add('on');panelStore.classList.remove('on');crumbView.textContent='平台总览';}
+    });
+  });
+
+  // ============================================================
+  //  DATA (spec §3 — real, do not invent)
+  // ============================================================
+  var TREND_7=[
+    {label:"07-25",value:47},{label:"07-26",value:62},{label:"07-27",value:58},
+    {label:"07-28",value:71},{label:"07-29",value:84},{label:"07-30",value:55},{label:"07-31",value:35}
+  ];
+  var TOP10=[
+    {label:"朝阳旗舰店",value:4823},{label:"浦东中心店",value:3941},{label:"天河城店",value:3120},
+    {label:"西湖店",value:2856},{label:"春熙路店",value:2401},{label:"解放路店",value:1985},
+    {label:"高新区店",value:1642},{label:"滨江店",value:1320},{label:"雁塔店",value:985},{label:"鼓楼店",value:668}
+  ];
+  function sum(a){return a.reduce(function(s,x){return s+x.value;},0);}
+  function mean(a){return sum(a)/a.length;}
+  function fmt(n){return n.toLocaleString('en-US');}
+
+  // ============================================================
+  //  AREA CHART (store) — area + mean ref line + peak/trough markers
+  // ============================================================
+  function buildArea(){
+    var svg=document.getElementById('areaChart');
+    var data=TREND_7;
+    var W=820,H=340,L=52,R=22,T=26,B=42;
+    var x0=L,x1=W-R,y0=T,y1=H-B;
+    var pw=x1-x0, ph=y1-y0;
+    var MAX=100; // tick ceiling (max val 84)
+    var n=data.length;
+    function X(i){return x0+(i/(n-1))*pw;}
+    function Y(v){return y1-(v/MAX)*ph;}
+
+    var s='';
+    // defs (gradient uses CSS var)
+    s+='<defs><linearGradient id="areaFill" x1="0" y1="0" x2="0" y2="1">'+
+      '<stop offset="0%" stop-color="hsl(var(--chart-1))" stop-opacity="0.42"/>'+
+      '<stop offset="100%" stop-color="hsl(var(--chart-1))" stop-opacity="0.02"/>'+
+      '</linearGradient></defs>';
+
+    // horizontal gridlines + y ticks (0,20,40,60,80,100)
+    for(var v=0;v<=MAX;v+=20){
+      var yy=Y(v);
+      s+='<line class="grid-line" x1="'+x0+'" y1="'+yy.toFixed(1)+'" x2="'+x1+'" y2="'+yy.toFixed(1)+'"/>';
+      s+='<text class="ax-tick" x="'+(x0-10)+'" y="'+(yy+3.5).toFixed(1)+'" text-anchor="end">'+v+'</text>';
+    }
+    // y axis title
+    s+='<text class="ax-tick" x="'+(x0-32)+'" y="'+(y0-8)+'" text-anchor="start" style="font-weight:600">对话数</text>';
+
+    // mean reference line
+    var mn=mean(data);
+    var ym=Y(mn);
+    s+='<line class="ref-line" x1="'+x0+'" y1="'+ym.toFixed(1)+'" x2="'+x1+'" y2="'+ym.toFixed(1)+'"/>';
+    s+='<text class="ax-tick" x="'+(x1)+'" y="'+(ym-5).toFixed(1)+'" text-anchor="end" style="font-weight:600;fill:hsl(var(--axis))">均值 '+mn.toFixed(1)+'</text>';
+
+    // area + line
+    var linePts=[],areaD='M ';
+    for(var i=0;i<n;i++){
+      linePts.push(X(i).toFixed(2)+','+Y(data[i].value).toFixed(2));
+    }
+    var linePath='M'+linePts.join(' L');
+    var areaPath=linePath+' L'+X(n-1).toFixed(2)+','+y1+' L'+X(0).toFixed(2)+','+y1+' Z';
+    s+='<path d="'+areaPath+'" fill="url(#areaFill)"/>';
+    s+='<path d="'+linePath+'" fill="none" stroke="hsl(var(--chart-1))" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round" filter="drop-shadow(0 0 5px hsl(var(--chart-1)/.4))"/>';
+
+    // x ticks + vertical guides
+    for(var i=0;i<n;i++){
+      var xx=X(i);
+      s+='<line class="grid-line" x1="'+xx.toFixed(1)+'" y1="'+y0+'" x2="'+xx.toFixed(1)+'" y2="'+y1+'" stroke-opacity="0.5"/>';
+      s+='<text class="ax-tick" x="'+xx.toFixed(1)+'" y="'+(y1+18)+'" text-anchor="middle">'+data[i].label+'</text>';
+      s+='<circle cx="'+xx.toFixed(1)+'" cy="'+Y(data[i].value).toFixed(1)+'" r="2.6" fill="hsl(var(--panel))" stroke="hsl(var(--chart-1))" stroke-width="1.6"/>';
+    }
+
+    // peak & trough markers
+    var maxV=-1,minV=Infinity,maxI=0,minI=0;
+    for(var j=0;j<n;j++){if(data[j].value>maxV){maxV=data[j].value;maxI=j;} if(data[j].value<minV){minV=data[j].value;minI=j;}}
+    // peak (success green)
+    var px=X(maxI),py=Y(maxV);
+    s+='<g class="pt" style="color:hsl(var(--success))">'+
+       '<line x1="'+px.toFixed(1)+'" y1="'+(py-8).toFixed(1)+'" x2="'+px.toFixed(1)+'" y2="'+(py-3).toFixed(1)+'" stroke="hsl(var(--success))" stroke-width="1.4"/>'+
+       '<circle cx="'+px.toFixed(1)+'" cy="'+py.toFixed(1)+'" r="5" fill="hsl(var(--success))" stroke="hsl(var(--panel))" stroke-width="2"/>'+
+       '<rect x="'+(px-26).toFixed(1)+'" y="'+(py-30).toFixed(1)+'" width="52" height="18" rx="4" fill="hsl(var(--success))" />'+
+       '<text x="'+px.toFixed(1)+'" y="'+(py-17).toFixed(1)+'" text-anchor="middle" style="fill:hsl(var(--success-foreground,0 0% 100%));font-size:11px;font-weight:700">峰值 '+maxV+'</text>'+
+       '</g>';
+    // trough (warning amber)
+    var tx=X(minI),ty=Y(minV);
+    s+='<g class="pt" style="color:hsl(var(--warning))">'+
+       '<circle cx="'+tx.toFixed(1)+'" cy="'+ty.toFixed(1)+'" r="5" fill="hsl(var(--warning))" stroke="hsl(var(--panel))" stroke-width="2"/>'+
+       '<rect x="'+(tx-26).toFixed(1)+'" y="'+(ty+10).toFixed(1)+'" width="52" height="18" rx="4" fill="hsl(var(--warning))"/>'+
+       '<text x="'+tx.toFixed(1)+'" y="'+(ty+23).toFixed(1)+'" text-anchor="middle" style="fill:#1a1205;font-size:11px;font-weight:700">谷值 '+minV+'</text>'+
+       '</g>';
+
+    // axis baselines
+    s+='<line class="axis-line" x1="'+x0+'" y1="'+y1+'" x2="'+x1+'" y2="'+y1+'"/>';
+
+    svg.innerHTML=s;
+  }
+
+  // ============================================================
+  //  BAR CHART (HQ Top10) — heatmap single-hue + mean ref + labels
+  // ============================================================
+  function buildBar(){
+    var svg=document.getElementById('barChart');
+    var data=TOP10;
+    var W=880,H=470,L0=10,LB=128,R=24,T0=18,BH=40;
+    var x0=L0+LB,x1=W-R;
+    var pw=x1-x0;
+    var MAX=5000; // tick ceiling (max 4823)
+    var n=data.length;
+    var rowH=(H-T0-BH)/n;
+    var barH=Math.max(16,rowH-16);
+    var maxVal=data[0].value;
+
+    function Xb(v){return x0+(v/MAX)*pw;}
+    function rowCY(i){return T0+i*rowH+rowH/2;}
+
+    var s='';
+    // vertical gridlines + x ticks (0,1000,...,5000)
+    for(var v=0;v<=MAX;v+=1000){
+      var xx=Xb(v);
+      s+='<line class="grid-line" x1="'+xx.toFixed(1)+'" y1="'+T0+'" x2="'+xx.toFixed(1)+'" y2="'+(H-BH)+'"/>';
+      s+='<text class="ax-tick" x="'+xx.toFixed(1)+'" y="'+(H-BH+16)+'" text-anchor="middle">'+(v/1000)+'k</text>';
+    }
+    s+='<text class="ax-tick" x="'+(x1)+'" y="'+(H-BH+30)+'" text-anchor="end" style="font-weight:600">活跃度(会话计)</text>';
+
+    // mean reference vertical line
+    var mn=mean(data);
+    var xm=Xb(mn);
+    s+='<line class="ref-line" x1="'+xm.toFixed(1)+'" y1="'+(T0-4)+'" x2="'+xm.toFixed(1)+'" y2="'+(H-BH)+'"/>';
+    s+='<text class="ax-tick" x="'+xm.toFixed(1)+'" y="'+(T0-7)+'" text-anchor="middle" style="font-weight:600">均值 '+fmt(Math.round(mn))+'</text>';
+
+    // bars
+    for(var i=0;i<n;i++){
+      var d=data[i];
+      var cy=rowCY(i);
+      var by=cy-barH/2;
+      var w=Xb(d.value)-x0;
+      var opacity=(0.32+0.68*(d.value/maxVal)).toFixed(2);
+      // rank label
+      s+='<text class="ax-tick" x="'+(L0+2)+'" y="'+(cy+3.5).toFixed(1)+'" style="font-weight:700;fill:hsl(var(--muted-foreground))">'+String(i+1).padStart(2,'0')+'</text>';
+      // name label
+      s+='<text class="ax-tick" x="'+(L0+LB-8)+'" y="'+(cy+3.5).toFixed(1)+'" text-anchor="end" style="font-weight:600;fill:hsl(var(--foreground));font-size:12px">'+d.label+'</text>';
+      // track
+      s+='<rect class="bar-track" x="'+x0.toFixed(1)+'" y="'+by.toFixed(1)+'" width="'+pw.toFixed(1)+'" height="'+barH.toFixed(1)+'" rx="4"/>';
+      // bar (heatmap: chart-1 with value-driven opacity)
+      s+='<rect x="'+x0.toFixed(1)+'" y="'+by.toFixed(1)+'" width="'+w.toFixed(1)+'" height="'+barH.toFixed(1)+'" rx="4" fill="hsl(var(--chart-1))" fill-opacity="'+opacity+'"/>';
+      // value label at bar end
+      var above = d.value>=mn;
+      var labX = (d.value>=MAX*0.92) ? (x0+w-6) : (x0+w+8);
+      var anchor = (d.value>=MAX*0.92) ? 'end' : 'start';
+      var labFill = (d.value>=MAX*0.92) ? 'hsl(var(--panel))' : 'hsl(var(--chart-1))';
+      s+='<text class="num" x="'+labX.toFixed(1)+'" y="'+(cy+4).toFixed(1)+'" text-anchor="'+anchor+'" style="font-size:12px;font-weight:700;fill:'+labFill+'">'+fmt(d.value)+'</text>';
+    }
+
+    // x baseline
+    s+='<line class="axis-line" x1="'+x0+'" y1="'+(H-BH)+'" x2="'+x1+'" y2="'+(H-BH)+'"/>';
+    svg.innerHTML=s;
+  }
+
+  // ============================================================
+  //  MINI SPARKLINES (real data only)
+  // ============================================================
+  function buildSparks(){
+    // conversation 7-day (real STORE trend) → chart-3
+    var sc=document.getElementById('sparkConv');
+    var data=TREND_7; var MAX=100;
+    var pts=data.map(function(d,i){return [(i/(data.length-1)*100).toFixed(2),(27-(d.value/MAX)*24).toFixed(2)];});
+    var line='M'+pts.map(function(p){return p.join(',');}).join(' L');
+    var area=line+' L100,28 L0,28 Z';
+    sc.innerHTML='<defs><linearGradient id="spkC" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="hsl(var(--chart-3))" stop-opacity="0.5"/><stop offset="100%" stop-color="hsl(var(--chart-3))" stop-opacity="0"/></linearGradient></defs>'+
+      '<path d="'+area+'" fill="url(#spkC)"/><path d="'+line+'" fill="none" stroke="hsl(var(--chart-3))" stroke-width="1.6" stroke-linejoin="round"/>';
+    // customer active ratio 894/1256 → chart-4 ratio bar
+    var cu=document.getElementById('sparkCust');
+    var ratio=894/1256;
+    cu.innerHTML='<rect x="0" y="11" width="100" height="6" rx="3" fill="hsl(var(--muted))"/>'+
+      '<rect x="0" y="11" width="'+(ratio*100).toFixed(1)+'" height="6" rx="3" fill="hsl(var(--chart-4))"/>'+
+      '<text x="'+(ratio*100-4).toFixed(1)+'" y="9" text-anchor="end" style="font-size:9px;font-weight:700;fill:hsl(var(--chart-4))">71%</text>';
+  }
+
+  // ============================================================
+  //  SUMMARY BANDS (computed from real data)
+  // ============================================================
+  function buildSumBands(){
+    var s7=TREND_7;
+    var s7sum=sum(s7), s7mean=mean(s7);
+    var pk=s7[0],tr=s7[0];
+    s7.forEach(function(d){if(d.value>pk.value)pk=d;if(d.value<tr.value)tr=d;});
+    document.getElementById('sumband-store').innerHTML=
+      '<div class="cell"><div class="k">7 日总和</div><div class="v num">'+s7sum+'<span class="u">条</span></div></div>'+
+      '<div class="cell"><div class="k">日均</div><div class="v num">'+s7mean.toFixed(1)+'<span class="u">条/天</span></div></div>'+
+      '<div class="cell"><div class="k">峰值</div><div class="v peak num">'+pk.value+'<span class="u" style="color:hsl(var(--success))">'+pk.label+'</span></div></div>'+
+      '<div class="cell"><div class="k">谷值</div><div class="v trough num">'+tr.value+'<span class="u" style="color:hsl(var(--warning))">'+tr.label+'</span></div></div>';
+
+    var t=TOP10;
+    var tsum=sum(t),tmean=mean(t);
+    var top3=t.slice(0,3).reduce(function(a,b){return a+b.value;},0);
+    var share=(top3/tsum*100).toFixed(1);
+    document.getElementById('sumband-hq').innerHTML=
+      '<div class="cell"><div class="k">Top10 总和</div><div class="v num">'+fmt(tsum)+'<span class="u">活跃度</span></div></div>'+
+      '<div class="cell"><div class="k">均值</div><div class="v num">'+fmt(Math.round(tmean))+'</div></div>'+
+      '<div class="cell"><div class="k">峰值门店</div><div class="v peak num">'+fmt(t[0].value)+'<span class="u" style="color:hsl(var(--success))">'+t[0].label+'</span></div></div>'+
+      '<div class="cell"><div class="k">Top3 集中度</div><div class="v acc num">'+share+'<span class="u">%</span></div></div>'+
+      '<div class="cell"><div class="k">末位</div><div class="v trough num">'+fmt(t[9].value)+'<span class="u" style="color:hsl(var(--warning))">'+t[9].label+'</span></div></div>';
+  }
+
+  // ---------- range toggle (store) ----------
+  var rangeSeg=document.getElementById('rangeSeg');
+  rangeSeg.addEventListener('click',function(e){
+    var b=e.target.closest('button'); if(!b)return;
+    rangeSeg.querySelectorAll('button').forEach(function(x){x.classList.remove('on');});
+    b.classList.add('on');
+    var r=b.getAttribute('data-range');
+    if(r==='7'){buildArea();buildSumBands();}
+    else{
+      // 30-day aggregate (spec: just mark 30-day summary 412 — show as flat aggregate band, keep area hidden note)
+      document.getElementById('areaChart').innerHTML=
+        '<text x="410" y="150" text-anchor="middle" style="fill:hsl(var(--muted-foreground));font-size:14px;font-weight:600">30 天窗口 · 汇总数据</text>'+
+        '<text x="410" y="190" text-anchor="middle" class="num" style="fill:hsl(var(--chart-1));font-size:40px;font-weight:700">412</text>'+
+        '<text x="410" y="214" text-anchor="middle" style="fill:hsl(var(--muted-foreground));font-size:12px">条对话(近 7 天计 412,30 天仅标汇总)</text>';
+      // keep summary band as 7d for reference
+    }
+  });
+
+  // ---------- init ----------
+  buildArea();
+  buildBar();
+  buildSparks();
+  buildSumBands();
+})();
+</script>
+</body>
+</html>
