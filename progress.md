@@ -44,7 +44,7 @@
 - ⑤ clean-state-checklist ✅(下方)
 - ⑥ 文档影响评估(下方):无新增/改动架构文档(纯前端 className 映射)
 - ⑦ **末切片依赖解锁扫描**:Feature B(`design-system-color-sweep` p82)`depends_on design-system-token-foundation` —— **本 feature passing 后 B 解锁**,可置 in_progress(WIP=1 下 B 是下一 frontier)。Feature C 正交不依赖。
-- ⑧ 分支清理:`feat/design-system-token-foundation-slice-02` 待合并 main 后删(本地 + 远端)。
+- ⑧ 分支清理:`feat/design-system-token-foundation-slice-02` 待合并 main 后删(本地 + 远端)。**✅ 已本地合并 main**(merge commit `8868d67`,`--no-ff` 三方合并干净无冲突,本地 feature 分支 `-d` 安全删,`git branch` 只剩 main)。**远端 push 待网络恢复**:`git push`(github.com:443)`Empty reply from server` 不可达(沙箱网络限制,与 Session 168 同);`gh api`(api.github.com)可达,本地 main `ac784be` → `8868d67` ahead origin/main **3 commits**(切片02 代码 `8398ab2` + 收尾文档 `348c441` + merge commit `8868d67`),待网络恢复后 `git push origin main`。参照 Session 168/169 范式:推送当时可能超时但后台/后续会完成,以 `gh api repos/hugo617/ai-agent-platform/branches/main` HEAD 验真为准。
 
 **feature 核心**:前端设计系统收口 Feature A(token 地基)完成 —— 4 个 semantic token(`--success/--warning/--danger/--info`)B3 定稿双色值落地 index.css + tailwind.config 暴露(DEFAULT+foreground)+ ui/ 组件库内部(badge 4 处 + toast 2 处)语义硬编码原色映射到 token,**ui/ 自身成为设计系统收口的干净样板**。avatar 8 色环 + chart 多色 + destructive 命名保留(设计性多色 + 既有命名边界)。danger 与 destructive 并存(danger 新语义 token / destructive shadcn 既有命名)。**toast 实心 vs tint 决策**给 Feature B 暴露一个需后续验证的点:Feature B notes 计划业务页用 tint(`bg-X/10 + text-X DEFAULT`),但 DEFAULT 字在亮色 2.96 不达 AA —— Feature B 实施时需复核 tint 字色对比度(可能需 foreground 或加深 /80)。下一步:EP3 `/implement` Feature B 切片 01(success 色系业务页扫荡)。
 
