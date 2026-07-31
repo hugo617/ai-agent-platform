@@ -47,6 +47,11 @@ const TYPE_META: Record<
   string,
   { label: string; icon: React.ComponentType<{ className?: string }>; accent: string }
 > = {
+  // 切片 05 WCAG 决策:小面积语义标签保留 tint(bg-{tok}/10 + text-{tok})忠于 B3
+  // 设计调性(B3 .badge = token/.14 底 + DEFAULT 字 + /30 边)。精算证实 B3 自身在
+  // 亮色下 tint 就不达 WCAG AA(success 2.82 / warning 2.07 / info 2.29),属 B3 设计
+  // 固有 accessibility 债(非本 feature 引入),登记 plan 切片 05 evidence。大面积警告框
+  // 场景另改 text-foreground 达标(见 settings/composite/permissions),此处标签维持 tint。
   balance_warning: { label: "余额预警", icon: AlertTriangle, accent: "bg-warning/10 text-warning" },
   recharge: { label: "充值到账", icon: Coins, accent: "bg-success/10 text-success" },
   role_change: { label: "角色变更", icon: UserCog, accent: "bg-info/10 text-info" },

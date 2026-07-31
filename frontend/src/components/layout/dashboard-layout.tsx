@@ -165,6 +165,8 @@ export function DashboardLayout() {
             {/* 通知铃铛(priority 54) — 未读数 badge + 下拉。Every authenticated
                 user reads their own notifications, so no permission guard. */}
             <NotificationBell />
+            {/* 切片 05 WCAG 决策:超管 Badge 保留 tint(bg-warning/10 + text-warning)
+                忠于 B3 .badge 调性。亮色 tint 2.13 < AA 属 B3 固有债(见 plan 切片 05)。 */}
             {isSuperAdmin(me) && (
               <Badge className="border-warning/30 bg-warning/10 text-warning hover:bg-warning/10">
                 🛡️ 超级管理员

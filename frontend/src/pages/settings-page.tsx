@@ -1036,8 +1036,12 @@ function ApiTokenCard() {
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
+            {/* 切片 05 WCAG 收口:大面积警告框实心橙色刺眼,保留 bg-warning/10 浅橙底
+                (传达 warning 语义),标题/icon 从 text-warning(亮色 2.13 < AA)改
+                text-foreground(亮 18.39 / 暗 16.73 双模式 AA 远超)。正文 muted-foreground
+                本就达标(亮 4.38 / 暗 6.83)不动。 */}
             <div className="rounded-md border border-warning/30 bg-warning/10 p-3 text-sm">
-              <div className="flex items-center gap-2 font-medium text-warning">
+              <div className="flex items-center gap-2 font-medium text-foreground">
                 <AlertTriangle className="h-4 w-4" />
                 请立即复制下方 Token 并妥善保管
               </div>
