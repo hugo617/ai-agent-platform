@@ -15,7 +15,7 @@ const badgeVariants = cva(
           "border-transparent bg-destructive text-destructive-foreground hover:bg-destructive/80",
         outline: "text-foreground",
         success:
-          "border-transparent bg-emerald-500 text-white hover:bg-emerald-500/80",
+          "border-transparent bg-success text-success-foreground hover:bg-success/80",
         /** Muted pill with a leading status dot — "运行中" / "已停用" etc. The
          *  dot is drawn via ::before so it travels with the badge and stays a
          *  fixed size. Pair with a short status word (not a long label). */
@@ -30,13 +30,13 @@ const badgeVariants = cva(
           "border-transparent bg-muted text-muted-foreground [&::before]:mr-1.5 [&::before]:h-1.5 [&::before]:w-1.5 [&::before]:rounded-full [&::before]:bg-current",
         /** Dot variant tinted success (green dot). Use for "active/running". */
         "dot-success":
-          "border-transparent bg-muted text-muted-foreground [&::before]:mr-1.5 [&::before]:h-1.5 [&::before]:w-1.5 [&::before]:rounded-full [&::before]:bg-emerald-500",
+          "border-transparent bg-muted text-muted-foreground [&::before]:mr-1.5 [&::before]:h-1.5 [&::before]:w-1.5 [&::before]:rounded-full [&::before]:bg-success",
         /** Dot variant tinted warning (amber dot). Use for "pending/idle". */
         "dot-warning":
-          "border-transparent bg-muted text-muted-foreground [&::before]:mr-1.5 [&::before]:h-1.5 [&::before]:w-1.5 [&::before]:rounded-full [&::before]:bg-amber-500",
+          "border-transparent bg-muted text-muted-foreground [&::before]:mr-1.5 [&::before]:h-1.5 [&::before]:w-1.5 [&::before]:rounded-full [&::before]:bg-warning",
         /** Dot variant tinted destructive (red dot). Use for "failed/stopped". */
         "dot-destructive":
-          "border-transparent bg-muted text-muted-foreground [&::before]:mr-1.5 [&::before]:h-1.5 [&::before]:w-1.5 [&::before]:rounded-full [&::before]:bg-red-500",
+          "border-transparent bg-muted text-muted-foreground [&::before]:mr-1.5 [&::before]:h-1.5 [&::before]:w-1.5 [&::before]:rounded-full [&::before]:bg-danger",
       },
     },
     defaultVariants: {
