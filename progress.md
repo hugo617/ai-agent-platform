@@ -8,7 +8,7 @@
 - **标准启动路径(开工冒烟)**: `./init.sh`(装依赖 + ruff + `pytest -m smoke`,~15s,确认起点没坏)
 - **标准验证路径(收尾全量)**: `./init.sh full`(装依赖 + ruff + 全量 pytest,~5min,确认没回归)
 - **完整验证路径**(需 docker): `alembic upgrade head && alembic check` + `cd frontend && npm run build`
-- **当前最高优先级未完成功能**: **`design-system-color-sweep`(p82,not_started)— 前端设计系统收口系列 Feature B**(2026-07-31 Session 172 EP2 单回环登记 3 feature,Session 173 Feature A ✅ passing 后 B 解锁为 frontier)。系列总纲 `harness/docs/plan-frontend-design-system-overview.md`(EP1 grill 7 决策 + huashu-design B3 变体定稿,语义色 HSL 值固化)。**系列进度:① A ✅ passing / ② B frontier / ③ C not_started**。① **A `design-system-token-foundation`(p81,✅ passing,2026-07-31 Session 173)** — semantic token 基建(`--success/--warning/--danger/--info` 四 token B3 定稿双色值 + tailwind.config 暴露 + ui/ 组件库内部映射 badge/toast),全 2 切片合并。② **B `design-system-color-sweep`(p82,not_started,depends_on A 已解锁,frontier)** — 业务页 ~30 处硬编码色扫荡(跨 ~12 文件,按色系切片 success/warning/danger/info),5 切片。③ **C `design-system-spacing-card-hierarchy`(p83,not_started,与 A/B 正交)** — 卡片层级 shadow 语义命名 + 字号任意值 text-[10px] 收口(顺手项),2 切片。执行顺序 A→B→C(WIP=1)。**下一步:EP3 `/implement` Feature B 切片 01**(success 色系业务页扫荡,frontier,A token 已就绪可消费)。更早 passing:design-system-token-foundation(81,A)/queries-endpoints-domain-split(80)/customers-page-split(79)/devices-page-split(78)/perm-backfill-dedupe(77)/chat-page-split(76)/union-cast-split(75)/twoscope-config(74)/bookings-shared-split(73)/composite-chat(72)/principal-scope-doc-alignment(71)/principal-module(70)。
+- **当前最高优先级未完成功能**: **`design-system-spacing-card-hierarchy`(p83,not_started)— 前端设计系统收口系列 Feature C**(与 A/B 正交,无 depends_on,A+B 已 passing 后 C 成为最后一片 frontier)。系列总纲 `harness/docs/plan-frontend-design-system-overview.md`(EP1 grill 7 决策 + huashu-design B3 变体定稿,语义色 HSL 值固化)。**系列进度:① A ✅ passing / ② B ✅ passing / ③ C frontier(最后一片)**。① **A `design-system-token-foundation`(p81,✅ passing,Session 173)** — semantic token 基建。② **B `design-system-color-sweep`(p82,✅ passing,Session 178 末切片合并)** — 业务页 ~30 处硬编码色扫荡(跨 ~12 文件,全 5 切片:01 success/02 warning/03 danger/04 info/05 暗色一致性+tint 对比度系统性修复+收尾)。③ **C `design-system-spacing-card-hierarchy`(p83,not_started,frontier)** — 卡片层级 shadow 语义命名(card/overlay)+ 字号任意值 text-[10px] 收口(text-2xs 扩展),2 切片。执行顺序 A→B→C(WIP=1,C 是系列收官)。**下一步:EP3 `/implement` Feature C 切片 01**(卡片层级语义化 frontire,与 A/B 正交可独立做)。更早 passing:design-system-color-sweep(82,B)/design-system-token-foundation(81,A)/queries-endpoints-domain-split(80)/customers-page-split(79)/devices-page-split(78)/perm-backfill-dedupe(77)/chat-page-split(76)/union-cast-split(75)/twoscope-config(74)/bookings-shared-split(73)/composite-chat(72)/principal-scope-doc-alignment(71)/principal-module(70)。
 - **queries-endpoints-domain-split ✅ passing(2026-07-30 Session 170,全 2 切片完成)**:第 8 次巡检候选 ③ Strong —— queries.ts(1560 行/25 section)+ endpoints.ts(1514 行/29 section)两个 god-module 按 domain 拆成文件夹,deep module 按 domain 切 + 共享 core + barrel 保 interface 不变(区别于 page-split 范式)。**完整切片链**:**切片 1 ✅ commit fb88c64**(expand):Python 脚本自动化拆分 → queries/core.ts(qk 工厂 + useApiMutation export,68× leverage 保留)+ 24 domain + barrel(33 行);endpoints/core.ts + 29 domain + barrel(38 行)。tsc 0 错 + npm test 110/110 + build + oxlint 0/0 + import 路径零变化(@/hooks/queries 33 + @/api/endpoints 36 调用点不变)。**切片 2 ✅ contract**(本次):import 路径零变化显式验证 + qk 编码 diff 逐字一致(106 行 diff 空)+ domain 边界审计(queries 124→125 export[+1 useApiMutation private→export]/endpoints 141→141 逐字一致)+ ./init.sh full 842 passed 零回归。**/code-review 双轴**(general-purpose ×2 并行):**0 硬违规**,核心不变式(零行为变更 + 零 import 变化 + qk 逐字一致)全达标。**4 判断项处置**:① endpoints/core.ts 删死 re-export(原 export{api,...} 扩张 API 表面+5 无人消费,Standards 轴发现)→ export{} 占位,API 表面恢复 141→141;② 文件名修正 conversations-+-chat→conversations-chat / auth-2→auth-sessions;③ barrel 行数超 ≤30(33/38 注释撑超)→ plan AC2 修订 ≤40;④ bookings/devices 超 ≤150(207/173 内聚)→ plan AC10 记录豁免。**code-review 的价值**:Standards 轴发现 endpoints/core.ts 死 re-export 扩张公共面(避免 @/api/endpoints API 表面意外膨胀);Spec 轴确认 useApiMutation 可见性扩大无害(67=67 调用守恒无误用)。**feature 核心**:两个缓涨 god-module(queries 1505→1560/endpoints 1466→1514)按 domain 归位,leverage(useApiMutation 68× + qk 工厂)保留在 core,locality(22+ section 靠 grep 不靠目录)修复。barrel export * 接管,33+36 调用点零改动。范式:deep module 按 domain 切 + 共享 core + barrel(第 8 次巡检第 6 次 not-shallow 判决重评为 Strong 的兑现)。
 - **customers-page-split ✅ passing(2026-07-30 Session 170,全 2 切片完成)**:第 8 次巡检候选 ④ Top —— customers-page.tsx(834 行单文件 4 组件)拆 store-view/hq-view,镜像 bookings/devices/chat split 范式第 4 实例。**完整切片链**:**切片 1 ✅ commit 347af5f**:建 customers/ 文件夹 6 文件(index.tsx 双路 route + store-view.tsx 本店 CRUD + hq-view.tsx 跨店聚合只读 + customer-usage-dialog.tsx AI 用量+Metric + shared.tsx statusBadge+schema+常量+parseTagsJson 纯函数 D4)+ customers-page.tsx 改 barrel(re-export from customers/index,App.tsx 零改动)+ hq-view.test smoke 2 tests。**切片 2 ✅ 末切片**(commit 85a969a + code-review 8356c64):补完整 store-view.test(5 tests:列表渲染 + 空态 + member 只读守卫 + owner 创建填表提交**断言 tags 经 parseTagsJson 正确解析** + 删除菜单)+ hq-view.test(5 tests:跨店表渲染 + 空态 + 行展开 profile 明细 + AI 用量 dialog storeScoped=false + 搜索过滤)+ parse-tags.test(6 tests,D4 纯函数 3 边界 + 空白/undefined)。**/code-review 双轴**(general-purpose ×2 并行):**Standards 0 硬违规**(范式忠实镜像 + symbol-name 锚定 + 测试隔离正确 hasPermission 真实实现 + permissions string[] 格式 + 依赖方向清晰);**1 判断项已文档化**(buildPayload tags 字段顺带修复隐藏 bug —— 原 monolith 把整个 {...values,tags} 当 payload.tags 传后端 → 脏数据,新版 tags.tags 正确取纯解析结果;补 store-view 注释显式记录,locked by test 断言)。**Spec** 9 AC 全满足;1 偏差已修(hq-view 测试数 4→5 补搜索过滤)。**code-review 的价值**:双轴独立交叉验证同一隐藏 bug(高置信),发现「零行为变更」宣称下的正向修复并文档化,避免 git blame 困惑。**验证**(plan §10 AC 全绿):npm test **110/110**(94 baseline + 16 customers[5 store+5 hq+6 parse])+ npm run build 0 错 + tsc -b 0 错 + oxlint 0/0 + grep 'pages/customers-page' 外部 import 仅 App.tsx barrel + **./init.sh full 842 passed**(零回归,纯前端)。**feature 收尾仪式(three-tier §4 第1-8步)**:① ./init.sh full 842 passed + 前端 110/110 + build + oxlint 全绿 ✅ / ② feature_list.json status `not_started → passing` + evidence 4 条 ✅ / ③ sync-active 刷新(1 活跃 queries-endpoints + 5 最近 passing)✅ / ④ progress.md 顶部 frontier 指向 ③ queries-endpoints ✅ / ⑤ clean-state-checklist ✅ / ⑥ 文档影响评估:**无新增/改动文档**(纯前端结构重构,AGENTS.md/项目指南/铁律均不受影响)/ ⑦ **末切片依赖解锁扫描**:无任何 feature depends_on 指向 customers-page-split(纯重构无下游)→ 无需推进 / ⑧ 分支清理:refactor/customers-page-split-t1 待 PR 合并后删。**feature 核心**:customers-page 834 行单文件拆成 customers/ 文件夹 7 文件(双 entry barrel + 双路 route + store/hq 双视图 + usage dialog + shared + 3 测试)。完全镜像 bookings/devices/chat 已验证范式,运行时行为零变化(除 tags 字段隐藏 bug 正向修复)。customers-page 从零单测大 page → 有完整单测覆盖。store/hq 双视图范式第 4 实例,leverage 验证最强。
 - **规则死循环修复(2026-07-30 Session 168)— 清三笔债**:用户问「切片 02 为什么没合并到主分支」。排查发现 sess_c9895f7d 确立的「末切片分支清理」规则**自己卡在未合并的功能分支**上(`docs/harness-branch-cleanup-rule` = commit `ce9d64e`),从未进 main → 下游 agent 读到旧 7 步版本 → 切片 2 漏掉合并。规则要求合并,但规则自己没合并(self-referential trap)。**三笔债依次清完**:① **债1 规则合并** —— `ce9d64e` 单 commit 是纯规则改动(4 文档 +27/-11,zero 代码),从干净分支 `chore/merge-branch-cleanup-rule` cherry-pick,progress.md 部分因被后续事实超越保留 main 现状,3 核心规则文件(three-tier §4 第8步 + clean-state 第10项 + harness-router SKILL 4 处)落 main(merge commit `5c2b9cd`)。② **债2 切片2 合并** —— `refactor/devices-page-split-t2`(be7c223)本地 `git merge --no-ff` 进 main(merge commit `529bf29`,因沙箱网络不可达 GitHub push 超时,用户选「本地直接合 main」,远端推送待网络恢复)。分支基底是规则合并前的 0e1cd46,但未碰规则文件,三方合并干净无冲突,规则完整保留 main 版本未覆盖。**第8步分支清理执行**:删 `refactor/devices-page-split-t2` + `docs/harness-branch-cleanup-rule` + `chore/merge-branch-cleanup-rule` 三条已合并分支(`-d` 安全删,非 `-D`),本地 `git branch` 只剩 main。验证:前端 **94/94 全绿**(store-view 5 + hq-view 8)+ 后端冒烟绿。feature_list status=passing + evidence 4 条(已在 be7c223 内完成,合并后生效)。③ **债3 闭环项** —— sess_c989 自标注「回归纪律第3条同步 main 已记 progress.md 但未固化进 SKILL 回归第1步」,本次补齐:harness-router SKILL 回归流程**新增第1步「同步本地 main」(前置硬动作)**,原第1-4步顺延为第2-5步,交叉引用同步更新(commit `d3b3703`)。**三笔债清完 = 规则死循环修复闭环**:规则进 main → 下次末切片 agent 能读到第8步 → 不再漏合并。~~**待用户动作**(网络恢复后):`git push origin main`(本地 ahead origin/main **5 commits**)~~ **✅ 已验证无债(2026-07-30 Session 169 回归)**:`gh api repos/hugo617/ai-agent-platform/branches/main` 实测远端 main HEAD = `4ceafe6` = 本地 main HEAD(byte-for-byte 一致),5 关键 commit(`4ceafe6`/`d3b3703`/`529bf29`/`5c2b9cd`/`be7c223`)均在远端,OPEN PR = 0,远端分支只剩 main。即推送在 Session 168 之后某时刻已成功(当时 `git push` github.com:443 超时,但后台/后续已完成),原「待推送」债已不存在。注:`git fetch`/`git push`(github.com:443)本会话仍超时,但 `gh`/`gh api`(api.github.com)可达 —— 后续若需本地 git 同步,以 `gh api` 验真为准或待网络恢复。
@@ -2489,3 +2489,84 @@ plan `harness/docs/plan-shared-tsx-split.md` 切片 2 —— expand-contract 的
 | `feature_list.json` + 派生视图 | ✅ 已更新 | 末切片,status `in_progress → passing` + evidence 4 条(切片01 token 基建 / 切片02 ui 映射 + grep 归 0 / WCAG 修复 + 对比度手算 / 收尾全量验证)+ sync-active 刷新(2 活跃 B+C + 5 最近 passing)|
 
 > 判断依据:切片 02 是纯前端 className 映射(2 改 ui 组件 + 1 新建测试),后端零改动,无架构约定变更,无新表/迁移。toast 实心 vs tint 的 WCAG 对比度修复是视觉可读性决策(非架构变更),已记入 evidence + plan §切片02 AC inline。**feature 完整收官**:Feature A(token 地基)✅ passing,Feature B(color-sweep,depends_on A)解锁为下一 frontier。下一步 EP3 `/implement` Feature B 切片 01(success 色系业务页扫荡,A token 已就绪可消费 —— 注意 Feature B tint 范式需复核对比度,见 Session 173 记录的洞察)。
+
+---
+
+## Session 178(2026-07-31):design-system-color-sweep EP3 切片 05(暗色一致性验证 + tint 对比度系统性修复 + feature 收尾,末切片收官)
+
+plan `harness/docs/plan-design-system-color-sweep.md` 切片 05 —— Feature B 末切片。处理切片 01-04 累积登记的「亮色 tint 范式对比度系统性问题」+ 暗色一致性验证 + feature 收尾仪式。
+
+### 入口:EP3 切片 05(末切片)
+
+按用户指令推进 Feature B 切片 05。前置:切片 01-04(success/warning/danger/info)已全部合并进 main(切片04 merge commit 727c166),业务页四语义硬编码色 grep 已全归零。开工流程:基线冒烟 42 passed + 前端 141/141 全绿,开 `feat/design-system-color-sweep-slice-05` 分支。
+
+### WCAG 全范式精算(node REPL,四色 × 亮暗 × 四范式)
+
+切片 02 审查登记的「亮色 tint 范式对比度不达标」系统性问题,本切片用 node REPL 完整精算验证:
+
+| 范式 | 亮色 | 暗色 | 判定 |
+|---|---|---|---|
+| **A. tint**(`bg-{tok}/10 + text-{tok}`,现状)| success 2.96 / warning 2.13 / info 2.38 / danger 3.31 ❌ | 全 8.23-9.37 ✓ | 亮色 FAIL |
+| **B. solid**(`bg-{tok} text-{tok}-foreground`)| 全 4.72-7.70 ✓ | 全 5.28-9.55 ✓ | **唯一双模式 AA 成立** |
+| **C. tint+foreground**(`bg-{tok}/10 + text-{tok}-foreground`)| 全 15.63-16.41 ✓ | 全 1.01-1.03 ❌ | 暗色 FAIL |
+| D. 调高 alpha | — | — | **无解**(同色相叠,alpha↑对比度↓)|
+
+### ⚠️ 关键发现:B3 设计自身固有 WCAG 债(AC3 与 AC4 互斥)
+
+对照 `design-demos/B3.html`,B3 `.badge` 定义(L264-265)= `token/.14` 底 + DEFAULT 字 + `/30` 边框,**正是 tint 范式**。精算 B3 自身亮色 badge:success 2.82 / warning 2.07 / info 2.29,均 < AA 4.5。即 **AC3(B3 一致)与 AC4(WCAG AA)在标签场景互斥** —— 唯一双模式成立的实心范式(B)会破坏 B3 `.badge` tint 调性。
+
+### 统一决策(经用户确认,避免范式分裂)
+
+按场景区分,非一刀切(两轮 AskUserQuestion 用户拍板):
+
+- **场景 1:小面积语义标签/Badge**(notifications 三色标签 recharge/balance_warning/role_change + dashboard-layout 超管 Badge):**保留 tint 忠于 B3** 设计调性,接受亮色 WCAG 债(B3 固有,非本 feature 引入)。三色统一处理无分裂,仅加注释登记决策。
+- **场景 2:大面积警告框容器**(settings Token 警告框 + composite 余额不足警告框 + permissions 超管 Card):**容器保留 `bg-warning/10`** 浅橙底(实心橙色大面积刺眼,且浅底传达 warning 语义),**标题/icon 从 `text-warning`(亮色 2.13 < AA)改 `text-foreground`**(亮 18.39 / 暗 16.73 双模式 AA 远超),正文 muted-foreground 本就达标(亮 4.38 / 暗 6.83)不动。此修复不违 B3(容器仍是 tint 浅底)且达 WCAG。
+
+### 落地(5 文件,7 处 tint 场景)
+
+- `settings-page.tsx`:Token 警告框标题 `text-warning` → `text-foreground`(容器 bg-warning/10 保留)
+- `composite-mode.tsx`:余额不足警告框 icon + 标题 `text-warning` → `text-foreground`(容器保留)
+- `permissions-page.tsx`:超管 Card icon `text-warning` → `text-foreground`(容器保留)
+- `notifications-page.tsx`:三色标签保 tint(仅注释登记 B3 固有债决策)
+- `dashboard-layout.tsx`:超管 Badge 保 tint(仅注释登记)
+
+### /code-review 双轴(general-purpose ×2 并行)
+
+- **Standards 轴:PASS**(0 硬违规)。§11 不越界边界干净:5 文件全在业务页/layout,未碰 ui/、avatar、chart、destructive、token 定义、后端。1 软建议(3 处警告框注释 WCAG 数字重复可精简 —— 不采纳,各文件独立可读更重要)。
+- **Spec 轴:PASS**(0 硬违规)。AC4 标签场景决策统一(三色一致保 tint,无分裂)。1 判断项闭环:Spec 轴发现全仓 5 处纯图标 `text-warning`(非 tint 容器,亮色 2.32 < 非文本阈值 3.0)是切片 02 登记的既有债 —— 经用户决策**不扩展**(AC4 字面只覆盖 tint 容器场景;修纯图标会反向改已 passing 切片 01-04 违 WIP/不越界;且这些是装饰性辅助图标旁有文字标签),登记为「切片 02 纯图标债,留后续 feature」。
+
+### 验证(plan §10 + 切片 05 AC 全绿)
+
+- ✅ `npm run build` ✓ built in 2.46s(0 类型错误,仅预存 chunk 大小警告)
+- ✅ `npx oxlint` 0 warnings/0 errors(180 files 102 rules)
+- ✅ `npm test` 17 files / 141 tests passed(零回归,含 design-tokens.test.ts 21 + badge-toast-avatar.test.tsx Feature A 锁回退断言)
+- ✅ `./init.sh full` **842 passed**(后端零回归,~6.5min)
+- ✅ 业务页四语义硬编码原色 grep = 0(边界 markdown-view zinc / Pin-Star amber / avatar 8 色环保留)
+- ✅ dark: 冗余变体业务页 = 0(token 自带暗色,本切片未引入新 dark:)
+
+### feature 收尾仪式(three-tier §4 第 1-8 步)
+
+1. ✅ `./init.sh full` 842 passed + 前端 141/141 + build + oxlint 全绿
+2. ✅ feature_list.json status `not_started → passing` + evidence 5 条(切片01-05 各一条,含 WCAG 精算实测)
+3. ✅ `./scripts/sync-active-features.sh` 刷新(1 活跃 C + 5 最近 passing[color-sweep 新进])
+4. ✅ progress.md 顶部 frontier 推进:color-sweep ✅ passing,frontier → Feature C(spacing-card,系列最后一片)
+5. ✅ clean-state-checklist 对照
+6. ✅ 文档影响评估(见下)
+7. ✅ **末切片依赖解锁扫描**:无 feature depends_on color-sweep(计数 0)—— Feature C 与 A/B 正交(空 depends_on),无下游依赖解锁,无需推进
+8. ⏳ **分支清理**:`feat/design-system-color-sweep-slice-05` 待 `--no-ff` 合并 main + push + 删分支(收尾 ⑤ 执行)
+
+### 已知债登记(非本 feature 引入,留后续)
+
+- **B3 亮色 tint WCAG 债**:标签/Badge 场景(success 2.82 / warning 2.07 / info 2.29 < AA 4.5),B3 设计固有,按用户决策忠于 B3 接受。
+- **切片 02 纯图标 `text-warning` 债**:5 处独立图标(notification-bell:38 / dashboard-page:165 / settings:1030 / permissions:318 / users:600,亮色 2.32 < 非文本 3.0),切片 02 登记留评估,本切片按 AC4 字面范围不扩展。
+
+### Session 178 文档影响评估(design-system-color-sweep 切片 05 末切片)
+
+| 文档 | 是否需更新 | 本 Session 动作 |
+|---|---|---|
+| `项目指南/02-后端架构/*` | ❌ 无影响 | 纯前端 className 映射(警告框 text-warning→text-foreground + 标签 tint 注释),后端零改动;四层架构 + 多租户隔离 + ORM 文档不涉及前端 className |
+| `harness/docs/plan-design-system-color-sweep.md` | ✅ 已更新 | 顶部 status `not_started → ✅ passing` + 切片 05 标题追加 `✅ commit 239475c` + 7 AC 全勾选(含 inline 完成证据:WCAG 四范式精算表 + B3 固有债发现 + 双场景统一决策 + 双轴 review + 两项已知债登记)+ 依赖图切片 05 标 ✅ |
+| `progress.md` | ✅ 已更新 | 顶部 frontier「B frontier」→「B ✅ passing,下一步 C frontier(系列最后一片)」+ Session 178 完整记录(/implement + WCAG 精算 + 双轴 review + feature 收尾仪式)+ 本文档影响评估 |
+| `feature_list.json` + 派生视图 | ✅ 已更新 | 末切片,status `not_started → passing` + evidence 5 条(切片01-05 各一条,含 WCAG 精算实测)+ sync-active 刷新(1 活跃 C + 5 最近 passing)|
+
+> 判断依据:切片 05 是纯前端 className 调整(3 处警告框 text-warning→text-foreground 实质修复 + 2 处标签 tint 决策注释),后端零改动,无架构约定变更,无新表/迁移。WCAG tint 对比度系统性修复是视觉可读性决策(场景区分:标签忠于 B3 接受债 / 警告框改前景达标),已记入 evidence + plan 切片05 AC inline。**feature 完整收官**:Feature B(业务页色扫荡)✅ passing,Feature C(spacing-card,与 A/B 正交)成为系列最后一片 frontier。下一步 EP3 `/implement` Feature C 切片 01(卡片层级语义化 frontier,与 A/B 正交可独立做)。**系列进度:① A ✅ / ② B ✅ / ③ C 待做(收官)**。

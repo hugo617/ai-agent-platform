@@ -15,25 +15,6 @@
   },
   "features": [
     {
-      "id": "design-system-color-sweep",
-      "priority": 82,
-      "area": "前端设计系统",
-      "title": "设计系统收口 — Feature B:业务页硬编码色扫荡(emerald/amber/rose/cyan/blue → semantic token,跨 ~12 文件)",
-      "user_visible_behavior": "无直接用户可见行为变化(纯前端 className 映射,视觉一致)。Feature A 建好 semantic token 后,把业务页(settings/permissions/billing/billing-admin/users/notifications/dashboard/composite-mode)+ layout(notification-bell/dashboard-layout)+ chat(conversation-list-panel)散落的 ~30 处语义性硬编码原色逐个映射到 token:emerald/green→success(成功/收入/充值)、amber→warning(警告/余额预警)、rose/red→danger(危险/支出/锁定)、blue/cyan→info(信息/角色变更)。手写的 dark:text-amber-* 等 dark: 冗余变体删除(token 接管暗色)。浅底深字组合(-100/-800)统一用 bg-xxx/10 + text-xxx(DEFAULT)+ border-xxx/30 alpha 约定。代码块主题色 zinc(markdown-view)+ Pin/Star 强调色 amber(conversation-list-panel,EP3 核对边界)保留不动。avatar 8 色环 + chart-1..5 保留(Feature A 边界)。",
-      "status": "not_started",
-      "verification": [
-        "业务页+layout+chat 内语义性硬编码原色(emerald/amber/rose/red/blue/cyan/green 表达 success/warning/danger/info)grep = 0(排除 markdown-view zinc + conversation-list-panel Pin/Star 边界 + avatar/chart 设计性多色)",
-        "手写 dark: 冗余变体(与 token 暗色重复的)已清理",
-        "cd frontend && npm run build 0 类型错误 + npx oxlint 0/0 + npm test 全绿",
-        "映射后暗色下状态色 WCAG AA 对比度达标(复用 Feature A token 暗色变体验证)",
-        "对照 design-demos/B3.html,关键页面(billing/users/notifications)亮/暗双模式视觉一致"
-      ],
-      "notes": "2026-07-31 立项。设计系统收口系列 Feature B,depends_on design-system-token-foundation(A 提供 token 才能映射)。C(spacing-card)与本 feature 正交。实测硬编码色按文件分布:settings(5)/permissions(5)/billing(5)/users(4)/notifications(3)/dashboard(3)/composite-mode(3)/billing-admin(2)/conversation-list-panel(2)/notification-bell(3)/markdown-view(2,zinc 代码块保留)/dashboard-layout(1)。EP2 单回环 plan 含 5 切片:按色系分组(非页面)——01 success 收口(frontier)→ 02 warning/03 danger/04 info 并行 blocked by 01 → 05 暗色一致性+收尾。浅底深字 alpha 约定(/10 底 / /30 边 / DEFAULT 字)由切片 01 建立范式供 02-04 复用。",
-      "plan": "harness/docs/plan-design-system-color-sweep.md",
-      "depends_on": "design-system-token-foundation",
-      "evidence": []
-    },
-    {
       "id": "design-system-spacing-card-hierarchy",
       "priority": 83,
       "area": "前端设计系统",
@@ -51,6 +32,13 @@
       "plan": "harness/docs/plan-design-system-spacing-card-hierarchy.md",
       "depends_on": "",
       "evidence": []
+    },
+    {
+      "id": "design-system-color-sweep",
+      "priority": 82,
+      "area": "前端设计系统",
+      "title": "设计系统收口 — Feature B:业务页硬编码色扫荡(emerald/amber/rose/cyan/blue → semantic token,跨 ~12 文件)",
+      "status": "passing"
     },
     {
       "id": "design-system-token-foundation",
@@ -81,17 +69,10 @@
       "status": "passing"
     },
     {
-      "id": "perm-backfill-dedupe",
-      "priority": 77,
-      "area": "工程化",
-      "title": "permission backfill 参数化去重(消解逐字节镜像函数,巡检候选 ③)",
-      "status": "passing"
-    },
-    {
       "id": "_milestone_archived",
       "priority": 0,
       "area": "里程碑",
-      "title": "[已归档 76 条 passing,见 archive/features-passing-archive.json]",
+      "title": "[已归档 77 条 passing,见 archive/features-passing-archive.json]",
       "status": "passing"
     }
   ],

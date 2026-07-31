@@ -1,7 +1,7 @@
 # 计划:设计系统收口 — Feature B:业务页硬编码色扫荡
 
 > **id**: `design-system-color-sweep`
-> **状态**: not_started
+> **状态**: ✅ passing(全 5 切片完成,2026-07-31 Session 178 末切片合并)
 > **优先级**: 82(feature_list.json)
 > **创建日期**: 2026-07-31
 > **系列总纲**: [`plan-frontend-design-system-overview.md`](./plan-frontend-design-system-overview.md)
@@ -209,7 +209,7 @@ Feature A 建好 `--success`/`--warning`/`--danger`/`--info` 四 token 后,**业
    │
    ├─→ 切片 04(info 收口:blue/cyan → info,跨页)── blocked by 01
    │
-   └─→ 切片 05(收尾:暗色 dark: 冗余清理 + 视觉一致性验证 + feature 收尾)── blocked by 02,03,04
+   └─→ 切片 05(收尾:暗色 dark: 冗余清理 + 视觉一致性验证 + feature 收尾)── blocked by 02,03,04  ✅ commit 239475c
 ```
 
 > **切片策略说明**:本 feature 不按「页面」切片(会横向切片化),而按「色系/语义」切片——每片把一种语义(emerald→success)跨所有页面收口到底。这样每片是「一个语义全站闭环」的垂直切片,grep 归零可单片验证。切片 01 是 frontier(success 语义,覆盖最多 emerald/green 用例),02-04 并行 blocked by 01(共享映射范式 + alpha 约定),05 收尾聚合。
@@ -343,18 +343,38 @@ Feature A 建好 `--success`/`--warning`/`--danger`/`--info` 四 token 后,**业
 - **`/code-review` 双轴(general-purpose ×2 并行)**:**Standards PASS + Spec PASS**(0 硬违规 / 0 判断项 / 0 缺漏 / 0 creep / 0 错误)。两轴独立核实一致:范式忠实、grep 归零属实、purple/zinc/Pin-Star/destructive 边界全守住、未越界(未碰 ui/ Feature A 领地、未反向改切片 01-03、未碰后端)。7 条 AC 逐条 diff 证据核实 [x]。info token(`--info` 亮 `189 90% 42%` / 暗 `189 80% 55%` + `--info-foreground`)在 `index.css:39-40,100-101` 已定义,新 class 可解析。
 - **无新增对比度债**(纯图标场景不触发 tint 问题);**继承切片 05 的 tint 债已就位**(见上)。
 
-### 切片 05 — 收尾:暗色一致性验证 + feature 收尾(末切片)
+### 切片 05 — 收尾:暗色一致性验证 + tint 对比度系统性修复 + feature 收尾(末切片) ✅ commit 239475c
 
-**What it delivers**:全 feature 范围 grep 归零确认 + 暗/亮双模式视觉一致性验证(对照 B3)+ 后端零回归确认 + feature 收尾仪式。
+**What it delivers**:全 feature 范围 grep 归零确认 + 暗/亮双模式视觉一致性验证(对照 B3)+ 亮色 tint 范式对比度系统性修复 + 后端零回归确认 + feature 收尾仪式。
 
 **Blocked by**: 切片 02, 03, 04(所有色系映射完成)
 
 **Acceptance criteria**:
 
-- [ ] 全 feature 范围 grep:语义性硬编码原色(emerald/amber/rose/red/blue/cyan/green)= 0(排除 markdown-view zinc + Pin/Star 边界 + avatar/chart 设计性多色)
-- [ ] 所有手写 `dark:` 冗余变体(与 token 暗色重复的)已清理
-- [ ] 视觉一致性:对照 `design-demos/B3.html`,关键页面(billing/users/notifications/dashboard)亮/暗双模式渲染与 B3 调性一致(手动,evidence 记录)
-- [ ] **WCAG AA(亮色 tint 范式系统性收口)**:切片 02 审查实测发现 `bg-{token}/10 + text-{token}`(DEFAULT 字)的 tint 范式在**亮色模式**对比度不达标(warning 2.13 / success 2.97 / 同结构 info 预计同病,均 < AA 4.5),而 `text-{token}-foreground` 暗色隐形(1.18)跨模式无解;唯一双模式成立的是**实心范式** `bg-{token} text-{token}-foreground`(warning 亮 7.69/暗 9.54,success 亮 5.39/暗 8.28)。本切片须统一决策:tint 范式(通知标签/警告框/徽章三类浅底场景)是否全部改实心,或保留 tint 接受亮色对比度债。涉及切片 01(`notifications-page` recharge)+ 切片 02(4 处警告框/标签)+ 切片 04(notifications role_change)三色同结构场景,须统一处理避免范式分裂。决策与实测写入 evidence。
-- [ ] `cd frontend && npm run build` 0 错 + `npx oxlint` 0/0 + `npm test` 全绿
-- [ ] `./init.sh full` 后端零回归(确认前端改动不影响后端测试)
-- [ ] **feature 收尾**:feature_list.json `status` → `passing` + evidence 写实测 + `./scripts/sync-active-features.sh` 刷新 + 依赖解锁扫描(Feature C 与 A/B 正交,无下游依赖解锁)
+- [x] 全 feature 范围 grep:语义性硬编码原色(emerald/amber/rose/red/blue/cyan/green)= 0(排除 markdown-view zinc + Pin/Star 边界 + avatar/chart 设计性多色)
+- [x] 所有手写 `dark:` 冗余变体(与 token 暗色重复的)已清理
+- [x] 视觉一致性:对照 `design-demos/B3.html`,关键页面(billing/users/notifications/dashboard)亮/暗双模式渲染与 B3 调性一致(手动,evidence 记录)
+- [x] **WCAG AA(亮色 tint 范式系统性收口)**:切片 02 审查实测发现 `bg-{token}/10 + text-{token}`(DEFAULT 字)的 tint 范式在**亮色模式**对比度不达标(warning 2.13 / success 2.97 / 同结构 info 预计同病,均 < AA 4.5),而 `text-{token}-foreground` 暗色隐形(1.18)跨模式无解;唯一双模式成立的是**实心范式** `bg-{token} text-{token}-foreground`(warning 亮 7.69/暗 9.54,success 亮 5.39/暗 8.28)。本切片须统一决策:tint 范式(通知标签/警告框/徽章三类浅底场景)是否全部改实心,或保留 tint 接受亮色对比度债。涉及切片 01(`notifications-page` recharge)+ 切片 02(4 处警告框/标签)+ 切片 04(notifications role_change)三色同结构场景,须统一处理避免范式分裂。决策与实测写入 evidence。
+- [x] `cd frontend && npm run build` 0 错 + `npx oxlint` 0/0 + `npm test` 全绿
+- [x] `./init.sh full` 后端零回归(确认前端改动不影响后端测试)
+- [x] **feature 收尾**:feature_list.json `status` → `passing` + evidence 写实测 + `./scripts/sync-active-features.sh` 刷新 + 依赖解锁扫描(Feature C 与 A/B 正交,无下游依赖解锁)
+
+**✅ 实施证据(2026-07-31 Session 178)**
+
+- **改动**:7 处 tint 场景处理(跨 5 文件 settings/composite/permissions/notifications/dashboard-layout),分支 `feat/design-system-color-sweep-slice-05`,单 commit `239475c`。
+- **WCAG 全范式精算(node REPL,四色 × 亮暗 × 四范式)**:
+  - **tint**(`bg-{tok}/10 + text-{tok}`):亮色 success 2.96 / warning 2.13 / info 2.38 / danger 3.31 ❌(< AA 4.5);暗色全 8.23-9.37 ✓
+  - **solid**(`bg-{tok} text-{tok}-foreground`):亮色全 4.72-7.70 ✓ / 暗色全 5.28-9.55 ✓ —— **唯一双模式 AA 成立**
+  - **tint+foreground**(`bg-{tok}/10 + text-{tok}-foreground`):亮色全 15.63-16.41 ✓ / 暗色全 1.01-1.03 ❌
+  - **alpha 调高**:无解(同色相叠,明度差决定对比度,alpha↑ 对比度↓,warning alpha 0.10→0.50 亮色 2.13→1.52 持续降)
+- **⚠️ 关键发现:B3 设计自身固有 WCAG 债**。对照 `design-demos/B3.html`,B3 `.badge` 定义(L264-265)= `token/.14` 底 + DEFAULT 字 + `/30` 边框,**正是 tint 范式**。精算 B3 自身亮色 badge 对比度:success 2.82 / warning 2.07 / info 2.29,均 < AA 4.5。即 **AC3(B3 一致)与 AC4(WCAG AA)在标签场景互斥** —— 唯一双模式成立的实心范式会破坏 B3 `.badge` tint 调性。
+- **统一决策(经用户确认,避免范式分裂)**:按场景区分,非一刀切 ——
+  - **场景 1:小面积语义标签/Badge(notifications 三色标签 recharge/balance_warning/role_change + dashboard-layout 超管 Badge)**:保留 tint 忠于 B3 设计调性,接受亮色 WCAG 债(B3 固有,非本 feature 引入)。三色统一处理(无分裂),仅加注释登记决策。
+  - **场景 2:大面积警告框容器(settings Token 警告框 + composite 余额不足警告框 + permissions 超管 Card)**:容器保留 `bg-warning/10` 浅橙底(实心橙色大面积刺眼,且浅底传达 warning 语义),**标题/icon 从 `text-warning`(亮色 2.13 < AA)改 `text-foreground`**(亮 18.39 / 暗 16.73 双模式 AA 远超),正文 `muted-foreground` 本就达标(亮 4.38 / 暗 6.83)不动。此修复不违 B3(容器仍是 tint 浅底)且达 WCAG。
+- **grep 归零**:业务页四语义硬编码原色(emerald/amber/rose/red/blue/cyan/green)= 0;red = 0。边界文件正确保留:`markdown-view.tsx` zinc 代码块主题色 / `conversation-list-panel.tsx` Pin(L352)/Star(L355)amber 强调色 / `avatar.tsx` 8 色环(Feature A)/ `chart-1..5`。
+- **dark: 清理验证**:全仓 `dark:(bg|text|border|fill|stroke|ring)-(amber|rose|red|blue|cyan|emerald|green)` 业务页(排除 ui/)= 0;`dark:-(success|warning|danger|info)` 手写 = 0(token 自带暗色,无冗余)。本切片未引入任何新 dark: 变体。
+- **`/code-review` 双轴(general-purpose ×2 并行)**:**Standards PASS + Spec PASS**。
+  - **Standards 轴**:0 硬违规 / 1 软建议(3 处警告框注释 WCAG 数字重复可精简 —— 不采纳,各文件独立可读更重要)。§11 不越界边界干净:5 文件全在业务页/layout,未碰 ui/、avatar、chart、destructive、token 定义、后端。
+  - **Spec 轴**:0 硬违规。AC4 标签场景决策统一(三色一致保 tint,无分裂)。1 判断项闭环:Spec 轴发现全仓 5 处纯图标 `text-warning`(非 tint 容器,亮色 2.32 < 非文本阈值 3.0)是切片 02 登记的既有债 —— 经用户决策**不扩展**(AC4 字面只覆盖 tint 容器场景;修纯图标会反向改已 passing 切片 01-04,违 WIP/不越界;且这些是装饰性辅助图标旁有文字标签),登记为「切片 02 纯图标债,留后续 feature」。
+- **验证**:`npm run build` ✓ built in 2.46s(0 类型错误,仅预存 chunk 大小警告)+ `npx oxlint` 0 warnings/0 errors(180 files 102 rules)+ `npm test` 17 files / 141 tests passed(零回归)+ `./init.sh full` **842 passed**(后端零回归)。
+- **已知债登记(非本 feature 引入,留后续)**:① **B3 亮色 tint WCAG 债** —— 标签/Badge 场景(success 2.82 / warning 2.07 / info 2.29 < AA 4.5),B3 设计固有,忠于 B3 接受。② **切片 02 纯图标 `text-warning` 债** —— 5 处独立图标(notification-bell:38 / dashboard-page:165 / settings:1030 / permissions:318 / users:600,亮色 2.32 < 非文本 3.0),切片 02 登记留评估,本切片按 AC4 字面范围不扩展。
