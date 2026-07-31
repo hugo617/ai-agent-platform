@@ -594,7 +594,7 @@ function PageHeader({
   isSuperAdmin?: boolean;
 }) {
   const cards = [
-    { label: "用户总数", value: stats?.total ?? 0, icon: UsersIcon, color: "text-blue-500" },
+    { label: "用户总数", value: stats?.total ?? 0, icon: UsersIcon, color: "text-info" },
     { label: "活跃", value: stats?.active ?? 0, icon: UserCheck, color: "text-success" },
     { label: "锁定", value: stats?.locked ?? 0, icon: Lock, color: "text-danger" },
     { label: "本月新增", value: stats?.new_this_month ?? 0, icon: UserPlus, color: "text-warning" },

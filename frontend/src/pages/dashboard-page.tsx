@@ -148,7 +148,7 @@ function StoreView() {
       icon: Bot,
       title: "管理智能体",
       hint: "配置 prompt、模型与编排",
-      accent: "text-blue-500",
+      accent: "text-info",
     },
     {
       to: "/chat",

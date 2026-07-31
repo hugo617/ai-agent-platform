@@ -307,7 +307,7 @@ Feature A 建好 `--success`/`--warning`/`--danger`/`--info` 四 token 后,**业
 - **`/code-review` 双轴(general-purpose ×2 并行)**:**Standards PASS + Spec PASS**(0 硬违规 / 0 判断项 / 0 缺漏 / 0 creep / 0 错误)。两轴独立核实一致:范式忠实、grep 归零属实、danger/destructive 边界守住、未越界(未碰 ui/ Feature A 领地、未碰切片 04 blue/info、未碰后端)。AC「ArrowDown ×2」疑问澄清:spec 原文精确指 L64+L218 两个 ArrowDown,L343 三元是独立「交易方向」单独列出,3 处对齐无漏算。
 - **无对比度债**:本切片 5 处全为纯图标 `text-danger`(非 tint 浅底场景),不触发切片 02 登记的「亮色 tint 范式对比度」系统性问题(该问题限于 `bg-{token}/10 + text-{token}` 浅底场景,留切片 05 统一收口)。
 
-### 切片 04 — info 语义收口:blue/cyan → `info`(跨页)
+### 切片 04 — info 语义收口:blue/cyan → `info`(跨页) ✅ commit b11911a
 
 **What it delivers**:所有表达「信息/角色变更/中性统计」的 blue/cyan 统一变成 `info` token。
 
@@ -315,13 +315,33 @@ Feature A 建好 `--success`/`--warning`/`--danger`/`--info` 四 token 后,**业
 
 **Acceptance criteria**:
 
-- [ ] `users-page.tsx`:stat icon `text-blue-500`(用户总数)→ `text-info`
-- [ ] `notifications-page.tsx`:`bg-blue-100 text-blue-800`(角色变更)→ `bg-info/10 text-info`
-- [ ] `notification-bell.tsx`:`text-blue-600`(role_change)→ `text-info`
-- [ ] `dashboard-page.tsx`:accent `text-blue-500` → `text-info`
-- [ ] info 语义 blue/cyan grep(业务页范围)= 0
-- [ ] **边界保留**:`markdown-view.tsx` 的 zinc 代码块主题色不动(非语义,归 Feature C 或保留)
-- [ ] `cd frontend && npm run build` 0 错 + `npx oxlint` 0/0 + `npm test` 全绿
+- [x] `users-page.tsx`:stat icon `text-blue-500`(用户总数)→ `text-info`
+- [x] `notifications-page.tsx`:`bg-blue-100 text-blue-800`(角色变更)→ `bg-info/10 text-info`
+- [x] `notification-bell.tsx`:`text-blue-600`(role_change)→ `text-info`
+- [x] `dashboard-page.tsx`:accent `text-blue-500` → `text-info`
+- [x] info 语义 blue/cyan grep(业务页范围)= 0
+- [x] **边界保留**:`markdown-view.tsx` 的 zinc 代码块主题色不动(非语义,归 Feature C 或保留)
+- [x] `cd frontend && npm run build` 0 错 + `npx oxlint` 0/0 + `npm test` 全绿
+
+**✅ 实施证据(2026-07-31 Session 177)**
+
+- **改动**:4 处 className 映射,跨 4 文件(users-page/notifications-page/notification-bell/dashboard-page),分支 `feat/design-system-color-sweep-slice-04`。业务页范围无 cyan 残留(全仓仅 blue),4 处精确对齐 AC。
+- **范式忠实(切片 01 alpha 约定)**:
+  - 纯图标 text 色场景(3 处:`users-page` stat「用户总数」+ `notification-bell` role_change accent + `dashboard-page` 管理智能体 accent)→ 全部 DEFAULT `text-info`,无 `/10` 底 / `foreground` 误用(与切片 03 danger 5 处同构)。
+  - 浅底深字 tint 场景(1 处:`notifications-page` role_change `bg-blue-100 text-blue-800`)→ `bg-info/10 + text-info`(切片 01 alpha 约定落地,与同文件 `balance_warning` warning / `recharge` success 三色通知标签同结构同范式)。
+- **dark: 清理**:本切片 4 处原本就无手写 `dark:(bg|text|border)-blue-*` 冗余变体(AC 亦无此项),无清理动作、无暗色债新增(镜像切片 03)。全仓 `grep "dark:(bg|text|border)-(blue|cyan)"` 业务页范围 = 0。
+- **grep 归零**:业务页范围 blue/cyan 色值(精确边界 `(bg|text|border|fill|stroke|ring|from|to|via|accent)-(blue|cyan)-[0-9]`,排除 `components/ui/`)= 0。**无 cyan 残留**(cyan 仅在 AC 理论覆盖,实际业务页未用)。
+- **边界核对**:
+  - `purple`(usage_report)在 `notifications-page:53` + `notification-bell:41` 各 1 处保留 —— purple 为多色非语义(用量报告),不在四 token(success/warning/danger/info)范围,§4.5/§8 明示多色保留,不纳入收口。
+  - `markdown-view.tsx` zinc 代码块主题色 diff 为空(未触碰,归 Feature C)。
+  - `conversation-list-panel.tsx` Pin/Star amber(切片 02 边界)未触碰。
+  - `components/ui/`(Feature A 领地)未触碰。
+  - `destructive` 既有命名未混淆(本切片无相关)。
+  - 未反向改切片 01-03 已合并代码。
+- **对比度债继承(非本切片缺陷)**:`notifications-page` role_change 的 tint 范式(`bg-info/10 + text-info`)属切片 02 审查登记的「亮色 tint 范式对比度不达标」系统性问题(warning 2.13 / success 2.97,均 < AA 4.5),已登记切片 05 统一收口。本切片**忠实 AC 字面**(AC 写的就是 `bg-info/10 text-info`),不越界改实心,保持 notifications 三色通知标签(recharge-success / balance_warning-warning / role_change-info)范式统一,避免三色三范式。**至此切片 05 须统一决策的三色 tint 场景全部就位**(切片 01 recharge + 切片 02 balance_warning/dashboard-layout/settings/permissions/composite 等 + 切片 04 role_change),由切片 05 一并处理。
+- **验证**:`npm run build` ✓ built in 2.25s(0 类型错误,仅预存 chunk 大小警告)+ `npx oxlint` 0 warnings/0 errors(180 files 102 rules)+ `npm test` 17 files / 141 tests passed(零回归,含 `design-tokens.test.ts` 21 + `badge-toast-avatar.test.tsx` Feature A 锁回退断言)。
+- **`/code-review` 双轴(general-purpose ×2 并行)**:**Standards PASS + Spec PASS**(0 硬违规 / 0 判断项 / 0 缺漏 / 0 creep / 0 错误)。两轴独立核实一致:范式忠实、grep 归零属实、purple/zinc/Pin-Star/destructive 边界全守住、未越界(未碰 ui/ Feature A 领地、未反向改切片 01-03、未碰后端)。7 条 AC 逐条 diff 证据核实 [x]。info token(`--info` 亮 `189 90% 42%` / 暗 `189 80% 55%` + `--info-foreground`)在 `index.css:39-40,100-101` 已定义,新 class 可解析。
+- **无新增对比度债**(纯图标场景不触发 tint 问题);**继承切片 05 的 tint 债已就位**(见上)。
 
 ### 切片 05 — 收尾:暗色一致性验证 + feature 收尾(末切片)
 

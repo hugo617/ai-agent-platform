@@ -37,7 +37,7 @@ const TYPE_META: Record<
 > = {
   balance_warning: { icon: AlertTriangle, accent: "text-warning" },
   recharge: { icon: Coins, accent: "text-success" },
-  role_change: { icon: UserCog, accent: "text-blue-600" },
+  role_change: { icon: UserCog, accent: "text-info" },
   usage_report: { icon: ScrollText, accent: "text-purple-600" },
   system: { icon: Info, accent: "text-muted-foreground" },
 };
