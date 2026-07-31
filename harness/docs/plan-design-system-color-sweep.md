@@ -1,7 +1,7 @@
 # 计划:设计系统收口 — Feature B:业务页硬编码色扫荡
 
 > **id**: `design-system-color-sweep`
-> **状态**: draft v1
+> **状态**: not_started
 > **优先级**: 82(feature_list.json)
 > **创建日期**: 2026-07-31
 > **系列总纲**: [`plan-frontend-design-system-overview.md`](./plan-frontend-design-system-overview.md)
