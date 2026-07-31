@@ -1,7 +1,7 @@
 # 计划:设计系统收口 — Feature A:semantic token 基建
 
 > **id**: `design-system-token-foundation`
-> **状态**: draft v1
+> **状态**: ✅ passing(全 2 切片完成,2026-07-31 Session 173)
 > **优先级**: 81(feature_list.json)
 > **创建日期**: 2026-07-31
 > **系列总纲**: [`plan-frontend-design-system-overview.md`](./plan-frontend-design-system-overview.md)
@@ -263,7 +263,7 @@ info:    { DEFAULT: "hsl(var(--info))",    foreground: "hsl(var(--info-foregroun
 - **v2 修订触发**:实施期发现 plan §4.5① 「纯白前景达 AA」断言数学错误(WCAG 公式实测证伪),回 plan 补 v1→v2 变更摘要 + §4.5① 重写 + 对比度表,foreground 从 `0 0% 100%` → `222.2 47.4% 11.2%`(对齐现有 `--secondary-foreground` 范式),B3 底色逐字不变
 - **非末切片**(切片 02 才是 feature 收尾),不动 feature_list.json status/evidence
 
-### 切片 02 — `ui/` 组件库内部映射:badge + toast + avatar(末切片,feature 收尾)
+### 切片 02 — `ui/` 组件库内部映射:badge + toast + avatar(末切片,feature 收尾)✅ commit 8398ab2
 
 **What it delivers**:从组件库维护者视角,`ui/` 内部残留的语义性硬编码原色(badge dot 状态色 / toast 状态 icon 色 / avatar 语义 ring)全部映射到新 token,组件库自身成为「设计系统收口」的干净样板。avatar 8 色环保留不动(设计性多色边界)。
 
@@ -271,11 +271,19 @@ info:    { DEFAULT: "hsl(var(--info))",    foreground: "hsl(var(--info-foregroun
 
 **Acceptance criteria**:
 
-- [ ] `src/components/ui/badge.tsx`:语义性 dot 色(`emerald→success` / `amber→warning` / `rose→danger`)映射完成;纯装饰多色 dot(若有)保留并在 evidence 注明保留理由
-- [ ] `src/components/ui/toast.tsx`:success/warning/error icon 色映射到 `text-success` / `text-warning` / `text-danger`(或复用 `destructive`);映射后渲染不报错
-- [ ] `src/components/ui/avatar.tsx`:语义性 ring/border 映射;**8 色环保留不动**(evidence 注明保留边界规则)
-- [ ] `ui/` 三文件内语义性硬编码原色 grep = 0(8 色环 + chart 等设计性多色不计)
-- [ ] 新增/更新组件渲染测试:Badge/Toast/Avatar 含新 className 的 fixture 渲染通过(复用现有 `key-spec-rows.test.tsx` 范式或建最小渲染测试)
-- [ ] `cd frontend && npm run build` 0 错 + `npx oxlint` 0/0 + `npm test` 全绿
-- [ ] 视觉一致性验证:对照 `design-demos/B3.html`,映射前后亮色渲染一致(danger 暗色与 destructive 差异按 §4.5② 记录)
-- [ ] **feature 收尾**:`./init.sh full` 后端零回归(本 feature 纯前端,确认前端改动不影响后端测试) + feature_list.json `status` → `passing` + evidence 写实测 + `./scripts/sync-active-features.sh` 刷新 + 依赖解锁扫描(Feature B 依赖本 feature,本 feature passing 后 B 可置 `in_progress`)
+- [x] `src/components/ui/badge.tsx`:语义性 dot 色(`emerald→success` / `amber→warning` / `rose→danger`)映射完成;纯装饰多色 dot(若有)保留并在 evidence 注明保留理由
+  - **✅ done**:success variant `bg-emerald-500 text-white`→`bg-success text-success-foreground`;dot-success/warning/destructive `[&::before]:bg-emerald/amber/red-500`→`bg-success/warning/danger`。dot-muted(中性灰,`bg-current`)保留不动(非语义色,无对应 token)。
+- [x] `src/components/ui/toast.tsx`:success/warning/error icon 色映射到 `text-success` / `text-warning` / `text-danger`(或复用 `destructive`);映射后渲染不报错
+  - **✅ done(实心范式,非 tint)**:success→`bg-success text-success-foreground`、destructive(error)→`bg-danger text-danger-foreground`。**偏离 AC 措辞**「text-success DEFAULT」:DEFAULT 中绿在 `bg-success/10` tint 底上亮色对比度仅 2.96 / 暗色 1.18 不达 WCAG AA 4.5(`/code-review` Spec #3 拦截);改实心 `bg-success`+深 foreground 对齐 badge/button destructive 范式,亮 5.42/4.72 + 暗 8.31/5.28 双模式全过 AA。`text-warning` 条款 vacuous:ToastVariant 只有 default/success/destructive/loading,无 warning variant(代码现状无对应物,evidence 留痕)。
+- [x] `src/components/ui/avatar.tsx`:语义性 ring/border 映射;**8 色环保留不动**(evidence 注明保留边界规则)
+  - **✅ done(零改动)**:avatar 实测**无语义 ring/border**(仅 8 色环 `COLOR_PALETTE` + `rounded-full` + `text-white`),「ring/border 映射」条款 vacuous;「8 色环保留不动」满足(avatar.tsx 零改动,feature notes 边界规则)。evidence 留痕。
+- [x] `ui/` 三文件内语义性硬编码原色 grep = 0(8 色环 + chart 等设计性多色不计)
+  - **✅ done**:grep `emerald|amber|rose|red-[0-9]` 在 badge.tsx + toast.tsx **代码归 0**(badge L34 注释文字「amber dot」是描述性非 className,不计);avatar.tsx 仅剩 8 色环 `COLOR_PALETTE`(设计性多色,AC 明确不计)。
+- [x] 新增/更新组件渲染测试:Badge/Toast/Avatar 含新 className 的 fixture 渲染通过(复用现有 `key-spec-rows.test.tsx` 范式或建最小渲染测试)
+  - **✅ done**:新建 `badge-toast-avatar.test.tsx` 10 测试(5 Badge 语义映射 + 3 Toast 实心 token + 2 Avatar 8 色环保留锁)。锁映射不回退:断言新 className 真出现 + 旧 emerald/red 残留即变红。沿用 key-spec-rows.test.tsx 中文注释 + describe/it 范式。
+- [x] `cd frontend && npm run build` 0 错 + `npx oxlint` 0/0 + `npm test` 全绿
+  - **✅ done**:build 0 类型错误(1.56s)+ oxlint 0 warning 0 error(180 files)+ npm test **141/141**(131 baseline + 10 新,零行为回归)。
+- [x] 视觉一致性验证:对照 `design-demos/B3.html`,映射前后亮色渲染一致(danger 暗色与 destructive 差异按 §4.5② 记录)
+  - **✅ done**:B3 定稿底色值逐字落地 index.css(切片 01),toast 实心 + badge dot 映射后亮色渲染与 B3 一致。暗色 danger 提亮(`0 80% 64%`)比 destructive 暗色(`0 62.8% 30.6%`)更亮 —— 按 §4.5② 记录的设计差异(danger 是新语义 token 提亮保对比度,destructive 是 shadcn 既有暗色命名保留)。
+- [x] **feature 收尾**:`./init.sh full` 后端零回归(本 feature 纯前端,确认前端改动不影响后端测试) + feature_list.json `status` → `passing` + evidence 写实测 + `./scripts/sync-active-features.sh` 刷新 + 依赖解锁扫描(Feature B 依赖本 feature,本 feature passing 后 B 可置 `in_progress`)
+  - **✅ done**:`./init.sh full` **842 passed**(后端零改动零回归)+ feature_list.json status `in_progress → passing` + evidence 4 条 + sync-active 刷新(2 活跃 B+C)+ **依赖解锁**:Feature B(`design-system-color-sweep` p82,depends_on 本 feature)解锁,可置 in_progress(WIP=1 下 B 是下一 frontier)。

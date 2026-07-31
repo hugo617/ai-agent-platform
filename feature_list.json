@@ -2029,7 +2029,7 @@
       "area": "前端设计系统",
       "title": "设计系统收口 — Feature A:semantic token 基建(--success/--warning/--danger/--info 四 token 双色值 + ui/ 组件库内部映射)",
       "user_visible_behavior": "无直接用户可见行为变化(纯前端 token 基建)。在 index.css :root + .dark 各新增 4 个语义色 HSL token(--success/--warning/--danger/--info,B3 定稿值:亮 152 76% 36% / 35 92% 50% / 0 84% 60% / 189 90% 42%;暗 152 64% 48% / 38 95% 58% / 0 80% 64% / 189 80% 55%)+ tailwind.config.js theme.extend.colors 暴露 success/warning/danger/info(各 DEFAULT+foreground)。随后把 ui/ 组件库内部(badge dot 状态色 / toast 状态 icon / avatar 语义 ring)的语义性硬编码原色映射到新 token(emerald→success / amber→warning / rose→danger / cyan→info)。avatar 8 色环(设计性多色)+ chart-1..5(数据可视化多色)+ destructive 既有命名保留不动。业务页硬编码色留给 Feature B。暗色协同:token 自带暗色变体,一次性消除「硬编码色暗色下靠原色硬撑」风险。",
-      "status": "in_progress",
+      "status": "passing",
       "verification": [
         "src/index.css :root + .dark 各含 --success/--warning/--danger/--info 四 token + 各 -foreground,HSL 值逐字 = B3 定稿",
         "tailwind.config.js theme.extend.colors 含 success/warning/danger/info(各 DEFAULT+foreground,照 destructive 范式)",
@@ -2038,10 +2038,15 @@
         "cd frontend && npm run build 0 类型错误 + npx oxlint 0/0 + npm test 全绿",
         "对照 design-demos/B3.html,四 token 渲染色与 B3 定稿视觉一致(亮/暗双模式)"
       ],
-      "notes": "2026-07-31 立项。设计系统收口系列 Feature A(地基),B(color-sweep)依赖本 feature 的 token,C(spacing-card)与本 feature 正交。系列总纲 plan-frontend-design-system-overview.md(EP1 grill + huashu-design B3 变体定稿)。7 个 grill 决策 + B3 语义色 HSL 值固化为本 feature token 定义依据。执行顺序 A→B→C(WIP=1)。EP2 单回环 plan 含 2 切片:01 token 基建(CSS+tailwind,frontier)→ 02 ui/ 组件库内部映射+收尾。danger 与 destructive 并存:danger 是新语义 token,destructive 是 shadcn 既有命名保留不迁移。",
+      "notes": "2026-07-31 立项。设计系统收口系列 Feature A(地基),B(color-sweep)依赖本 feature 的 token,C(spacing-card)与本 feature 正交。系列总纲 plan-frontend-design-system-overview.md(EP1 grill + huashu-design B3 变体定稿)。7 个 grill 决策 + B3 语义色 HSL 值固化为本 feature token 定义依据。执行顺序 A→B→C(WIP=1)。EP2 单回环 plan 含 2 切片:01 token 基建(CSS+tailwind,frontier)→ 02 ui/ 组件库内部映射+收尾。danger 与 destructive 并存:danger 是新语义 token,destructive 是 shadcn 既有命名保留不迁移。【2026-07-31 Session 173 ✅ passing】两切片完成。verification[3] 前景值是 plan v1 过时表述(写 0 0% 100% 白),plan §4.5① v2 已修订为深 slate 222.2 47.4% 11.2%(白字对 B3 底色 8 组全不达 AA),evidence 记录实际验证深前景版本。avatar verification「语义 ring 映射」vacuous:avatar 实测无语义 ring/border(仅 8 色环 COLOR_PALETTE + rounded-full + text-white),AC 第3条「8 色环保留不动」满足,ring/border 半句不适用(evidence 留痕)。toast verification「text-warning」vacuous:ToastVariant 只有 default/success/destructive/loading,无 warning variant,evidence 留痕。",
       "plan": "harness/docs/plan-design-system-token-foundation.md",
       "depends_on": "",
-      "evidence": []
+      "evidence": [
+        "切片 01 ✅ commit ffe4a8a(已合并 main ac784be):token 基建 —— index.css :root + .dark 各加 4 token(--success 152 76% 36% / --warning 35 92% 50% / --danger 0 84% 60% / --info 189 90% 42%;暗 152 64% 48% / 38 95% 58% / 0 80% 64% / 189 80% 55%,foreground 统一深 slate 222.2 47.4% 11.2% [plan §4.5① v2 修订])+ tailwind.config.js theme.extend.colors 加 success/warning/danger/info(各 DEFAULT+foreground,照 destructive 范式)+ design-tokens.test.ts(21 测试,亮暗逐字断言)。verification[1][2] 全绿。",
+        "切片 02 ✅ commit 8398ab2(分支 feat/design-system-token-foundation-slice-02):ui/ 组件库内部语义色映射 —— badge.tsx 4 处(success variant bg-emerald-500 text-white → bg-success text-success-foreground + dot-success/warning/destructive [&::before]:bg-emerald/amber/red-500 → bg-success/warning/danger)+ toast.tsx 2 处(success/destructive 浅底深字 emerald/red-50/200/900 三件套 → 实心 bg-success/danger + 深 foreground,对齐 badge/button destructive 范式)。avatar.tsx 零改动(8 色环保留,AC 第3条)。verification[3] grep:badge.tsx + toast.tsx 语义硬编码归 0(avatar 8 色环 + badge 注释文字 amber 不计)。新增 badge-toast-avatar.test.tsx 10 测试锁映射不回退。verification[5] npm run build 0 错 + oxlint 0/0 + npm test 141/141(131 baseline + 10 新)。",
+        "【/code-review Spec #3 修复 + WCAG 对比度手算 verification[4]】初版 toast 用 tint(bg-success/10 + text-success DEFAULT),亮色对比度 2.96 / 暗色 1.18 不达 WCAG AA 4.5(Spec agent 精准拦截)。修复改实心 bg-success text-success-foreground:亮 5.42(success)/ 4.72(danger)+ 暗 8.31 / 5.28,双模式全过 AA 4.5(node WCAG 公式实测)。badge success variant 同模式亮色 5.42 / 暗 8.31。注:verification[3] 原措辞「前景 0 0% 100%」为 plan v1 过时(plan §4.5① v2 改深 slate 222.2 47.4% 11.2%),实测深前景版本。verification[6] B3 视觉一致:对照 design-demos/B3.html,B3 定稿底色值逐字落地 index.css,toast 实心 + badge dot 映射后亮色渲染与 B3 一致(暗色 danger 提亮 0 80% 64% vs destructive 暗色 0 62.8% 30.6%,按 plan §4.5② 记录 danger 暗色比 destructive 更亮的设计差异)。",
+        "【feature 收尾 verification 全绿】./init.sh full 842 passed(后端零改动零回归,纯前端 feature)+ cd frontend && npm run build 0 类型错误 + npx oxlint 0 warning 0 error + npm test 141/141(131 baseline + 10 新切片02测试,零行为回归)+ grep ui/badge.tsx + ui/toast.tsx 语义硬编码归 0(avatar 8 色环保留 + badge 注释文字不计)+ feature_list.json status in_progress → passing + sync-active-features.sh 刷新 + 依赖解锁:Feature B(design-system-color-sweep)depends_on 本 feature,本 feature passing 后 B 可置 in_progress。"
+      ]
     },
     {
       "id": "design-system-color-sweep",

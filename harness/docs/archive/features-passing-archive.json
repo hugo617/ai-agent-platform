@@ -1,7 +1,7 @@
 {
   "project": "ai-agent-platform",
   "description": "已 passing feature 的历史归档(完整字段保留,审计用)",
-  "count": 75,
+  "count": 76,
   "features": [
     {
       "id": "data-export",
@@ -1873,6 +1873,51 @@
         "切片 2 ✅(devices domain,PR #147 commit abce938):消解 8 处 A 类 device cast —— endpoints.ts 新增 fetchDevicesAll(返 DeviceHqRead[])+ fetchDeviceModelsAll(返 DeviceModelRead[]),均调同一 URL 类型注解窄化;窄化 fetchDevices→Device[](store 视角)+ fetchDeviceModels→DeviceModelPublic[](store 视角,**偏离 §4.5** 改镜像切片 1 对称范式,4 理由记入 plan);queries.ts 新增 useDevicesAll(共享 qk.devices)+ useDeviceModelsAll(共享 qk.deviceModels);hq-view 改调 useDevicesAll 消 L161 as DeviceHqRead[](接切片1遗留,双侧收口)+ store-view 消 L152/355/365 三处 as Device[] + devices-page 双组件 StoreView L192/HqView L422 消 cast + device-models-page 改调 useDeviceModelsAll 消 L149/216 + hq-view.test.tsx mock 改名 useDevices→useDevicesAll(D7)。npx tsc -b exit 0 + npm run build 绿(2.10s)+ npm test 65/65 + oxlint 0 warning + grep A 类 device cast 代码归 0(唯一匹注释)。/code-review 双轴(general-purpose ×2 并行):Standards 0 硬违规 + 1 判断项已采纳修复(endpoints.ts 三处 section header union 注释被证伪→更新为描述 split)/ Spec 8 AC 全满足。",
         "切片 3 ✅(末切片审计,PR #148 commit addb9eb,0 源码改动 —— grep 验证 + 收尾仪式,符合 plan「文件清单 0-1」预期):AC1 grep A 类数组 cast(as Device[]|as DeviceHqRead[]|as Booking[]|as BookingHqRead[]|as DeviceModelRead[])在 frontend/src/pages/ 代码处归 0(唯一 2 处匹 my-bookings-view L7 + store-view L153 是说明性历史注释,非待办残余,保留正确)/ AC2 B 类保留(hq-view L516 b as Booking + L519 bk as BookingHqRead 单数 props cast + 测试 as BookingHqRead mock 散在 hq-view.test.tsx L139 + schedule-grid.test.tsx L109 各 1 处,共 2 处)/ AC3 C 类保留(devices-page as ModelOption[] ×4 L172/375/462/669 + as DeviceStatus ×1 L1053)/ AC4 Note(candidate-8) grep 0 处。验证:npm run build 绿(2.06s 0 类型错误)+ npm test 65/65 全绿(8 test files 零行为回归)+ npx oxlint 0 warning 0 error(101 files 102 rules)+ CI 4/4 绿(Backend pytest+ruff / E2E Playwright / Frontend typecheck+build+lint / Migrations alembic)。",
         "收尾条(2026-07-29 Session 158 续,PR #148 合并 commit addb9eb):feature status not_started → passing(修正切片 1+2 非末切片未更新 status 的状态 + 派生视图 active.json 同步)。union-cast 扩散消解完成:3 个 role-branching hook(useDevices/useBookings/useDeviceModels)各拆出 store 版 + All 版,union 在 hook 层消灭而非 view 边界,10 处 A 类 role 窄化 cast 全消 + 1 处 D 类死 cast 顺手清。B 类(props 适配 cast)+ C 类(字段投影/enum cast)按决策 D2/§4.5 明确排除保留原样。CI 4/4 全绿验证零回归。末切片依赖解锁扫描(three-tier §4 第 7 步):无 feature depends_on 指向 union-cast-split → 无需推进。无 ADR(决策 D8,plan 记录足够,纯前端类型重构非范式基类)。第 6 次巡检 Top recommendation 收官,union-cast 从第 5 次 ~10→第 6 次 12 处的恶化趋势终止并归零。"
+      ]
+    },
+    {
+      "id": "chat-page-split",
+      "priority": 76,
+      "area": "工程化",
+      "title": "前端 chat-page 拆 ConversationListPanel + buildWorkingList 纯函数(巡检候选 ① Top)",
+      "user_visible_behavior": "无用户可见行为变化(纯前端结构重构)。frontend/src/pages/chat-page.tsx(1038 行单函数 ChatPage)拆成 chat/ 文件夹:chat-page.tsx(streaming 半边 ~600 行)+ conversation-list-panel.tsx(列表 + 菜单 + 2 Dialog + 4 state,自含)+ build-working-list.ts(纯函数,从 handleSend 抽出 working-list 计算)+ customer-helpers.ts(共享 customerNameOf)。一石三鸟:消解单函数膨胀 + 解锁 streaming 逻辑单测(A2 不可测债)+ 抽 buildWorkingList 纯函数。无后端改动无 schema 变化,运行时行为零变化。",
+      "status": "passing",
+      "verification": [
+        "cd frontend && npm run build(0 类型错误)",
+        "cd frontend && npm test(65 现有 + ~8 新增 = ~73+ 全绿,零行为回归)",
+        "cd frontend && npx oxlint .(0 warning 0 error)",
+        "grep -rn 'from.*pages/chat-page' frontend/src/ | grep -v 'pages/chat/' → 0",
+        "wc -l frontend/src/pages/chat/chat-page.tsx(< 650 行)",
+        "./init.sh full(840 passed + 前端全绿)"
+      ],
+      "notes": "第 7 次巡检候选 ① Top recommendation。grill 9 决策(D1 Panel + 纯函数 / D2 传 handler / D3 独立 .ts / D4 建 chat/ 文件夹 / D5 Dialog 随 Panel / D6 不动 chat panel 右半边 / D7 customerNameOf 共享 helper / D8 两测试文件 / D9 router barrel chat-page.tsx)。纯前端结构重构非复杂任务不走对抗式审查。与候选②③同批规划。实施顺序:① 排第一(Top recommendation)。buildWorkingList 解锁 A2 不可测债是选它为 Top 的关键。【2026-07-30 收尾】3 切片全完成(Ticket 1 c2cd439 + Ticket 2 42e8504 + Ticket 3 4c961c2),经 v2 修订 + 每切片 /code-review 双轴 + 全量验证。最终:chat/ 文件夹 6 文件(chat-page barrel + index 路由 + conversation-list-panel + build-working-list + customer-helpers + __tests__ 2 文件),对称 bookings/。chat-page 1038 行 → index.tsx 590 行 + Panel 552 行。81 前端测试全绿(65 基线 + 5 buildWorkingList + 11 panel)。后端 841 passed 零回归。",
+      "plan": "harness/docs/plan-chat-page-split.md",
+      "depends_on": "",
+      "evidence": [
+        {
+          "date": "2026-07-30",
+          "slice": "Ticket 1 — buildWorkingList 近纯函数 + 5 单测",
+          "commit": "c2cd439",
+          "summary": "从 handleSend 抽出 buildWorkingList(base, userText, now?=Date.now) => Message[] 到 chat/build-working-list.ts(now 注入便于单测),base 浅拷贝 + local-user-/local-assistant- 占位。handleSend 改调,assistantMsg = working[len-1] 保留流式就地 mutate 引用。5 边界单测用 vi.useFakeTimers。验证:vitest 5/5 + tsc 0 错 + build 绿 + npm test 70/70(零回归)+ oxlint 0。chat-page.tsx 仍在旧位置(未 git mv)。非末切片,不动 status。"
+        },
+        {
+          "date": "2026-07-30",
+          "slice": "Ticket 2 — ConversationListPanel 组件 + 11 单测",
+          "commit": "42e8504",
+          "summary": "抽列表半边(列表 JSX + 右键菜单 + rename/add-tag 2 Dialog + 10 handler + selectedIds/searchInput/searchCommitted/2 effect + conversationLabel + customerNameOf 本地副本)到 chat/conversation-list-panel.tsx。Panel 自调 9 会话管理 hook(对齐 store-view D2),零 data/mutation 下传。双栏特化:接 2 向下只读 UI 状态(streaming+activeConversationId)+ 2 向上回调 + initialSearch。code-review 发现并修 1 行为回归(行 button 漏 disabled={streaming})+ 补回归用例。11 单测 vi.hoisted mock 9 hook。验证:vitest 11/11 + build 绿 + npm test 81/81(70+11)+ oxlint 0。chat-page 1032→582 行。非末切片。"
+        },
+        {
+          "date": "2026-07-30",
+          "slice": "Ticket 3 — git mv + 双 entry + customerNameOf 共享 helper(末切片)",
+          "commit": "4c961c2",
+          "summary": "git mv pages/chat-page.tsx → pages/chat/(rename 检测 chat-page.tsx=>chat/index.tsx 95%,blame 连续)。新建 chat/index.tsx 路由入口(590 行 streaming 半边)+ chat-page.tsx 改 16 行 barrel(镜像 bookings/bookings-page.tsx D9)。App.tsx import 改 @/pages/chat/chat-page。新建 chat/customer-helpers.ts:customerNameOf(cid, profiles) 参数化真纯函数(D7),cid 扩 string|null|undefined(!cid 短路等价零行为变更)。index.tsx + panel 改调共享 helper 删两份本地副本。验证:build 绿(chunk 348kB 不变)+ npm test 81/81 + oxlint 0 + grep residual=0 + index.tsx 590<650 + useMemo grep=0 + ./init.sh full 后端 841 passed。/code-review 双轴:Standards 0 硬违规 / Spec 0 scope creep。"
+        },
+        {
+          "date": "2026-07-30",
+          "slice": "feature 收尾",
+          "commit": "(本条 evidence commit)",
+          "summary": "3 切片全 passing,plan-chat-page-split.md status draft v2 → ✅ passing(标题 + Ticket 3 AC 全勾 + 完成证据回填)。feature_list.json status not_started → passing + evidence 4 条(切片 1/2/3 + 收尾条)。跑 ./scripts/sync-active-features.sh 刷新 active 视图。progress.md 顶部 frontier 清空。文档影响评估:无新增/改动文档(纯前端结构重构,AGENTS.md/项目指南/铁律均不受影响)。后置候选:devices-page 第 3 份 customerNameOf(fallback 语义不同)留独立后续 ticket,不越界。"
+        }
       ]
     }
   ]
