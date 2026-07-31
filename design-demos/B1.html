@@ -1,0 +1,743 @@
+<!doctype html>
+<!--
+  ============================================================================
+  B1 · 冷峻技术感(深色优先,Vercel / Linear dark 方向)
+  ============================================================================
+  本版默认暗色,亮色为可切换备选。
+
+  【语义色收口 HSL(暗色底,均通过 WCAG AA 对正文 ≥4.5:1)】
+    --success  162 64% 48%   冷调青绿 —— 科技感的成功(非自然绿),与品牌蓝同冷色系
+    --warning   40 88% 58%   冷琥珀 —— 收敛饱和度,不刺眼
+    --danger     0 74% 68%   清晰红 —— 提亮 L 保证暗底可读
+    --info     199 85% 55%   冷青 —— 与主色蓝 217.2° 协调(色相差 18°)
+    (亮色模式语义色见 :root[data-theme="light"] 注释,均加深 L 保证白底对比)
+
+  【3 条关键设计决策】
+    1. 用项目真实深蓝灰底 222.2 84% 4.9%(带蓝灰调,非纯黑蓝 #0D1117),
+       表面靠「比底亮一档的 subtle lift + 1px 半透明白边框」分层,绝不用 glow / 阴影。
+    2. 整页强调极度克制:品牌蓝只出现在 ① 主趋势线 ② 关键 CTA(active tab / refresh focus)
+       两处,其余层级全靠灰阶 + 留白 + 等宽数字,营造「冷静技术控制台」。
+    3. 技术感细节:数据/时间戳/ID 全 tabular-nums 等宽,关键标签用 mono 字体;
+       角落放真实平台 chrome(ONLINE 状态点 · region · build)做技术指示,非装饰。
+  ============================================================================
+-->
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=1280" />
+<title>智能体云平台 · 控制台 B1</title>
+<style>
+/* ----------------------------------------------------------------------- */
+/* 0. Reset & base                                                          */
+/* ----------------------------------------------------------------------- */
+*,*::before,*::after{box-sizing:border-box}
+html,body{margin:0;padding:0}
+html{ -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility; }
+button{font:inherit;color:inherit;background:none;border:0;cursor:pointer;padding:0}
+:focus-visible{outline:2px solid var(--primary);outline-offset:2px;border-radius:4px}
+
+:root{
+  /* 暗色(默认)—— 全部派生自 spec §2.2 真实 token,不凭空发明 */
+  --bg:            hsl(222.2 84% 4.9%);   /* spec --background 近黑深蓝 */
+  --bg-grid:       hsla(210 40% 98% / 0.025);
+  --surface:       hsl(222 47% 7%);       /* card subtle lift,比底亮一档,蓝灰调 */
+  --surface-2:     hsl(217.2 33% 10.5%);  /* hover / input 再亮一档 */
+  --surface-3:     hsl(217.2 33% 13.5%);  /* active / segment-on */
+  --border:        hsla(210 40% 98% / 0.08);   /* 极细亮边框 */
+  --border-strong: hsla(210 40% 98% / 0.16);
+  --fg:            hsl(210 40% 98%);      /* spec --foreground */
+  --fg-muted:      hsl(215 20.2% 65.1%);  /* spec --muted-foreground */
+  --fg-subtle:     hsl(215 16% 46%);
+  --fg-faint:      hsl(215 16% 36%);
+
+  --primary:       hsl(217.2 91.2% 59.8%);/* spec 暗色 --primary */
+  --primary-fg:    hsl(222.2 47.4% 11.2%);
+  --primary-soft:  hsla(217.2 91.2% 59.8% / 0.14);
+
+  /* 语义色收口(暗色)—— 见文件头注释 */
+  --success:  hsl(162 64% 48%);
+  --success-fg: hsl(162 64% 14%);
+  --success-soft: hsla(162 64% 48% / 0.12);
+  --warning:  hsl(40 88% 58%);
+  --warning-fg: hsl(35 80% 14%);
+  --warning-soft: hsla(40 88% 58% / 0.12);
+  --danger:   hsl(0 74% 68%);
+  --danger-fg: hsl(0 60% 16%);
+  --danger-soft: hsla(0 74% 68% / 0.12);
+  --info:     hsl(199 85% 55%);
+  --info-soft: hsla(199 85% 55% / 0.12);
+
+  --radius: 10px;            /* spec --radius */
+  --radius-sm: 6px;
+  --mono: "SF Mono","JetBrains Mono","Menlo","Consolas","Liberation Mono",monospace;
+  --sans: -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+
+  --chart-line: var(--primary);
+  --chart-fill-1: hsla(217.2 91.2% 59.8% / 0.28);
+  --chart-fill-2: hsla(217.2 91.2% 59.8% / 0.00);
+  --track: hsla(210 40% 98% / 0.06);
+}
+
+:root[data-theme="light"]{
+  /* 亮色 —— spec §2.1 真实 token */
+  --bg:            hsl(0 0% 100%);
+  --bg-grid:       hsla(222.2 84% 4.9% / 0.022);
+  --surface:       hsl(0 0% 100%);
+  --surface-2:     hsl(210 40% 97%);
+  --surface-3:     hsl(210 40% 94%);
+  --border:        hsl(214.3 31.8% 91.4%);          /* spec --border */
+  --border-strong: hsl(214.3 28% 82%);
+  --fg:            hsl(222.2 84% 4.9%);             /* spec --foreground */
+  --fg-muted:      hsl(215.4 16.3% 46.9%);          /* spec --muted-foreground */
+  --fg-subtle:     hsl(215 16% 38%);
+  --fg-faint:      hsl(215 16% 55%);
+
+  --primary:       hsl(221.2 83.2% 53.3%);          /* spec 亮色 --primary */
+  --primary-fg:    hsl(210 40% 98%);
+  --primary-soft:  hsla(221.2 83.2% 53.3% / 0.10);
+
+  /* 语义色收口(亮色)—— 加深 L,白底 AA */
+  --success:  hsl(160 62% 34%);
+  --success-fg: hsl(160 60% 97%);
+  --success-soft: hsla(160 62% 34% / 0.10);
+  --warning:  hsl(34 92% 42%);
+  --warning-fg: hsl(34 90% 97%);
+  --warning-soft: hsla(34 92% 42% / 0.10);
+  --danger:   hsl(0 72% 48%);
+  --danger-fg: hsl(0 70% 98%);
+  --danger-soft: hsla(0 72% 48% / 0.10);
+  --info:     hsl(199 82% 38%);
+  --info-soft: hsla(199 82% 38% / 0.10);
+
+  --chart-line: var(--primary);
+  --chart-fill-1: hsla(221.2 83.2% 53.3% / 0.20);
+  --chart-fill-2: hsla(221.2 83.2% 53.3% / 0.00);
+  --track: hsl(214.3 31.8% 92%);
+}
+
+body{
+  font-family:var(--sans);
+  background:var(--bg);
+  color:var(--fg);
+  font-size:13px;
+  line-height:1.5;
+  min-width:1280px;
+  /* 极淡的网格点纹理 —— 技术控制台质感,非 glow */
+  background-image:
+    radial-gradient(circle at 1px 1px, var(--bg-grid) 1px, transparent 0);
+  background-size:32px 32px;
+}
+
+.mono{font-family:var(--mono);font-feature-settings:"tnum" 1}
+.tnum{font-variant-numeric:tabular-nums}
+svg.ic{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:1.6;
+  stroke-linecap:round;stroke-linejoin:round;flex:none;display:block}
+
+/* ----------------------------------------------------------------------- */
+/* 1. Topbar                                                                */
+/* ----------------------------------------------------------------------- */
+.topbar{
+  position:sticky;top:0;z-index:20;
+  display:flex;align-items:center;gap:24px;
+  height:52px;padding:0 24px;
+  background:color-mix(in srgb, var(--bg) 86%, transparent);
+  backdrop-filter:saturate(140%) blur(8px);
+  border-bottom:1px solid var(--border);
+}
+.brand{display:flex;align-items:center;gap:10px;font-weight:600;letter-spacing:-0.01em}
+.brand .mark{
+  width:22px;height:22px;border-radius:6px;display:grid;place-items:center;
+  background:var(--surface-2);border:1px solid var(--border-strong);color:var(--primary)
+}
+.brand .mark svg{width:13px;height:13px}
+.brand small{font-family:var(--mono);font-size:11px;color:var(--fg-faint);font-weight:400;margin-left:2px}
+
+.crumbs{display:flex;align-items:center;gap:8px;color:var(--fg-muted);font-size:12.5px}
+.crumbs .sep{color:var(--fg-faint);opacity:.7}
+.crumbs .here{color:var(--fg)}
+
+.topbar-spacer{flex:1}
+
+/* 真实技术 chrome:状态 / region / build(平台自身标识,非业务数据) */
+.techstrip{display:flex;align-items:center;gap:14px;font-family:var(--mono);font-size:11px;color:var(--fg-subtle)}
+.techstrip .kv{display:flex;align-items:center;gap:5px}
+.techstrip .lbl{color:var(--fg-faint)}
+.techstrip .dot{width:6px;height:6px;border-radius:50%;background:var(--success);
+  box-shadow:0 0 0 3px var(--success-soft);animation:pulse 2.4s ease-in-out infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.45}}
+
+.iconbtn{
+  display:inline-flex;align-items:center;gap:7px;height:30px;padding:0 12px;
+  border-radius:var(--radius-sm);border:1px solid var(--border);color:var(--fg-muted);
+  font-size:12.5px;transition:border-color .15s,background .15s,color .15s
+}
+.iconbtn:hover{border-color:var(--border-strong);background:var(--surface-2);color:var(--fg)}
+.iconbtn .spin{animation:spin 0.9s linear}
+@keyframes spin{to{transform:rotate(720deg)}}
+
+.theme-toggle{width:30px;height:30px;padding:0;justify-content:center}
+.theme-toggle .moon{display:none}
+:root[data-theme="light"] .theme-toggle .sun{display:none}
+:root[data-theme="light"] .theme-toggle .moon{display:block}
+
+/* ----------------------------------------------------------------------- */
+/* 2. Layout shell                                                          */
+/* ----------------------------------------------------------------------- */
+.shell{max-width:1440px;margin:0 auto;padding:24px 24px 64px}
+
+/* 3. Tabs */
+.tabs{display:flex;align-items:flex-end;gap:0;border-bottom:1px solid var(--border);margin-bottom:24px}
+.tab{
+  position:relative;padding:10px 16px;font-size:13px;color:var(--fg-muted);
+  border-radius:6px 6px 0 0;transition:color .15s
+}
+.tab:hover{color:var(--fg)}
+.tab[aria-selected="true"]{color:var(--fg)}
+.tab[aria-selected="true"]::after{
+  content:"";position:absolute;left:12px;right:12px;bottom:-1px;height:2px;
+  background:var(--primary); /* 品牌蓝强调点① */
+}
+.tab .badge{
+  margin-left:8px;font-family:var(--mono);font-size:10.5px;color:var(--fg-faint);
+  padding:1px 5px;border:1px solid var(--border);border-radius:4px
+}
+
+/* 4. Page header */
+.pgh{display:flex;align-items:flex-end;justify-content:space-between;gap:24px;margin-bottom:22px}
+.pgh h1{margin:0 0 4px;font-size:20px;font-weight:600;letter-spacing:-0.015em}
+.pgh h1 .id{font-family:var(--mono);font-size:13px;color:var(--fg-subtle);font-weight:400;margin-left:8px}
+.pgh p{margin:0;color:var(--fg-muted);font-size:12.5px;max-width:640px}
+.pgh .pgh-meta{font-family:var(--mono);font-size:11px;color:var(--fg-subtle);text-align:right;line-height:1.7}
+.pgh .pgh-meta b{color:var(--fg-muted);font-weight:400}
+
+/* 5. Stat grid */
+.grid{display:grid;gap:14px}
+.store-stats{grid-template-columns:repeat(4,1fr)}
+.hq-stats{grid-template-columns:repeat(5,1fr)}
+
+.stat{
+  position:relative;
+  background:var(--surface);
+  border:1px solid var(--border);
+  border-radius:var(--radius);
+  padding:16px 16px 14px;
+  transition:border-color .15s,background .15s,transform .15s;
+}
+.stat:hover{border-color:var(--border-strong);background:var(--surface-2)}
+.stat .top{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
+.stat .lbl{display:flex;align-items:center;gap:7px;color:var(--fg-muted);font-size:12px;letter-spacing:.01em}
+.stat .lbl svg{color:var(--fg-subtle)}
+.stat .idx{font-family:var(--mono);font-size:10.5px;color:var(--fg-faint)}
+.stat .val{font-size:28px;font-weight:600;letter-spacing:-0.02em;font-variant-numeric:tabular-nums;line-height:1.1}
+.stat .sub{margin-top:5px;font-family:var(--mono);font-size:11px;color:var(--fg-subtle)}
+.stat .sub b{color:var(--fg-muted);font-weight:400}
+.stat .delta{color:var(--success)}                 /* 唯一成功的强调:数据增长 */
+.stat.is-key .val{color:var(--primary)}            /* 关键指标用品牌蓝 —— 强调点② */
+
+/* 6. Chart card */
+.chartcard{margin-top:14px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius)}
+.card-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 16px;border-bottom:1px solid var(--border)}
+.card-head .title{display:flex;align-items:center;gap:9px;font-size:13px;font-weight:500}
+.card-head .title svg{color:var(--fg-subtle)}
+.card-head .title .hint{font-family:var(--mono);font-size:11px;color:var(--fg-faint);font-weight:400;margin-left:4px}
+.card-body{padding:18px 16px 16px}
+
+.seg{display:inline-flex;border:1px solid var(--border);border-radius:7px;overflow:hidden;background:var(--bg)}
+.seg button{padding:5px 12px;font-size:12px;color:var(--fg-muted);font-family:var(--mono);transition:background .14s,color .14s}
+.seg button:hover{color:var(--fg)}
+.seg button[aria-pressed="true"]{background:var(--surface-3);color:var(--fg)}
+
+.legend{display:flex;align-items:center;gap:14px;font-family:var(--mono);font-size:11px;color:var(--fg-subtle)}
+.legend .sw{width:10px;height:2px;background:var(--primary);display:inline-block;margin-right:5px;vertical-align:middle}
+
+/* area chart */
+.area-wrap{position:relative}
+.area-wrap svg{display:block;width:100%;height:auto}
+.x-labels{display:flex;justify-content:space-between;margin-top:6px;font-family:var(--mono);font-size:10.5px;color:var(--fg-faint)}
+.x-labels span{flex:1;text-align:center}
+.x-labels span:first-child{text-align:left}
+.x-labels span:last-child{text-align:right}
+
+.chart-summary{display:flex;align-items:baseline;gap:14px;padding:6px 0 2px}
+.chart-summary .big{font-size:30px;font-weight:600;letter-spacing:-0.02em;font-variant-numeric:tabular-nums;color:var(--fg)}
+.chart-summary .cap{font-family:var(--mono);font-size:11.5px;color:var(--fg-subtle)}
+.chart-summary .cap b{color:var(--fg-muted);font-weight:400}
+
+/* bar chart */
+.bars{display:flex;flex-direction:column;gap:9px}
+.bar-row{display:grid;grid-template-columns:108px 1fr 56px;align-items:center;gap:12px;font-size:12px}
+.bar-row .name{color:var(--fg-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bar-row .track{height:18px;background:var(--track);border-radius:4px;position:relative;overflow:hidden}
+.bar-row .fill{height:100;background:var(--primary);border-radius:4px;width:0;transition:width .5s cubic-bezier(.2,.7,.2,1)}
+.bar-row .rank{font-family:var(--mono);font-size:10.5px;color:var(--fg-faint);grid-column:1;text-align:left}
+/* using rank overlay approach instead: see markup */
+.bar-row .num{font-family:var(--mono);font-size:12px;color:var(--fg);text-align:right;font-variant-numeric:tabular-nums}
+
+/* 7. Bento quick actions */
+.section-title{display:flex;align-items:center;gap:9px;font-size:13px;font-weight:500;color:var(--fg);margin:26px 0 12px}
+.section-title svg{color:var(--fg-subtle)}
+.section-title .hint{font-family:var(--mono);font-size:11px;color:var(--fg-faint);font-weight:400}
+
+.bento{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
+.qa{
+  display:flex;flex-direction:column;gap:10px;
+  background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);
+  padding:16px;min-height:112px;
+  transition:border-color .15s,background .15s,transform .15s;
+}
+.qa:hover{border-color:var(--border-strong);background:var(--surface-2);transform:translateY(-1px)}
+.qa .ic-wrap{width:30px;height:30px;border-radius:8px;display:grid;place-items:center;
+  background:var(--surface-2);border:1px solid var(--border);color:var(--fg-muted);transition:color .15s}
+.qa:hover .ic-wrap{color:var(--primary)}
+.qa .ic-wrap svg{width:15px;height:15px}
+.qa h4{margin:0;font-size:13.5px;font-weight:500}
+.qa p{margin:0;color:var(--fg-subtle);font-size:11.5px}
+.qa .arrow{margin-top:auto;display:flex;align-items:center;gap:5px;font-family:var(--mono);font-size:10.5px;color:var(--fg-faint)}
+.qa .arrow svg{width:12px;height:12px;transition:transform .15s}
+.qa:hover .arrow svg{transform:translateX(2px);color:var(--primary)}
+
+/* 8. Permissions */
+.perms{display:flex;align-items:center;gap:10px;margin-top:26px;padding:14px 16px;
+  background:var(--surface);border:1px solid var(--border);border-radius:var(--radius)}
+.perms .pl{display:flex;align-items:center;gap:8px;color:var(--fg-subtle);font-family:var(--mono);font-size:11.5px}
+.perms .pl svg{width:14px;height:14px;color:var(--success)}
+.badge{display:inline-flex;align-items:center;gap:6px;font-family:var(--mono);font-size:11px;
+  padding:3px 9px;border-radius:5px;border:1px solid var(--success);color:var(--success);
+  background:var(--success-soft);letter-spacing:.02em;text-transform:lowercase}
+.badge .bd{width:5px;height:5px;border-radius:50%;background:var(--success)}
+
+/* footer line */
+.foot{margin-top:32px;padding-top:14px;border-top:1px solid var(--border);
+  display:flex;justify-content:space-between;font-family:var(--mono);font-size:11px;color:var(--fg-faint)}
+.foot .right{display:flex;gap:18px}
+
+.view{display:none}
+.view.active{display:block}
+
+@media (prefers-reduced-motion:reduce){
+  *{animation:none!important;transition:none!important}
+}
+</style>
+</head>
+<body>
+
+<!-- SVG sprite (lucide-style line icons, inline) -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-logo" viewBox="0 0 24 24"><path d="M12 2 3 7v10l9 5 9-5V7z"/><path d="m12 22V12"/><path d="m21 7-9 5"/><path d="m3 7 9 5"/></symbol>
+  <symbol id="i-users" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></symbol>
+  <symbol id="i-bot" viewBox="0 0 24 24"><rect width="18" height="10" x="3" y="11" rx="2"/><circle cx="12" cy="5" r="2"/><path d="M12 7v4"/><path d="M8 16h.01"/><path d="M16 16h.01"/></symbol>
+  <symbol id="i-msg" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></symbol>
+  <symbol id="i-user" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M6 21v-1a6 6 0 0 1 12 0v1"/></symbol>
+  <symbol id="i-building" viewBox="0 0 24 24"><path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/><path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/><path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"/><path d="M10 6h4M10 10h4M10 14h4M10 18h4"/></symbol>
+  <symbol id="i-spark" viewBox="0 0 24 24"><path d="M9.94 14.06A2 2 0 0 0 8.5 12.62l-4.05-1.04a.5.5 0 0 1 0-.96L8.5 9.58A2 2 0 0 0 9.94 8.14l1.04-4.05a.5.5 0 0 1 .96 0l1.04 4.05a2 2 0 0 0 1.44 1.44l4.05 1.04a.5.5 0 0 1 0 .96l-4.05 1.04a2 2 0 0 0-1.44 1.44l-1.04 4.05a.5.5 0 0 1-.96 0z"/><path d="M20 3v4M22 5h-4M4 17v2M5 18H3"/></symbol>
+  <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></symbol>
+  <symbol id="i-shield" viewBox="0 0 24 24"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/></symbol>
+  <symbol id="i-activity" viewBox="0 0 24 24"><path d="M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.25.25 0 0 1-.48 0L9.24 2.18a.25.25 0 0 0-.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2"/></symbol>
+  <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></symbol>
+  <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2m-7.07-4.93-1.41 1.41m14.14-14.14 1.41 1.41M2 12h2m16 0h2M4.93 4.93 6.34 6.34m11.32 11.32 1.41 1.41"/></symbol>
+  <symbol id="i-moon" viewBox="0 0 24 24"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></symbol>
+</svg>
+
+<!-- ============================ TOPBAR ============================ -->
+<header class="topbar">
+  <div class="brand">
+    <span class="mark"><svg class="ic"><use href="#i-logo"/></svg></span>
+    智能体云平台 <small class="mono">agenthub</small>
+  </div>
+
+  <nav class="crumbs" aria-label="breadcrumb">
+    <span>控制台</span>
+    <span class="sep">/</span>
+    <span>门店</span>
+    <span class="sep">/</span>
+    <span class="here">朝阳旗舰店</span>
+  </nav>
+
+  <div class="topbar-spacer"></div>
+
+  <!-- 真实技术 chrome:平台运行状态 -->
+  <div class="techstrip" aria-hidden="true">
+    <span class="kv"><span class="dot"></span>ONLINE</span>
+    <span class="kv"><span class="lbl">region</span>cn-east-1</span>
+    <span class="kv"><span class="lbl">build</span>v1.2.3</span>
+  </div>
+
+  <button id="themeBtn" class="iconbtn theme-toggle" title="切换主题" aria-label="切换主题">
+    <svg class="ic sun"><use href="#i-sun"/></svg>
+    <svg class="ic moon"><use href="#i-moon"/></svg>
+  </button>
+
+  <button id="refreshBtn" class="iconbtn" title="刷新数据">
+    <svg class="ic" id="refreshIcon"><use href="#i-refresh"/></svg>
+    <span>刷新</span>
+  </button>
+</header>
+
+<main class="shell">
+
+  <!-- Tabs -->
+  <div class="tabs" role="tablist" aria-label="视角切换">
+    <button class="tab" role="tab" aria-selected="true"  data-view="store">门店视角<span class="badge mono">STORE</span></button>
+    <button class="tab" role="tab" aria-selected="false" data-view="hq">总部视角<span class="badge mono">HQ</span></button>
+  </div>
+
+  <!-- =================== STORE VIEW =================== -->
+  <section class="view active" id="view-store" role="tabpanel">
+
+    <div class="pgh">
+      <div>
+        <h1>门店概览<span class="id mono">/ 朝阳旗舰店 · TNT-CY001</span></h1>
+        <p>欢迎回来,manager@demo.com。这是你门店的实时数据看板。</p>
+      </div>
+      <div class="pgh-meta">
+        <div><b>last_sync</b> <span id="syncTs">2024-07-31 09:42:18</span></div>
+        <div><b>scope</b> tenant:default / store:chaoyang</div>
+      </div>
+    </div>
+
+    <!-- 4 stat cards -->
+    <div class="grid store-stats">
+      <div class="stat is-key">
+        <div class="top">
+          <span class="lbl"><svg class="ic"><use href="#i-users"/></svg>用户</span>
+          <span class="idx mono">01</span>
+        </div>
+        <div class="val tnum">128</div>
+        <div class="sub">本店注册用户</div>
+      </div>
+
+      <div class="stat">
+        <div class="top">
+          <span class="lbl"><svg class="ic"><use href="#i-bot"/></svg>智能体</span>
+          <span class="idx mono">02</span>
+        </div>
+        <div class="val tnum">6</div>
+        <div class="sub">已部署 · <b>4 运行中</b></div>
+      </div>
+
+      <div class="stat">
+        <div class="top">
+          <span class="lbl"><svg class="ic"><use href="#i-msg"/></svg>对话</span>
+          <span class="idx mono">03</span>
+        </div>
+        <div class="val tnum">3,842</div>
+        <div class="sub">近 7 天 <b>412</b></div>
+      </div>
+
+      <div class="stat">
+        <div class="top">
+          <span class="lbl"><svg class="ic"><use href="#i-user"/></svg>客户</span>
+          <span class="idx mono">04</span>
+        </div>
+        <div class="val tnum">1,256</div>
+        <div class="sub">活跃 <b>894</b></div>
+      </div>
+    </div>
+
+    <!-- Trend chart -->
+    <div class="chartcard">
+      <div class="card-head">
+        <div class="title">
+          <svg class="ic"><use href="#i-activity"/></svg>
+          7 天活跃趋势<span class="hint">· 对话创建数 / 日</span>
+        </div>
+        <div class="seg" id="rangeSeg" role="group" aria-label="时间范围">
+          <button aria-pressed="true"  data-range="7">7天</button>
+          <button aria-pressed="false" data-range="30">30天</button>
+        </div>
+      </div>
+      <div class="card-body">
+        <div id="range7" class="area-wrap">
+          <svg viewBox="0 0 760 200" preserveAspectRatio="none" aria-label="7天对话趋势面积图">
+            <defs>
+              <linearGradient id="areaFill" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%"  stop-color="var(--chart-fill-1)"/>
+                <stop offset="100%" stop-color="var(--chart-fill-2)"/>
+              </linearGradient>
+            </defs>
+            <!-- grid hairlines -->
+            <g stroke="var(--border)" stroke-width="1">
+              <line x1="0" y1="16"  x2="760" y2="16"/>
+              <line x1="0" y1="60"  x2="760" y2="60"/>
+              <line x1="0" y1="104" x2="760" y2="104"/>
+              <line x1="0" y1="148" x2="760" y2="148"/>
+              <line x1="0" y1="184" x2="760" y2="184"/>
+            </g>
+            <!-- y axis labels (mono) -->
+            <g font-family="var(--mono)" font-size="10" fill="var(--fg-faint)">
+              <text x="6" y="13">90</text>
+              <text x="6" y="57">68</text>
+              <text x="6" y="101">45</text>
+              <text x="6" y="145">23</text>
+              <text x="6" y="181">0</text>
+            </g>
+            <!-- area + line, drawn by JS -->
+            <path id="areaPath" fill="url(#areaFill)" d=""/>
+            <path id="linePath" fill="none" stroke="var(--chart-line)" stroke-width="1.5" stroke-linejoin="round" d=""/>
+            <g id="dots"></g>
+          </svg>
+          <div class="x-labels mono" id="xLabels"></div>
+        </div>
+
+        <div id="range30" class="chart-summary" style="display:none">
+          <span class="big tnum">412</span>
+          <span class="cap">近 30 天对话创建总数 · <b>日均 13.7</b> · 峰值 07-29</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Quick actions -->
+    <div class="section-title">
+      <svg class="ic"><use href="#i-spark"/></svg>快速操作<span class="hint">· QUICK ACTIONS</span>
+    </div>
+    <div class="bento">
+      <a class="qa" href="javascript:void(0)">
+        <span class="ic-wrap"><svg class="ic"><use href="#i-bot"/></svg></span>
+        <h4>管理智能体</h4>
+        <p>配置 prompt、模型与编排</p>
+        <span class="arrow">manage <svg class="ic"><use href="#i-arrow"/></svg></span>
+      </a>
+      <a class="qa" href="javascript:void(0)">
+        <span class="ic-wrap"><svg class="ic"><use href="#i-msg"/></svg></span>
+        <h4>开始对话</h4>
+        <p>测试智能体的实际表现</p>
+        <span class="arrow">open <svg class="ic"><use href="#i-arrow"/></svg></span>
+      </a>
+      <a class="qa" href="javascript:void(0)">
+        <span class="ic-wrap"><svg class="ic"><use href="#i-user"/></svg></span>
+        <h4>客户管理</h4>
+        <p>维护客户档案与标签</p>
+        <span class="arrow">browse <svg class="ic"><use href="#i-arrow"/></svg></span>
+      </a>
+      <a class="qa" href="javascript:void(0)">
+        <span class="ic-wrap"><svg class="ic"><use href="#i-spark"/></svg></span>
+        <h4>知识库</h4>
+        <p>为对话补充专属知识</p>
+        <span class="arrow">manage <svg class="ic"><use href="#i-arrow"/></svg></span>
+      </a>
+    </div>
+
+    <!-- Permissions -->
+    <div class="perms">
+      <span class="pl"><svg class="ic"><use href="#i-shield"/></svg>我的权限</span>
+      <span class="badge"><span class="bd"></span>owner</span>
+      <span class="badge"><span class="bd"></span>admin</span>
+    </div>
+
+  </section>
+
+  <!-- =================== HQ VIEW =================== -->
+  <section class="view" id="view-hq" role="tabpanel">
+
+    <div class="pgh">
+      <div>
+        <h1>平台总览<span class="id mono">/ HQ · 全门店汇总</span></h1>
+        <p>跨全部门店汇总。admin@demo.com(super_admin 视角)</p>
+      </div>
+      <div class="pgh-meta">
+        <div><b>tenants</b> 12 active</div>
+        <div><b>last_sync</b> 2024-07-31 09:42:18</div>
+      </div>
+    </div>
+
+    <!-- 5 stat cards -->
+    <div class="grid hq-stats">
+      <div class="stat is-key">
+        <div class="top"><span class="lbl"><svg class="ic"><use href="#i-building"/></svg>租户</span><span class="idx mono">01</span></div>
+        <div class="val tnum">12</div>
+        <div class="sub">全部启用中</div>
+      </div>
+      <div class="stat">
+        <div class="top"><span class="lbl"><svg class="ic"><use href="#i-users"/></svg>用户</span><span class="idx mono">02</span></div>
+        <div class="val tnum">1,536</div>
+        <div class="sub">全平台累计</div>
+      </div>
+      <div class="stat">
+        <div class="top"><span class="lbl"><svg class="ic"><use href="#i-bot"/></svg>智能体</span><span class="idx mono">03</span></div>
+        <div class="val tnum">47</div>
+        <div class="sub">跨 12 租户</div>
+      </div>
+      <div class="stat">
+        <div class="top"><span class="lbl"><svg class="ic"><use href="#i-msg"/></svg>对话</span><span class="idx mono">04</span></div>
+        <div class="val tnum">28,341</div>
+        <div class="sub">累计总量</div>
+      </div>
+      <div class="stat">
+        <div class="top"><span class="lbl"><svg class="ic"><use href="#i-user"/></svg>客户</span><span class="idx mono">05</span></div>
+        <div class="val tnum">9,872</div>
+        <div class="sub">去重客户数</div>
+      </div>
+    </div>
+
+    <!-- Top 10 bar chart -->
+    <div class="chartcard">
+      <div class="card-head">
+        <div class="title">
+          <svg class="ic"><use href="#i-activity"/></svg>
+          各门店活跃度 Top 10<span class="hint">· 近 30 天对话数</span>
+        </div>
+        <div class="legend"><span class="sw"></span>对话数</div>
+      </div>
+      <div class="card-body">
+        <div class="bars" id="bars"></div>
+      </div>
+    </div>
+
+  </section>
+
+  <!-- Footer tech line -->
+  <div class="foot">
+    <span>agenthub console · B1 dark-tech</span>
+    <span class="right">
+      <span>latency 38ms</span>
+      <span>cache HIT</span>
+      <span>© 2024</span>
+    </span>
+  </div>
+
+</main>
+
+<script>
+(function(){
+  "use strict";
+
+  /* ---------- 真实数据(spec §3,禁止编造) ---------- */
+  var TREND7 = [
+    {label:"07-25", value:47},
+    {label:"07-26", value:62},
+    {label:"07-27", value:58},
+    {label:"07-28", value:71},
+    {label:"07-29", value:84},
+    {label:"07-30", value:55},
+    {label:"07-31", value:35}
+  ];
+  var TOP10 = [
+    {label:"朝阳旗舰店", value:4823},
+    {label:"浦东中心店", value:3941},
+    {label:"天河城店",   value:3120},
+    {label:"西湖店",     value:2856},
+    {label:"春熙路店",   value:2401},
+    {label:"解放路店",   value:1985},
+    {label:"高新区店",   value:1642},
+    {label:"滨江店",     value:1320},
+    {label:"雁塔店",     value:985},
+    {label:"鼓楼店",     value:668}
+  ];
+
+  /* ---------- 面积图绘制(纯 SVG 手绘) ---------- */
+  function drawArea(){
+    var W=760, top=16, base=184, padL=0, padR=0;
+    var span = W - padL - padR;
+    var n = TREND7.length;
+    var step = span/(n-1);
+    var max = 90; // 留 headroom
+    var xs=[], ys=[];
+    TREND7.forEach(function(d,i){
+      var x = padL + i*step;
+      var y = base - (d.value/max)*(base-top);
+      xs.push(x); ys.push(y);
+    });
+    var line = "M " + xs.map(function(x,i){return x.toFixed(1)+" "+ys[i].toFixed(1);}).join(" L ");
+    var area = line + " L "+xs[n-1].toFixed(1)+" "+base+" L "+xs[0].toFixed(1)+" "+base+" Z";
+    document.getElementById("linePath").setAttribute("d", line);
+    document.getElementById("areaPath").setAttribute("d", area);
+
+    // dots + value labels on hover-able points
+    var g = document.getElementById("dots");
+    g.innerHTML = "";
+    TREND7.forEach(function(d,i){
+      var c = document.createElementNS("http://www.w3.org/2000/svg","circle");
+      c.setAttribute("cx", xs[i].toFixed(1));
+      c.setAttribute("cy", ys[i].toFixed(1));
+      c.setAttribute("r", 2.6);
+      c.setAttribute("fill", "var(--bg)");
+      c.setAttribute("stroke", "var(--chart-line)");
+      c.setAttribute("stroke-width", "1.4");
+      g.appendChild(c);
+    });
+
+    // x labels
+    var xl = document.getElementById("xLabels");
+    xl.innerHTML = TREND7.map(function(d){
+      return "<span class='mono'>"+d.label+"</span>";
+    }).join("");
+  }
+
+  /* ---------- 横向条形图(纯 SVG/HTML 手绘) ---------- */
+  function drawBars(){
+    var max = TOP10[0].value;
+    var host = document.getElementById("bars");
+    host.innerHTML = "";
+    TOP10.forEach(function(d,i){
+      var row = document.createElement("div");
+      row.className = "bar-row";
+      var pct = (d.value/max*100);
+      row.innerHTML =
+        '<span class="name" title="'+d.label+'">'+d.label+'</span>'+
+        '<span class="track"><span class="fill" data-pct="'+pct.toFixed(2)+'"></span></span>'+
+        '<span class="num">'+d.value.toLocaleString()+'</span>';
+      host.appendChild(row);
+    });
+    // animate widths next frame
+    requestAnimationFrame(function(){
+      host.querySelectorAll(".fill").forEach(function(f){
+        f.style.width = f.getAttribute("data-pct") + "%";
+      });
+    });
+  }
+
+  /* ---------- 视角 tab 切换 ---------- */
+  var tabs = document.querySelectorAll(".tab");
+  tabs.forEach(function(t){
+    t.addEventListener("click", function(){
+      tabs.forEach(function(x){ x.setAttribute("aria-selected", x===t ? "true":"false"); });
+      var v = t.getAttribute("data-view");
+      document.getElementById("view-store").classList.toggle("active", v==="store");
+      document.getElementById("view-hq").classList.toggle("active", v==="hq");
+      if(v==="hq") drawBars();
+    });
+  });
+
+  /* ---------- 时间范围切换 ---------- */
+  var seg = document.getElementById("rangeSeg");
+  seg.addEventListener("click", function(e){
+    var b = e.target.closest("button"); if(!b) return;
+    seg.querySelectorAll("button").forEach(function(x){
+      x.setAttribute("aria-pressed", x===b ? "true":"false");
+    });
+    var r = b.getAttribute("data-range");
+    document.getElementById("range7").style.display  = r==="7"  ? "" : "none";
+    document.getElementById("range30").style.display = r==="30" ? "" : "none";
+  });
+
+  /* ---------- 主题切换 ---------- */
+  var root = document.documentElement;
+  document.getElementById("themeBtn").addEventListener("click", function(){
+    var cur = root.getAttribute("data-theme");
+    root.setAttribute("data-theme", cur==="dark" ? "light" : "dark");
+  });
+
+  /* ---------- 刷新(模拟 isFetching) ---------- */
+  var rb = document.getElementById("refreshBtn");
+  var ri = document.getElementById("refreshIcon");
+  rb.addEventListener("click", function(){
+    if(rb.disabled) return;
+    rb.disabled = true; ri.classList.add("spin");
+    setTimeout(function(){
+      ri.classList.remove("spin"); rb.disabled = false;
+      var ts = document.getElementById("syncTs");
+      if(ts){ var d = new Date();
+        function p(n){return String(n).padStart(2,"0");}
+        ts.textContent = d.getFullYear()+"-"+p(d.getMonth()+1)+"-"+p(d.getDate())+
+          " "+p(d.getHours())+":"+p(d.getMinutes())+":"+p(d.getSeconds());
+      }
+    }, 1000);
+  });
+
+  /* ---------- init ---------- */
+  drawArea();
+  drawBars();
+})();
+</script>
+</body>
+</html>

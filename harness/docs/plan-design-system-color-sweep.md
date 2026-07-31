@@ -1,0 +1,302 @@
+# 计划:设计系统收口 — Feature B:业务页硬编码色扫荡
+
+> **id**: `design-system-color-sweep`
+> **状态**: draft v1
+> **优先级**: 82(feature_list.json)
+> **创建日期**: 2026-07-31
+> **系列总纲**: [`plan-frontend-design-system-overview.md`](./plan-frontend-design-system-overview.md)
+> **系列内位置**: B(依赖 Feature A 提供的 semantic token;C 与本 feature 正交)
+
+---
+
+## 0. v1 → vN 变更摘要
+
+| v(N-1) 问题 | 严重度 | vN 处理 |
+|---|---|---|
+| _(首版,无修订)_ | — | — |
+
+---
+
+## 1. Problem Statement(对齐 to-spec)
+
+Feature A 建好 `--success`/`--warning`/`--danger`/`--info` 四 token 后,**业务页**仍散落 ~30 处硬编码调色板原色(emerald/amber/rose/cyan/blue/green 等),集中表达「成功/警告/危险/信息」四类语义,却绕过 token 层直接引用 Tailwind 原色。
+
+**后果**:这些色在暗色下不随 `.dark` 切换(原色靠在深底勉强可见硬撑)、无法被主题覆盖触及、调色需散落多文件改。Feature A 只收口了 `ui/` 组件库内部,业务页这「最后 20%」没收口,设计系统就还没真正闭环。
+
+## 2. Solution(对齐 to-spec)
+
+逐文件把业务页里**表达语义**的硬编码色映射到 Feature A 的四 token(emerald→success / amber→warning / rose/red→danger / blue/cyan→info),暗色下自动切换为 token 的暗色变体,一次性消除「暗色靠原色硬撑」风险。
+
+**不动**:代码块主题色(`markdown-view.tsx` 的 `zinc-700/900/100` 模拟深色代码块,非语义色,归 Feature C 表面层或保留)、`avatar` 8 色环(Feature A 已留)、`chart-1..5`(数据可视化多色)。
+
+## 3. User Stories(对齐 to-spec)
+
+- 作为 **业务页使用者**,我想要「成功/警告/危险/信息」四类状态色在所有页面一致,以便跨页面读状态不歧义
+- 作为 **暗色模式用户**,我想要业务页的状态色在暗色下自动提亮,以便深底背景上保持可读
+- 作为 **看账单的用户**(`billing`),我想要收入(emerald)和支出(rose)色稳定可辨,以便快速识别资金流向
+- 作为 **看用户列表的管理员**(`users`),我想要「总数/活跃/锁定/本月新增」四个统计卡片 icon 配色有语义(信息/成功/危险/警告),以便一眼读懂数据维度
+- 作为 **收通知的用户**(`notifications`/`notification-bell`),我想要「余额预警/充值到账/角色变更」三类通知的色与图标语义一致(警告/成功/信息),以便扫一眼分类
+- 作为 **设计系统维护者**,我想要业务页不再有语义性硬编码原色,以便未来调色只在 token 层一处
+
+## 4. Implementation Decisions(对齐 to-spec + 项目特化)
+
+### 4.1 影响面清单(项目特化)
+
+| 类别 | 数量 | 明细 |
+|---|---|---|
+| 后端文件改动 | 0 | 纯前端 |
+| 数据库迁移 | 0 | 无 |
+| 前端文件改动 | ~12 | 业务页:settings/permissions/billing/billing-admin/users/notifications/dashboard/composite-mode;layout:notification-bell/dashboard-layout;chat:conversation-list-panel/markdown-view |
+| 新增测试类 | ~0-1 | 本 feature 是 className 替换,以构建/lint/视觉验证为主;必要时补渲染快照 |
+| Skill / Hook / 配置 | 0 | 无 |
+
+> **文件分布(实测扫描)**:硬编码色按文件:settings(5)/permissions(5)/billing(5)/users(4)/notifications(3)/dashboard(3)/composite-mode(3)/billing-admin(2)/conversation-list-panel(2)/notification-bell(3)/markdown-view(2)/dashboard-layout(1)。
+
+### 4.2 多租户影响评估
+
+- 是否新增租户 scoped 表? **NO**(纯前端)
+- 是否修改现有租户隔离逻辑? **NO**
+- 是否引入跨租户访问点? **NO**
+- 验证:无多租户语义
+
+### 4.3 权限影响评估
+
+- 是否新增 permission code? **NO**
+- 是否修改 DEFAULT_*_PERMS? **NO**
+- 是否影响 `require_permission` caller? **NO**
+- 是否影响 graph.py 工具内 check? **NO**
+
+### 4.4 数据库表设计 checklist
+
+**N/A**(纯前端)
+
+### 4.5 其他实施决策
+
+**① 映射规则(语义色 → token,逐处核对)**
+
+| 原色 className | 语义 | 映射到 |
+|---|---|---|
+| `emerald-*` / `green-600` | 成功 / 达成 / 收入 | `success` |
+| `amber-*` | 警告 / 余额预警 / 提醒 | `warning` |
+| `rose-*` / `red-500` | 危险 / 锁定 / 支出 | `danger` |
+| `blue-*` / `cyan-*` | 信息 / 角色变更 / 中性统计 | `info` |
+
+**② 关键页面映射决策(基于实测行级扫描)**
+
+| 文件 | 行级现状 | 映射决策 |
+|---|---|---|
+| `settings-page.tsx` | `text-amber-500` AlertTriangle + `border/bg-amber-500/*` 警告框 + `text-green-600` Check + `bg-emerald-500 text-white` active 态 | amber→`warning`(警告框整簇)/ green→`success`(Check)/ emerald→`success`(active)。**注意 `dark:text-amber-400` 这种已手写暗色变体的,映射后可删除 dark: 变体(token 自动切暗色)** |
+| `permissions-page.tsx` | `border/bg-amber-*` 警告 Card + `text-amber-600 dark:text-amber-500` Shield/Lock + `bg-emerald-500` granted 标记 | amber→`warning` / emerald→`success`。**手写 dark: 变体删除(token 接管暗色)** |
+| `billing-page.tsx` | `text-emerald-500` 收入 ArrowUp + `text-rose-500` 支出 ArrowDown + `text-emerald/rose-600` 交易方向 | emerald→`success`(收入)/ rose→`danger`(支出) |
+| `billing-admin-page.tsx` | `text-emerald-500` / `text-rose-500` Coins icon | emerald→`success` / rose→`danger` |
+| `users-page.tsx` | 四 stat icon `text-blue/emerald/rose/amber-500`(总数/活跃/锁定/新增) | blue→`info` / emerald→`success` / rose→`danger` / amber→`warning`(四语义恰好对齐) |
+| `notifications-page.tsx` | `accent: bg-amber-100 text-amber-800`(余额预警)/ `bg-emerald-100 text-emerald-800`(充值)/ `bg-blue-100 text-blue-800`(角色) | amber→`warning` / emerald→`success` / blue→`info`。**`-100`/`-800` 是浅底深字组合 → 用 `bg-warning/10 text-warning` 或保留语义前缀(token 的 DEFAULT 即可,浅底用 `/10` alpha)** |
+| `dashboard-page.tsx` | 三 accent `text-blue/emerald/amber-500` | blue→`info` / emerald→`success` / amber→`warning` |
+| `composite-mode.tsx` | `border/bg/text-amber-*` 余额不足警告框 | amber→`warning`(整簇) |
+| `notification-bell.tsx` | `accent: text-amber/emerald/blue-600` 三类通知 | amber→`warning` / emerald→`success` / blue→`info` |
+| `conversation-list-panel.tsx` | `text-amber-500` Pin + `fill/text-amber-400` Star | Pin/Star 是**置顶/收藏标记**。**边界判断**:amber 在此表达「高亮/强调」而非严格 warning 语义 → **保留为 amber 或映射 `warning`?** EP3 实施时核对:若仅为视觉强调(非警告),保留;若团队倾向统一,映射 warning。**默认保留**,在 plan checklist 注明 |
+| `markdown-view.tsx` | `text-zinc-400/100` + `bg-zinc-900/700` 代码块按钮/背景 | **zinc 是代码块主题色(模拟深色代码块),非语义色 → 保留不动**(归 Feature C 表面层或保留) |
+| `dashboard-layout.tsx` | `border-amber-300 bg-amber-100 text-amber-800` Badge(疑似 demo/构建标识) | amber→`warning`(浅底深字 → `border-warning/30 bg-warning/10 text-warning`) |
+
+**③ 浅底深字组合的处理(`-100`/`-800` / `-50`/`-800` 等)**
+
+通知/标识常用「浅色底 + 深色字」组合(如 `bg-amber-100 text-amber-800`)。映射策略:
+
+- **底色**:用 token DEFAULT + alpha,如 `bg-warning/10`(浅 warning 底)
+- **字色**:用 token DEFAULT,如 `text-warning`(warning 标准色,在 `/10` 浅底上对比度达标)
+- **边框**:如需,`border-warning/30`
+
+**理由**:token 层只定义一个 DEFAULT 值(亮/暗各一),浅底深字的「层次感」由 alpha(`/10` `/30`)表达,而非定义额外 `-light`/`-dark` token。这与 B3「数据为尊,UI chrome 退到 hairline」的设计调性一致。
+
+**④ 暗色变体手写删除**
+
+现状多处手写 `dark:text-amber-400` / `dark:bg-amber-950/20` 来补偿暗色。映射到 token 后,token 自带暗色变体,**这些手写 dark: 变体应删除**(否则双重定义)。EP3 实施时逐处核对:映射后 dark: 变体是否冗余,冗余则删。
+
+**⑤ 边界保留(不映射)**
+
+| 用法 | 文件 | 保留理由 |
+|---|---|---|
+| 代码块主题色 zinc | markdown-view.tsx | 模拟深色代码块,非语义色(归 Feature C 表面层或保留) |
+| Pin/Star 强调色 amber | conversation-list-panel.tsx | 表达「高亮/强调」非严格 warning(EP3 核对,默认保留) |
+| avatar 8 色环 | (Feature A 范围) | 设计性多色 |
+| chart-1..5 | (全局) | 数据可视化多色 |
+
+### 4.6 验收硬标准(来自总纲,客观可验)
+
+1. **grep 归零**(本 feature 范围):业务页 + layout + chat 内的**语义性**硬编码原色(emerald/amber/rose/red/blue/cyan/green 表达 success/warning/danger/info 语义的)= 0(代码块 zinc / Pin-Star amber / 设计性多色保留的不算)
+2. **暗色对比度**:映射后所有状态色在暗色下达 WCAG AA(token 暗色变体已在 Feature A 验证,本 feature 复用)
+3. **npm test 全绿 + npm run build 0 错 + oxlint 0/0**
+4. **零行为变更**:映射前后视觉一致(亮色下 token 渲染色 = 原色调色板渲染色,因 B3 定稿值就是同色系)
+
+---
+
+## 5. Testing Decisions(对齐 to-spec)
+
+- **测试金字塔**:本 feature 是 className 机械替换 + 少量 alpha 调整,无运行时逻辑 → **以构建/类型/lint + grep 归零为主**
+- **优先复用现有 seam**:各业务页若有既有组件测试(如 stat-card 渲染),加色映射断言;无则不强建
+- **grep 归零自动化**:验收时跑固定 grep(见 §10 验收标准),结果记入 evidence
+- **视觉验证**:对照 `design-demos/B3.html`,关键页面(账单/用户统计/通知)映射前后亮/暗双模式截图比对(手动,evidence 记录)
+- **覆盖率**:纯前端无服务端基线;目标 = 现有前端测试不回归
+
+---
+
+## 6. 切片规划(对齐 to-tickets tracer-bullet)
+
+> 见下方「实施切片」段(/to-tickets 产出)。
+
+---
+
+## 7. v1 → v2 对抗式审查段
+
+**触发条件评估**:改动文件 ~12(>10 阈值)→ **满足复杂任务触发条件**。但本 feature 性质是「className 机械映射 + alpha 调整」,无鉴权/权限/迁移/安全敏感/不可逆操作,实际风险低。
+
+**审查方式**:**轻量自审为主**(EP2 收尾自检 + 切片 acceptance criteria),**EP3 末切片收尾时若发现映射边界争议**(如 Pin/Star amber、浅底深字 alpha 取值)累积 >3 处,则补一次单模型双轴 review 落 v2。否则不强制多模型审查。
+
+---
+
+## 8. Out of Scope(对齐 to-spec)
+
+- ❌ **`ui/` 组件库内部映射** → Feature A
+- ❌ **间距 token + 卡片层级规范** → Feature C
+- ❌ **代码块主题色(zinc)重构** → 保留或归 Feature C 表面层
+- ❌ **avatar 8 色环 / chart-1..5** → 设计性/数据可视化多色保留
+- ❌ **字号任意值收口** → Feature C 顺手项
+- ❌ **`destructive` → `danger` 全站迁移** → 保留 destructive 既有命名
+- ❌ **移动端/响应式适配** → 系列边界
+
+---
+
+## 9. 风险与缓解
+
+| 风险 | 严重度 | 缓解 |
+|---|---|---|
+| Pin/Star 的 amber 是「强调」非「警告」,误映射破坏语义 | 中 | §4.5② 默认保留,EP3 核对;若映射则在 evidence 注明理由 |
+| 浅底深字组合(`-100`/`-800`)映射成 alpha 后视觉层次弱化 | 中 | §4.5③ 统一用 `/10` 底 + DEFAULT 字 + `/30` 边框;EP3 视觉比对,必要时调 alpha |
+| 手写 dark: 变体删除时误删非冗余的 dark: 规则 | 中 | 逐处核对:仅删「与 token 暗色变体重复」的 dark:;非语义 dark:(如布局)保留 |
+| 12 文件改动跨页面一致性难保证 | 中 | 切片按「色系分组」而非「页面分组」(见切片规划),同语义一次性收口所有页面 |
+| `users` stat 四色映射后 icon 配色失去「四色区分」视觉 | 低 | 四语义(info/success/danger/warning)本身四色,映射后仍四色可区分,且语义更明确 |
+
+---
+
+## 10. 验收标准(同步 feature_list.json verification)
+
+1. 业务页 + layout + chat 内**语义性**硬编码原色 grep = 0(grep 模式:emerald/amber/rose/red/blue/cyan/green 表达 success/warning/danger/info 的;排除 markdown-view 代码块 zinc + conversation-list-panel Pin/Star amber + avatar/chart 设计性多色)
+2. `cd frontend && npm run build` 0 类型错误 + `npx oxlint` 0/0 + `npm test` 全绿
+3. 映射后暗色下状态色 WCAG AA 对比度达标(复用 Feature A token 暗色变体验证)
+4. 对照 `design-demos/B3.html`,关键页面(billing/users/notifications)亮/暗双模式视觉一致
+5. 手写 `dark:` 冗余变体已删除(仅删与 token 暗色重复的)
+
+---
+
+## 11. 不越界声明
+
+本次改动**只**涉及:业务页(settings/permissions/billing/billing-admin/users/notifications/dashboard/composite-mode)、layout(notification-bell/dashboard-layout)、chat(conversation-list-panel)的**语义性**硬编码色映射;`markdown-view.tsx` 仅在确认 zinc 为代码块主题后**保留不动**(或归 Feature C)。
+
+**不**触碰:`ui/` 组件库(Feature A 范围)、avatar 8 色环、chart-1..5、`destructive` 命名、间距/字号体系、token 定义(Feature A)、白标逻辑、任何后端代码。
+
+---
+
+## 实施切片(/to-tickets 产出)
+
+### 切片依赖图
+
+```
+切片 01(success 收口:emerald/green → success,跨页)── 无 blocker,frontier
+   │
+   ├─→ 切片 02(warning 收口:amber → warning,跨页)── blocked by 01(同批保持一致性基线)
+   │
+   ├─→ 切片 03(danger 收口:rose/red → danger,跨页)── blocked by 01
+   │
+   ├─→ 切片 04(info 收口:blue/cyan → info,跨页)── blocked by 01
+   │
+   └─→ 切片 05(收尾:暗色 dark: 冗余清理 + 视觉一致性验证 + feature 收尾)── blocked by 02,03,04
+```
+
+> **切片策略说明**:本 feature 不按「页面」切片(会横向切片化),而按「色系/语义」切片——每片把一种语义(emerald→success)跨所有页面收口到底。这样每片是「一个语义全站闭环」的垂直切片,grep 归零可单片验证。切片 01 是 frontier(success 语义,覆盖最多 emerald/green 用例),02-04 并行 blocked by 01(共享映射范式 + alpha 约定),05 收尾聚合。
+
+### 切片 01 — success 语义收口:emerald/green → `success`(跨页,frontier)
+
+**What it delivers**:从使用者视角,所有表达「成功/达成/收入/充值到账」的绿色(emerald/green)在所有业务页统一变成 `success` token,亮/暗自动切换。这是建立「色系→语义」映射范式的首片,后续 warning/danger/info 复用其 alpha 约定与 dark: 清理规则。
+
+**Blocked by**: 无(可立即开始;Feature A 已 passing 提供了 `success` token)
+
+**Acceptance criteria**:
+
+- [ ] `settings-page.tsx`:`text-green-600` Check 图标 → `text-success`;`bg-emerald-500 text-white` active 态 → `bg-success text-success-foreground`
+- [ ] `permissions-page.tsx`:`bg-emerald-500`(granted 标记 ×2)→ `bg-success`
+- [ ] `billing-page.tsx`:`text-emerald-500` ArrowUp(收入 ×2)+ `text-emerald-600`(交易方向)→ `text-success`
+- [ ] `billing-admin-page.tsx`:`text-emerald-500` Coins → `text-success`
+- [ ] `users-page.tsx`:stat icon `text-emerald-500`(活跃)→ `text-success`
+- [ ] `notifications-page.tsx`:`bg-emerald-100 text-emerald-800`(充值到账)→ `bg-success/10 text-success`
+- [ ] `notification-bell.tsx`:`text-emerald-600`(recharge)→ `text-success`
+- [ ] `dashboard-page.tsx`:accent `text-emerald-500` → `text-success`
+- [ ] success 语义 emerald/green grep(业务页范围)= 0
+- [ ] `cd frontend && npm run build` 0 错 + `npx oxlint` 0/0 + `npm test` 全绿
+- [ ] **建立范式文档**(evidence 记录):alpha 约定(`/10` 底 / `/30` 边框 / DEFAULT 字)+ dark: 冗余清理规则,供切片 02-04 复用
+
+### 切片 02 — warning 语义收口:amber → `warning`(跨页)
+
+**What it delivers**:所有表达「警告/余额预警/提醒」的 amber 在所有业务页统一变成 `warning` token,手写的 `dark:text-amber-*` 冗余变体删除(token 接管暗色)。
+
+**Blocked by**: 切片 01(复用其 alpha 约定 + dark: 清理范式)
+
+**Acceptance criteria**:
+
+- [ ] `settings-page.tsx`:`text-amber-500` AlertTriangle + `border/bg-amber-500/*` 警告框整簇 → `warning`(+ 删 dark: 变体)
+- [ ] `permissions-page.tsx`:`border/bg-amber-*` 警告 Card + `text-amber-600 dark:text-amber-500` Shield/Lock → `warning`(删 dark: 变体)
+- [ ] `composite-mode.tsx`:`border/bg/text-amber-*` 余额不足警告框 → `warning`
+- [ ] `users-page.tsx`:stat icon `text-amber-500`(本月新增)→ `text-warning`
+- [ ] `notifications-page.tsx`:`bg-amber-100 text-amber-800`(余额预警)→ `bg-warning/10 text-warning`
+- [ ] `notification-bell.tsx`:`text-amber-600`(balance_warning)→ `text-warning`
+- [ ] `dashboard-page.tsx`:accent `text-amber-500` → `text-warning`
+- [ ] `dashboard-layout.tsx`:Badge `border-amber-300 bg-amber-100 text-amber-800` → `border-warning/30 bg-warning/10 text-warning`
+- [ ] **边界保留**:`conversation-list-panel.tsx` 的 Pin/Star amber:EP3 核对后,若为强调非警告 → 保留并在 evidence 注明;若统一 → 映射
+- [ ] warning 语义 amber grep(业务页范围,排除 Pin/Star 边界)= 0
+- [ ] 手写 `dark:text-amber-*` / `dark:bg-amber-*` 冗余变体已删
+- [ ] `cd frontend && npm run build` 0 错 + `npx oxlint` 0/0 + `npm test` 全绿
+
+### 切片 03 — danger 语义收口:rose/red → `danger`(跨页)
+
+**What it delivers**:所有表达「危险/锁定/支出」的 rose/red 统一变成 `danger` token。
+
+**Blocked by**: 切片 01(复用范式)
+
+**Acceptance criteria**:
+
+- [ ] `billing-page.tsx`:`text-rose-500` ArrowDown(支出 ×2)+ `text-rose-600`(交易方向)→ `text-danger`
+- [ ] `billing-admin-page.tsx`:`text-rose-500` Coins → `text-danger`
+- [ ] `users-page.tsx`:stat icon `text-rose-500`(锁定)→ `text-danger`
+- [ ] danger 语义 rose/red grep(业务页范围)= 0(注意:不动 ui/ 内 Feature A 已处理的)
+- [ ] `cd frontend && npm run build` 0 错 + `npx oxlint` 0/0 + `npm test` 全绿
+
+### 切片 04 — info 语义收口:blue/cyan → `info`(跨页)
+
+**What it delivers**:所有表达「信息/角色变更/中性统计」的 blue/cyan 统一变成 `info` token。
+
+**Blocked by**: 切片 01(复用范式)
+
+**Acceptance criteria**:
+
+- [ ] `users-page.tsx`:stat icon `text-blue-500`(用户总数)→ `text-info`
+- [ ] `notifications-page.tsx`:`bg-blue-100 text-blue-800`(角色变更)→ `bg-info/10 text-info`
+- [ ] `notification-bell.tsx`:`text-blue-600`(role_change)→ `text-info`
+- [ ] `dashboard-page.tsx`:accent `text-blue-500` → `text-info`
+- [ ] info 语义 blue/cyan grep(业务页范围)= 0
+- [ ] **边界保留**:`markdown-view.tsx` 的 zinc 代码块主题色不动(非语义,归 Feature C 或保留)
+- [ ] `cd frontend && npm run build` 0 错 + `npx oxlint` 0/0 + `npm test` 全绿
+
+### 切片 05 — 收尾:暗色一致性验证 + feature 收尾(末切片)
+
+**What it delivers**:全 feature 范围 grep 归零确认 + 暗/亮双模式视觉一致性验证(对照 B3)+ 后端零回归确认 + feature 收尾仪式。
+
+**Blocked by**: 切片 02, 03, 04(所有色系映射完成)
+
+**Acceptance criteria**:
+
+- [ ] 全 feature 范围 grep:语义性硬编码原色(emerald/amber/rose/red/blue/cyan/green)= 0(排除 markdown-view zinc + Pin/Star 边界 + avatar/chart 设计性多色)
+- [ ] 所有手写 `dark:` 冗余变体(与 token 暗色重复的)已清理
+- [ ] 视觉一致性:对照 `design-demos/B3.html`,关键页面(billing/users/notifications/dashboard)亮/暗双模式渲染与 B3 调性一致(手动,evidence 记录)
+- [ ] WCAG AA:映射后状态色暗色下对比度达标(复用 Feature A 验证结论)
+- [ ] `cd frontend && npm run build` 0 错 + `npx oxlint` 0/0 + `npm test` 全绿
+- [ ] `./init.sh full` 后端零回归(确认前端改动不影响后端测试)
+- [ ] **feature 收尾**:feature_list.json `status` → `passing` + evidence 写实测 + `./scripts/sync-active-features.sh` 刷新 + 依赖解锁扫描(Feature C 与 A/B 正交,无下游依赖解锁)

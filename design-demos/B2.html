@@ -1,0 +1,945 @@
+<!DOCTYPE html>
+<!--
+  B2 · 编辑/出版气质(衬线 display + 克制色)
+  设计方向:Notion / Stripe Docs / Pentagram 式编辑出版物气质 —— 衬线 display 标题 + 无衬线 body,
+  墨水印刷语义色,报刊栏宽,细线分隔,优雅夜读暗色。
+
+  语义色收口(墨水印刷方向,低饱和、书卷气)—— HSL:
+    亮色:
+      success (沉稳墨绿) : 152 38% 32%
+      warning (书页赭石) : 34  62% 38%
+      danger  (印刷红)   : 4   60% 42%
+      info    (墨水蓝)   : 214 42% 38%
+    暗色(夜读,提亮):
+      success : 152 35% 52%
+      warning : 36  55% 58%
+      danger  : 4   55% 58%
+      info    : 214 40% 62%
+
+  3 条关键设计决策:
+    1) 衬线 display + 无衬线 body 的字体对比 —— 统计数字与大标题用衬线轻字重大号(出版物大标题气质),
+       UI 控件标签与正文仍用无衬线,字体级差本身就是分隔与层级。
+    2) 报刊栏宽 + 细线划区 —— 主内容 max-width 1160px 居中、两侧留白多;放弃卡片阴影,
+       用 1px hairline 与纵向留白划区,像报纸版面;语义色全部低饱和墨水印刷系。
+    3) 排印签名 —— 统计区上方一行衬线斜体日期署名(真实信息「数据截至 2026-07-31 · 朝阳旗舰店」),
+       各章节用罗马数字小写大写 + 衬线 small-caps 编号(§ Ⅰ / Ⅱ / Ⅲ …),营造期刊目录感。
+-->
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=1280" />
+<title>B2 · 编辑/出版气质 — 智能体云平台</title>
+<style>
+  :root {
+    /* 基础 token(spec §2.1 派生,微调为「纸张/墨水」气质) */
+    --background:        40 30% 99.4%;   /* 微暖纸白 */
+    --paper:             40 24% 99%;     /* 次级纸面 */
+    --foreground:        222 38% 9%;     /* 浓墨近黑 */
+    --muted-foreground:  215 14% 44%;    /* 次要文字灰 */
+    --faint:             215 12% 62%;    /* 图注灰 */
+    --primary:           221 70% 42%;    /* 墨水品牌蓝(对协调出版色稍下沉) */
+    --primary-soft:      221 60% 96%;
+    --border:            220 14% 88%;    /* 极淡细线 */
+    --rule:              220 12% 82%;    /* 分隔细线 */
+    --rule-strong:       220 14% 70%;
+
+    /* 语义色收口 —— 墨水印刷(亮) */
+    --success: 152 38% 32%;
+    --warning: 34  62% 38%;
+    --danger:  4   60% 42%;
+    --info:    214 42% 38%;
+    --success-fg: 0 0% 100%;
+    --warning-fg: 40 40% 99%;
+    --danger-fg:  40 40% 99%;
+    --info-fg:    40 40% 99%;
+
+    --serif: "Source Serif Pro", "Source Serif 4", "Charter", "Iowan Old Style", Georgia, "Times New Roman", "Songti SC", "Noto Serif SC", serif;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+
+    --maxw: 1160px;
+  }
+
+  html.dark {
+    /* 夜读:深墨蓝底 + 暖白字 */
+    --background:        222 40% 7%;
+    --paper:             222 36% 9%;
+    --foreground:        40 34% 93%;
+    --muted-foreground:  220 14% 66%;
+    --faint:             220 12% 52%;
+    --primary:           214 60% 66%;
+    --primary-soft:      214 40% 16%;
+    --border:            220 18% 20%;
+    --rule:              220 16% 24%;
+    --rule-strong:       220 18% 38%;
+
+    /* 语义色 —— 夜读提亮 */
+    --success: 152 35% 52%;
+    --warning: 36  55% 58%;
+    --danger:  4   55% 58%;
+    --info:    214 40% 62%;
+    --success-fg: 222 40% 8%;
+    --warning-fg: 222 40% 8%;
+    --danger-fg:  222 40% 8%;
+    --info-fg:    222 40% 8%;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+
+  body {
+    background: hsl(var(--background));
+    color: hsl(var(--foreground));
+    font-family: var(--sans);
+    font-size: 14px;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    transition: background-color .35s ease, color .35s ease;
+  }
+
+  .wrap { max-width: var(--maxw); margin: 0 auto; padding: 0 40px; }
+
+  /* ---------- Masthead ---------- */
+  .masthead {
+    border-bottom: 1px solid hsl(var(--rule));
+    background: hsl(var(--background));
+    position: sticky; top: 0; z-index: 20;
+  }
+  .masthead-inner {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    align-items: center;
+    gap: 24px;
+    padding: 18px 0 16px;
+  }
+  .brand {
+    font-family: var(--serif);
+    font-size: 19px;
+    letter-spacing: .01em;
+    font-weight: 600;
+    display: flex; align-items: baseline; gap: 10px;
+  }
+  .brand .vol {
+    font-family: var(--sans);
+    font-size: 10.5px;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    color: hsl(var(--faint));
+    font-weight: 500;
+    padding-left: 10px;
+    border-left: 1px solid hsl(var(--rule));
+  }
+  .crumb {
+    font-family: var(--serif);
+    font-style: italic;
+    font-size: 14px;
+    color: hsl(var(--muted-foreground));
+    text-align: center;
+    letter-spacing: .01em;
+  }
+  .crumb b { font-style: normal; font-weight: 600; color: hsl(var(--foreground)); }
+  .nav-actions { display: flex; justify-content: flex-end; align-items: center; gap: 14px; }
+
+  .btn {
+    font-family: var(--sans);
+    font-size: 12.5px;
+    letter-spacing: .02em;
+    color: hsl(var(--foreground));
+    background: transparent;
+    border: 1px solid hsl(var(--rule-strong));
+    border-radius: 2px;
+    padding: 7px 13px;
+    display: inline-flex; align-items: center; gap: 7px;
+    cursor: pointer;
+    transition: background-color .2s ease, border-color .2s ease, color .2s ease;
+  }
+  .btn:hover { background: hsl(var(--foreground)); color: hsl(var(--background)); border-color: hsl(var(--foreground)); }
+  .btn svg { width: 14px; height: 14px; }
+  .btn .spin { animation: spin 1s linear; }
+  @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+
+  .icon-btn {
+    width: 34px; height: 34px;
+    display: inline-flex; align-items: center; justify-content: center;
+    border: 1px solid hsl(var(--rule-strong));
+    border-radius: 2px;
+    background: transparent;
+    color: hsl(var(--foreground));
+    cursor: pointer;
+    transition: background-color .2s ease, border-color .2s ease, color .2s ease;
+  }
+  .icon-btn:hover { background: hsl(var(--foreground)); color: hsl(var(--background)); border-color: hsl(var(--foreground)); }
+  .icon-btn svg { width: 16px; height: 16px; }
+
+  /* ---------- Tabs ---------- */
+  .tabs-row { padding-top: 30px; padding-bottom: 0; }
+  .tabs {
+    display: flex;
+    gap: 0;
+    border-bottom: 1px solid hsl(var(--rule));
+  }
+  .tab {
+    font-family: var(--sans);
+    font-size: 12px;
+    letter-spacing: .16em;
+    text-transform: uppercase;
+    color: hsl(var(--faint));
+    background: transparent;
+    border: none;
+    padding: 0 0 12px;
+    margin-right: 38px;
+    cursor: pointer;
+    position: relative;
+    font-weight: 600;
+    transition: color .2s ease;
+  }
+  .tab:hover { color: hsl(var(--muted-foreground)); }
+  .tab.active { color: hsl(var(--foreground)); }
+  .tab.active::after {
+    content: "";
+    position: absolute;
+    left: 0; right: 0; bottom: -1px;
+    height: 2px;
+    background: hsl(var(--foreground));
+  }
+
+  /* ---------- Page header ---------- */
+  .page-head { padding: 30px 0 8px; }
+  .kicker {
+    font-family: var(--sans);
+    font-size: 10.5px;
+    letter-spacing: .22em;
+    text-transform: uppercase;
+    color: hsl(var(--primary));
+    font-weight: 600;
+    margin-bottom: 14px;
+  }
+  h1.title {
+    font-family: var(--serif);
+    font-weight: 400;
+    font-size: 44px;
+    line-height: 1.08;
+    letter-spacing: -.01em;
+    margin: 0 0 12px;
+  }
+  h1.title em { font-style: italic; color: hsl(var(--muted-foreground)); font-weight: 400; }
+  .dek {
+    font-family: var(--serif);
+    font-size: 17px;
+    line-height: 1.5;
+    color: hsl(var(--muted-foreground));
+    max-width: 720px;
+    margin: 0;
+  }
+
+  /* ---------- Dateline (signature) ---------- */
+  .dateline {
+    display: flex;
+    align-items: baseline;
+    gap: 14px;
+    margin: 26px 0 4px;
+    padding-top: 16px;
+    border-top: 1px solid hsl(var(--rule));
+    font-family: var(--serif);
+    font-style: italic;
+    font-size: 13.5px;
+    color: hsl(var(--faint));
+  }
+  .dateline .dot { color: hsl(var(--rule-strong)); }
+  .dateline b { font-style: normal; font-weight: 600; color: hsl(var(--muted-foreground)); letter-spacing: .02em; }
+
+  /* ---------- Section label (Roman numeral) ---------- */
+  .section { padding: 26px 0 6px; }
+  .sec-label {
+    display: flex; align-items: baseline; gap: 14px;
+    margin-bottom: 22px;
+  }
+  .sec-num {
+    font-family: var(--serif);
+    font-size: 13px;
+    letter-spacing: .04em;
+    color: hsl(var(--faint));
+    font-variant: small-caps;
+    padding-right: 14px;
+    border-right: 1px solid hsl(var(--rule));
+  }
+  .sec-title {
+    font-family: var(--serif);
+    font-size: 14px;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    color: hsl(var(--foreground));
+    font-weight: 600;
+  }
+  .sec-aside {
+    font-family: var(--serif);
+    font-style: italic;
+    font-size: 13px;
+    color: hsl(var(--faint));
+    margin-left: auto;
+  }
+
+  /* ---------- Stat grid ---------- */
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    border-top: 1px solid hsl(var(--rule));
+  }
+  .stats.hq { grid-template-columns: repeat(5, 1fr); }
+  .stat {
+    padding: 26px 24px 24px 0;
+    border-right: 1px solid hsl(var(--rule));
+    display: flex; flex-direction: column; gap: 12px;
+  }
+  .stat:last-child { border-right: none; padding-right: 0; }
+  .stats .stat:not(:first-child) { padding-left: 24px; }
+  .stat-head {
+    display: flex; align-items: center; gap: 9px;
+    color: hsl(var(--faint));
+  }
+  .stat-head svg { width: 15px; height: 15px; stroke-width: 1.5; }
+  .stat-label {
+    font-family: var(--sans);
+    font-size: 11px;
+    letter-spacing: .18em;
+    text-transform: uppercase;
+    font-weight: 600;
+  }
+  .stat-value {
+    font-family: var(--serif);
+    font-weight: 300;
+    font-size: 46px;
+    line-height: 1;
+    letter-spacing: -.015em;
+    color: hsl(var(--foreground));
+    font-variant-numeric: lining-nums tabular-nums;
+  }
+  .stat-sub {
+    font-family: var(--sans);
+    font-size: 12px;
+    color: hsl(var(--muted-foreground));
+    display: flex; align-items: center; gap: 6px;
+  }
+  .stat-sub b { color: hsl(var(--foreground)); font-weight: 600; font-variant-numeric: tabular-nums; }
+  .stat-sub .chip {
+    font-size: 10.5px; letter-spacing: .04em;
+    padding: 1px 6px; border-radius: 2px;
+    background: hsl(var(--info) / .12); color: hsl(var(--info));
+    border: 1px solid hsl(var(--info) / .28);
+  }
+
+  /* ---------- Chart card (hairline, no shadow) ---------- */
+  .chart-block {
+    border-top: 1px solid hsl(var(--rule));
+    border-bottom: 1px solid hsl(var(--rule));
+    padding: 26px 0 30px;
+  }
+  .chart-head {
+    display: flex; align-items: baseline; justify-content: space-between;
+    margin-bottom: 22px;
+    flex-wrap: wrap; gap: 12px;
+  }
+  .chart-title {
+    font-family: var(--serif);
+    font-size: 20px;
+    font-weight: 400;
+    letter-spacing: -.005em;
+  }
+  .chart-title span { color: hsl(var(--faint)); font-style: italic; font-size: 15px; }
+  .seg {
+    display: inline-flex; align-items: center;
+    border: 1px solid hsl(var(--rule-strong));
+    border-radius: 2px;
+    overflow: hidden;
+  }
+  .seg button {
+    font-family: var(--sans);
+    font-size: 11.5px;
+    letter-spacing: .06em;
+    color: hsl(var(--muted-foreground));
+    background: transparent;
+    border: none;
+    padding: 6px 14px;
+    cursor: pointer;
+    transition: background-color .2s ease, color .2s ease;
+  }
+  .seg button + button { border-left: 1px solid hsl(var(--rule)); }
+  .seg button.active { background: hsl(var(--foreground)); color: hsl(var(--background)); }
+
+  .chart-foot {
+    margin-top: 14px;
+    display: flex; justify-content: space-between; align-items: baseline;
+    font-family: var(--serif);
+    font-style: italic;
+    font-size: 12.5px;
+    color: hsl(var(--faint));
+  }
+  .chart-foot b { font-style: normal; color: hsl(var(--muted-foreground)); font-weight: 600; }
+
+  .area-svg, .bar-svg { width: 100%; height: auto; display: block; }
+  .area-svg { overflow: visible; }
+
+  /* ---------- Quick actions (bento) ---------- */
+  .bento {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    border-top: 1px solid hsl(var(--rule));
+  }
+  .qa {
+    padding: 26px 24px 26px 0;
+    border-right: 1px solid hsl(var(--rule));
+    display: flex; flex-direction: column; gap: 14px;
+    cursor: pointer;
+    position: relative;
+    transition: background-color .2s ease;
+  }
+  .qa:last-child { border-right: none; padding-right: 0; }
+  .bento .qa:not(:first-child) { padding-left: 24px; }
+  .qa:hover { background: hsl(var(--primary) / .045); }
+  html.dark .qa:hover { background: hsl(var(--primary) / .10); }
+  .qa-icon {
+    width: 30px; height: 30px;
+    color: hsl(var(--primary));
+  }
+  .qa-icon svg { width: 100%; height: 100%; stroke-width: 1.4; }
+  .qa-title {
+    font-family: var(--serif);
+    font-size: 18px;
+    font-weight: 500;
+    letter-spacing: -.005em;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .qa-arrow {
+    color: hsl(var(--faint));
+    opacity: 0; transform: translateX(-4px);
+    transition: opacity .2s ease, transform .2s ease;
+  }
+  .qa:hover .qa-arrow { opacity: 1; transform: translateX(0); }
+  .qa-hint {
+    font-family: var(--sans);
+    font-size: 12.5px;
+    color: hsl(var(--muted-foreground));
+    line-height: 1.5;
+  }
+  .qa-num {
+    font-family: var(--sans);
+    font-size: 10.5px;
+    letter-spacing: .16em;
+    text-transform: uppercase;
+    color: hsl(var(--faint));
+    margin-top: auto;
+  }
+
+  /* ---------- Permissions ---------- */
+  .perms {
+    border-top: 1px solid hsl(var(--rule));
+    padding: 24px 0 0;
+    display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+  }
+  .perms-label {
+    font-family: var(--sans);
+    font-size: 11px;
+    letter-spacing: .18em;
+    text-transform: uppercase;
+    color: hsl(var(--faint));
+    font-weight: 600;
+    margin-right: 4px;
+  }
+  .badge {
+    font-family: var(--sans);
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: .04em;
+    padding: 5px 11px 5px 9px;
+    border-radius: 2px;
+    display: inline-flex; align-items: center; gap: 6px;
+    background: hsl(var(--success) / .10);
+    color: hsl(var(--success));
+    border: 1px solid hsl(var(--success) / .32);
+  }
+  .badge svg { width: 13px; height: 13px; stroke-width: 2; }
+  .perm-note {
+    font-family: var(--serif);
+    font-style: italic;
+    font-size: 13px;
+    color: hsl(var(--faint));
+    margin-left: auto;
+  }
+
+  /* ---------- Colophon (footer) ---------- */
+  .colophon {
+    margin-top: 40px;
+    padding: 22px 0 48px;
+    border-top: 3px double hsl(var(--rule));
+    display: flex; justify-content: space-between; align-items: baseline;
+    font-family: var(--serif);
+    font-style: italic;
+    font-size: 12.5px;
+    color: hsl(var(--faint));
+  }
+  .colophon b { font-style: normal; font-weight: 600; color: hsl(var(--muted-foreground)); }
+
+  /* hidden view */
+  .view { display: none; }
+  .view.active { display: block; }
+
+  /* 30-day summary line */
+  .summary-line {
+    font-family: var(--serif);
+    font-size: 26px;
+    font-weight: 300;
+    color: hsl(var(--foreground));
+    padding: 40px 0 30px;
+    text-align: center;
+    letter-spacing: -.01em;
+  }
+  .summary-line b { font-weight: 500; }
+  .summary-line span { color: hsl(var(--faint)); font-size: 16px; font-style: italic; }
+
+  @media (max-width: 1200px) {
+    .wrap { padding: 0 28px; }
+    h1.title { font-size: 38px; }
+    .stat-value { font-size: 40px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ===================== MASTHEAD ===================== -->
+<header class="masthead">
+  <div class="wrap masthead-inner">
+    <div class="brand">
+      智能体云平台
+      <span class="vol">agenthub · Vol.07</span>
+    </div>
+    <div class="crumb">
+      <span id="crumbView">门店视角</span> &nbsp;/&nbsp; <b id="crumbOrg">朝阳旗舰店</b>
+    </div>
+    <div class="nav-actions">
+      <button class="btn" id="refreshBtn" aria-label="刷新">
+        <svg id="refreshIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M3 12a9 9 0 0 1 15-6.7L21 8"/>
+          <path d="M21 3v5h-5"/>
+          <path d="M21 12a9 9 0 0 1-15 6.7L3 16"/>
+          <path d="M3 21v-5h5"/>
+        </svg>
+        刷新
+      </button>
+      <button class="icon-btn" id="themeBtn" aria-label="切换主题">
+        <svg id="themeIconSun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="4"/>
+          <path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>
+        </svg>
+        <svg id="themeIconMoon" style="display:none" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/>
+        </svg>
+      </button>
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <!-- ===================== TABS ===================== -->
+  <div class="tabs-row">
+    <div class="tabs" role="tablist">
+      <button class="tab active" data-view="store" role="tab">门店视角 · Store</button>
+      <button class="tab" data-view="hq" role="tab">总部视角 · Headquarters</button>
+    </div>
+  </div>
+
+  <!-- ===================== STORE VIEW ===================== -->
+  <main class="view active" id="view-store">
+
+    <div class="page-head">
+      <div class="kicker">Storefront Brief</div>
+      <h1 class="title">门店概览 <em>· 朝阳旗舰店</em></h1>
+      <p class="dek">欢迎回来,manager@demo.com。这是你门店的实时数据看板 —— 一份关于客户、智能体与对话的每日简报。</p>
+      <div class="dateline">
+        <b>数据截至 2026-07-31</b>
+        <span class="dot">·</span>
+        <span>朝阳旗舰店</span>
+        <span class="dot">·</span>
+        <span>实时</span>
+      </div>
+    </div>
+
+    <!-- §Ⅰ Stats -->
+    <section class="section">
+      <div class="sec-label">
+        <span class="sec-num">§ Ⅰ</span>
+        <span class="sec-title">实时态势</span>
+        <span class="sec-aside">四项核心指标</span>
+      </div>
+      <div class="stats" id="storeStats"></div>
+    </section>
+
+    <!-- §Ⅱ Trend -->
+    <section class="section">
+      <div class="sec-label">
+        <span class="sec-num">§ Ⅱ</span>
+        <span class="sec-title">活跃趋势</span>
+        <span class="sec-aside">每日新建对话数</span>
+      </div>
+      <div class="chart-block">
+        <div class="chart-head">
+          <div class="chart-title">对话增长曲线 <span>· Conversation Tide</span></div>
+          <div class="seg" id="rangeSeg">
+            <button class="active" data-range="7">7 天</button>
+            <button data-range="30">30 天</button>
+          </div>
+        </div>
+        <div id="trendArea">
+          <!-- area chart injected here -->
+        </div>
+        <div class="chart-foot">
+          <span><b id="footPeak">峰值 84</b> · 出现在 07-29</span>
+          <span id="footTotal">7 天合计 412 条</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- §Ⅲ Quick actions -->
+    <section class="section">
+      <div class="sec-label">
+        <span class="sec-num">§ Ⅲ</span>
+        <span class="sec-title">快速操作</span>
+        <span class="sec-aside">常用入口</span>
+      </div>
+      <div class="bento" id="bento"></div>
+    </section>
+
+    <!-- §Ⅳ Permissions -->
+    <section class="section">
+      <div class="sec-label">
+        <span class="sec-num">§ Ⅳ</span>
+        <span class="sec-title">我的权限</span>
+        <span class="sec-aside">本店角色</span>
+      </div>
+      <div class="perms">
+        <span class="perms-label">Roles</span>
+        <span class="badge">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg>
+          owner
+        </span>
+        <span class="badge">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+          admin
+        </span>
+        <span class="perm-note">门店级数据与管理权限。</span>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- ===================== HQ VIEW ===================== -->
+  <main class="view" id="view-hq">
+
+    <div class="page-head">
+      <div class="kicker">Headquarters Review</div>
+      <h1 class="title">平台总览 <em>· 跨店汇总</em></h1>
+      <p class="dek">跨全部门店汇总。admin@demo.com(super_admin 视角)—— 一份关于整张网络的月度盘点。</p>
+      <div class="dateline">
+        <b>数据截至 2026-07-31</b>
+        <span class="dot">·</span>
+        <span>全平台 · 12 租户</span>
+        <span class="dot">·</span>
+        <span>实时</span>
+      </div>
+    </div>
+
+    <!-- §Ⅰ Stats -->
+    <section class="section">
+      <div class="sec-label">
+        <span class="sec-num">§ Ⅰ</span>
+        <span class="sec-title">全网态势</span>
+        <span class="sec-aside">五项核心指标</span>
+      </div>
+      <div class="stats hq" id="hqStats"></div>
+    </section>
+
+    <!-- §Ⅱ Top stores bar -->
+    <section class="section">
+      <div class="sec-label">
+        <span class="sec-num">§ Ⅱ</span>
+        <span class="sec-title">门店活跃度排行</span>
+        <span class="sec-aside">Top 10 · 近 30 天</span>
+      </div>
+      <div class="chart-block">
+        <div class="chart-head">
+          <div class="chart-title">各门店对话量 <span>· Store Leaderboard</span></div>
+          <div class="chart-title" style="font-size:13px;color:hsl(var(--faint));font-style:italic">单位:条</div>
+        </div>
+        <div id="barChart"></div>
+        <div class="chart-foot">
+          <span><b>榜首 朝阳旗舰店 4,823</b></span>
+          <span>末位 鼓楼店 668</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="perms">
+        <span class="perms-label">Roles</span>
+        <span class="badge">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg>
+          super_admin
+        </span>
+        <span class="perm-note">平台级超管权限。</span>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- ===================== COLOPHON ===================== -->
+  <footer class="colophon">
+    <span><b>agenthub</b> · 智能体云平台</span>
+    <span>编辑于 北京 · 排印以衬线为本</span>
+  </footer>
+
+</div>
+
+<script>
+/* ===================== ICON LIB (inline lucide-style line icons) ===================== */
+const ICONS = {
+  users: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
+  bot: '<rect x="3" y="11" width="18" height="10" rx="2"/><circle cx="12" cy="5" r="2"/><path d="M12 7v4"/><line x1="8" y1="16" x2="8" y2="16"/><line x1="16" y1="16" x2="16" y2="16"/>',
+  'message-square': '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>',
+  contact: '<path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.81.36 1.6.7 2.34a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.74-1.27a2 2 0 0 1 2.11-.45c.74.34 1.53.57 2.34.7A2 2 0 0 1 22 16.92z"/>',
+  'building-2': '<path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/><path d="M6 12H4a2 2 0 0 0-2 2v8h4"/><path d="M18 9h2a2 2 0 0 1 2 2v11h-4"/><path d="M10 6h4M10 10h4M10 14h4M10 18h4"/>',
+  sparkles: '<path d="m12 3 1.9 4.6L18.5 9.5l-4.6 1.9L12 16l-1.9-4.6L5.5 9.5l4.6-1.9z"/><path d="M19 14l.8 2 2 .8-2 .8L19 20l-.8-2-2-.8 2-.8z"/>',
+  shield: '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>',
+  'shield-check': '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/>',
+  'arrow-ur': '<line x1="7" y1="17" x2="17" y2="7"/><polyline points="7 7 17 7 17 17"/>',
+  activity: '<path d="M22 12h-4l-3 9L9 3l-3 9H2"/>',
+};
+function svg(name, extra='') {
+  return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" ${extra}>${ICONS[name]||''}</svg>`;
+}
+
+/* ===================== DATA (spec §3, real) ===================== */
+const STORE_STATS = [
+  { label: '用户',    value: '128',   sub: null, icon: 'users' },
+  { label: '智能体',  value: '6',     sub: null, icon: 'bot' },
+  { label: '对话',    value: '3,842', sub: '<span class="chip">近 7 天</span> <b>412</b>', icon: 'message-square' },
+  { label: '客户',    value: '1,256', sub: '活跃 <b>894</b>', icon: 'contact' },
+];
+const HQ_STATS = [
+  { label: '租户',  value: '12',     icon: 'building-2' },
+  { label: '用户',  value: '1,536',  icon: 'users' },
+  { label: '智能体',value: '47',     icon: 'bot' },
+  { label: '对话',  value: '28,341', icon: 'message-square' },
+  { label: '客户',  value: '9,872',  icon: 'contact' },
+];
+const TREND_7 = [
+  {label:'07-25', value:47},
+  {label:'07-26', value:62},
+  {label:'07-27', value:58},
+  {label:'07-28', value:71},
+  {label:'07-29', value:84},
+  {label:'07-30', value:55},
+  {label:'07-31', value:35},
+];
+const TOP10 = [
+  {label:'朝阳旗舰店', value:4823},
+  {label:'浦东中心店', value:3941},
+  {label:'天河城店',   value:3120},
+  {label:'西湖店',     value:2856},
+  {label:'春熙路店',   value:2401},
+  {label:'解放路店',   value:1985},
+  {label:'高新区店',   value:1642},
+  {label:'滨江店',     value:1320},
+  {label:'雁塔店',     value:985},
+  {label:'鼓楼店',     value:668},
+];
+const QUICK_ACTIONS = [
+  { title:'管理智能体', hint:'配置 prompt、模型与编排', icon:'bot' },
+  { title:'开始对话',   hint:'测试智能体的实际表现', icon:'message-square' },
+  { title:'客户管理',   hint:'维护客户档案与标签',   icon:'contact' },
+  { title:'知识库',     hint:'为对话补充专属知识',   icon:'sparkles' },
+];
+
+/* ===================== RENDER: stats ===================== */
+function renderStats(hostId, data) {
+  const host = document.getElementById(hostId);
+  host.innerHTML = data.map((s,i) => `
+    <div class="stat">
+      <div class="stat-head">${svg(s.icon)}<span class="stat-label">${s.label}</span></div>
+      <div class="stat-value">${s.value}</div>
+      <div class="stat-sub">${s.sub || '&nbsp;'}</div>
+    </div>
+  `).join('');
+}
+
+/* ===================== RENDER: area chart (SVG) ===================== */
+function renderArea(range) {
+  const host = document.getElementById('trendArea');
+  const peak = document.getElementById('footPeak');
+  const total = document.getElementById('footTotal');
+
+  if (range === '30') {
+    host.innerHTML = `
+      <div class="summary-line"><b>412</b> 条 <span>· 近 30 天对话合计</span></div>
+      <svg class="area-svg" viewBox="0 0 1080 60" preserveAspectRatio="none" style="height:60px">
+        ${sparkPath()}
+      </svg>`;
+    peak.textContent = '日均 13.7';
+    total.textContent = '30 天合计 412 条';
+    return;
+  }
+
+  const W = 1080, H = 260, padL = 8, padR = 8, padT = 24, padB = 36;
+  const innerW = W - padL - padR;
+  const innerH = H - padT - padB;
+  const max = 90; // headroom above peak 84
+  const pts = TREND_7.map((d, i) => {
+    const x = padL + (innerW * i / (TREND_7.length - 1));
+    const y = padT + innerH - (d.value / max) * innerH;
+    return { x, y, ...d };
+  });
+
+  // smooth-ish path (straight segments keep editorial clarity)
+  const linePath = pts.map((p,i) => (i===0?'M':'L') + p.x.toFixed(1) + ' ' + p.y.toFixed(1)).join(' ');
+  const areaPath = linePath + ` L ${pts[pts.length-1].x.toFixed(1)} ${(padT+innerH).toFixed(1)} L ${pts[0].x.toFixed(1)} ${(padT+innerH).toFixed(1)} Z`;
+
+  const peakPt = pts.reduce((a,b)=> b.value>a.value?b:a, pts[0]);
+
+  host.innerHTML = `
+    <svg class="area-svg" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">
+      <defs>
+        <linearGradient id="areaFill" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%"   stop-color="hsl(var(--primary))" stop-opacity="0.16"/>
+          <stop offset="100%" stop-color="hsl(var(--primary))" stop-opacity="0"/>
+        </linearGradient>
+      </defs>
+      <!-- baseline gridlines (hairline) -->
+      ${[0.25,0.5,0.75,1].map(g => {
+        const y = padT + innerH*g;
+        return `<line x1="${padL}" y1="${y.toFixed(1)}" x2="${(W-padR).toFixed(1)}" y2="${y.toFixed(1)}" stroke="hsl(var(--rule))" stroke-width="1" stroke-dasharray="2 4"/>`;
+      }).join('')}
+      <!-- area fill -->
+      <path d="${areaPath}" fill="url(#areaFill)"/>
+      <!-- line -->
+      <path d="${linePath}" fill="none" stroke="hsl(var(--primary))" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"/>
+      <!-- points + x labels (labels drawn in HTML overlay for crispness) -->
+      ${pts.map(p => `
+        <circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="3" fill="hsl(var(--background))" stroke="hsl(var(--primary))" stroke-width="1.6"/>
+      `).join('')}
+      <!-- peak callout -->
+      <line x1="${peakPt.x.toFixed(1)}" y1="${(peakPt.y-10).toFixed(1)}" x2="${peakPt.x.toFixed(1)}" y2="${(peakPt.y-26).toFixed(1)}" stroke="hsl(var(--faint))" stroke-width="1"/>
+      <text x="${peakPt.x.toFixed(1)}" y="${(peakPt.y-30).toFixed(1)}" text-anchor="middle"
+            font-family="var(--serif)" font-style="italic" font-size="14" fill="hsl(var(--muted-foreground))">${peakPt.value}</text>
+    </svg>
+    <div style="display:flex; justify-content:space-between; padding:6px 8px 0; font-family:var(--sans); font-size:11px; letter-spacing:.06em; color:hsl(var(--faint))">
+      ${TREND_7.map(d=>`<span>${d.label}</span>`).join('')}
+    </div>`;
+  peak.textContent = '峰值 ' + peakPt.value;
+  total.textContent = '7 天合计 ' + TREND_7.reduce((a,b)=>a+b.value,0) + ' 条';
+}
+function sparkPath() {
+  // mini sparkline for 30-day summary (decorative, derived from 7-day shape)
+  const W=1080,H=60, n=30;
+  let d='';
+  for(let i=0;i<n;i++){
+    const x = (W*(i/(n-1))).toFixed(1);
+    const v = 0.3 + 0.5*Math.abs(Math.sin(i*0.7)) + (i%7===0?0.2:0);
+    const y = (H - v*H*0.8).toFixed(1);
+    d += (i===0?'M':'L')+x+' '+y+' ';
+  }
+  return `<path d="${d}" fill="none" stroke="hsl(var(--rule-strong))" stroke-width="1"/>`;
+}
+
+/* ===================== RENDER: horizontal bar chart (SVG) ===================== */
+function renderBars() {
+  const host = document.getElementById('barChart');
+  const max = 4823;
+  const labelW = 110, valW = 56, gap = 14;
+  const rowH = 30, rowGap = 12;
+  const n = TOP10.length;
+  const W = 1080;
+  const innerW = W - labelW - valW - gap;
+  const H = n*(rowH+rowGap) - rowGap;
+
+  let svg = `<svg class="bar-svg" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">`;
+  TOP10.forEach((d,i) => {
+    const y = i*(rowH+rowGap);
+    const bw = (d.value/max)*innerW;
+    // label
+    svg += `<text x="0" y="${(y+rowH/2+5).toFixed(1)}" font-family="var(--serif)" font-size="14" fill="hsl(var(--foreground))">${d.label}</text>`;
+    // track
+    svg += `<rect x="${labelW}" y="${(y+rowH/2-6).toFixed(1)}" width="${innerW.toFixed(1)}" height="12" fill="hsl(var(--rule) / 0.5)"/>`;
+    // bar (ink blue solid)
+    const rank = i; // 0 top
+    const op = (1 - rank*0.05).toFixed(2);
+    svg += `<rect x="${labelW}" y="${(y+rowH/2-6).toFixed(1)}" width="${bw.toFixed(1)}" height="12" fill="hsl(var(--info))" opacity="${Math.max(0.5,op)}"/>`;
+    // value (serif numeral)
+    svg += `<text x="${(labelW+bw+8).toFixed(1)}" y="${(y+rowH/2+5).toFixed(1)}" font-family="var(--serif)" font-size="15" fill="hsl(var(--muted-foreground))" font-variant-numeric="tabular-nums">${d.value.toLocaleString()}</text>`;
+  });
+  svg += `</svg>`;
+  host.innerHTML = svg;
+}
+
+/* ===================== RENDER: bento ===================== */
+function renderBento() {
+  const host = document.getElementById('bento');
+  host.innerHTML = QUICK_ACTIONS.map((q,i) => `
+    <div class="qa" tabindex="0">
+      <div class="qa-icon">${svg(q.icon)}</div>
+      <div class="qa-title">${q.title}
+        <span class="qa-arrow">${svg('arrow-ur')}</span>
+      </div>
+      <div class="qa-hint">${q.hint}</div>
+      <div class="qa-num">No. ${String(i+1).padStart(2,'0')}</div>
+    </div>
+  `).join('');
+}
+
+/* ===================== INTERACTIONS ===================== */
+// view tabs
+document.querySelectorAll('.tab').forEach(t => {
+  t.addEventListener('click', () => {
+    const v = t.dataset.view;
+    document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('active', x===t));
+    document.getElementById('view-store').classList.toggle('active', v==='store');
+    document.getElementById('view-hq').classList.toggle('active', v==='hq');
+    document.getElementById('crumbView').textContent = v==='store' ? '门店视角' : '总部视角';
+    document.getElementById('crumbOrg').textContent  = v==='store' ? '朝阳旗舰店' : '平台总览';
+    window.scrollTo({top:0, behavior:'smooth'});
+  });
+});
+
+// range segment
+document.getElementById('rangeSeg').addEventListener('click', e => {
+  const b = e.target.closest('button');
+  if (!b) return;
+  document.querySelectorAll('#rangeSeg button').forEach(x=>x.classList.toggle('active', x===b));
+  renderArea(b.dataset.range);
+});
+
+// refresh (spin icon 1s)
+document.getElementById('refreshBtn').addEventListener('click', () => {
+  const ic = document.getElementById('refreshIcon');
+  if (ic.classList.contains('spin')) return;
+  ic.classList.add('spin');
+  setTimeout(()=>ic.classList.remove('spin'), 1000);
+});
+
+// theme toggle (persist in memory)
+const themeBtn = document.getElementById('themeBtn');
+const sun = document.getElementById('themeIconSun');
+const moon = document.getElementById('themeIconMoon');
+themeBtn.addEventListener('click', () => {
+  const dark = document.documentElement.classList.toggle('dark');
+  sun.style.display  = dark ? 'none'  : '';
+  moon.style.display = dark ? '' : 'none';
+});
+
+/* ===================== INIT ===================== */
+renderStats('storeStats', STORE_STATS);
+renderStats('hqStats', HQ_STATS);
+renderArea('7');
+renderBars();
+renderBento();
+</script>
+</body>
+</html>
