@@ -49,7 +49,7 @@ const TYPE_META: Record<
 > = {
   balance_warning: { label: "余额预警", icon: AlertTriangle, accent: "bg-warning/10 text-warning" },
   recharge: { label: "充值到账", icon: Coins, accent: "bg-success/10 text-success" },
-  role_change: { label: "角色变更", icon: UserCog, accent: "bg-blue-100 text-blue-800" },
+  role_change: { label: "角色变更", icon: UserCog, accent: "bg-info/10 text-info" },
   usage_report: { label: "用量报告", icon: ScrollText, accent: "bg-purple-100 text-purple-800" },
   system: { label: "系统通知", icon: Info, accent: "bg-muted text-muted-foreground" },
 };
