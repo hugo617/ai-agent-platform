@@ -108,6 +108,18 @@ export default {
         surface: "0 1px 2px 0 rgb(0 0 0 / 0.05)",
         overlay: "0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1)",
       },
+      // Type scale — ``2xs`` extends the scale below ``xs`` so the 10px sizes
+      // used by kbd, badges, and micro-labels stop bypassing the scale via
+      // ``text-[10px]`` (Feature C 切片 02: the arbitrary-value escape hatch
+      // gets closed, not a full type rewrite).
+      //   - ``2xs``: 10px — the smallest tier, backing kbd/badge/micro-label.
+      //     Line-height 14px keeps the 1.4 ratio of the surrounding tiers
+      //     (``xs`` is 12px/16px ≈ 1.33; 14/10 = 1.4 is the closest 2px step).
+      // The 11px escapes don't earn their own step — 11px ≈ ``xs`` (12px) is
+      // visually close enough, so they map to ``text-xs`` (plan §4.5② option 1).
+      fontSize: {
+        "2xs": ["10px", { lineHeight: "14px" }],
+      },
       // Animations — four CSS keyframe families backing the motion budget
       // (plan §6: most motion is CSS; motion lib is reserved for 4 specific
       // cases). These are utilities like `animate-fade-in`, `animate-shimmer`.

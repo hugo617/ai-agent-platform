@@ -132,7 +132,7 @@ export function CommandMenu({
           placeholder="搜索或输入命令…"
           className="h-12 w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground"
         />
-        <kbd className="ml-2 hidden shrink-0 rounded border bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground sm:inline">
+        <kbd className="ml-2 hidden shrink-0 rounded border bg-muted px-1.5 py-0.5 text-2xs text-muted-foreground sm:inline">
           ESC
         </kbd>
       </div>

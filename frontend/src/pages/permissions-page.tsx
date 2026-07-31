@@ -214,7 +214,7 @@ export function PermissionsPage() {
                                 {r.is_system && (
                                   <Badge
                                     variant="secondary"
-                                    className="text-[10px]"
+                                    className="text-2xs"
                                   >
                                     系统
                                   </Badge>
@@ -404,7 +404,7 @@ function DataScopeSelect({
           >
             <div className="flex flex-col">
               <span>{opt.label}</span>
-              <span className="text-[10px] text-muted-foreground">
+              <span className="text-2xs text-muted-foreground">
                 {opt.hint}
               </span>
             </div>

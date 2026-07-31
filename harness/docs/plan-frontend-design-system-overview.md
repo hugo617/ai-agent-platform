@@ -107,7 +107,12 @@ tailwind.config.js theme.extend.colors:
 
 ### 系列状态
 
-🚧 **规划中**(2026-07-30 grill 完成 + 2026-07-31 设计变体探索 B3 定稿,待 `/to-spec` 落各 feature plan + 登记 feature_list.json)。
+✅ **全部完成**(2026-07-31 收官)。三片 feature 全部 passing:
+- **A `design-system-token-foundation`(p81)** ✅ passing — semantic token 基建(`--success`/`--warning`/`--danger`/`--info` 四 token 双色值 + ui/ 组件库内部映射)
+- **B `design-system-color-sweep`(p82)** ✅ passing — 业务页硬编码色扫荡(emerald/amber/rose/cyan/blue → semantic token,跨 ~12 文件,5 切片)
+- **C `design-system-spacing-card-hierarchy`(p83)** ✅ passing — 卡片层级 shadow 语义命名(`shadow-surface`/`shadow-overlay`,v2 命名)+ 字号任意值 text-[10px] 收口(text-2xs 扩展 + 11 处映射),2 切片
+
+收尾路径:grill(2026-07-30)→ 设计变体探索 B3 定稿(2026-07-31)→ A/B/C 顺序实施(WIP=1)→ Feature C 切片 02 末切片合并即系列收官。设计系统收口系列至此闭环。
 
 ### 设计变体探索结论(2026-07-31,huashu-design 驱动)
 

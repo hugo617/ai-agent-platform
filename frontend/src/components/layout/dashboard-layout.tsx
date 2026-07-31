@@ -146,7 +146,7 @@ export function DashboardLayout() {
               onClick={() => setCommandOpen(true)}
             >
               <span>搜索或命令…</span>
-              <kbd className="rounded border bg-muted px-1.5 py-0.5 text-[10px] font-medium">
+              <kbd className="rounded border bg-muted px-1.5 py-0.5 text-2xs font-medium">
                 ⌘K
               </kbd>
             </Button>
