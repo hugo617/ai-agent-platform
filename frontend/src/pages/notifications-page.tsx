@@ -47,7 +47,7 @@ const TYPE_META: Record<
   string,
   { label: string; icon: React.ComponentType<{ className?: string }>; accent: string }
 > = {
-  balance_warning: { label: "余额预警", icon: AlertTriangle, accent: "bg-amber-100 text-amber-800" },
+  balance_warning: { label: "余额预警", icon: AlertTriangle, accent: "bg-warning/10 text-warning" },
   recharge: { label: "充值到账", icon: Coins, accent: "bg-success/10 text-success" },
   role_change: { label: "角色变更", icon: UserCog, accent: "bg-blue-100 text-blue-800" },
   usage_report: { label: "用量报告", icon: ScrollText, accent: "bg-purple-100 text-purple-800" },

@@ -166,7 +166,7 @@ export function DashboardLayout() {
                 user reads their own notifications, so no permission guard. */}
             <NotificationBell />
             {isSuperAdmin(me) && (
-              <Badge className="border-amber-300 bg-amber-100 text-amber-800 hover:bg-amber-100">
+              <Badge className="border-warning/30 bg-warning/10 text-warning hover:bg-warning/10">
                 🛡️ 超级管理员
               </Badge>
             )}

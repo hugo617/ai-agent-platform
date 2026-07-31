@@ -1027,7 +1027,7 @@ function ApiTokenCard() {
         <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <AlertTriangle className="h-5 w-5 text-amber-500" />
+              <AlertTriangle className="h-5 w-5 text-warning" />
               Token 已颁发 — 立即复制保存
             </DialogTitle>
             <DialogDescription>
@@ -1036,8 +1036,8 @@ function ApiTokenCard() {
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
-            <div className="rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm">
-              <div className="flex items-center gap-2 font-medium text-amber-700 dark:text-amber-400">
+            <div className="rounded-md border border-warning/30 bg-warning/10 p-3 text-sm">
+              <div className="flex items-center gap-2 font-medium text-warning">
                 <AlertTriangle className="h-4 w-4" />
                 请立即复制下方 Token 并妥善保管
               </div>
