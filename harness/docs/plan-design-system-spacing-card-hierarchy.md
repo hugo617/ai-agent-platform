@@ -1,7 +1,7 @@
 # 计划:设计系统收口 — Feature C:间距与卡片层级规范
 
 > **id**: `design-system-spacing-card-hierarchy`
-> **状态**: not_started
+> **状态**: passing(2026-07-31 Session 180,切片 01 + 切片 02 末切片全完成)
 > **优先级**: 83(feature_list.json)
 > **创建日期**: 2026-07-31
 > **系列总纲**: [`plan-frontend-design-system-overview.md`](./plan-frontend-design-system-overview.md)
