@@ -23,6 +23,21 @@
     --accent-foreground: 222.2 47.4% 11.2%;
     --destructive: 0 84.2% 60.2%;
     --destructive-foreground: 210 40% 98%;
+    /* Semantic status colors — success / warning / danger / info. B3-finalized
+       HSL values (see harness/docs/plan-frontend-design-system-overview.md).
+       Danger coexists with destructive (shadcn legacy name kept for ui/); danger
+       is the semantic token for business-page mapping (Feature B). Foreground is
+       the deep slate 222.2 47.4% 11.2% (= --secondary-foreground): the saturated
+       mid-lightness backgrounds (36%–60%) need dark text to clear WCAG AA 4.5:1
+       — pure white fails all 8 pairs (plan §4.5① v2 contrast table). */
+    --success: 152 76% 36%;
+    --success-foreground: 222.2 47.4% 11.2%;
+    --warning: 35 92% 50%;
+    --warning-foreground: 222.2 47.4% 11.2%;
+    --danger: 0 84% 60%;
+    --danger-foreground: 222.2 47.4% 11.2%;
+    --info: 189 90% 42%;
+    --info-foreground: 222.2 47.4% 11.2%;
     --border: 214.3 31.8% 91.4%;
     --input: 214.3 31.8% 91.4%;
     --ring: 221.2 83.2% 53.3%;
@@ -70,6 +85,20 @@
     --accent-foreground: 210 40% 98%;
     --destructive: 0 62.8% 30.6%;
     --destructive-foreground: 210 40% 98%;
+    /* Dark-mode semantic status tokens — lifted/lightened variants of the light
+       values to keep high discriminability against the near-black background
+       (mirrors the chart-palette dark lift pattern above). Foreground is the
+       same deep slate 222.2 47.4% 11.2% as light mode: the dark variants are
+       *brighter* than their light counterparts, so dark text still wins contrast
+       (white would be even worse here). See plan §4.5① v2 contrast table. */
+    --success: 152 64% 48%;
+    --success-foreground: 222.2 47.4% 11.2%;
+    --warning: 38 95% 58%;
+    --warning-foreground: 222.2 47.4% 11.2%;
+    --danger: 0 80% 64%;
+    --danger-foreground: 222.2 47.4% 11.2%;
+    --info: 189 80% 55%;
+    --info-foreground: 222.2 47.4% 11.2%;
     --border: 217.2 32.6% 17.5%;
     --input: 217.2 32.6% 17.5%;
     --ring: 224.3 76.3% 48%;

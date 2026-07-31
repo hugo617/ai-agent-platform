@@ -13,7 +13,9 @@
 
 | v(N-1) 问题 | 严重度 | vN 处理 |
 |---|---|---|
-| _(首版,无修订)_ | — | — |
+| v1 §4.5① 断言「四 token 亮色底饱和度均高(36%–60% lightness),白字对比度均达 WCAG AA(4.5:1)」数学错误:实测纯白前景(`0 0% 100%`)对 B3 定稿底色 8 组对比度**全部不达 4.5:1**(warning/info 亮+暗连 AA-large 3:1 都不达),与 §4.6 验收硬标准 #2 自相矛盾 | 🔴 高(硬阻断 §4.6 #2) | **v2** §4.5① 修订:foreground 从「统一纯白 `0 0% 100%`」改为「统一深色前景 `222.2 47.4% 11.2%`」(对齐现有 `--secondary-foreground`/`--primary-foreground` 亮色范式)。B3 定稿底色逐字不变。8 组对比度实测重算(§4.5① 表),全部达 AA 4.5:1(最低 danger 亮色 4.72,最高 warning 暗色 9.54)。§4.6 #2 / 切片 01 AC「前景对底色 AA」据此修订 |
+
+---
 
 ---
 
@@ -77,29 +79,47 @@
 
 ```css
 --success: 152 76% 36%;    /* B3 定稿;正向/峰值/达成 */
---success-foreground: 0 0% 100%;        /* 白字 on success 底 */
+--success-foreground: 222.2 47.4% 11.2%;  /* 深字 on success 底(见下理由) */
 --warning: 35 92% 50%;     /* B3 定稿;提醒/谷值 */
---warning-foreground: 0 0% 100%;        /* 白字 on warning 底 */
+--warning-foreground: 222.2 47.4% 11.2%;  /* 深字 on warning 底 */
 --danger: 0 84% 60%;       /* B3 定稿;危险 */
---danger-foreground: 0 0% 100%;         /* 白字 on danger 底 */
+--danger-foreground: 222.2 47.4% 11.2%;   /* 深字 on danger 底 */
 --info: 189 90% 42%;       /* B3 定稿;信息/青 */
---info-foreground: 0 0% 100%;           /* 白字 on info 底 */
+--info-foreground: 222.2 47.4% 11.2%;     /* 深字 on info 底 */
 ```
 
 `index.css` `.dark`(暗色,提亮保高辨识度):
 
 ```css
 --success: 152 64% 48%;    /* 暗色变体(提亮) */
---success-foreground: 0 0% 100%;
+--success-foreground: 222.2 47.4% 11.2%;  /* 深字(暗色底更亮,仍需深字保对比) */
 --warning: 38 95% 58%;     /* 暗色变体(提亮) */
---warning-foreground: 0 0% 100%;
+--warning-foreground: 222.2 47.4% 11.2%;
 --danger: 0 80% 64%;       /* 暗色变体(提亮) */
---danger-foreground: 0 0% 100%;
+--danger-foreground: 222.2 47.4% 11.2%;
 --info: 189 80% 55%;       /* 暗色变体(提亮) */
---info-foreground: 0 0% 100%;
+--info-foreground: 222.2 47.4% 11.2%;
 ```
 
-> **foreground 取 `0 0% 100%`(纯白)的理由**:四 token 的亮色底饱和度均高(36%–60% lightness),白字对比度均达 WCAG AA(4.5:1);暗色底提亮后仍用白字。这与现有 `--destructive-foreground: 210 40% 98%` 同族(近白),保持一致性。
+> **foreground 取 `222.2 47.4% 11.2%`(深蓝灰,非纯白)的理由(v2 修订)**:
+> v1 曾断言「四 token 亮色底饱和度均高(36%–60% lightness),白字达 WCAG AA(4.5:1)」—— 此断言**数学错误**。按 WCAG 官方相对亮度公式实测,纯白前景(`0 0% 100%`)对 B3 定稿底色 **8 组对比度全部不达 4.5:1**(warning/info 亮+暗连 AA-large 3:1 都不达,见下表「v1 白字」列),与 §4.6 验收硬标准 #2 自相矛盾。
+>
+> v2 修订:**统一改用深色前景 `222.2 47.4% 11.2%`**(= 现有 `--secondary-foreground` / `--primary-foreground`(亮色)同值),8 组对比度全部达 AA 4.5:1(最低 danger 亮色 4.72,最高 warning 暗色 9.54)。这与组件库既有「中等亮度彩色底用深色前景」范式一致,且 B3 定稿底色**逐字不变**。
+>
+> | token | 底色亮度 | v1 白字 CR | v2 深字 CR | 判定 |
+> |---|---|---|---|---|
+> | 亮 `--success`(152 76% 36%)| 0.267 | 3.31 ❌ | **5.39** ✅ | AA |
+> | 亮 `--warning`(35 92% 50%)| 0.403 | 2.32 ❌ | **7.69** ✅ | AA |
+> | 亮 `--danger`(0 84% 60%)| 0.228 | 3.78 ❌ | **4.72** ✅ | AA |
+> | 亮 `--info`(189 90% 42%)| 0.349 | 2.63 ❌ | **6.78** ✅ | AA |
+> | 暗 `--success`(152 64% 48%)| 0.437 | 2.15 ❌ | **8.28** ✅ | AA |
+> | 暗 `--warning`(38 95% 58%)| 0.511 | 1.87 ❌ | **9.54** ✅ | AA |
+> | 暗 `--danger`(0 80% 64%)| 0.260 | 3.39 ❌ | **5.26** ✅ | AA |
+> | 暗 `--info`(189 80% 55%)| 0.499 | 1.91 ❌ | **9.33** ✅ | AA |
+>
+> (计算脚本:WCAG 相对亮度 `0.2126R+0.7152G+0.0722B`,对比度 `(L1+0.05)/(L2+0.05)`,HSL→sRGB 标准变换。)
+>
+> **注**:`--destructive-foreground: 210 40% 98%` 仍保留近白(destructive 底是 shadcn 既有,用途为 hover/active 背景,其亮色底 lightness 60.2% 与本 feature 语义色不同簇,不在本次统一范畴)。
 
 **② Tailwind 颜色暴露(`tailwind.config.js` `theme.extend.colors`)**
 
@@ -136,7 +156,7 @@ info:    { DEFAULT: "hsl(var(--info))",    foreground: "hsl(var(--info-foregroun
 ### 4.6 验收硬标准(来自总纲,客观可验)
 
 1. **grep 归零**(本 feature 范围内):`ui/badge.tsx` + `ui/toast.tsx` + `ui/avatar.tsx` 内的**语义性**硬编码原色 = 0(8 色环保留的不算)
-2. **暗色对比度**:四 token 亮/暗变体前景(`0 0% 100%`)对底色对比度 ≥ WCAG AA(4.5:1 正常文本 / 3:1 大文本)
+2. **暗色对比度**:四 token 亮/暗变体前景(`222.2 47.4% 11.2%`,v2 深字)对底色对比度 ≥ WCAG AA(4.5:1 正常文本);8 组实测见 §4.5① 表
 3. **npm test 全绿 + npm run build 0 错 + oxlint 0/0**
 4. **零行为变更**:映射前后视觉一致(亮色下 `bg-success` 渲染色 = 原 `bg-emerald-500` 渲染色,因 B3 定稿值就是 emerald 系)
 
@@ -198,7 +218,7 @@ info:    { DEFAULT: "hsl(var(--info))",    foreground: "hsl(var(--info-foregroun
 1. `src/index.css` `:root` + `.dark` 各含 `--success`/`--warning`/`--danger`/`--info`(及 `-foreground`),值 = B3 定稿
 2. `tailwind.config.js` `theme.extend.colors` 含 `success`/`warning`/`danger`/`info`(各 `DEFAULT` + `foreground`)
 3. `ui/badge.tsx` + `ui/toast.tsx` 内**语义性**硬编码原色 = 0(`ui/avatar.tsx` 仅映射语义 ring,8 色环保留)
-4. 四 token 亮/暗变体前景对底色 WCAG AA 对比度达标(手算 + 记录)
+4. 四 token 亮/暗变体前景(`222.2 47.4% 11.2%`)对底色 WCAG AA 对比度达标(v2 重算 8 组见 §4.5① 表,全部 ≥ 4.5:1)
 5. `cd frontend && npm run build` 0 类型错误 + `npx oxlint` 0/0 + `npm test` 全绿
 6. 对照 `design-demos/B3.html`,四 token 渲染色与 B3 定稿视觉一致
 
@@ -221,7 +241,7 @@ info:    { DEFAULT: "hsl(var(--info))",    foreground: "hsl(var(--info-foregroun
    └──→ 切片 02(ui/ 组件库内部映射 + 验收)── blocked by 01
 ```
 
-### 切片 01 — semantic token 基建:`index.css` + `tailwind.config.js`(frontier)
+### 切片 01 — semantic token 基建:`index.css` + `tailwind.config.js`(frontier)✅ commit c28ecd3
 
 **What it delivers**:从组件库使用者视角,`bg-success` / `text-warning` / `border-danger` / `bg-info` 这类 className 立即可用,且在亮/暗模式下自动切换为 B3 定稿的双色值。这是「四 token 存在且可消费」的最小可验证路径——token 落地 + Tailwind 暴露,任何下游(切片 02 + Feature B)都能引用。
 
@@ -229,12 +249,19 @@ info:    { DEFAULT: "hsl(var(--info))",    foreground: "hsl(var(--info-foregroun
 
 **Acceptance criteria**:
 
-- [ ] `src/index.css` `:root` 含 `--success: 152 76% 36%` / `--warning: 35 92% 50%` / `--danger: 0 84% 60%` / `--info: 189 90% 42%` 四 token + 各 `-foreground: 0 0% 100%`(HSL 值逐字 = B3 定稿)
-- [ ] `src/index.css` `.dark` 含 `--success: 152 64% 48%` / `--warning: 38 95% 58%` / `--danger: 0 80% 64%` / `--info: 189 80% 55%` 四 token + 各 `-foreground: 0 0% 100%`(HSL 值逐字 = B3 定稿暗色变体)
-- [ ] `tailwind.config.js` `theme.extend.colors` 含 `success`/`warning`/`danger`/`info`,各 `DEFAULT: "hsl(var(--xxx))"` + `foreground: "hsl(var(--xxx-foreground))"`(照 `destructive` 范式)
-- [ ] 新增/更新前端测试:断言 token 定义存在(`:root` + `.dark` 各 4 token,值正确)
-- [ ] `cd frontend && npm run build` 0 类型错误 + `npx oxlint` 0/0 + `npm test` 全绿
-- [ ] 手动验证:四 token 亮/暗变体前景(`0 0% 100%`)对底色 WCAG AA 对比度 ≥ 4.5:1(手算或工具,结果记入 evidence)
+- [x] `src/index.css` `:root` 含 `--success: 152 76% 36%` / `--warning: 35 92% 50%` / `--danger: 0 84% 60%` / `--info: 189 90% 42%` 四 token + 各 `-foreground: 222.2 47.4% 11.2%`(底色 HSL 逐字 = B3 定稿;foreground v2 修订为深字,见 §4.5①)
+- [x] `src/index.css` `.dark` 含 `--success: 152 64% 48%` / `--warning: 38 95% 58%` / `--danger: 0 80% 64%` / `--info: 189 80% 55%` 四 token + 各 `-foreground: 222.2 47.4% 11.2%`(底色 HSL 逐字 = B3 定稿暗色变体;foreground v2 深字)
+- [x] `tailwind.config.js` `theme.extend.colors` 含 `success`/`warning`/`danger`/`info`,各 `DEFAULT: "hsl(var(--xxx))"` + `foreground: "hsl(var(--xxx-foreground))"`(照 `destructive` 范式)
+- [x] 新增/更新前端测试:断言 token 定义存在(`:root` + `.dark` 各 4 token,值正确)
+- [x] `cd frontend && npm run build` 0 类型错误 + `npx oxlint` 0/0 + `npm test` 全绿
+- [x] 手动验证:四 token 亮/暗变体前景(`222.2 47.4% 11.2%`,v2 深字)对底色 WCAG AA 对比度 ≥ 4.5:1(实测 8 组见 §4.5① 表,全部达标)
+
+**完成证据(commit 后回填 HASH)**:
+- 改动文件:`frontend/src/index.css`(:root + .dark 各 8 行 token)+ `frontend/tailwind.config.js`(theme.extend.colors +success/warning/danger/info)+ `frontend/src/__tests__/design-tokens.test.ts`(新建,21 测试)+ `harness/docs/plan-design-system-token-foundation.md`(v2 修订:§0 变更摘要 + §4.5① foreground 决策修订 + 对比度实测表 + §4.6/§10/切片01 AC 措辞同步)
+- 验证:`npm run build` 0 类型错误 + `npx oxlint` 0 warning 0 error + `npm test` **131/131 全绿**(原 110 + 21 新增 design-tokens)+ design-tokens 单测 21/21(:root 8 + .dark 8 + tailwind 4 色 + destructive 保留 1)
+- WCAG 实测(§4.5① 表):8 组前景 `222.2 47.4% 11.2%` 对 B3 底色对比度全部 ≥ 4.5:1(最低 danger 亮色 4.72,最高 warning 暗色 9.54);v1 纯白前景 8 组全不达标的硬阻断已解
+- **v2 修订触发**:实施期发现 plan §4.5① 「纯白前景达 AA」断言数学错误(WCAG 公式实测证伪),回 plan 补 v1→v2 变更摘要 + §4.5① 重写 + 对比度表,foreground 从 `0 0% 100%` → `222.2 47.4% 11.2%`(对齐现有 `--secondary-foreground` 范式),B3 底色逐字不变
+- **非末切片**(切片 02 才是 feature 收尾),不动 feature_list.json status/evidence
 
 ### 切片 02 — `ui/` 组件库内部映射:badge + toast + avatar(末切片,feature 收尾)
 
