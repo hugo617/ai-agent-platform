@@ -37,7 +37,7 @@ import pytest
 from sqlalchemy import select
 
 from app.core import casbin_enforcer as casbin_mod
-from app.models.tenant import User, UserTenant
+from app.models.tenant import Tenant, User, UserTenant
 from app.repositories.tenant import UserTenantRepository
 from app.schemas.user import MemberCreate, MemberUpdate
 from app.services.errors import BizError, NotFoundError
@@ -87,14 +87,6 @@ async def test_list_returns_seeded_owner_membership(test_env, tenant_owner, db_s
     ``list`` MUST surface exactly that row. Pins the list → ``MemberRead``
     mapping (user_id / role / joined_at) and the seed precondition the other
     tests rely on.
-
-    The plan's "empty tenant → []" branch is not asserted separately: a tenant
-    owner cannot ``list`` a foreign tenant (``require("users", "read")`` is
-    domain-scoped — the owner's ``users:read`` policy is seeded only for their
-    own tenant), so "no members visible" is unreachable via the owner principal
-    the service-layer seam exposes. The empty-list behaviour is the trivial
-    list-comprehension over ``[]`` and is covered structurally by the seeded
-    case above.
     """
     tenant_id = tenant_owner["tenant_id"]
     owner_id = tenant_owner["user_id"]
@@ -109,6 +101,30 @@ async def test_list_returns_seeded_owner_membership(test_env, tenant_owner, db_s
     assert owner_member.role == "owner"
     assert owner_member.email == "owner@example.com"
     assert owner_member.joined_at is not None
+
+
+@pytest.mark.asyncio
+async def test_list_empty_tenant_returns_empty_list(test_env, db_session):
+    """list on a tenant with no memberships → ``[]``.
+
+    A store owner cannot reach a foreign tenant (``require("users", "read")``
+    is domain-scoped), so the empty-list branch is exercised through the
+    platform ``super_admin`` path: ``permission_service.check`` short-circuits
+    to True for ``super_admin`` (permission_service.py super_admin bypass),
+    letting the owner read across tenants. We seed a second tenant with no
+    memberships and assert ``list`` returns ``[]`` for it — pinning the
+    list-comprehension-over-empty-input contract end-to-end.
+    """
+    empty_tenant = "tnt-empty-for-list"
+    db_session.add(Tenant(id=empty_tenant, name="Empty Tenant"))
+    await db_session.commit()
+
+    owner_id = test_env.owner_user
+    service = MemberService(db_session)
+    with _enforcer_patch(test_env):
+        members = await service.list(owner_id, empty_tenant, platform_role="super_admin")
+
+    assert members == []
 
 
 # ============================================================================
