@@ -279,7 +279,7 @@ Feature A 建好 `--success`/`--warning`/`--danger`/`--info` 四 token 后,**业
   - **Spec 轴:需修复后 PASS → 经独立核实 + 决策,保留 tint 范式(对比度债登记切片 05)**。Spec 精算发现 `text-warning` on `bg-warning/10` **亮色对比度 2.13 ❌**(原 amber-700 基线 4.65 ✅,构成回归)。我独立 node REPL 复核坐实:tint 范式亮色 2.13 ❌、foreground 跨模式无解(亮 16.41 ✅/暗 1.18 ❌)、**实心范式双模式全过**(warning 亮 7.69/暗 9.54,与切片 01 toast success 实心 5.39/8.28 印证)。
 - **⚠️ 对比度债决策(登记切片 05 统一收口)**:保留 tint 范式不改实心,理由 4 条:① 不越界碰切片 01 已合并代码(WIP=1 + 不反向改已 passing 切片);② 不引入范式分裂 —— `notifications-page` 三色通知标签(`recharge` success / `balance_warning` warning / `role_change` info)同结构须统一,单改 warning 会造成三色三范式;③ 系统性问题需系统性解 —— success/warning/info 三色 tint 亮色均不达标(success 2.97/warning 2.13/info 预计同病),属 plan AC 设计缺陷非本切片实施错误;④ plan AC 字面要求即 tint,实施按 spec 正确。**已在切片 05 增加 WCAG AC(亮色 tint 系统性收口)**,要求切片 05 统一决策三色 tint 场景改实心或接受债,避免分裂。纯图标场景(notification-bell amber-600→warning 2.69→2.32)是本就不达标的微小负向平移,非核心回归,留切片 05 一并评估。
 
-### 切片 03 — danger 语义收口:rose/red → `danger`(跨页)
+### 切片 03 — danger 语义收口:rose/red → `danger`(跨页) ✅ commit 1d2562c
 
 **What it delivers**:所有表达「危险/锁定/支出」的 rose/red 统一变成 `danger` token。
 
@@ -287,11 +287,25 @@ Feature A 建好 `--success`/`--warning`/`--danger`/`--info` 四 token 后,**业
 
 **Acceptance criteria**:
 
-- [ ] `billing-page.tsx`:`text-rose-500` ArrowDown(支出 ×2)+ `text-rose-600`(交易方向)→ `text-danger`
-- [ ] `billing-admin-page.tsx`:`text-rose-500` Coins → `text-danger`
-- [ ] `users-page.tsx`:stat icon `text-rose-500`(锁定)→ `text-danger`
-- [ ] danger 语义 rose/red grep(业务页范围)= 0(注意:不动 ui/ 内 Feature A 已处理的)
-- [ ] `cd frontend && npm run build` 0 错 + `npx oxlint` 0/0 + `npm test` 全绿
+- [x] `billing-page.tsx`:`text-rose-500` ArrowDown(支出 ×2)+ `text-rose-600`(交易方向)→ `text-danger`
+- [x] `billing-admin-page.tsx`:`text-rose-500` Coins → `text-danger`
+- [x] `users-page.tsx`:stat icon `text-rose-500`(锁定)→ `text-danger`
+- [x] danger 语义 rose/red grep(业务页范围)= 0(注意:不动 ui/ 内 Feature A 已处理的)
+- [x] `cd frontend && npm run build` 0 错 + `npx oxlint` 0/0 + `npm test` 全绿
+
+**✅ 实施证据(2026-07-31 Session 176)**
+
+- **改动**:5 处 className 映射,跨 3 文件(billing/billing-admin/users),分支 `feat/design-system-color-sweep-slice-03`
+- **范式忠实(切片 01 alpha 约定)**:5 处均为「纯图标 text 色」场景(与切片 01 success 同构)→ 全部 DEFAULT `text-danger`,无 `/10` 底 / `/30` 边 / `foreground` 误用。具体:
+  - `billing-page.tsx` L64 `txIcon` ArrowDown 支出 + L218 `CounterCard` ArrowDown 累计消耗(2 个 ArrowDown = AC「支出 ×2」)+ L343 三元交易方向 rose 半边(切片 01 已改 emerald 半边为 success,本次补齐 danger 半边,语义对称)
+  - `billing-admin-page.tsx` L165 Coins 全平台累计消耗
+  - `users-page.tsx` L599 stat「锁定」icon(四 stat 中 blue/info + rose/danger 为仅剩两片,success/warning 已就位)
+- **dark: 清理**:本切片 5 处原本就无手写 `dark:text-rose-*` / `dark:bg-rose-*` 冗余变体(AC 亦无此项),无清理动作、无暗色债新增。全仓 `grep "dark:(bg|text|border)-(rose|red)"` 业务页范围 = 0。
+- **grep 归零**:业务页范围 rose/red 色值(精确边界 `(bg|text|border|fill|stroke|ring|from|to|via|accent)-(rose|red)-[0-9]`,排除 `components/ui/`)= 0。`markdown-view.tsx:56 break-words` 为 prose 排版类含 "red" 子串的误报,非色值,排除正确。
+- **边界核对**:danger 与 shadcn 既有 `destructive` 命名并存 —— 同文件内 `variant="destructive"`(Badge/Button)、`bg-destructive/5`、`text-destructive` 等既有命名原样保留(`billing-page.tsx:179/192/198`、`users-page.tsx:95/575`、`billing-admin-page.tsx:218/242`),未迁移、未混淆,符合 §11 不越界。
+- **验证**:`npm run build` ✓ built in 1.66s(0 类型错误,仅预存 chunk 大小警告)+ `npx oxlint` 0/0(180 files 102 rules)+ `npm test` 17 files / 141 tests passed(零回归,含 `design-tokens.test.ts` 21 + `badge-toast-avatar.test.tsx` Feature A 锁回退断言)。
+- **`/code-review` 双轴(general-purpose ×2 并行)**:**Standards PASS + Spec PASS**(0 硬违规 / 0 判断项 / 0 缺漏 / 0 creep / 0 错误)。两轴独立核实一致:范式忠实、grep 归零属实、danger/destructive 边界守住、未越界(未碰 ui/ Feature A 领地、未碰切片 04 blue/info、未碰后端)。AC「ArrowDown ×2」疑问澄清:spec 原文精确指 L64+L218 两个 ArrowDown,L343 三元是独立「交易方向」单独列出,3 处对齐无漏算。
+- **无对比度债**:本切片 5 处全为纯图标 `text-danger`(非 tint 浅底场景),不触发切片 02 登记的「亮色 tint 范式对比度」系统性问题(该问题限于 `bg-{token}/10 + text-{token}` 浅底场景,留切片 05 统一收口)。
 
 ### 切片 04 — info 语义收口:blue/cyan → `info`(跨页)
 
