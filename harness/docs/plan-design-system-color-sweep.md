@@ -214,7 +214,7 @@ Feature A 建好 `--success`/`--warning`/`--danger`/`--info` 四 token 后,**业
 
 > **切片策略说明**:本 feature 不按「页面」切片(会横向切片化),而按「色系/语义」切片——每片把一种语义(emerald→success)跨所有页面收口到底。这样每片是「一个语义全站闭环」的垂直切片,grep 归零可单片验证。切片 01 是 frontier(success 语义,覆盖最多 emerald/green 用例),02-04 并行 blocked by 01(共享映射范式 + alpha 约定),05 收尾聚合。
 
-### 切片 01 — success 语义收口:emerald/green → `success`(跨页,frontier) ✅
+### 切片 01 — success 语义收口:emerald/green → `success`(跨页,frontier) ✅ commit 5146312
 
 **What it delivers**:从使用者视角,所有表达「成功/达成/收入/充值到账」的绿色(emerald/green)在所有业务页统一变成 `success` token,亮/暗自动切换。这是建立「色系→语义」映射范式的首片,后续 warning/danger/info 复用其 alpha 约定与 dark: 清理规则。
 
