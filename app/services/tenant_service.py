@@ -3,7 +3,9 @@ platform-level list / detail / update."""
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.group import Group
 from app.models.tenant import Tenant
+from app.repositories.group import GroupRepository, GroupTenantRepository
 from app.repositories.tenant import TenantRepository, UserRepository, UserTenantRepository
 from app.schemas.tenant import TenantCreate, TenantRead, TenantUpdate
 from app.services.errors import NotFoundError
@@ -37,6 +39,13 @@ class TenantService:
         ``created_by`` records the platform user who created this tenant
         (the super_admin's id under the tightened POST policy). The bootstrap /
         dev-seed path may leave it as None.
+
+        Step 7 (knowledge-tiered slice 02): every tenant is born as its own
+        one-member Group — a single store IS a chain of one (D8+D10+E2). The
+        Group's ``headquarters_tenant_id`` points back at the new tenant so its
+        owner/admin derive the ``group_admin`` identity for knowledge. Runs in
+        the SAME transaction as steps 1-6, so a failure here rolls the whole
+        tenant back (no orphan tenant without a group, AC8).
         """
         # 1. Ensure the user row exists
         await self.users.get_or_create(owner_user_id, email=owner_email)
@@ -71,6 +80,18 @@ class TenantService:
         from app.services.billing_service import BillingService
 
         await BillingService(self.db).create_wallet_for_tenant(tenant.id)
+
+        # 7. Auto-group: single store = its own chain. Always create a Group
+        #    (name mirrors the tenant, headquarters points at the tenant) and
+        #    attach the tenant to it, in this same transaction. Knowledge-tiered
+        #    D8 (one-tenant-one-group) + D10 (Group has HQ pointer) + E2
+        #    (auto-group at create). Chain stores join an existing group via
+        #    ``group_service.attach_tenant`` instead, so this step only fires
+        #    for the born-as-its-own-chain case. If anything here raises, the
+        #    whole create_tenant rolls back (AC8) — no half-created tenant.
+        group = Group(name=tenant.name, headquarters_tenant_id=tenant.id)
+        await GroupRepository(self.db).add(group)
+        await GroupTenantRepository(self.db).attach(group.id, tenant.id)
 
         await self.db.commit()
         return _to_read(tenant, member_count=1)

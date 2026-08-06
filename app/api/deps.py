@@ -261,11 +261,23 @@ def require_permission(obj: str, act: str):
     Usage in a router::
 
         @router.post("/", dependencies=[Depends(require_permission("agents", "create"))])
+
+    The request's db session is forwarded to ``check`` so the knowledge
+    group_admin derived bypass (slice 02) can fire on the HTTP path. Other
+    objects are unaffected (the bypass is scoped to obj=knowledge).
     """
 
-    async def _guard(user: CurrentUser = Depends(get_current_user)) -> CurrentUser:
+    async def _guard(
+        user: CurrentUser = Depends(get_current_user),
+        db: AsyncSession = Depends(get_db),
+    ) -> CurrentUser:
         allowed = await permission_service.check(
-            user.user_id, user.tenant_id, obj, act, platform_role=user.platform_role
+            user.user_id,
+            user.tenant_id,
+            obj,
+            act,
+            platform_role=user.platform_role,
+            db=db,
         )
         if not allowed:
             raise HTTPException(

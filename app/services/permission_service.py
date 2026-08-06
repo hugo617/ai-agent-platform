@@ -28,6 +28,8 @@ keeping casbin usage in exactly one place (easy to test, easy to swap).
 ``项目指南/02-后端架构/06-权限模型RBAC.md`` 的「权限变更的历史回溯(SCD2)」节。
 """
 
+from typing import TYPE_CHECKING
+
 from fastapi.concurrency import run_in_threadpool
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -35,8 +37,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.token_context import current_token_ctx
 from app.core import casbin_enforcer as _casbin_mod
 from app.models.rbac import Permission, Role
+from app.repositories.group import GroupRepository
 from app.repositories.rbac import RolePermissionRepository, RoleRepository
+from app.repositories.tenant import UserTenantRepository
 from app.schemas.rbac import PermissionItem, PermissionMatrix, RoleRead
+
+if TYPE_CHECKING:
+    from app.models.group import Group
 
 
 class PermissionService:
@@ -55,6 +62,8 @@ class PermissionService:
         obj: str,
         act: str,
         platform_role: str | None = None,
+        *,
+        db: AsyncSession | None = None,
     ) -> bool:
         """Return True if ``user_id`` may perform ``act`` on ``obj`` in ``tenant_id`.
 
@@ -75,6 +84,16 @@ class PermissionService:
         a token scoped to ``customers:update`` automatically satisfies a
         ``customers:read`` check. ``scope_mode="full"`` and the JWT path
         (``current_token_ctx is None``) skip this gate entirely.
+
+        group_admin derived bypass (knowledge-tiered slice 02): when ``db`` is
+        supplied and ``obj == "knowledge"``, the group context is derived from
+        ``tenant_id`` (group_tenants 1:1 after D8) and, if the user is that
+        group's admin (``is_group_admin``), the check short-circuits to True.
+        Strictly scoped to knowledge (D9) — devices/bookings/etc. never take
+        this branch. ``db`` defaults None, so the 60+ existing callers that do
+        not pass it keep the pre-slice-02 behavior exactly (the branch never
+        runs); callers that DO pass it opt into the bypass. Signature is thus
+        backward-compatible: the new param is keyword-only and optional.
         """
         # API token scope gate. Runs FIRST (before any bypass) so restricted
         # tokens — including super_admin-issued ones — stay bounded.
@@ -120,6 +139,18 @@ class PermissionService:
         # patch 5 — slice 02+03 merge rationale).
         if is_platform_writer(platform_role) and obj in ("devices", "bookings"):
             return True
+        # group_admin derived bypass (knowledge-tiered slice 02 §4.7/§4.8). Only
+        # fires when the caller passes a db AND the object is knowledge — so the
+        # 60+ legacy callers (no db) are untouched. Derives the group from
+        # tenant_id (D8 1:1 → at most one), then asks ``is_group_admin``. If the
+        # tenant has no group (reverse lookup empty) the bypass degrades safely
+        # to casbin — never raises. See plan §4.8 for the four-bypass boundary
+        # table (super_admin / hq_staff read / is_platform_writer /
+        # is_group_admin each own a disjoint obj scope).
+        if db is not None and obj == "knowledge":
+            groups = await GroupRepository(db).list_for_tenant(tenant_id)
+            if groups and await _is_group_admin_of(db, user_id, groups[0]):
+                return True
 
         def _do() -> bool:
             e = _casbin_mod.get_enforcer()
@@ -135,13 +166,19 @@ class PermissionService:
         obj: str,
         act: str,
         platform_role: str | None = None,
+        *,
+        db: AsyncSession | None = None,
     ):
         """Convenience: raise ``PermissionError`` if not allowed.
 
-        Kept as a coroutine so callers can ``await service.require(...)``.
+        Kept as a coroutine so callers can ``await service.require(...)``. The
+        optional ``db`` is forwarded to ``check`` so the knowledge group_admin
+        bypass can fire for callers that hold a session (slice 02).
         """
 
-        if not await self.check(user_id, tenant_id, obj, act, platform_role=platform_role):
+        if not await self.check(
+            user_id, tenant_id, obj, act, platform_role=platform_role, db=db
+        ):
             raise PermissionError(
                 f"无权限：{user_id} 不能在租户 {tenant_id} 中对 {obj} 执行 {act}"
             )
@@ -704,6 +741,60 @@ def is_platform_writer(platform_role: str | None) -> bool:
     without superseding that ADR**.
     """
     return platform_role in PLATFORM_WRITER_ROLES
+
+
+# The tenant roles that, when held on a group's headquarters store, derive the
+# ``group_admin`` identity (knowledge-tiered D1 edge rule 1). A member of the
+# HQ store is NOT a group_admin — only owner/admin.
+GROUP_ADMIN_HQ_ROLES: frozenset[str] = frozenset({"owner", "admin"})
+
+
+async def is_group_admin(db: AsyncSession, user_id: str, group_id: str) -> bool:
+    """True if ``user_id`` is the owner/admin of ``group_id``'s headquarters store.
+
+    Derived identity (knowledge-tiered D11): the group_admin identity is NOT a
+    stored role — it is derived at check time from the user's *current* (SCD2,
+    ``valid_to IS NULL``) role on the group's ``headquarters_tenant_id`` store.
+    This keeps the identity decoupled from any role the user holds on other
+    tenants (D1 edge rule 2 — cross-tenant identity stacking is judged in the
+    context of the group being acted on).
+
+    Six boundaries (AC3), all returning False rather than raising:
+      * member of the HQ store (not owner/admin);
+      * group has no headquarters (``headquarters_tenant_id is None``);
+      * user is group_admin of a *different* group (cross-group isolation);
+      * user has no current membership on the HQ store;
+      * the group id does not exist (soft-deleted groups also read as None);
+      * and, by construction, any DB error surfaces only through the await.
+
+    Two lightweight selects per call, never cached (E8 — same no-cache spirit
+    as ``check()``'s casbin lookup; 1-2 light queries are acceptable). Sibling
+    of ``is_cross_tenant_viewer`` / ``is_platform_writer`` — the only one that
+    queries the DB, hence ``async`` + ``db``.
+
+    Callers that have ALREADY fetched the group (e.g. ``check()`` reverse-derived
+    it from tenant_id) should call ``_is_group_admin_of`` directly to skip the
+    redundant ``GroupRepository.get`` round-trip.
+    """
+    group = await GroupRepository(db).get(group_id)
+    return await _is_group_admin_of(db, user_id, group)
+
+
+async def _is_group_admin_of(
+    db: AsyncSession, user_id: str, group: "Group | None"
+) -> bool:
+    """The membership half of ``is_group_admin`` for an already-fetched group.
+
+    Split out so ``check()`` (which has the group in hand after the tenant→group
+    reverse lookup) doesn't re-fetch it. ``group=None`` covers both the
+    "group id absent" and "group has no headquarters" boundaries.
+    """
+    if group is None or group.headquarters_tenant_id is None:
+        return False
+    membership = await UserTenantRepository(db).current_role(
+        user_id, group.headquarters_tenant_id
+    )
+    return membership is not None and membership.role in GROUP_ADMIN_HQ_ROLES
 
 
 # ---------------------------------------------------------------------------

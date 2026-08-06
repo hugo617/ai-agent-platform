@@ -31,6 +31,10 @@ from sqlalchemy.exc import IntegrityError
 
 pytestmark = pytest.mark.smoke
 
+# The JWT is mocked by the test client (conftest's _build_client), so any bearer
+# token string suffices for the Authorization header — mirrors test_tenants_api.
+AUTH = {"Authorization": "Bearer fake"}
+
 
 # --------------------------------------------------------------------- helpers
 
@@ -521,3 +525,482 @@ def test_migration_seed_categories_match_repo_constant():
     # All 5 must live in the _PLATFORM_CATEGORIES block (not just anywhere in
     # the docstring). Confirm the constant is defined and non-empty.
     assert "_PLATFORM_CATEGORIES = [" in source
+
+
+# ===========================================================================
+# Slice 02 — permission derivation + single-store auto-grouping
+# (plan-knowledge-tiered-foundation.md §切片 02)
+#
+# Three chapters:
+# - P. is_group_admin derived identity (AC1-3) — 6 boundary cases.
+# - B. check() knowledge bypass (AC4-6) — 3 cases (allow knowledge / reject
+#   devices / safe-degrade when tenant has no group).
+# - A. create_tenant auto-grouping step 7 (AC7-8) — single-store becomes its
+#   own one-member group at creation.
+#
+# These tests exercise the *service-layer* derivation logic, so they build
+# real Group/GroupTenant/UserTenant rows against the same in-memory SQLite
+# ``db_session`` fixture (create_all, not the migration).
+# ===========================================================================
+
+
+# ---------------------------------------------------------------- P. is_group_admin
+#
+# AC1: ``is_group_admin`` is a module-level async helper taking (db, user_id,
+# group_id) and returning bool — siblings of ``is_cross_tenant_viewer`` /
+# ``is_platform_writer`` (the only difference: it queries the DB, hence
+# async+db).
+# AC2: judgement = look up ``group.headquarters_tenant_id`` → the user's
+# *current* (SCD2 valid_to IS NULL) role on that tenant → role in (owner, admin).
+# AC3: six boundaries — member=False, no headquarters=None→False, cross-group
+# =False, user not on that tenant=False, group absent=False (and the positive
+# owner/admin=True).
+
+
+async def _seed_group_with_hq(
+    db_session,
+    *,
+    group_name: str,
+    hq_tenant_id: str,
+):
+    """Build a Group whose headquarters is ``hq_tenant_id`` and return it.
+
+    Used by the is_group_admin matrix: the group_admin identity derives from
+    the owner/admin of the headquarters tenant, so each case wires a Group →
+    HQ tenant → user membership and then asserts the derivation.
+    """
+    from app.models.group import Group
+
+    group = Group(name=group_name, headquarters_tenant_id=hq_tenant_id)
+    db_session.add(group)
+    await db_session.flush()
+    return group
+
+
+async def _seed_user_role(db_session, *, user_id: str, tenant_id: str, role: str):
+    """Insert an *active* UserTenant row (SCD2 current state) for a user.
+
+    Mirrors what ``UserTenantRepository.assign_role`` ends up persisting, but
+    inline so the test is explicit about the exact row that drives the
+    derivation (no hidden helper behavior).
+    """
+    from app.models.tenant import UserTenant
+
+    db_session.add(
+        UserTenant(
+            user_id=user_id, tenant_id=tenant_id, role=role, valid_to=None
+        )
+    )
+    await db_session.flush()
+
+
+@pytest.mark.asyncio
+async def test_is_group_admin_true_for_headquarters_owner(db_session):
+    """AC2/AC3: owner of the headquarters tenant derives group_admin."""
+    from app.models.tenant import Tenant
+    from app.services.permission_service import is_group_admin
+
+    hq = Tenant(id=_uuid("tnt"), name="HQ Store")
+    db_session.add(hq)
+    await db_session.flush()
+    group = await _seed_group_with_hq(
+        db_session, group_name="Chain", hq_tenant_id=hq.id
+    )
+    await _seed_user_role(
+        db_session, user_id="u-owner", tenant_id=hq.id, role="owner"
+    )
+    await db_session.commit()
+
+    assert await is_group_admin(db_session, "u-owner", group.id) is True
+
+
+@pytest.mark.asyncio
+async def test_is_group_admin_true_for_headquarters_admin(db_session):
+    """AC2/AC3: admin of the headquarters tenant also derives group_admin."""
+    from app.models.tenant import Tenant
+    from app.services.permission_service import is_group_admin
+
+    hq = Tenant(id=_uuid("tnt"), name="HQ Store")
+    db_session.add(hq)
+    await db_session.flush()
+    group = await _seed_group_with_hq(
+        db_session, group_name="Chain", hq_tenant_id=hq.id
+    )
+    await _seed_user_role(
+        db_session, user_id="u-admin", tenant_id=hq.id, role="admin"
+    )
+    await db_session.commit()
+
+    assert await is_group_admin(db_session, "u-admin", group.id) is True
+
+
+@pytest.mark.asyncio
+async def test_is_group_admin_false_for_headquarters_member(db_session):
+    """AC3 boundary: a member of the headquarters tenant is NOT group_admin
+    (D1 edge rule 1 — only owner/admin of the HQ store derive the identity)."""
+    from app.models.tenant import Tenant
+    from app.services.permission_service import is_group_admin
+
+    hq = Tenant(id=_uuid("tnt"), name="HQ Store")
+    db_session.add(hq)
+    await db_session.flush()
+    group = await _seed_group_with_hq(
+        db_session, group_name="Chain", hq_tenant_id=hq.id
+    )
+    await _seed_user_role(
+        db_session, user_id="u-member", tenant_id=hq.id, role="member"
+    )
+    await db_session.commit()
+
+    assert await is_group_admin(db_session, "u-member", group.id) is False
+
+
+@pytest.mark.asyncio
+async def test_is_group_admin_false_when_group_has_no_headquarters(db_session):
+    """AC3 boundary: a group with headquarters_tenant_id=None yields False
+    (no HQ tenant → nobody can derive group_admin from it)."""
+    from app.models.group import Group
+    from app.services.permission_service import is_group_admin
+
+    group = Group(name=_uuid("grp"), headquarters_tenant_id=None)
+    db_session.add(group)
+    await db_session.commit()
+
+    assert await is_group_admin(db_session, "u-anyone", group.id) is False
+
+
+@pytest.mark.asyncio
+async def test_is_group_admin_false_for_cross_group_user(db_session):
+    """AC3 boundary: owner of tenant B's group is NOT group_admin of tenant A's
+    group (cross-group isolation — D1 edge rule 2)."""
+    from app.models.tenant import Tenant
+    from app.services.permission_service import is_group_admin
+
+    hq_a = Tenant(id=_uuid("tnt"), name="HQ A")
+    hq_b = Tenant(id=_uuid("tnt"), name="HQ B")
+    db_session.add_all([hq_a, hq_b])
+    await db_session.flush()
+    group_a = await _seed_group_with_hq(
+        db_session, group_name="Chain A", hq_tenant_id=hq_a.id
+    )
+    await _seed_group_with_hq(
+        db_session, group_name="Chain B", hq_tenant_id=hq_b.id
+    )
+    # user is owner of B's HQ — must NOT count as admin of A's group.
+    await _seed_user_role(
+        db_session, user_id="u-b-owner", tenant_id=hq_b.id, role="owner"
+    )
+    await db_session.commit()
+
+    assert await is_group_admin(db_session, "u-b-owner", group_a.id) is False
+
+
+@pytest.mark.asyncio
+async def test_is_group_admin_false_when_user_not_in_headquarters_tenant(
+    db_session,
+):
+    """AC3 boundary: user with no active membership on the HQ tenant → False
+    (the derivation looks for a *current* SCD2 row; absent → None → False)."""
+    from app.models.tenant import Tenant
+    from app.services.permission_service import is_group_admin
+
+    hq = Tenant(id=_uuid("tnt"), name="HQ Store")
+    db_session.add(hq)
+    await db_session.flush()
+    group = await _seed_group_with_hq(
+        db_session, group_name="Chain", hq_tenant_id=hq.id
+    )
+    await db_session.commit()
+    # No UserTenant row seeded for "u-stranger" on hq.id.
+
+    assert await is_group_admin(db_session, "u-stranger", group.id) is False
+
+
+@pytest.mark.asyncio
+async def test_is_group_admin_false_when_group_absent(db_session):
+    """AC3 boundary: a non-existent group id → False (never raises)."""
+    from app.services.permission_service import is_group_admin
+
+    assert await is_group_admin(db_session, "u-anyone", "no-such-group") is False
+
+
+# -------------------------------------------------------- B. check() knowledge bypass
+#
+# AC4: ``check()`` gains a bypass branch — when ``obj=='knowledge'`` and the
+# caller is NOT already short-circuited by super_admin/hq_staff, it derives the
+# group context from ``tenant_id`` (group_tenants 1:1 after D8) and, if the
+# user is that group's admin (``is_group_admin``), returns True. When the
+# tenant has no group the reverse lookup yields None and the check safely
+# degrades to the casbin path.
+# AC5: the bypass is strictly scoped to ``obj=='knowledge'`` — a group_admin
+# asking for devices/bookings/etc. still goes through casbin (D9 scope guard).
+# AC6: ``check()`` signature is unchanged for the 60+ existing callers; the db
+# needed for the reverse lookup is an OPTIONAL trailing param (defaults None),
+# so callers that don't pass it never trigger the bypass (zero behavior change).
+
+
+async def _seed_grouped_tenant_with_owner(db_session, *, tenant_name, user_id):
+    """Build a self-grouped tenant (HQ of its own group) + an owner membership.
+
+    Returns ``(tenant, group)``. This is exactly the shape ``create_tenant``
+    will produce after slice 02's step 7 (single-store = its own group), so the
+    check() bypass tests operate on realistic data.
+    """
+    from app.models.group import Group, GroupTenant
+    from app.models.tenant import Tenant, UserTenant
+
+    tenant = Tenant(id=_uuid("tnt"), name=tenant_name)
+    db_session.add(tenant)
+    await db_session.flush()
+    group = Group(name=tenant_name, headquarters_tenant_id=tenant.id)
+    db_session.add(group)
+    await db_session.flush()
+    db_session.add(GroupTenant(group_id=group.id, tenant_id=tenant.id))
+    db_session.add(
+        UserTenant(
+            user_id=user_id, tenant_id=tenant.id, role="owner", valid_to=None
+        )
+    )
+    await db_session.commit()
+    return tenant, group
+
+
+@pytest.mark.asyncio
+async def test_check_bypasses_casbin_for_group_admin_on_knowledge(db_session):
+    """AC4: a group_admin (HQ owner) acting on obj=knowledge is allowed even
+    without any casbin knowledge policy (the bypass short-circuits casbin)."""
+    from app.services.permission_service import permission_service
+
+    tenant, _group = await _seed_grouped_tenant_with_owner(
+        db_session, tenant_name="HQ Store", user_id="u-hq-owner"
+    )
+
+    # No casbin knowledge policy seeded for this user → without the bypass the
+    # check would fall through to casbin and return False. The group_admin
+    # derivation must let the HQ owner through on knowledge.
+    allowed = await permission_service.check(
+        "u-hq-owner", tenant.id, "knowledge", "create", db=db_session
+    )
+    assert allowed is True
+
+
+@pytest.mark.asyncio
+async def test_check_does_not_bypass_for_group_admin_on_devices(db_session):
+    """AC5 (D9 scope guard): the group_admin bypass is knowledge-only. The same
+    HQ owner hitting devices still goes through casbin — which has no policy
+    for them here, so the result is False (not silently elevated)."""
+    from app.services.permission_service import permission_service
+
+    tenant, _group = await _seed_grouped_tenant_with_owner(
+        db_session, tenant_name="HQ Store", user_id="u-hq-owner"
+    )
+
+    allowed = await permission_service.check(
+        "u-hq-owner", tenant.id, "devices", "create", db=db_session
+    )
+    assert allowed is False
+
+
+@pytest.mark.asyncio
+async def test_check_safe_degrades_when_tenant_has_no_group(db_session):
+    """AC4 boundary: when the tenant belongs to no group (reverse lookup None),
+    the knowledge bypass cannot fire and the check degrades to casbin. With no
+    casbin policy, the result is False — never an error."""
+    from app.models.tenant import Tenant, UserTenant
+    from app.services.permission_service import permission_service
+
+    # A lone tenant with an owner but NO group attached (the pre-automation
+    # shape, or a tenant created before slice 02's step 7 existed).
+    tenant = Tenant(id=_uuid("tnt"), name="Lone Store")
+    db_session.add(tenant)
+    await db_session.flush()
+    db_session.add(
+        UserTenant(
+            user_id="u-lone", tenant_id=tenant.id, role="owner", valid_to=None
+        )
+    )
+    await db_session.commit()
+
+    allowed = await permission_service.check(
+        "u-lone", tenant.id, "knowledge", "read", db=db_session
+    )
+    assert allowed is False
+
+
+@pytest.mark.asyncio
+async def test_check_without_db_arg_preserves_legacy_behavior(db_session):
+    """AC6: callers that don't pass ``db`` get the pre-slice-02 behavior — the
+    group_admin bypass never fires, so a HQ owner with no casbin knowledge
+    policy is denied (zero behavior change for the 60+ existing callers)."""
+    from app.services.permission_service import permission_service
+
+    tenant, _group = await _seed_grouped_tenant_with_owner(
+        db_session, tenant_name="HQ Store", user_id="u-hq-owner"
+    )
+
+    # db omitted → bypass cannot run → falls through to casbin → False.
+    allowed = await permission_service.check(
+        "u-hq-owner", tenant.id, "knowledge", "create"
+    )
+    assert allowed is False
+
+
+# -------------------------------------------------- A. create_tenant auto-grouping
+#
+# AC7: ``create_tenant`` gains a 7th step — ALWAYS create a Group
+# (name=tenant.name, headquarters_tenant_id=tenant.id) and attach the new
+# tenant to it, in the SAME transaction (after the wallet step, before commit).
+# So every store is born as its own one-member group (single-store = its own
+# chain, knowledge-tiered D8+D10+E2).
+# AC8: transactional consistency — if step 7 fails the whole create_tenant
+# rolls back (no orphan tenant without a group).
+#
+# These go through the real HTTP path (super_admin_client) so the full 7-step
+# pipeline runs including casbin seeding, then assert the group side-effects
+# on ``db_session``.
+
+
+@pytest.mark.asyncio
+async def test_create_tenant_auto_creates_self_group(super_admin_client, db_session):
+    """AC7: creating a tenant also creates a Group acting as its own chain HQ.
+
+    The group's name mirrors the tenant's name and its headquarters_tenant_id
+    points back at the new tenant — the single-store = its-own-group invariant.
+    """
+    from sqlalchemy import select
+
+    from app.models.group import Group
+
+    resp = await super_admin_client.post(
+        "/api/v1/tenants/", json={"name": "Auto Group Store"}, headers=AUTH
+    )
+    assert resp.status_code == 201, resp.text
+    tenant_id = resp.json()["id"]
+
+    # Exactly one group whose headquarters is this tenant.
+    groups = (
+        await db_session.execute(
+            select(Group).where(Group.headquarters_tenant_id == tenant_id)
+        )
+    ).scalars().all()
+    assert len(groups) == 1, f"expected 1 self-group, got {len(groups)}"
+    assert groups[0].name == "Auto Group Store"
+
+
+@pytest.mark.asyncio
+async def test_create_tenant_auto_attaches_tenant_to_self_group(
+    super_admin_client, db_session
+):
+    """AC7: the new tenant is attached (GroupTenant row) to its self-group.
+
+    This is what makes ``GroupRepository.list_for_tenant`` resolve the tenant →
+    its group, which the check() knowledge bypass relies on.
+    """
+    from sqlalchemy import select
+
+    from app.models.group import Group, GroupTenant
+
+    resp = await super_admin_client.post(
+        "/api/v1/tenants/", json={"name": "Attach Store"}, headers=AUTH
+    )
+    assert resp.status_code == 201, resp.text
+    tenant_id = resp.json()["id"]
+
+    group = (
+        await db_session.execute(
+            select(Group).where(Group.headquarters_tenant_id == tenant_id)
+        )
+    ).scalar_one()
+    links = (
+        await db_session.execute(
+            select(GroupTenant).where(GroupTenant.tenant_id == tenant_id)
+        )
+    ).scalars().all()
+    assert len(links) == 1
+    assert links[0].group_id == group.id
+
+
+@pytest.mark.asyncio
+async def test_create_tenant_auto_group_is_unique_per_tenant(
+    super_admin_client, db_session
+):
+    """AC7 boundary: two different tenants get two different self-groups
+    (the D8 1:1 collapse is not violated by the automation — each tenant is
+    the sole member of its own group)."""
+    from sqlalchemy import select
+
+    from app.models.group import Group
+
+    r1 = await super_admin_client.post(
+        "/api/v1/tenants/", json={"name": "Store One"}, headers=AUTH
+    )
+    r2 = await super_admin_client.post(
+        "/api/v1/tenants/", json={"name": "Store Two"}, headers=AUTH
+    )
+    assert r1.status_code == 201 and r2.status_code == 201
+
+    groups = (
+        await db_session.execute(select(Group).order_by(Group.created_at))
+    ).scalars().all()
+    # Each tenant's headquarters pointer is distinct — no two tenants share a
+    # self-group HQ, and each tenant appears in exactly one GroupTenant.
+    hq_ids = [g.headquarters_tenant_id for g in groups if g.headquarters_tenant_id]
+    assert len(set(hq_ids)) == len(hq_ids), (
+        "auto-grouping must not collapse two tenants into one group's HQ"
+    )
+
+
+@pytest.mark.asyncio
+async def test_create_tenant_step7_failure_rolls_back_whole_tenant(
+    db_session, test_env, monkeypatch
+):
+    """AC8: if step 7 (auto-grouping) fails, the entire create_tenant rolls
+    back — no orphan tenant (or wallet, or membership) is left behind.
+
+    Drives ``TenantService.create_tenant`` directly (not via HTTP) and injects
+    a failure into ``GroupTenantRepository.attach`` — the last write of step 7.
+    The raise propagates before the single ``commit()``, and because all seven
+    steps share one session, SQLAlchemy rolls back steps 1-6 too. We then
+    assert the tenant/group/group_tenant rows never landed.
+
+    The global casbin enforcer is patched to the file-backed test enforcer
+    (mirroring ``_build_client``) so step 5's ``seed_tenant_defaults`` writes
+    policies to the temp file instead of needing a ``casbin_rule`` table that
+    ``create_all`` doesn't build.
+    """
+    from unittest.mock import patch
+
+    from sqlalchemy import select
+
+    from app.core import casbin_enforcer as casbin_mod
+    from app.models.group import Group, GroupTenant
+    from app.models.tenant import Tenant
+    from app.repositories import group as group_repo_mod
+    from app.schemas.tenant import TenantCreate
+    from app.services.tenant_service import TenantService
+
+    async def _boom(self, group_id, tenant_id):  # noqa: ANN001
+        raise RuntimeError("simulated step-7 failure")
+
+    monkeypatch.setattr(group_repo_mod.GroupTenantRepository, "attach", _boom)
+
+    svc = TenantService(db_session)
+    with patch.object(casbin_mod, "get_enforcer", return_value=test_env.enforcer):
+        with pytest.raises(RuntimeError, match="simulated step-7 failure"):
+            await svc.create_tenant("u-rollback", TenantCreate(name="Rollback Store"))
+    # create_tenant's commit never ran; expunge any uncommitted adds from steps
+    # 1-6 so the audit queries see a clean state.
+    await db_session.rollback()
+
+    # AC8: nothing committed — tenant, group, and group_tenant all absent.
+    assert (
+        await db_session.execute(
+            select(Tenant).where(Tenant.name == "Rollback Store")
+        )
+    ).scalars().all() == []
+    assert (
+        await db_session.execute(select(Group).where(Group.name == "Rollback Store"))
+    ).scalars().all() == []
+    assert (
+        await db_session.execute(select(GroupTenant))
+    ).scalars().all() == []

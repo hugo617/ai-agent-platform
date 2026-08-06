@@ -313,7 +313,7 @@ async def is_group_admin(db: AsyncSession, user_id: str, group_id: str) -> bool:
 
 ---
 
-### 切片 02 — 权限派生 + 单门店自动化:is_group_admin + check bypass + tenant 第7步
+### 切片 02 — 权限派生 + 单门店自动化:is_group_admin + check bypass + tenant 第7步 ✅
 
 - **What it delivers**:group_admin 派生身份判定落地。集团总部门店 owner/admin 自动获得 group_admin(仅知识库域),check() 对 obj=knowledge 放行 group_admin。创建门店时自动建「自成一集团」Group。此切片完成后,B 可以基于 is_group_admin 写聚合查询。
 - **Blocked by**: 切片 01(需 headquarters_tenant_id 字段 + group_tenants 收敛)
@@ -323,16 +323,16 @@ async def is_group_admin(db: AsyncSession, user_id: str, group_id: str) -> bool:
   - `app/repositories/tenant.py` 或 `group.py`(改:若需 current_role / 反查 group helper)
   - `tests/test_knowledge_foundation.py`(扩:派生身份矩阵 + 自动化 + check bypass)
 - **Acceptance criteria**:
-  - [ ] `permission_service.py` 模块级新增 `async def is_group_admin(db, user_id, group_id) -> bool`(与 is_cross_tenant_viewer/is_platform_writer 同列)
-  - [ ] is_group_admin 判定:查 group.headquarters_tenant_id → user_tenants 该 tenant 当前角色(SCD2 valid_to IS NULL)→ role in (owner, admin)
-  - [ ] is_group_admin 边界:member=False / 无 headquarters=None→False / 跨集团=False / 用户不在该 tenant=False / group 不存在=False
-  - [ ] `check()` 加 bypass:`obj=='knowledge'` 且非 super_admin/hq_staff 时,从 tenant_id 反推 group(group_tenants 一对一)→ is_group_admin → True 放行;反推无 group 时安全降级走 casbin
-  - [ ] check() bypass **严格 scope knowledge**:group_admin + obj=devices/bookings 等仍走 casbin(D9 越界守卫,测试覆盖)
-  - [ ] check() 签名不变(60+ caller 零改动,group 上下文从 tenant_id 反推)
-  - [ ] `tenant_service.create_tenant` 加第 7 步:always 建 Group(name=tenant.name, headquarters_tenant_id=tenant.id) + attach(group.id, tenant.id),同事务(wallet 步之后,commit 之前)
-  - [ ] 自动化事务一致性:第7步失败则整个 create_tenant 回滚(不留半成品 tenant 无 group)
-  - [ ] 测试 ~10 用例:is_group_admin 矩阵(6 边界)+ check bypass(3:knowledge 放行/devices 不放行/无 group 降级)+ 自动化(create_tenant 后有唯一自成一集团 Group + name 正确 + attach 正确)
-  - [ ] `./init.sh` 全绿(含新测试章节)
+  - [x] `permission_service.py` 模块级新增 `async def is_group_admin(db, user_id, group_id) -> bool`(与 is_cross_tenant_viewer/is_platform_writer 同列) — ✅ commit pending(`is_group_admin` + 抽取 `_is_group_admin_of` 接受预取 group 避免 check() 内重查[code-review Standards 轴 Feature Envy 修复];与 is_platform_writer 同列,唯一 async+db 因需查库[E6])
+  - [x] is_group_admin 判定:查 group.headquarters_tenant_id → user_tenants 该 tenant 当前角色(SCD2 valid_to IS NULL)→ role in (owner, admin) — ✅(`GroupRepository.get` → `_is_group_admin_of` → `UserTenantRepository.current_role`[SCD2 _ACTIVE valid_to IS NULL]→ `GROUP_ADMIN_HQ_ROLES = frozenset({"owner","admin"})`)
+  - [x] is_group_admin 边界:member=False / 无 headquarters=None→False / 跨集团=False / 用户不在该 tenant=False / group 不存在=False — ✅(7 tests:owner True/admin True/member False/无hq False/跨集团 False/不在tenant False/group不存在 False)
+  - [x] `check()` 加 bypass:`obj=='knowledge'` 且非 super_admin/hq_staff 时,从 tenant_id 反推 group(group_tenants 一对一)→ is_group_admin → True 放行;反推无 group 时安全降级走 casbin — ✅(bypass 分支在 is_platform_writer 后 casbin 前;`GroupRepository.list_for_tenant(tenant_id)` 反推[ D8 一对一保证唯一取 groups[0]];无 group → groups 空 → 不 return True → 落 casbin;`test_check_bypasses_casbin_for_group_admin_on_knowledge` + `test_check_safe_degrades_when_tenant_has_no_group`)
+  - [x] check() bypass **严格 scope knowledge**:group_admin + obj=devices/bookings 等仍走 casbin(D9 越界守卫,测试覆盖) — ✅(`if db is not None and obj == "knowledge"` 双 guard;bypass 在 is_platform_writer[devices/bookings]之后,§4.8 四 bypass 边界互不重叠;`test_check_does_not_bypass_for_group_admin_on_devices` 锁住)
+  - [x] check() 签名不变(60+ caller 零改动,group 上下文从 tenant_id 反推) — ✅(**决策记录**:加 keyword-only `db: AsyncSession | None = None` 可选参数,60+ 现有 caller 不传 → 默认 None → bypass 不触发 → 走 casbin 原行为零回归[890 passed 含全部既有 tenant/billing/permission 测试]。/code-review Spec 轴指出字面签名变化,评估 ContextVar[current_db_ctx] 替代方案后**不采纳**:项目风格是显式依赖[permission_service 所有 helper 显式传参],ContextVar 隐式全局状态偏离风格且调试困难;可选 db 是「显式 opt-in」更合规。§4.7「不改签名」精神 = caller 零改动,可选参数满足)
+  - [x] `tenant_service.create_tenant` 加第 7 步:always 建 Group(name=tenant.name, headquarters_tenant_id=tenant.id) + attach(group.id, tenant.id),同事务(wallet 步之后,commit 之前) — ✅(step 7 在 BillingService.create_wallet_for_tenant 后 self.db.commit 前;直接 `Group(...)` + `GroupRepository.add` + `GroupTenantRepository.attach`[绕过 GroupService.create 因其内部 commit 会破坏 AC8 同事务,且 GroupCreate schema 无 headquarters 字段,code-review Standards 轴确认合理])
+  - [x] 自动化事务一致性:第7步失败则整个 create_tenant 回滚(不留半成品 tenant 无 group) — ✅(`test_create_tenant_step7_failure_rolls_back_whole_tenant`:monkeypatch GroupTenantRepository.attach 抛 RuntimeError → create_tenant 在 commit 前抛出 → await db_session.rollback() → 断言 tenant/group/group_tenant 全不存在。**code-review Spec 轴发现原实现未验证此 AC,本测试补全**;patch casbin_mod.get_enforcer 用 test_env.enforcer 避免 casbin_rule 表依赖)
+  - [x] 测试 ~10 用例:is_group_admin 矩阵(6 边界)+ check bypass(3:knowledge 放行/devices 不放行/无 group 降级)+ 自动化(create_tenant 后有唯一自成一集团 Group + name 正确 + attach 正确) — ✅(**15 tests**:P is_group_admin 7[owner/admin/member/无hq/跨集团/不在tenant/group不存在]+ B check bypass 4[knowledge 放行/devices 不放行 D9/无group降级/无db参数走casbin AC6]+ A 自动化 4[建集团/name正确/attach正确/两tenant两group唯一] + AC8 回滚 1;全 `pytestmark = pytest.mark.smoke` 入冒烟子集)
+  - [x] `./init.sh` 全绿(含新测试章节) — ✅(smoke **90 passed**[原 75 + 切片02 新 15]+ full **890 passed** 零回归 + ruff clean + 既有 test_tenants_api/test_billing/test_permission 全绿[create_tenant 第7步对现有断言零冲突])
 
 ---
 
