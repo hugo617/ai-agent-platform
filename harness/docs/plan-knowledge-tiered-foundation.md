@@ -1,7 +1,7 @@
 # 计划:知识库分级 Feature A —— 数据模型 + 权限地基
 
 > **id**: `knowledge-tiered-foundation`
-> **状态**: passing(切片 01+02+03 全部完成,feature 收尾 §1-7 done;§8 分支清理待 PR merged)
+> **状态**: ✅ passing(切片 01+02+03 全部完成,feature 收尾 §1-8 全 done,合并 main + 推送远端 + 分支清理完毕)
 > **优先级**: 90(feature_list.json)
 > **创建日期**: 2026-08-06
 > **承接**: [`plan-knowledge-tiered-overview.md`](plan-knowledge-tiered-overview.md)(EP1 总纲,D1-D12 决策锁定)
