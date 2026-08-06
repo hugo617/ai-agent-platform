@@ -1,7 +1,7 @@
 {
   "project": "ai-agent-platform",
   "description": "多租户 AI 智能体 SaaS 平台脚手架(FastAPI + React + pycasbin + LangGraph)",
-  "last_updated": "2026-08-01",
+  "last_updated": "2026-08-05",
   "harness_version": "stage1-clean-state",
   "rules": {
     "single_active_feature": true,
@@ -14,6 +14,89 @@
     "standard_start_command": "RUN_START_COMMAND=1 ./init.sh"
   },
   "features": [
+    {
+      "id": "knowledge-tiered-foundation",
+      "priority": 90,
+      "area": "知识库-后端",
+      "title": "知识库分级 Feature A:数据模型 + 权限地基(groups 加 headquarters_tenant_id + group_tenants 唯一约束 + documents 加 scope/group_id/category_id + 新建 knowledge_categories/knowledge_distribution 表 + migration seed 预置 Category + group_admin 派生身份逻辑 + 单门店自成一集团自动化)",
+      "user_visible_behavior": "(地基 feature,无直接用户可见行为;为 B/C/D 提供数据模型与权限基础)搭建知识库三级权限的数据地基:① groups 表加 headquarters_tenant_id(总部门店指针);② group_tenants 从多对多收敛为一门店只属一集团(tenant_id 唯一);③ documents 表加 scope(platform/group/store)+ group_id + category_id 三字段(现有数据回填 store);④ 新建 knowledge_categories 表(带 scope+group_id+tenant_id,平台预置 Category)+ knowledge_distribution 表(下发关系,引用模型不拷贝);⑤ migration + seed 预置全局 Category(产品手册/FAQ/话术脚本/服务规范/促销文案);⑥ group_admin 派生身份逻辑:集团总部门店(group.headquarters_tenant_id 指向的 tenant)的 owner/admin 自动获得本集团知识库管理权(仅 object=knowledge,不扩其他域);⑦ 创建门店时若未指定集团,自动创建一个只有自己的 Group 并把自己设为总部(单门店=自成一集团)。",
+      "status": "not_started",
+      "verification": [
+        "后端 app/models/group.py:Group 新增 headquarters_tenant_id(FK tenants.id,nullable);group_tenants 的 tenant_id 加唯一索引(收敛一对一);迁移双库兼容(PG + SQLite)",
+        "后端 app/models/document.py:Document 新增 scope(String default 'store' NOT NULL)+ group_id(FK groups.id nullable,scope='group' 时必填,service 层校验)+ category_id(FK knowledge_categories nullable);现有 documents 数据回填 scope='store'",
+        "后端 app/models/knowledge_category.py 新建:knowledge_categories 表(id/name/scope[platform|group|store]/group_id nullable/tenant_id nullable/sort_order/is_deleted/created_at/updated_at)+ 迁移",
+        "后端 app/models/knowledge_distribution.py 新建:knowledge_distribution 表(id/source_doc_id FK documents/target_tenant_id FK tenants/distributed_by FK users/distributed_at/is_active)+ UniqueConstraint(source_doc_id,target_tenant_id)+ 迁移",
+        "后端 migration:建 2 新表 + 改 2 表 + seed 预置全局 Category(产品手册/FAQ/话术脚本/服务规范/促销文案 5 条 scope=platform);alembic upgrade head && alembic check 无 drift",
+        "后端 app/services/permission_service.py:新增 is_group_admin(user_id, group_id) 派生判定 (只看 user 是否为 group.headquarters_tenant_id 的 owner/admin,与他在其他 tenant 的 role 解耦 —— 总部门店 member 非 group_admin;跨门店身份叠加按当前操作 group 上下文判定);casbin 策略:group_admin 对 object=knowledge 的 group 级操作放行(仅知识库域,不扩 devices/bookings 等)",
+        "后端 app/services/tenant_service.py 或 group_service.py:创建门店时若未指定 group_id,自动建 Group(name=门店名,headquarters_tenant_id=新门店)+ attach 该门店到此 group;单门店=自成一集团自动化",
+        "测试 tests/test_knowledge_foundation_api.py ~15 用例(group_admin 派生身份判定 + 单门店自成一集团自动化 + scope 字段默认值/回填 + category 预置 seed + knowledge_distribution 唯一约束 + 权限边界 group_admin 仅知识库域不扩 devices)+ ./init.sh 全绿(ruff + pytest 含新章节)+ alembic check 无 drift"
+      ],
+      "notes": "知识库分级管理系列 Feature A(地基,EP1 总纲 plan-knowledge-tiered-overview.md)。grill 12 决策(D1-D12,Session 188)已固化。**硬约束**:group_admin 是派生身份非显式角色(D11,总部门店 owner/admin 自动获得,不加角色枚举/不加 user_groups 表);scope=group 知识独立层级存 Group(D12,非用总部门店 scope=store 表达);一门店只属一集团(D8,GroupTenant 收敛一对一);单门店=自成一集团(D8+D10,创建门店时自动建 Group)。**Out of Scope**:不改 hq_staff 语义 / group_admin 不扩知识库外 object(D9)/ 不做富文本编辑器 / 不做门店间共享(铁律)/ 不做门店创建后迁移集团(D8,创建时定集团后归属不可改)。依赖图:A 是 frontier,B 依赖 A,C/D 依赖 B。",
+      "plan": "harness/docs/plan-knowledge-tiered-overview.md",
+      "depends_on": "",
+      "evidence": []
+    },
+    {
+      "id": "knowledge-tiered-backend",
+      "priority": 89,
+      "area": "知识库-后端",
+      "title": "知识库分级 Feature B:后端 CRUD + 下发 API + 检索改造(KnowledgeService 扩展 scope/category/分发 + 下发撤回 API + 按角色过滤 list + search_by_embedding join distribution + Category CRUD)",
+      "user_visible_behavior": "(后端 feature,无直接前端;为 C/D 提供 API)① 超级管理员创建 scope=platform 知识后,可下发到指定门店或整个集团(POST /knowledge/distribute);② 集团管理员(总部门店 owner/admin)创建 scope=group 知识后,可下发到本集团分店;③ 门店 owner 创建 scope=store 知识(本店自建);④ 门店 list 知识时按角色自动过滤:看到 = 本店自建(scope=store)+ 上级显式下发给我的(knowledge_distribution 里 target_tenant_id=本店);⑤ 门店 agent 的 retrieve_knowledge 检索范围同样覆盖本店 + 上级下发;⑥ Category CRUD:各级管理员创建本级 Category,下级能选用上级 Category;⑦ 撤回下发(DELETE /knowledge/distribute/{id})后门店侧文档即时消失。",
+      "status": "not_started",
+      "verification": [
+        "后端 app/api/v1/knowledge.py:新增端点 —— POST /knowledge/{doc_id}/distribute(下发到指定 tenant_id 列表或 group_id 整个集团)+ DELETE /knowledge/distribute/{dist_id}(撤回=软删 is_active=false,保留审计痕迹,非硬删)+ 源文档软删(Document.is_deleted=true)时所有引用该文档的下发关系自动失效(list/retrieve 同时排除 doc.is_deleted=false AND dist.is_active=true)+ GET/POST/PUT/DELETE /knowledge/categories(Category CRUD,按 scope 权限)",
+        "后端 app/repositories/document.py:search_by_embedding 改造 —— 三路径按角色:① 门店视角 WHERE (doc.tenant_id=:tenant AND doc.scope='store') OR (dist.target_tenant_id=:tenant AND dist.is_active=true AND doc.is_deleted=false);② group_admin 聚合视角 WHERE (doc.scope='group' AND doc.group_id=:group) OR (doc.tenant_id IN 该group所有tenant AND doc.scope='store');③ super_admin 全局无过滤。retrieve_knowledge 工具传 include_distributed=True(本店+下发),retrieve 调试页传 include_distributed=False(纯本店调试,避免误扩)。门店视角检索「只增不减」(本店原结果保留+新增下发命中),零负向回归",
+        "后端 app/api/v1/knowledge.py:新增端点 —— POST /knowledge/{doc_id}/distribute(下发到指定 tenant_id 列表或 group_id 整个集团)+ DELETE /knowledge/distribute/{dist_id}(撤回=软删 is_active=false,保留审计痕迹,非硬删)+ 源文档软删(Document.is_deleted=true)时所有引用该文档的下发关系自动失效(list/retrieve 同时排除 doc.is_deleted=false AND dist.is_active=true)+ GET/POST/PUT/DELETE /knowledge/categories(Category CRUD,按 scope 权限)",
+        "后端 app/services/category_service.py 新建:Category CRUD + scope 权限(super_admin 建 platform / group_admin 建 group / 门店建 store)+ 下级能 list 上级 Category(list 可见 = platform 全部 + 本集团 group + 本店 store)",
+        "后端 app/agents/graph.py:_build_tenant_tools 的 retrieve_knowledge 适配新检索范围(本店 store + 下发),docstring 更新说明检索跨 scope",
+        "后端 app/api/v1/knowledge.py:新增端点 —— POST /knowledge/{doc_id}/distribute(下发到指定 tenant_id 列表或 group_id 整个集团)+ DELETE /knowledge/distribute/{dist_id}(撤回=软删 is_active=false,保留审计痕迹,非硬删)+ 源文档软删(Document.is_deleted=true)时所有引用该文档的下发关系自动失效(list/retrieve 同时排除 doc.is_deleted=false AND dist.is_active=true)+ GET/POST/PUT/DELETE /knowledge/categories(Category CRUD,按 scope 权限)",
+        "DataScope/Role.data_scope/DEFAULT_*_PERMS/casbin policy 零回归(group_admin 派生身份仅知识库域);retrieve_knowledge 现有调用点零行为回归(门店 agent 检索范围只增不减)"
+      ],
+      "notes": "知识库分级管理系列 Feature B(后端,依赖 A)。**硬约束**:下发是引用模型(D4,共享 chunks 不拷贝,上级改门店即时看到最新,撤回=软删 is_active=false 保留审计);RAG 检索三路径(D6:门店本店+下发 / group_admin 聚合 / super_admin 全局);Category 预置+扩展(D5,平台预置+各级自建);group_admin 仅知识库域(D9)。**Out of Scope**:不做富文本编辑/不做 PDF 预览/不改门店间隔离。验证核心:跨 scope 可见性矩阵 + 引用一致性 + 跨租户隔离铁律不破。",
+      "plan": "harness/docs/plan-knowledge-tiered-overview.md",
+      "depends_on": "knowledge-tiered-foundation",
+      "evidence": []
+    },
+    {
+      "id": "knowledge-tiered-reader-ui",
+      "priority": 88,
+      "area": "知识库-前端",
+      "title": "知识库分级 Feature C:前端三栏可视化阅读页(分类目录树 + 文档列表卡片 + Markdown 在线阅读器 + scope 来源标识 + 全文搜索,门店视角直观)",
+      "user_visible_behavior": "门店 owner/admin/member 打开知识库页,看到三栏布局:【左:分类目录树】scope 分区(平台下发/集团下发/本店)+ category 分组(产品手册/FAQ/话术等),树形导航点击筛选;【中:文档列表】按选中分类展示文档卡片,每卡显示标题/状态徽章(indexed/failed)/scope 来源标识(平台🔴/集团🟡/本店🟢)/更新时间/chunk 数,支持排序;【右:在线阅读器】点击文档后渲染 Markdown,带目录大纲(自动从标题提取)+ 全文搜索高亮 + 滚动定位。门店视角一眼区分「这是平台下发的/这是集团的/这是我自己加的」。super_admin/group_admin 看到聚合视图(group_admin 看本集团所有门店的 store 级 + 本集团 group 级)。响应式适配(窄屏折叠左栏)。",
+      "status": "not_started",
+      "verification": [
+        "前端 frontend/src/pages/knowledge/ 重构(或新建文件夹):knowledge-page.tsx 三栏布局 barrel + category-tree.tsx(左栏目录树,scope 分区 + category 分组,递归渲染)+ document-list.tsx(中栏列表卡片,scope 来源徽章 + 状态徽章 + 排序)+ markdown-reader.tsx(右栏阅读器,react-markdown 渲染 + 目录大纲提取 + 全文搜索高亮)",
+        "前端 frontend/src/hooks/queries.ts:扩展 useDocuments(带 scope/category 过滤参数)+ useKnowledgeCategories(scope 可见 = platform + 本集团 group + 本店)+ useDistributeDocuments(group_admin/super_admin 视角看下发关系);frontend/src/api/endpoints.ts 对应 fetch 函数",
+        "前端 frontend/src/api/types.ts:扩展 DocumentRead 加 scope/group_id/category_id + 新 KnowledgeCategoryRead + KnowledgeDistributionRead 类型",
+        "前端 scope 来源标识组件:platform🔴/group🟡/store🟢 三色徽章(对齐 design-system token,复用 semantic token 不硬编码色)",
+        "测试 knowledge-page reader 三栏 smoke test ~15 用例(三栏渲染 + scope 分区显示 + category 树点击筛选 + 文档卡片 scope 徽章 + Markdown 阅读器渲染 + 目录大纲 + 搜索高亮 + 空态 + 跨角色视图差异[门店看本店+下发/group_admin 看聚合] + 响应式窄屏折叠)+ npm test 全绿 + npm run build 0 错 + oxlint 0/0",
+        "现有 knowledge-page.tsx 零行为回归(检索调试页保留,仅列表/管理迁移到新三栏);现有 retrieve 调试页保留"
+      ],
+      "notes": "知识库分级管理系列 Feature C(前端阅读,依赖 B)。**硬约束(D7)**:三栏布局(目录树+列表+阅读器);scope 来源标识用 semantic token(对齐 design-system 收口,不复用硬编码色);Markdown 阅读器用 react-markdown(已有依赖,不新增);不做 PDF/Word 预览(超范围);不做富文本编辑器(只读+管理CRUD,编辑留后续)。**门店处理得非常好**:门店 owner 一眼看出「平台下发/集团下发/本店自建」三色分区。镜像现有 page-split 范式(三栏 barrel)。**Out of Scope**:富文本编辑 / PDF 预览 / 文档版本树。",
+      "plan": "harness/docs/plan-knowledge-tiered-overview.md",
+      "depends_on": "knowledge-tiered-backend",
+      "evidence": []
+    },
+    {
+      "id": "knowledge-tiered-admin-ui",
+      "priority": 87,
+      "area": "知识库-前端",
+      "title": "知识库分级 Feature D:前端分类管理 + 下发操作 UI(Category 管理 + 下发/撤回操作流程 + 权限按钮控制 + scope 切换的文档创建表单)",
+      "user_visible_behavior": "① group_admin/super_admin 在知识库管理页可「下发」按钮:选中文档后弹 Dialog 选择目标(指定门店列表 或 整个集团),确认后下发,目标门店即时可见;② 可「撤回下发」(列表中已下发项有撤回按钮,撤回后门店侧文档消失);③ Category 管理:各级管理员(super_admin/group_admin/门店 owner)可创建本级 Category,Category 列表按 scope 分组显示;④ 创建文档表单:scope 下拉(platform/group/store,按当前角色可选范围过滤)+ category 下拉(按 scope 可见的 Category)+ 内容输入;⑤ 权限按钮控制:仅 group_admin/super_admin 看到「下发」按钮,门店 owner 只看到「本店创建」。",
+      "status": "not_started",
+      "verification": [
+        "前端 frontend/src/pages/knowledge/distribute-dialog.tsx:下发 Dialog(选目标 = 门店多选 或 集团单选整组,调 POST /knowledge/{id}/distribute)+ 撤回操作(调 DELETE /knowledge/distribute/{id},二次确认)",
+        "前端 frontend/src/pages/knowledge/category-manager.tsx:Category CRUD Dialog(按 scope 权限:super_admin 建 platform/group_admin 建 group/门店建 store)+ Category 列表 scope 分组显示",
+        "前端 frontend/src/pages/knowledge/document-form.tsx:创建文档表单(scope 下拉按角色过滤可选范围 + category 下拉按 scope 可见 + 内容 textarea),scope=group 时 group_id 默认当前集团,scope=store 时 tenant_id 当前门店",
+        "前端 frontend/src/hooks/queries.ts:useDistributeDocument/useRevokeDistribution/useCreateCategory/useUpdateCategory/useDeleteCategory mutation hooks;权限按钮控制(group_admin/super_admin 才能下发,门店 owner 只能本店创建)",
+        "测试 knowledge-admin UI ~12 用例(下发 Dialog 选目标门店/集团 + 撤回二次确认 + Category CRUD 按 scope 权限 + 创建文档表单 scope 过滤 + 权限按钮隐藏[门店 owner 看不到下发按钮] + group_admin 视角 + 跨角色权限矩阵)+ npm test 全绿 + npm run build 0 错 + oxlint 0/0",
+        "现有 knowledge 相关前端零行为回归"
+      ],
+      "notes": "知识库分级管理系列 Feature D(前端管理+下发,依赖 B,可与 C 并行)。**硬约束**:下发/撤回是核心交互(集团统一管控门店的落地);权限按钮控制严格(仅 group_admin/super_admin 可下发);Category CRUD 按 scope 权限分级(D5 预置+扩展);scope 下拉按角色过滤(门店 owner 只能选 store,group_admin 可选 group/store,super_admin 全选)。**Out of Scope**:富文本编辑器(表单只 textarea 纯文本)/ 批量重新下发(单个操作)/ 下发定时(即时)。",
+      "plan": "harness/docs/plan-knowledge-tiered-overview.md",
+      "depends_on": "knowledge-tiered-backend",
+      "evidence": []
+    },
     {
       "id": "member-service-direct-tests",
       "priority": 85,

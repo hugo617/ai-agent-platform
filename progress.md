@@ -8,7 +8,7 @@
 - **标准启动路径(开工冒烟)**: `./init.sh`(装依赖 + ruff + `pytest -m smoke`,~15s,确认起点没坏)
 - **标准验证路径(收尾全量)**: `./init.sh full`(装依赖 + ruff + 全量 pytest,~5min,确认没回归)
 - **完整验证路径**(需 docker): `alembic upgrade head && alembic check` + `cd frontend && npm run build`
-- **当前最高优先级未完成功能**: **无 frontier(member-service-direct-tests p85 已 ✅ passing,2026-08-01 Session 184)。待用户排新需求。** 第 9 次巡检候选 ①+④ 均已收官(user-service-lookup-seam p84 + member-service-direct-tests p85),service 层直接测试范式建立并复用。**远端 main 已同步 = `cb8e1ad`(2026-08-03 Session 186 经 `gh api` 验真 + `git update-ref` 同步本地 ref,ahead 归 0;github.com:443 仍断,`git fetch` 不可用,以 `gh api` 验真 + 本地 ref 校准为准)**。最近 passing:member-service-direct-tests(85)/user-service-lookup-seam(84)/design-system-spacing-card-hierarchy(83,C)/design-system-color-sweep(82,B)/design-system-token-foundation(81,A)/queries-endpoints-domain-split(80)/customers-page-split(79)/devices-page-split(78)/perm-backfill-dedupe(77)/chat-page-split(76)/union-cast-split(75)/twoscope-config(74)/bookings-shared-split(73)/composite-chat(72)/principal-scope-doc-alignment(71)/principal-module(70)。
+- **当前最高优先级未完成功能**: **`knowledge-tiered-foundation` p90(知识库分级 Feature A:数据模型 + 权限地基)— EP1 总纲已落(Session 188),待 EP2 拆切片**。系列 4 feature 已登记(p90 foundation frontier / p89 backend depends_on foundation / p88 reader-ui depends_on backend / p87 admin-ui depends_on backend)。grill 12 决策(D1-D12)固化于 `harness/docs/plan-knowledge-tiered-overview.md`,经子智能体审查(事实✅6/6 准确 + 7 质量问题已修正:group_admin 边界补全 / 撤回语义统一软删 / 检索三路径 / 门店迁移 Out of Scope)。**核心架构**:三级权限(super_admin / group_admin 派生身份=总部门店 owner/admin / 门店 owner/admin/member)+ 双维度分类(scope[platform/group/store] + category 主题)+ 显式下发(引用模型共享 chunks,撤回软删)+ 可视化三栏阅读。「门店=最小 OPC 产业单元」是核心洞察:单门店自成一集团,门店 owner 自动是本集团 group_admin。第 9 次巡检候选 ①+④ 已收官(p84+p85)。**远端 main 真实 HEAD = `807f4df`(Session 187 经 `gh api` 验真;本地 HEAD `9707dc7` 内容等价[tree `f34c995`]SHA 分叉属不可本地消除的已知现象,详见 Session 187)。github.com:443 仍断,远端真相源以 `gh api` 为准**。最近 passing:member-service-direct-tests(85)/user-service-lookup-seam(84)/design-system-spacing-card-hierarchy(83,C)/design-system-color-sweep(82,B)/design-system-token-foundation(81,A)/queries-endpoints-domain-split(80)/customers-page-split(79)/devices-page-split(78)/perm-backfill-dedupe(77)/chat-page-split(76)。
 - **queries-endpoints-domain-split ✅ passing(2026-07-30 Session 170,全 2 切片完成)**:第 8 次巡检候选 ③ Strong —— queries.ts(1560 行/25 section)+ endpoints.ts(1514 行/29 section)两个 god-module 按 domain 拆成文件夹,deep module 按 domain 切 + 共享 core + barrel 保 interface 不变(区别于 page-split 范式)。**完整切片链**:**切片 1 ✅ commit fb88c64**(expand):Python 脚本自动化拆分 → queries/core.ts(qk 工厂 + useApiMutation export,68× leverage 保留)+ 24 domain + barrel(33 行);endpoints/core.ts + 29 domain + barrel(38 行)。tsc 0 错 + npm test 110/110 + build + oxlint 0/0 + import 路径零变化(@/hooks/queries 33 + @/api/endpoints 36 调用点不变)。**切片 2 ✅ contract**(本次):import 路径零变化显式验证 + qk 编码 diff 逐字一致(106 行 diff 空)+ domain 边界审计(queries 124→125 export[+1 useApiMutation private→export]/endpoints 141→141 逐字一致)+ ./init.sh full 842 passed 零回归。**/code-review 双轴**(general-purpose ×2 并行):**0 硬违规**,核心不变式(零行为变更 + 零 import 变化 + qk 逐字一致)全达标。**4 判断项处置**:① endpoints/core.ts 删死 re-export(原 export{api,...} 扩张 API 表面+5 无人消费,Standards 轴发现)→ export{} 占位,API 表面恢复 141→141;② 文件名修正 conversations-+-chat→conversations-chat / auth-2→auth-sessions;③ barrel 行数超 ≤30(33/38 注释撑超)→ plan AC2 修订 ≤40;④ bookings/devices 超 ≤150(207/173 内聚)→ plan AC10 记录豁免。**code-review 的价值**:Standards 轴发现 endpoints/core.ts 死 re-export 扩张公共面(避免 @/api/endpoints API 表面意外膨胀);Spec 轴确认 useApiMutation 可见性扩大无害(67=67 调用守恒无误用)。**feature 核心**:两个缓涨 god-module(queries 1505→1560/endpoints 1466→1514)按 domain 归位,leverage(useApiMutation 68× + qk 工厂)保留在 core,locality(22+ section 靠 grep 不靠目录)修复。barrel export * 接管,33+36 调用点零改动。范式:deep module 按 domain 切 + 共享 core + barrel(第 8 次巡检第 6 次 not-shallow 判决重评为 Strong 的兑现)。
 - **customers-page-split ✅ passing(2026-07-30 Session 170,全 2 切片完成)**:第 8 次巡检候选 ④ Top —— customers-page.tsx(834 行单文件 4 组件)拆 store-view/hq-view,镜像 bookings/devices/chat split 范式第 4 实例。**完整切片链**:**切片 1 ✅ commit 347af5f**:建 customers/ 文件夹 6 文件(index.tsx 双路 route + store-view.tsx 本店 CRUD + hq-view.tsx 跨店聚合只读 + customer-usage-dialog.tsx AI 用量+Metric + shared.tsx statusBadge+schema+常量+parseTagsJson 纯函数 D4)+ customers-page.tsx 改 barrel(re-export from customers/index,App.tsx 零改动)+ hq-view.test smoke 2 tests。**切片 2 ✅ 末切片**(commit 85a969a + code-review 8356c64):补完整 store-view.test(5 tests:列表渲染 + 空态 + member 只读守卫 + owner 创建填表提交**断言 tags 经 parseTagsJson 正确解析** + 删除菜单)+ hq-view.test(5 tests:跨店表渲染 + 空态 + 行展开 profile 明细 + AI 用量 dialog storeScoped=false + 搜索过滤)+ parse-tags.test(6 tests,D4 纯函数 3 边界 + 空白/undefined)。**/code-review 双轴**(general-purpose ×2 并行):**Standards 0 硬违规**(范式忠实镜像 + symbol-name 锚定 + 测试隔离正确 hasPermission 真实实现 + permissions string[] 格式 + 依赖方向清晰);**1 判断项已文档化**(buildPayload tags 字段顺带修复隐藏 bug —— 原 monolith 把整个 {...values,tags} 当 payload.tags 传后端 → 脏数据,新版 tags.tags 正确取纯解析结果;补 store-view 注释显式记录,locked by test 断言)。**Spec** 9 AC 全满足;1 偏差已修(hq-view 测试数 4→5 补搜索过滤)。**code-review 的价值**:双轴独立交叉验证同一隐藏 bug(高置信),发现「零行为变更」宣称下的正向修复并文档化,避免 git blame 困惑。**验证**(plan §10 AC 全绿):npm test **110/110**(94 baseline + 16 customers[5 store+5 hq+6 parse])+ npm run build 0 错 + tsc -b 0 错 + oxlint 0/0 + grep 'pages/customers-page' 外部 import 仅 App.tsx barrel + **./init.sh full 842 passed**(零回归,纯前端)。**feature 收尾仪式(three-tier §4 第1-8步)**:① ./init.sh full 842 passed + 前端 110/110 + build + oxlint 全绿 ✅ / ② feature_list.json status `not_started → passing` + evidence 4 条 ✅ / ③ sync-active 刷新(1 活跃 queries-endpoints + 5 最近 passing)✅ / ④ progress.md 顶部 frontier 指向 ③ queries-endpoints ✅ / ⑤ clean-state-checklist ✅ / ⑥ 文档影响评估:**无新增/改动文档**(纯前端结构重构,AGENTS.md/项目指南/铁律均不受影响)/ ⑦ **末切片依赖解锁扫描**:无任何 feature depends_on 指向 customers-page-split(纯重构无下游)→ 无需推进 / ⑧ 分支清理:refactor/customers-page-split-t1 待 PR 合并后删。**feature 核心**:customers-page 834 行单文件拆成 customers/ 文件夹 7 文件(双 entry barrel + 双路 route + store/hq 双视图 + usage dialog + shared + 3 测试)。完全镜像 bookings/devices/chat 已验证范式,运行时行为零变化(除 tags 字段隐藏 bug 正向修复)。customers-page 从零单测大 page → 有完整单测覆盖。store/hq 双视图范式第 4 实例,leverage 验证最强。
 - **规则死循环修复(2026-07-30 Session 168)— 清三笔债**:用户问「切片 02 为什么没合并到主分支」。排查发现 sess_c9895f7d 确立的「末切片分支清理」规则**自己卡在未合并的功能分支**上(`docs/harness-branch-cleanup-rule` = commit `ce9d64e`),从未进 main → 下游 agent 读到旧 7 步版本 → 切片 2 漏掉合并。规则要求合并,但规则自己没合并(self-referential trap)。**三笔债依次清完**:① **债1 规则合并** —— `ce9d64e` 单 commit 是纯规则改动(4 文档 +27/-11,zero 代码),从干净分支 `chore/merge-branch-cleanup-rule` cherry-pick,progress.md 部分因被后续事实超越保留 main 现状,3 核心规则文件(three-tier §4 第8步 + clean-state 第10项 + harness-router SKILL 4 处)落 main(merge commit `5c2b9cd`)。② **债2 切片2 合并** —— `refactor/devices-page-split-t2`(be7c223)本地 `git merge --no-ff` 进 main(merge commit `529bf29`,因沙箱网络不可达 GitHub push 超时,用户选「本地直接合 main」,远端推送待网络恢复)。分支基底是规则合并前的 0e1cd46,但未碰规则文件,三方合并干净无冲突,规则完整保留 main 版本未覆盖。**第8步分支清理执行**:删 `refactor/devices-page-split-t2` + `docs/harness-branch-cleanup-rule` + `chore/merge-branch-cleanup-rule` 三条已合并分支(`-d` 安全删,非 `-D`),本地 `git branch` 只剩 main。验证:前端 **94/94 全绿**(store-view 5 + hq-view 8)+ 后端冒烟绿。feature_list status=passing + evidence 4 条(已在 be7c223 内完成,合并后生效)。③ **债3 闭环项** —— sess_c989 自标注「回归纪律第3条同步 main 已记 progress.md 但未固化进 SKILL 回归第1步」,本次补齐:harness-router SKILL 回归流程**新增第1步「同步本地 main」(前置硬动作)**,原第1-4步顺延为第2-5步,交叉引用同步更新(commit `d3b3703`)。**三笔债清完 = 规则死循环修复闭环**:规则进 main → 下次末切片 agent 能读到第8步 → 不再漏合并。~~**待用户动作**(网络恢复后):`git push origin main`(本地 ahead origin/main **5 commits**)~~ **✅ 已验证无债(2026-07-30 Session 169 回归)**:`gh api repos/hugo617/ai-agent-platform/branches/main` 实测远端 main HEAD = `4ceafe6` = 本地 main HEAD(byte-for-byte 一致),5 关键 commit(`4ceafe6`/`d3b3703`/`529bf29`/`5c2b9cd`/`be7c223`)均在远端,OPEN PR = 0,远端分支只剩 main。即推送在 Session 168 之后某时刻已成功(当时 `git push` github.com:443 超时,但后台/后续已完成),原「待推送」债已不存在。注:`git fetch`/`git push`(github.com:443)本会话仍超时,但 `gh`/`gh api`(api.github.com)可达 —— 后续若需本地 git 同步,以 `gh api` 验真为准或待网络恢复。
@@ -21,6 +21,121 @@
 - **chat-page-split 切片 03 ✅(2026-07-30 Session 165 末切片,commit 4c961c2)**:收尾验证(git mv + 双 entry + customer-helpers + 全量验证)。落地 git mv + 2 新建 + 2 改:① **`git mv pages/chat-page.tsx → pages/chat/`**(git rename 检测 `chat-page.tsx => chat/index.tsx` (95%),blame 连续保留 —— 实际逻辑落地 index.tsx)。② `frontend/src/pages/chat/index.tsx`(590 行新建,路由入口,streaming 半边 + 编排的实际逻辑从旧 chat-page.tsx 搬出,改调共享 `customerNameOf(conv?.customer_id, customerProfiles)`)。③ `frontend/src/pages/chat/chat-page.tsx`(16 行 barrel,`export { ChatPage } from "./index"`,**镜像 bookings/bookings-page.tsx 双 entry 范式 D9**)。④ `frontend/src/App.tsx`(lazy import `@/pages/chat-page` → `@/pages/chat/chat-page`)。⑤ `frontend/src/pages/chat/customer-helpers.ts`(27 行新建,`customerNameOf(cid: string|null|undefined, profiles: CustomerProfileRead[]) => string|null` 参数化真纯函数 D7;签名 cid 扩含 undefined 是因为 `conv?.customer_id` 可能 undefined,`!cid` 短路语义等价,**零行为变更**;profiles 作参数传入可单测)。⑥ `frontend/src/pages/chat/conversation-list-panel.tsx`(改调共享 helper 删本地闭包副本 + call site 传 `customerProfiles`)。**验证**:`npm run build` 绿(1.83s,chat-page chunk 348 kB 与拆分前一致)+ `npm test` **81/81 全绿**(70 基线 + 11 panel,零回归)+ `npx oxlint .` 0/0 + grep residual `pages/chat-page` imports = **0** + `index.tsx` 590 行(<650 AC)+ grep `useMemo|useCallback` index.tsx = 0 + `./init.sh full` 后端 **841 passed**(零回归)。**/code-review 双轴**(general-purpose ×2 并行):Standards 0 硬违规(双 entry 忠实镜像 bookings、symbol-name 锚定 #5 合规、不越界)/ Spec 6/9 AC 满足(余 init.sh 已补跑 + 2 收尾后置)+ 0 scope creep;1 文档建议留痕(§10 AC item 5 `wc -l chat-page.tsx` 重命名后指向 barrel,measurement target 应 retarget index.tsx —— 非缺陷,streaming 半边 590 行 <650 实测满足);1 判断项留痕(devices-page 有第 3 份 customerNameOf,fallback 语义不同 `"-"`,属独立后续候选,不越界)。**feature 收尾仪式(three-tier §4 第 1-7 步)**:① feature_list.json status `not_started → passing` + evidence 4 条(切片 1/2/3 + 收尾条)✅ / ② `./scripts/sync-active-features.sh` 刷新 active 视图(2 活跃 + 5 最近 passing)✅ / ③ plan-chat-page-split.md draft v2 → ✅ passing(标题 + Ticket 3 AC 全勾 + 完成证据)✅ / ④ progress.md 顶部 frontier 清空(指向 devices-page-split 78)✅ / ⑤ clean-state-checklist 逐项 ✅ / ⑥ 文档影响评估:**无新增/改动文档**(纯前端结构重构,AGENTS.md/项目指南/铁律均不受影响);后置候选 devices-page 第 3 份 customerNameOf 留独立 ticket / ⑦ **末切片依赖解锁扫描**:无任何 feature `depends_on` 指向 chat-page-split(纯重构无下游)→ 无需推进。**feature 核心**:chat-page 1038 行单函数拆分完成 —— 拆成 chat/ 文件夹 6 文件(index 590 + panel 552 + build-working-list + customer-helpers + 2 测试),对称 bookings/ 范式;解锁 working-list 纯逻辑可测(A2 不可测债)+ 消解单函数膨胀 + 抽共享 helper。16 前端测试新增(5 buildWorkingList + 11 panel),总计 81 全绿。
 - **union-cast-split ✅ passing(2026-07-29 Session 158 续收尾,全 3 切片完成)**:第 6 次巡检(2026-07-29)Top recommendation —— 前端 5 个 role-branching hook 返回 union(`Device[]|DeviceHqRead[]` 等),窄化散落 4 view 靠 12 处 `as` 断言(微恶化,第5次 ~10→第6次 12)。grill 8 决策定方向:**拆 role-specific hook**(union 在 hook 层消灭而非 view 边界)+ queryKey 共享(D5)+ All 后缀(随 useAllTenants 先例,D6)+ 不提 ADR(D8)+ ModelOption/DeviceStatus 投影 cast 不纳入(正交,D2)。纯前端类型重构,零后端零 schema 零运行时行为变化,3 切片按 domain 分(bookings / devices / 收尾),非复杂任务不走对抗式审查。**完整切片链**:**切片 1 ✅ + 切片 2 ✅ PR #147 commit abce938**(bookings + devices domain 合并提交)+ **切片 3 ✅ 末切片**(本次,0 源码改动 —— grep 审计验证 + feature 收尾仪式,符合 plan「文件清单 0-1」预期)。**切片 1**(bookings domain):endpoints.ts 新增 `fetchBookingsAll`(返 `BookingHqRead[]`)+ queries.ts 新增 `useBookingsAll`(共享 `qk.bookings`) + hq-view 改调消 L143 `as BookingHqRead[]` + store-view 消 L186 `as Booking[]` + my-bookings-view 删 L63 D 类死 cast(`useMyBookings` 已返 `Booking[]` 非 union)+ 删 `Note(candidate-8)` 注释 + hq-view.test.tsx mock 改名 `useBookings`→`useBookingsAll`(D7)。**切片 2**(devices domain,消 8 处 A 类 device cast):endpoints.ts 新增 `fetchDevicesAll`/`fetchDeviceModelsAll` + 窄化 `fetchDevices`→`Device[]`/`fetchDeviceModels`→`DeviceModelPublic[]`(**偏离 §4.5** 改镜像切片 1 对称范式,4 理由记入 plan)+ queries.ts 新增 `useDevicesAll`/`useDeviceModelsAll`(共享 `qk.devices`/`qk.deviceModels`)+ hq-view 改调消 L161(接切片1遗留,双侧收口)+ store-view 消 L152/355/365 三处 + devices-page 双组件 StoreView L192/HqView L422 消 cast + device-models-page 消 L149/216 + hq-view.test.tsx mock 改名 `useDevices`→`useDevicesAll`。**/code-review 双轴**(切片 2,general-purpose ×2 并行):Standards 0 硬违规 + 1 判断项已采纳修复(endpoints.ts 三处 section header union 注释被本次改动证伪→更新为描述 split)/ Spec 8 AC 全满足。**切片 3 末切片**(本次):0 源码改动。AC1 grep A 类数组 cast(`as Device[]|as DeviceHqRead[]|as Booking[]|as BookingHqRead[]|as DeviceModelRead[]`)在 `frontend/src/pages/` **代码处归 0**(唯一 2 处匹 my-bookings-view L7 + store-view L153 是说明性历史注释,非 `Note(candidate-8)` 待办残余,保留正确)/ AC2 B 类保留(hq-view L516 `b as Booking` + L519 `bk as BookingHqRead` 单数 props cast[plan 写 520/523 实际微移 516/519]+ 测试 `as BookingHqRead` mock 散在 hq-view.test.tsx L139 + schedule-grid.test.tsx L109 各 1 处,共 2 处)/ AC3 C 类保留(devices-page `as ModelOption[]` ×4 L172/375/462/669 + `as DeviceStatus` ×1 L1053)/ AC4 `Note(candidate-8)` grep 0 处。**验证**:`npm run build` 绿(2.06s 0 类型错误)/ `npm test` **65/65 全绿**(8 test files 零行为回归)/ `npx oxlint .` **0 warning 0 error**(101 files 102 rules)。**feature 收尾**:status `not_started → passing`(修正切片 1+2 非末切片未更新 status 的状态 + 派生视图 active.json 同步)+ evidence 4 条(切片 1/2/3 + 收尾条)+ sync-active 刷新(active 视图 0 活跃 + 5 最近 passing)+ plan draft v1 → passing(切片 3 标题 ✅ + 7 AC 全勾 + 完成证据)+ progress.md 顶部 frontier 清空。**末切片仪式依赖解锁扫描(three-tier §4 第 7 步)**:无任何 feature `depends_on` 指向 union-cast-split(纯重构无下游)→ 无需推进。**文档影响评估**:① feature_list.json ✅ / ② progress.md ✅(顶部清空 + 本条记录 + EP3 断点)/ ③ plan-union-cast.md draft v1 → passing / ④ CONTEXT.md 不涉及(前端 hook 内部重构);不动 README / 不动 `项目指南/`(纯前端类型重构,现有架构文档完全覆盖)/ 不提 ADR(D8)。**feature 核心**:union-cast 扩散消解完成 —— 3 个 role-branching hook 各拆出 store 版 + All 版,union 在 hook 层消灭,10 处 A 类 role 窄化 cast 全消 + 1 处 D 类死 cast 顺手清;B 类(props 适配)+ C 类(字段投影/enum)按决策明确排除保留原样。union-cast 从第 5 次 ~10→第 6 次 12 处的恶化趋势终止并归零。
 - **EP3 断点**: **前端设计系统收口系列 EP2 单回环全完成 —— 3 feature 批量登记 + plan 含实施切片段就绪,Feature A `design-system-token-foundation` 为 frontier 待 EP3 实施**(2026-07-31 Session 172)。系列总纲 `harness/docs/plan-frontend-design-system-overview.md`(EP1 grill 7 决策 + huashu-design B3 变体定稿)。本次 Session 172 EP2 单回环:① `/to-spec` ×3 —— 落 `plan-design-system-token-foundation.md`(Feature A,2 切片)+ `plan-design-system-color-sweep.md`(Feature B,5 切片)+ `plan-design-system-spacing-card-hierarchy.md`(Feature C,2 切片),均含 Design 段 + 验收标准 + 实施切片段 + checklist;② feature_list.json 登记 3 条(A p81 in_progress / B p82 not_started depends_on A / C p83 not_started,与 A/B 正交);③ `/to-tickets` 切片段随 plan 一次成型(EP2 单回环高效做法,to-spec + to-tickets 同一套思考);④ EP2 收尾自检(three-tier §3)4 条全过(切片依赖图无环 / 每片有 AC / 首片 frontier / plan 无悬空 TODO);⑤ sync-active 刷新(3 活跃)。**Feature A token 值严格用 B3 定稿**(亮 `--success 152 76% 36%` / `--warning 35 92% 50%` / `--danger 0 84% 60%` / `--info 189 90% 42%`;暗 152 64% 48% / 38 95% 58% / 0 80% 64% / 189 80% 55%)。**下一步:EP3 `/implement` Feature A 切片 01**(token 基建:`index.css` `:root`+`.dark` 四 token + `tailwind.config.js` colors 暴露,frontier 无 blocker)。
+
+## Session 188(2026-08-05):知识库分级管理 EP1 grill + spec 落地(12 决策 + 总纲 + 4 feature 登记)
+
+**任务**:用户新加需求「按权限的知识库分类管理和知识库可视化阅读,超级管理员/租户管理员/门店管理员分级,门店为核心 OPC 产业」。走 EP1:`/grill-with-docs` 烤清大方向 → 落系列总纲 → 登记 feature。
+
+**grill 访谈(12 决策 D1-D12)**:
+
+关键澄清:**用户纠正了角色术语** —— 「租户管理员」实为「集团管理员」(集团=Group,非租户),三级为 super_admin / 集团管理员 / 门店管理员。
+
+**核心业务洞察(决定架构走向)**:用户确认「**一家门店就是一个集团**」(OPC 产业核心特征)。由此大幅简化:group_admin 为**派生身份**(总部门店 owner/admin 自动获得),避免新增独立角色枚举。
+
+| # | 决策点 | 选择 | 确认方式 |
+|---|---|---|---|
+| D1 | 三级角色 | super_admin / **group_admin 派生**(总部门店 owner/admin)/ 门店 owner/admin/member | 用户确认 |
+| D2 | 分类双维度 | scope(platform/group/store)+ category(主题)正交 | 用户确认 |
+| D3 | 下发机制 | 显式下发(可选推送到指定门店/集团) | 用户确认 |
+| D4 | 下发数据模型 | **引用**(共享 chunks 不拷贝,强一致性) | agent 推荐,用户未推翻 |
+| D5 | Category 管理 | 预置 + 允许扩展(平台预置+各级自建) | agent 推荐,用户未推翻 |
+| D6 | RAG 检索范围 | 本店 + 上级显式下发(agent retrieve 命中下发知识) | agent 推荐,用户未推翻 |
+| D7 | 可视化阅读 | 三栏(目录树+列表+Markdown 阅读器) | agent 推荐,基于「门店处理得非常好」 |
+| D8 | 门店集团归属 | **一对一**(一门店只属一集团,单门店=自成一集团) | 用户确认 |
+| D9 | 范畴边界 | 只做知识库域,group_admin 不扩其他 object | agent 推荐,用户未推翻 |
+| D10 | Group 模型 | 集团独立 + 总部门店指针(`headquarters_tenant_id`) | 用户确认 |
+| D11 | group_admin 身份 | **派生**(总部门店 owner/admin,不加角色枚举) | 用户确认 |
+| D12 | 集团级知识 | scope=group 独立层级(存 Group,非总部门店 store) | 用户确认 |
+
+**否决的关键方案**:① 新增独立 group_admin 角色枚举 + user_groups 表(D11 派生够用)② 复用 hq_staff(全局跨租户不绑 Group,无法区分 A/B 集团)③ 集团=特殊门店(Group 与 Tenant 合并,改动大)④ 下发拷贝(存储膨胀+embedding 重复)⑤ 集团级=总部门店 store 知识(语义混淆)。
+
+**现有 codebase 取证(grill 前 Explore)**:
+- p57 `knowledge-base-rag` ✅ passing(2026-07-16):Document(tenant 级软删)+ DocumentChunk(pgvector)+ KnowledgeService(CRUD+ingest+retrieve)+ retrieve_knowledge agent 工具 + 前端管理页+调试页
+- 现有角色:`UserTenant.role` = owner/admin/member(非 tenant_owner,我之前术语错);`hq_staff` 是全局跨租户只读(CROSS_TENANT_VIEWER_ROLES),不绑 Group
+- Group 模型:平台级(无 tenant_id),GroupTenant 多对多(D8 要收敛为一对一)
+- 缺失:无 scope 概念 / 无 category / 无下发 / 门店视角弱 / 阅读体验差
+
+**产出**:
+
+① **`harness/docs/plan-knowledge-tiered-overview.md`**(EP1 系列总纲):含背景 + 12 决策论证 + 数据模型变更总览(改 groups/group_tenants/documents + 新建 knowledge_categories/knowledge_distribution)+ 系列拆 4 feature + 范畴边界 + 参考文件定位。
+
+② **`feature_list.json` 登记 4 feature**(priority 86-89,按 priority 降序排,not_started):
+- `knowledge-tiered-foundation` p86(frontier,数据模型+权限地基,无 depends_on)
+- `knowledge-tiered-backend` p87(depends_on foundation,CRUD+下发 API+检索改造)
+- `knowledge-tiered-reader-ui` p88(depends_on backend,三栏可视化阅读)
+- `knowledge-tiered-admin-ui` p89(depends_on backend,分类管理+下发操作 UI)
+- 每条含 user_visible_behavior + verification + notes(硬约束+Out of Scope)+ plan 指向 overview
+
+③ **sync-active 刷新**:`./scripts/sync-active-features.sh` → active 视图 4 活跃 + 5 最近 passing + 1 里程碑。
+
+**数据模型变更总览**(各 feature 详细切片后续 EP2 拆):
+- `groups` 加 `headquarters_tenant_id`(D10)
+- `group_tenants.tenant_id` 唯一索引(D8 收敛一对一)
+- `documents` 加 `scope`/`group_id`/`category_id`(D2+D12)
+- 新表 `knowledge_categories`(D5,scope+group_id+tenant_id,平台预置+各级自建)
+- 新表 `knowledge_distribution`(D3+D4,引用关系 UniqueConstraint source_doc+target_tenant)
+
+**下一步(EP2)**:选 `knowledge-tiered-foundation` p90 走 EP2 单回环(`/grill-with-docs` 深化 → `/to-spec` 落 `plan-knowledge-tiered-foundation.md` → `/to-tickets` 拆切片),一个 context 内完成。foundation 是地基(feature B/C/D 都依赖),切片预估:① groups+group_tenants 模型改 + migration + 单门店自成一集团自动化 ② documents 加字段 + 回填 + knowledge_categories 表 + seed 预置 ③ knowledge_distribution 表 + group_admin 派生身份逻辑 + casbin 策略 + 权限边界测试。
+
+**子智能体审查修正(2026-08-06,EP1 产出提交前)**:启用 2 个子智能体并行审查(① 文档质量 ② codebase 事实核查)。**事实核查 ✅ 6/6 全准确**(p57 现状/角色值/CROSS_TENANT_VIEWER_ROLES/Group 模型/Document 现状/tenant_service 无自动建 Group —— 全部与 codebase 一致)。**质量审查发现 7 问题已全部修正**:
+- 🔴 S1 group_admin 边界未闭合 → D1 补「身份叠加与边界规则」3 条(总部门店 member 非 group_admin / 跨门店身份按当前 group 上下文判定 / group_admin 聚合视图 SQL 路径)
+- 🟡 M2 撤回语义矛盾(D4 说删关系行 vs 数据模型 is_active 软标)→ 统一为软删 is_active=false(保留审计,对齐 Document 软删惯例)+ 补「源文档软删→下发关系自动失效」
+- 🟡 M1 门店迁移集团未说明 → D8 补处理规则 + Out of Scope 明确「创建后不可迁移」
+- 🟡 M3 retrieve 改造回归风险 → D6 补风险评估(search_by_embedding 影响所有调用点含调试页,用 include_distributed 参数控制)
+- 🟡 M4 reader-ui 响应式边界 → Out of Scope 明确「仅 lg 断点折叠,完整移动端归移动端系列」
+- 🟢 L1 缺决策汇总表 → 总纲「总体方案」节开头补 12 决策速查表
+- 🟢 L2 priority 弄反(foundation 应是 frontier 但 priority 最小)→ 调整 foundation=90(最大,frontier)/ backend=89 / reader-ui=88 / admin-ui=87;area 区分前后端(知识库-后端/知识库-前端)
+
+feature_list.json 的 verification/notes 同步更新(backend 撤回软删 + 检索三路径 + foundation is_group_admin 边界 + 门店迁移 Out of Scope)。sync-active 重跑,frontier 正确指向 foundation p90。
+
+**文档影响评估**:
+| 文档 | 影响 | 说明 |
+|---|---|---|
+| `harness/docs/plan-knowledge-tiered-overview.md` | ✅ 新建 | EP1 系列总纲(12 决策 + 系列 feature 拆分) |
+| `feature_list.json` | ✅ 改 | +4 feature(p86-89,not_started,按 priority 降序) |
+| `feature_list.active.json` | ✅ 改(sync 生成) | 4 活跃 + 5 passing + 1 里程碑 |
+| `progress.md` | ✅ 改 | 顶部 frontier 行指向 p86 + Session 188 记录 |
+| `AGENTS.md` / `项目指南/` | ❌ 不动 | 纯 feature 登记,无架构/规则变化(group_admin 派生身份是 feature 内决策,非全局铁律) |
+| `项目指南/02-后端架构/03-数据库与ORM.md` | ⏳ 待 EP2 评估 | foundation feature 落地后可能补「三级 scope 数据隔离」章节(类比 booking_configs 两级配置范式) |
+
+---
+
+## Session 187(2026-08-05):轻量收尾债诊断 — SHA 分歧不可本地消除,定性为「已知现象」非「债」
+
+**任务**:hugo 入口 A 探索复核发现本地 HEAD(`9707dc7`)与远端 HEAD(`807f4df`)SHA 不同(内容相近的 Session 186 docs commit)。诊断是否需清理。
+
+**诊断流程**(逐层深入):
+
+1. **metadata 对比**(gh api + git log):两 commit 的 tree(`f34c995`)、parent(`cb8e1ad`)、author/committer(star)、时间戳(09:33:31+0800 = 01:33:31Z)全等。**唯一可观测差异**:commit message 尾部换行 —— 本地 `0a 0a`(2 个 `\n`),远端 `0a`(1 个 `\n`)。
+
+2. **本地重建验证 SHA 等价**(3 次尝试,全失败):
+   - 尝试1:`git commit-tree` + `+0800` timestamp + message 去尾换行 → SHA `6eb4b48` ≠ `807f4df`
+   - 尝试2:同上但 timestamp 改 UTC(`1785692011 +0000`)→ SHA `68588ced` ≠ `807f4df`
+   - 尝试3:`git update-ref refs/remotes/origin/main 807f4df` → **fatal: cannot update ref with nonexistent object**(git 安全机制:ref 不能指向本地不存在的对象;`807f4df` 因 github.com:443 网络阻断无法 fetch 到本地)
+
+3. **根因定性**:SHA 分歧受**双重制约**,无法本地消除:
+   - **制约 ①(网络)**:github.com:443 持续断,`git fetch` 不可达,无法把远端 `807f4df` commit object 拉到本地 → `update-ref` 无法指向它
+   - **制约 ②(GitHub 对象格式黑盒)**:GitHub git database API 创建 commit 时,内部 commit object 的 timestamp/metadata 格式与本地 `git commit` 产生的不完全一致(我从 REST API 看到的字段无法 100% 复现它内部 hash 的输入)→ `commit-tree` 重建 SHA 持续不匹配
+
+**内容层面零债验证**:
+- 本地 HEAD tree = 远端 HEAD tree = `f34c9950494f4aebb70d9a84a2540a44df7039b2`(git content-addressable 特性保证:tree 相同 = 工作区快照逐字节相同)
+- 构建测试业务零影响(内容相同,任何验证都过)
+
+**纠正 Session 186 的诊断误差**:Session 186 记录「远端真实 HEAD = `cb8e1ad` = 本地 HEAD(逐字一致)」是**不准确的** —— 当时本地 HEAD 已是 `9707dc7`(Session 186 自己刚 commit),远端 HEAD 是 `807f4df`,两者 SHA 本就不同。Session 186 把远端 HEAD 当成了 `cb8e1ad`(那是共同 parent),然后 `update-ref` 校准 origin 到 `cb8e1ad`,**这掩盖了真正的 HEAD 分歧而非消除它**(校准后 `git status` 不报 ahead,但本地 HEAD 与 origin ref 之间隔着一个 commit 的距离,只是恰好都被 `cb8e1ad` 作为祖先掩盖)。本次复核还原真相。
+
+**结论定性**:这不是可「清理」的债,而是**受环境约束的已知现象**:
+- ✅ 内容零债(tree 逐字节相同)
+- ✅ 业务零影响
+- ⚠️ SHA 分歧客观存在,但**不可本地消除**(网络 + GitHub 对象格式双重制约)
+- ⚠️ `git status` 的 ahead/behind 报告在此期间**不可信**(origin ref 无法指向真实远端 HEAD)
+
+**处置**:不强处理(动 HEAD 消除无业务影响的 SHA 分歧,收益<风险;钻 SHA 复现是死胡同)。**等网络恢复 `git fetch` 可达时,正常的 fetch 会自然收敛**(本地拉到 `807f4df` 后,本地 `9707dc7` 会成为 dangling object,ref 会指向远端真实 HEAD)。在此之前,远端真相源仍以 `gh api` 为准。
+
+**纪律强化**(延续 Session 166/169/185/186):断网期间的回归验证,**远端 HEAD 真相源 = `gh api repos/.../git/ref/heads/main --jq '.object.sha'`**,本地 `origin/main` ref 和 `git status` 的 ahead/behind 报告都不可信。**判断「推送债」应以远端 gh api HEAD 是否包含本地 commit 的 tree 为准,而非 SHA 字面等价**。
+
+**文档影响评估**:**无新增/改动正式文档**(纯 git 诊断 + 记录,无代码/无 plan/无 feature_list 变化)。progress.md 新增 Session 187 记录 + 纠正 Session 186 的诊断误差标注。
+
+---
 
 ## Session 186(2026-08-03):推送债复核清零 — gh api 验真远端已 = cb8e1ad,git update-ref 校准本地 origin/main ref
 
