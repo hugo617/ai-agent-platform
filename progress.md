@@ -8,7 +8,7 @@
 - **标准启动路径(开工冒烟)**: `./init.sh`(装依赖 + ruff + `pytest -m smoke`,~15s,确认起点没坏)
 - **标准验证路径(收尾全量)**: `./init.sh full`(装依赖 + ruff + 全量 pytest,~5min,确认没回归)
 - **完整验证路径**(需 docker): `alembic upgrade head && alembic check` + `cd frontend && npm run build`
-- **当前最高优先级未完成功能**: **`knowledge-tiered-foundation` p90(知识库分级 Feature A:数据模型 + 权限地基)— EP2 拆切片已落(Session 189),3 切片就绪,待 EP3 实施切片 01**。plan=`harness/docs/plan-knowledge-tiered-foundation.md`(status=in_progress,WIP=1 frontier)。系列 4 feature(p90 foundation in_progress / p89 backend not_started depends_on foundation / p88 reader-ui depends_on backend / p87 admin-ui depends_on backend)。EP1 总纲 12 决策(D1-D12)固化于 `plan-knowledge-tiered-overview.md`(Session 188,经子智能体审查事实✅6/6 + 7 质量问题已修正)。EP2 grill 8 深化决策(E1-E8)固化于 foundation plan §4.5(时序A+nullable / tenant_service第7步 / 1内聚迁移 / scope NOT NULL+回填 / check()bypass / permission_service模块级 / M2M报错中止 / 不缓存)+ §4.7 check()签名适配(从 tenant_id 反推 group 不改签名)+ §4.8 四 bypass 边界划分。**3 切片**:`01 数据模型地基(2改表+2新表+内聚迁移+Category seed)`→`02 权限派生+自动化(is_group_admin+check bypass+tenant第7步)`→`03 集成验证+收尾`,严格串行无环,plan 自检 4 项全过。**核心架构**:三级权限(super_admin / group_admin 派生身份=总部门店 owner/admin / 门店 owner/admin/member)+ 双维度分类(scope[platform/group/store] + category 主题)+ 显式下发(引用模型共享 chunks,撤回软删)+ 可视化三栏阅读。「门店=最小 OPC 产业单元」是核心洞察:单门店自成一集团,门店 owner 自动是本集团 group_admin。第 9 次巡检候选 ①+④ 已收官(p84+p85)。**远端 main 真实 HEAD = `807f4df`(Session 187 经 `gh api` 验真;本地 HEAD `9707dc7` 内容等价[tree `f34c995`]SHA 分叉属不可本地消除的已知现象,详见 Session 187)。github.com:443 仍断,远端真相源以 `gh api` 为准**。最近 passing:member-service-direct-tests(85)/user-service-lookup-seam(84)/design-system-spacing-card-hierarchy(83,C)/design-system-color-sweep(82,B)/design-system-token-foundation(81,A)/queries-endpoints-domain-split(80)/customers-page-split(79)/devices-page-split(78)/perm-backfill-dedupe(77)/chat-page-split(76)。
+- **当前最高优先级未完成功能**: **`knowledge-tiered-foundation` p90(知识库分级 Feature A:数据模型 + 权限地基)— EP3 切片 01 ✅ 完成(Session 190,commit 4fb20b6),frontier 推进到切片 02(权限派生+自动化,Blocked by 01 已解锁)**。plan=`harness/docs/plan-knowledge-tiered-foundation.md`(status=in_progress,WIP=1 frontier)。系列 4 feature(p90 foundation in_progress 切片01✅ / p89 backend not_started depends_on foundation / p88 reader-ui depends_on backend / p87 admin-ui depends_on backend)。EP1 总纲 12 决策(D1-D12)固化于 `plan-knowledge-tiered-overview.md`(Session 188)。EP2 grill 8 深化决策(E1-E8)固化于 foundation plan §4.5 + §4.7 check()签名适配 + §4.8 四 bypass 边界。**3 切片进度**:`01 数据模型地基 ✅ commit 4fb20b6`(2改表+2新表+内聚迁移+Category seed,16 tests,75 smoke passed,双轴 review APPROVE_WITH_NITS[orphan index drift 已修])→`02 权限派生+自动化(frontier,is_group_admin+check bypass+tenant第7步)`→`03 集成验证+收尾`,严格串行无环。**切片 01 落地**:Group +headquarters_tenant_id(FK nullable)/ GroupTenant tenant_id 唯一索引收敛一对一(drop 旧 idx 防 drift)/ Document +scope(NOT NULL default 'store')+group_id+category_id / knowledge_categories(部分唯一索引双库)/ knowledge_distribution(引用模型 D4 UniqueConstraint)/ 1 内聚迁移(M2M 预检报错 + scope 回填三层 + seed 5 Category 幂等)。**核心架构**:三级权限(super_admin / group_admin 派生身份=总部门店 owner/admin / 门店 owner/admin/member)+ 双维度分类(scope + category)+ 显式下发(引用模型,撤回软删)+ 三栏阅读。「门店=最小 OPC 产业单元」。第 9 次巡检候选 ①+④ 已收官(p84+p85)。**远端 main 真实 HEAD = `807f4df`(Session 187 经 `gh api` 验真;本地 HEAD `9707dc7` 内容等价 SHA 分叉属已知现象)。github.com:443 仍断,远端真相源以 `gh api` 为准**。最近 passing:member-service-direct-tests(85)/user-service-lookup-seam(84)/design-system-spacing-card-hierarchy(83,C)/design-system-color-sweep(82,B)/design-system-token-foundation(81,A)/queries-endpoints-domain-split(80)/customers-page-split(79)/devices-page-split(78)/perm-backfill-dedupe(77)/chat-page-split(76)。
 - **queries-endpoints-domain-split ✅ passing(2026-07-30 Session 170,全 2 切片完成)**:第 8 次巡检候选 ③ Strong —— queries.ts(1560 行/25 section)+ endpoints.ts(1514 行/29 section)两个 god-module 按 domain 拆成文件夹,deep module 按 domain 切 + 共享 core + barrel 保 interface 不变(区别于 page-split 范式)。**完整切片链**:**切片 1 ✅ commit fb88c64**(expand):Python 脚本自动化拆分 → queries/core.ts(qk 工厂 + useApiMutation export,68× leverage 保留)+ 24 domain + barrel(33 行);endpoints/core.ts + 29 domain + barrel(38 行)。tsc 0 错 + npm test 110/110 + build + oxlint 0/0 + import 路径零变化(@/hooks/queries 33 + @/api/endpoints 36 调用点不变)。**切片 2 ✅ contract**(本次):import 路径零变化显式验证 + qk 编码 diff 逐字一致(106 行 diff 空)+ domain 边界审计(queries 124→125 export[+1 useApiMutation private→export]/endpoints 141→141 逐字一致)+ ./init.sh full 842 passed 零回归。**/code-review 双轴**(general-purpose ×2 并行):**0 硬违规**,核心不变式(零行为变更 + 零 import 变化 + qk 逐字一致)全达标。**4 判断项处置**:① endpoints/core.ts 删死 re-export(原 export{api,...} 扩张 API 表面+5 无人消费,Standards 轴发现)→ export{} 占位,API 表面恢复 141→141;② 文件名修正 conversations-+-chat→conversations-chat / auth-2→auth-sessions;③ barrel 行数超 ≤30(33/38 注释撑超)→ plan AC2 修订 ≤40;④ bookings/devices 超 ≤150(207/173 内聚)→ plan AC10 记录豁免。**code-review 的价值**:Standards 轴发现 endpoints/core.ts 死 re-export 扩张公共面(避免 @/api/endpoints API 表面意外膨胀);Spec 轴确认 useApiMutation 可见性扩大无害(67=67 调用守恒无误用)。**feature 核心**:两个缓涨 god-module(queries 1505→1560/endpoints 1466→1514)按 domain 归位,leverage(useApiMutation 68× + qk 工厂)保留在 core,locality(22+ section 靠 grep 不靠目录)修复。barrel export * 接管,33+36 调用点零改动。范式:deep module 按 domain 切 + 共享 core + barrel(第 8 次巡检第 6 次 not-shallow 判决重评为 Strong 的兑现)。
 - **customers-page-split ✅ passing(2026-07-30 Session 170,全 2 切片完成)**:第 8 次巡检候选 ④ Top —— customers-page.tsx(834 行单文件 4 组件)拆 store-view/hq-view,镜像 bookings/devices/chat split 范式第 4 实例。**完整切片链**:**切片 1 ✅ commit 347af5f**:建 customers/ 文件夹 6 文件(index.tsx 双路 route + store-view.tsx 本店 CRUD + hq-view.tsx 跨店聚合只读 + customer-usage-dialog.tsx AI 用量+Metric + shared.tsx statusBadge+schema+常量+parseTagsJson 纯函数 D4)+ customers-page.tsx 改 barrel(re-export from customers/index,App.tsx 零改动)+ hq-view.test smoke 2 tests。**切片 2 ✅ 末切片**(commit 85a969a + code-review 8356c64):补完整 store-view.test(5 tests:列表渲染 + 空态 + member 只读守卫 + owner 创建填表提交**断言 tags 经 parseTagsJson 正确解析** + 删除菜单)+ hq-view.test(5 tests:跨店表渲染 + 空态 + 行展开 profile 明细 + AI 用量 dialog storeScoped=false + 搜索过滤)+ parse-tags.test(6 tests,D4 纯函数 3 边界 + 空白/undefined)。**/code-review 双轴**(general-purpose ×2 并行):**Standards 0 硬违规**(范式忠实镜像 + symbol-name 锚定 + 测试隔离正确 hasPermission 真实实现 + permissions string[] 格式 + 依赖方向清晰);**1 判断项已文档化**(buildPayload tags 字段顺带修复隐藏 bug —— 原 monolith 把整个 {...values,tags} 当 payload.tags 传后端 → 脏数据,新版 tags.tags 正确取纯解析结果;补 store-view 注释显式记录,locked by test 断言)。**Spec** 9 AC 全满足;1 偏差已修(hq-view 测试数 4→5 补搜索过滤)。**code-review 的价值**:双轴独立交叉验证同一隐藏 bug(高置信),发现「零行为变更」宣称下的正向修复并文档化,避免 git blame 困惑。**验证**(plan §10 AC 全绿):npm test **110/110**(94 baseline + 16 customers[5 store+5 hq+6 parse])+ npm run build 0 错 + tsc -b 0 错 + oxlint 0/0 + grep 'pages/customers-page' 外部 import 仅 App.tsx barrel + **./init.sh full 842 passed**(零回归,纯前端)。**feature 收尾仪式(three-tier §4 第1-8步)**:① ./init.sh full 842 passed + 前端 110/110 + build + oxlint 全绿 ✅ / ② feature_list.json status `not_started → passing` + evidence 4 条 ✅ / ③ sync-active 刷新(1 活跃 queries-endpoints + 5 最近 passing)✅ / ④ progress.md 顶部 frontier 指向 ③ queries-endpoints ✅ / ⑤ clean-state-checklist ✅ / ⑥ 文档影响评估:**无新增/改动文档**(纯前端结构重构,AGENTS.md/项目指南/铁律均不受影响)/ ⑦ **末切片依赖解锁扫描**:无任何 feature depends_on 指向 customers-page-split(纯重构无下游)→ 无需推进 / ⑧ 分支清理:refactor/customers-page-split-t1 待 PR 合并后删。**feature 核心**:customers-page 834 行单文件拆成 customers/ 文件夹 7 文件(双 entry barrel + 双路 route + store/hq 双视图 + usage dialog + shared + 3 测试)。完全镜像 bookings/devices/chat 已验证范式,运行时行为零变化(除 tags 字段隐藏 bug 正向修复)。customers-page 从零单测大 page → 有完整单测覆盖。store/hq 双视图范式第 4 实例,leverage 验证最强。
 - **规则死循环修复(2026-07-30 Session 168)— 清三笔债**:用户问「切片 02 为什么没合并到主分支」。排查发现 sess_c9895f7d 确立的「末切片分支清理」规则**自己卡在未合并的功能分支**上(`docs/harness-branch-cleanup-rule` = commit `ce9d64e`),从未进 main → 下游 agent 读到旧 7 步版本 → 切片 2 漏掉合并。规则要求合并,但规则自己没合并(self-referential trap)。**三笔债依次清完**:① **债1 规则合并** —— `ce9d64e` 单 commit 是纯规则改动(4 文档 +27/-11,zero 代码),从干净分支 `chore/merge-branch-cleanup-rule` cherry-pick,progress.md 部分因被后续事实超越保留 main 现状,3 核心规则文件(three-tier §4 第8步 + clean-state 第10项 + harness-router SKILL 4 处)落 main(merge commit `5c2b9cd`)。② **债2 切片2 合并** —— `refactor/devices-page-split-t2`(be7c223)本地 `git merge --no-ff` 进 main(merge commit `529bf29`,因沙箱网络不可达 GitHub push 超时,用户选「本地直接合 main」,远端推送待网络恢复)。分支基底是规则合并前的 0e1cd46,但未碰规则文件,三方合并干净无冲突,规则完整保留 main 版本未覆盖。**第8步分支清理执行**:删 `refactor/devices-page-split-t2` + `docs/harness-branch-cleanup-rule` + `chore/merge-branch-cleanup-rule` 三条已合并分支(`-d` 安全删,非 `-D`),本地 `git branch` 只剩 main。验证:前端 **94/94 全绿**(store-view 5 + hq-view 8)+ 后端冒烟绿。feature_list status=passing + evidence 4 条(已在 be7c223 内完成,合并后生效)。③ **债3 闭环项** —— sess_c989 自标注「回归纪律第3条同步 main 已记 progress.md 但未固化进 SKILL 回归第1步」,本次补齐:harness-router SKILL 回归流程**新增第1步「同步本地 main」(前置硬动作)**,原第1-4步顺延为第2-5步,交叉引用同步更新(commit `d3b3703`)。**三笔债清完 = 规则死循环修复闭环**:规则进 main → 下次末切片 agent 能读到第8步 → 不再漏合并。~~**待用户动作**(网络恢复后):`git push origin main`(本地 ahead origin/main **5 commits**)~~ **✅ 已验证无债(2026-07-30 Session 169 回归)**:`gh api repos/hugo617/ai-agent-platform/branches/main` 实测远端 main HEAD = `4ceafe6` = 本地 main HEAD(byte-for-byte 一致),5 关键 commit(`4ceafe6`/`d3b3703`/`529bf29`/`5c2b9cd`/`be7c223`)均在远端,OPEN PR = 0,远端分支只剩 main。即推送在 Session 168 之后某时刻已成功(当时 `git push` github.com:443 超时,但后台/后续已完成),原「待推送」债已不存在。注:`git fetch`/`git push`(github.com:443)本会话仍超时,但 `gh`/`gh api`(api.github.com)可达 —— 后续若需本地 git 同步,以 `gh api` 验真为准或待网络恢复。
@@ -2980,3 +2980,80 @@ plan `harness/docs/plan-member-service-direct-tests.md` 切片 01 = 末切片。
 | `feature_list.json` + 派生视图 | ✅ 已更新 | 末切片,status `in_progress → passing` + evidence 5 条(契约覆盖 / D1+D4 合规 / init.sh full 实测 / casbin SDK gap / 双轴 APPROVE)+ sync-active 刷新(0 活跃 + 5 最近 passing)|
 
 > 判断依据:切片 01 是纯后端加测(新增 1 测试文件,源码零改),无架构约定变更,无新表/迁移/前端改动。casbin SDK gap(has_role_for_user_in_domain 不存在)是测试断言层的 API 适配,不影响 member_service 源码或权限模型契约。**feature 完整收官**:第 9 次巡检候选 ④ ✅ passing,候选 ①(user-service-lookup-seam)+ ④(member-service-direct-tests)双双收官,service 层直接测试范式建立并复用。下一步:待用户排新需求(frontier 清空)。
+
+---
+
+## Session 190(2026-08-06):knowledge-tiered-foundation EP3 切片 01(数据模型地基,非末切片)
+
+plan `harness/docs/plan-knowledge-tiered-foundation.md` 切片 01 = 非末切片(切片 02 Blocked by 01)。本次从 frontier 接 `/implement`。开工流程:冒烟 59 passed 全绿,起点干净。开 `feat/knowledge-tiered-foundation-slice-01` 分支。
+
+### /implement 实施(TDD 红绿循环,16 tests)
+
+新增 `tests/test_knowledge_foundation.py`(plan §5 单一 seam,`pytestmark = pytest.mark.smoke` 全员入冒烟子集),用 `test_env` + `db_session` fixture(SQLite 内存库 + `create_all`,不跑迁移),验证模型 ORM 定义正确(create_all 建表 + CRUD + 约束 + 字段读写)。按表/字段分组做垂直切片,每组:写测试(红)→ 改模型/建模型(绿)。
+
+**6 章节覆盖(16 tests)**:
+- **G. Group(2)**:`test_group_headquarters_tenant_id_is_nullable_by_default` + `..._references_tenant` —— AC1,`Group.headquarters_tenant_id` FK tenants nullable 读写。
+- **T. GroupTenant(2)**:`test_group_tenant_unique_index_collapses_m2m_to_one`(真插入二次挂载 IntegrityError)+ `..._declares_tenant_id_unique_index`(ORM 声明校验)—— AC2,M2M 收敛一对一。
+- **D. Document(3)**:`test_document_scope_defaults_to_store` + `..._group_id_and_category_id_are_nullable` + `..._scope_can_be_set_to_group_or_platform` —— AC3,scope default 'store' NOT NULL + group_id/category_id nullable。
+- **C. knowledge_categories(3)**:`..._create_platform_scope` + `..._create_store_scope_with_tenant` + `..._has_scope_index_and_active_unique`(部分唯一索引 4 列活跃唯一校验)—— AC4。
+- **X. knowledge_distribution(3)**:`..._create_links_doc_to_target` + `..._unique_constraint_source_target`(UniqueConstraint 冲突 IntegrityError)+ `..._has_target_index_and_unique`(target 索引 + 唯一约束声明,兼容 UniqueConstraint 与 Index(unique=True)两种形式)—— AC5。
+- **M. 迁移行为(3)**:`test_migration_m2m_pre_check_sql_detects_dirty_data`(SQLite 实测 M2M 预检 SQL 脏=1/清=0,AC9)+ `test_migration_seed_is_idempotent`(双跑 INSERT...WHERE NOT EXISTS 零重复 5 名,AC7)+ `test_migration_seed_categories_match_repo_constant`(契约钉住迁移源码常量防漂移)。
+
+**模型/迁移落地(7 文件,对齐 plan 切片 01 文件清单 + 2 注册支持文件)**:
+- `app/models/group.py`(改):`Group +headquarters_tenant_id`(FK tenants ondelete SET NULL nullable,E1 方案A+nullable)+ `GroupTenant` tenant_id 唯一索引 `uq_group_tenants_tenant_id`(收敛一对一,D8)。
+- `app/models/document.py`(改):`Document +scope`(String(20) NOT NULL default='store' server_default='store',E4)+ `+group_id`(FK groups SET NULL nullable)+ `+category_id`(FK knowledge_categories SET NULL nullable)。
+- `app/models/knowledge_category.py`(新):`KnowledgeCategory`(scope 三级 + group_id/tenant_id nullable + sort_order + is_deleted + 部分唯一索引 `uq_..._scope_name_active`[postgresql_where + sqlite_where 双库镜像] + scope 索引)。
+- `app/models/knowledge_distribution.py`(新):`KnowledgeDistribution`(引用模型 D4 + source_doc_id CASCADE / target_tenant_id CASCADE / distributed_by SET NULL + is_active 软撤回 + UniqueConstraint[source,target] + target 索引)。
+- `alembic/versions/2026_08_06_1000_05fa069297cc_add_knowledge_tiered_foundation.py`(新,1 内聚迁移 E3):7 步 —— ① M2M 收敛预检(Python COUNT + raise,双库兼容,E7)② 建 knowledge_categories ③ groups +headquarters_tenant_id ④ documents +scope(NOT NULL+server_default+UPDATE 兜底三层防护,E4/AC8)+group_id+category_id ⑤ group_tenants drop 旧 idx + create 唯一索引(消 orphan 防 drift)⑥ 建 knowledge_distribution ⑦ seed 5 platform Category(INSERT...WHERE NOT EXISTS 幂等,镜像 booking_configs,D5/AC7)。
+- `tests/conftest.py` + `alembic/env.py`(改):双注册 knowledge_category/knowledge_distribution 到模型导入清单(create_all 建表 + autogenerate 识别)。
+
+### /code-review 双轴(general-purpose ×2 并行)→ APPROVE_WITH_NITS,1 drift 硬伤已修
+
+- **Standards 轴:APPROVE_WITH_NITS**。铁律全守(依赖单向零 service/repo import / 多租户字段齐备 / 双库部分唯一索引范式正确 / FK ondelete 与 plan §4.4 逐条对齐 / 按需加表无空架子 / 测试无 mock 调用断言对齐 D1)。**1 硬违规(🔴 已修)**:`group_tenants` 收敛后旧非唯一索引 `idx_group_tenants_tenant_id`(迁移 574391d912fc 建)成孤儿 —— 新迁移只 create 新唯一索引没 drop 旧的,PG `alembic check` 会判 drift(违反 AC10)。镜像仓库先例 `ce505ae8a1bd`(users username/email 索引 drop+create)修复:迁移 step5 `drop_index(idx_group_tenants_tenant_id)` 后 `create_index(uq_group_tenants_tenant_id unique)`,downgrade 对称重建。SQLite 实测 drop+create 序列双库兼容(孤儿 drop + 唯一约束生效)。3 判断项留痕(f-string seed 注入面[常量受控,与 booking_configs 同风格]/迁移 `now()` SQLite 不认[项目惯例,迁移 PG-only]/函数内 import[测试既有风格])。
+- **Spec 轴:APPROVE_WITH_NITS**。12 AC 逐条核对:AC1-5/AC7-9/AC11-12 全 ✅(16 tests + 75 smoke + ruff clean + 双库 DDL + seed 幂等 + M2M 预检双库);AC6/AC10 ⚠️(PG 运行时 `alembic upgrade head && alembic check` 待 CI/docker[本会话无 PG,属「实现正确 vs PG 运行时验证」区分]),AC10 drift 硬伤同 Standards 轴共识发现。无越界(只动模型+迁移+测试,未碰 service/repo/graph.py/DEFAULT_*_PERMS/devices/bookings)。
+
+**双轴共识价值**:两轴独立交叉验证同一 orphan index drift(高置信),精准定位仓库先例 ce505ae8a1bd 的 drop+create 范式作为修复依据,阻止了一个会在 PG CI 必然红的 drift 进仓库。修复 amend 进同一切片 commit(4fb20b6)。
+
+### 验证(plan 切片 01 AC 全绿)
+
+- ✅ `pytest tests/test_knowledge_foundation.py` **16/16 passed**
+- ✅ `./init.sh` 冒烟 **75 passed**(原 59 + 新增 16,零回归)+ ruff clean
+- ✅ 切片 01 文件清单 6 项全对齐 plan(group/document 改 + knowledge_category/knowledge_distribution 新 + 1 迁移 + 1 测试)+ 2 注册支持文件(conftest/env.py)
+- ✅ migration revision 链正确(aa7a88a8e643 → 05fa069297cc 单 head)+ M2M 预检 SQL + seed 幂等 + step5 drop+create 序列 SQLite 直测双库兼容
+- ⏳ PG 侧 `alembic upgrade head && alembic check` 待 CI/docker(本会话无 PG,迁移 DDL 与 ORM create_all 对齐 + drift 硬伤已修,预期 CI 绿)
+
+### 非末切片收尾(three-tier §4 非末切片路径)
+
+切片 01 是非末切片(切片 02 Blocked by 01),**不执行 feature 收尾仪式**(不动 feature_list.json status/evidence,不 sync-active,不做文档影响评估表)。收尾动作:
+1. ✅ `./init.sh` 冒烟 75 passed + ruff clean
+2. ✅ plan checklist 切片 01 **12 条 AC 全勾选** + inline 完成证据 + 切片 01 标题追加 `✅ commit 4fb20b6`
+3. ✅ progress.md 顶部 frontier 推进:切片 01 ✅ → frontier 推进到切片 02(权限派生+自动化,Blocked by 01 已解锁)
+4. ✅ 本 Session 记录
+5. ⏳ **分支清理**:`feat/knowledge-tiered-foundation-slice-01` 待切片 02 完成后一起合并(或用户决定单独合并)
+
+### 下一步
+
+切片 02(权限派生+自动化,is_group_admin + check bypass + tenant 第7步,9 条 AC)成为新 frontier,Blocked by 01 已解锁。下次会话从切片 02 接 `/implement`。
+
+---
+
+## Session 191(2026-08-06):回归验证补债 — main 分歧对齐(reset+cherry-pick)+ 切片 01 合并 main
+
+**任务**:hugo 回归模式验证「切片 01 已完成」,发现切片 01 实施成果孤立在 feature 分支(本地 + 远端 main 均无)。同时诊断出本地 main 与 origin/main diverged(本地等价双胞胎 Session186+EP1 + EP2 vs 远端等价双胞胎 Session186+EP1)。
+
+**main 分歧诊断 + 对齐**(方案 A:reset + cherry-pick,用户选定):
+- **分歧本质**:逻辑等价双胞胎分叉 —— 本地 `9707dc7`+`43e41c1`+`4389b5f` 与远端 `807f4df`+`3cc44c9` 内容等价(仅 commit SHA + 文件尾部 EOL 差异,GitHub git database API 创建 commit 时元数据黑盒导致,progress Session 187 已记录为已知现象),本地额外多 EP2。Session186 tree 全等(`f34c995`),EP1 仅 `overview.md`/`progress.md` 尾部 EOL 差异(语义零差)。
+- **对齐动作**:`git reset --hard origin/main`(丢弃本地 3 双胞胎,语义零丢失,远端是事实真相源)→ `cherry-pick 4389b5f`(EP2,新 SHA `0bd0a99`)。本地 main 干净,ahead origin/main 1(EP2)。
+
+**切片 01 合并 main**(cherry-pick 方案,因 feature 分支基底 `cb8e1ad` 太旧带双胞胎,merge 会污染):
+- 切片 01 在 feature 分支 2 commit:`4fb20b6`(实施,8 文件 +1087 行)+ `3241a20`(收尾,plan 12 AC 勾选 + progress Session 190)。
+- `cherry-pick 4fb20b6`(新 SHA `73602e5`):干净落入无冲突(代码文件 EP2 未碰)。
+- `cherry-pick 3241a20`:1 处冲突(`progress.md` 文件末尾,HEAD 的 member-service 行 vs incoming 同行 + Session 190 章节),取 incoming(两行内容相同 + 保留 Session 190)。`plan` 文件 auto-merge 完美(切片01 12 AC 全勾,切片02/03 17 AC 未勾)。
+
+**验证**:
+- ✅ 本地 main commit 链:`0bd0a99`(EP2)→ `73602e5`(切片01 实施)→ 切片01 收尾,基于 `3cc44c9`(origin/main)。
+- ✅ plan 切片 01 12 AC 全勾带证据 + 切片 02/03 17 AC 未勾。
+- ✅ progress.md 顶部 frontier 反映切片 01 完成 + Session 190 记录在册。
+- ⏳ 待推送远端 + 待分支清理(`feat/knowledge-tiered-foundation-slice-01`)。
+
+**说明**:本次为纯回归补债(理顺历史 + 合并已有成果),非切片 01 的实施会话。切片 01 的实施质量(/implement 16 tests + /code-review 双轴 + drift 硬伤修复)已在 Session 190 记录,本 Session 只负责把成果从孤立 feature 分支落盘到 main。

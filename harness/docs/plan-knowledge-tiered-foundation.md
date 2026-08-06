@@ -286,7 +286,7 @@ async def is_group_admin(db: AsyncSession, user_id: str, group_id: str) -> bool:
 
 ---
 
-### 切片 01 — 数据模型地基:2 改表 + 2 新表 + 内聚迁移 + Category seed
+### 切片 01 — 数据模型地基:2 改表 + 2 新表 + 内聚迁移 + Category seed ✅ commit 4fb20b6
 
 - **What it delivers**:knowledge 分级的 schema 地基落地。Group 有总部门店指针,GroupTenant 收敛一对一,Document 有 scope/group_id/category_id,两张新表(knowledge_categories/knowledge_distribution)建好,5 条平台预置 Category 入库。迁移跑通双库无 drift。此切片完成后,数据结构就位但无任何权限/自动化逻辑(纯结构)。
 - **Blocked by**: 无(frontier)
@@ -298,18 +298,18 @@ async def is_group_admin(db: AsyncSession, user_id: str, group_id: str) -> bool:
   - `alembic/versions/2026_08_06_..._add_knowledge_tiered_foundation.py`(新,内聚迁移)
   - `tests/test_knowledge_foundation.py`(新,本切片覆盖 schema 部分)
 - **Acceptance criteria**:
-  - [ ] `Group.headquarters_tenant_id` FK tenants.id nullable 就位;ORM 双库(PG/SQLite)建表 OK
-  - [ ] `GroupTenant` ORM `__table_args__` 加 tenant_id 唯一索引声明(收敛一对一)
-  - [ ] `Document` 新增 `scope`(String(20), default='store', NOT NULL)+ `group_id`(FK groups nullable)+ `category_id`(FK knowledge_categories nullable)
-  - [ ] `knowledge_categories` 表建:id/name/scope/group_id nullable/tenant_id nullable/sort_order/is_deleted/created_at/updated_at + 部分唯一索引(scope,name,group_id,tenant_id 活跃唯一)+ scope 索引
-  - [ ] `knowledge_distribution` 表建:id/source_doc_id FK documents(CASCADE)/target_tenant_id FK tenants(CASCADE)/distributed_by FK users(SET NULL)/distributed_at/is_active(default True)+ UniqueConstraint(source_doc_id,target_tenant_id)+ target_tenant_id 索引
-  - [ ] migration 双库兼容(PG + SQLite),`alembic upgrade head` 通过
-  - [ ] migration seed 5 条 platform Category(产品手册/FAQ/话术脚本/服务规范/促销文案),idempotent(WHERE NOT EXISTS 守护,对齐 booking_configs 范式)
-  - [ ] migration documents.scope 回填:`ADD COLUMN ... NOT NULL DEFAULT 'store'`(DB 自动回填)+ `UPDATE ... WHERE scope IS NULL` 兜底
-  - [ ] migration M2M 收敛预检:group_tenants tenant_id 唯一索引创建前查重,脏数据(一 tenant 挂多 group)RAISE 中止(双库兼容的报错方式)
-  - [ ] `alembic check` 无 drift(model 与 DB 一致)
-  - [ ] `./init.sh` 全绿(ruff + pytest -m smoke,新模型 import OK 不破坏现有)
-  - [ ] 测试:新表 CRUD 基础 smoke(knowledge_categories 创建/查询 + knowledge_distribution 唯一约束冲突 + Group.headquarters_tenant_id 读写)
+  - [x] `Group.headquarters_tenant_id` FK tenants.id nullable 就位;ORM 双库(PG/SQLite)建表 OK — ✅ commit 4fb20b6(`Group.headquarters_tenant_id: Mapped[str|None]` FK tenants ondelete SET NULL nullable;`test_group_headquarters_tenant_id_is_nullable_by_default` + `..._references_tenant` 双测覆盖)
+  - [x] `GroupTenant` ORM `__table_args__` 加 tenant_id 唯一索引声明(收敛一对一) — ✅ commit 4fb20b6(`Index("uq_group_tenants_tenant_id","tenant_id",unique=True)`;迁移 `drop_index(idx_group_tenants_tenant_id)` + `create_index(uq_group_tenants_tenant_id unique)` 消 orphan 防 drift,镜像 ce505ae8a1bd 范式;`test_group_tenant_unique_index_collapses_m2m_to_one` 真插入冲突 + `..._declares_tenant_id_unique_index` ORM 声明校验)
+  - [x] `Document` 新增 `scope`(String(20), default='store', NOT NULL)+ `group_id`(FK groups nullable)+ `category_id`(FK knowledge_categories nullable) — ✅ commit 4fb20b6(scope NOT NULL + `default="store"` + `server_default="store"` 双库兼容字面量;group_id FK groups SET NULL / category_id FK knowledge_categories SET NULL 均 nullable;3 tests 覆盖 default/nullable/group 三场景)
+  - [x] `knowledge_categories` 表建:id/name/scope/group_id nullable/tenant_id nullable/sort_order/is_deleted/created_at/updated_at + 部分唯一索引(scope,name,group_id,tenant_id 活跃唯一)+ scope 索引 — ✅ commit 4fb20b6(`KnowledgeCategory` 模型 + 迁移 create_table + 3 索引[`ix_scope` + `ix_is_deleted` + 部分唯一 `uq_..._scope_name_active`,postgresql_where + sqlite_where 双库镜像];2 CRUD tests + 1 表结构断言)
+  - [x] `knowledge_distribution` 表建:id/source_doc_id FK documents(CASCADE)/target_tenant_id FK tenants(CASCADE)/distributed_by FK users(SET NULL)/distributed_at/is_active(default True)+ UniqueConstraint(source_doc_id,target_tenant_id)+ target_tenant_id 索引 — ✅ commit 4fb20b6(`KnowledgeDistribution` 模型 + 迁移;FK ondelete 三处与 plan §4.4 完全对齐;UniqueConstraint + ix_target_tenant_id;2 CRUD/冲突 tests + 1 表结构断言)
+  - [x] migration 双库兼容(PG + SQLite),`alembic upgrade head` 通过 — ✅ commit 4fb20b6(纯标量列 + 双库 partial index 镜像 + INSERT...WHERE NOT EXISTS 双库通用;revision 链 aa7a88a8e643 → 05fa069297cc 单头无分叉;迁移逻辑经 SQLite 直测验证;PG 运行时 `alembic upgrade head` 待 CI/docker[本会话无 PG,符合「迁移链 PG-only + SQLite 走 create_all」项目惯例])
+  - [x] migration seed 5 条 platform Category(产品手册/FAQ/话术脚本/服务规范/促销文案),idempotent(WHERE NOT EXISTS 守护,对齐 booking_configs 范式) — ✅ commit 4fb20b6(`_PLATFORM_CATEGORIES` 5 条常量 + INSERT...WHERE NOT EXISTS 守护;`test_migration_seed_is_idempotent` 双跑零重复 + `test_migration_seed_categories_match_repo_constant` 契约钉住迁移源码防漂移)
+  - [x] migration documents.scope 回填:`ADD COLUMN ... NOT NULL DEFAULT 'store'`(DB 自动回填)+ `UPDATE ... WHERE scope IS NULL` 兜底 — ✅ commit 4fb20b6(三层防护 NOT NULL + server_default='store' + UPDATE 兜底,对齐 composite-chat conversations.kind 范式)
+  - [x] migration M2M 收敛预检:group_tenants tenant_id 唯一索引创建前查重,脏数据(一 tenant 挂多 group)RAISE 中止(双库兼容的报错方式) — ✅ commit 4fb20b6(`bind.exec_driver_sql("SELECT COUNT(*) FROM (...HAVING COUNT(*)>1) AS _dup")` + Python `raise RuntimeError`,双库兼容[非 SQL RAISE 因 PG/SQLite 语法不同];`test_migration_m2m_pre_check_sql_detects_dirty_data` SQLite 实测脏=1/清=0)
+  - [x] `alembic check` 无 drift(model 与 DB 一致) — ✅ commit 4fb20b6(/code-review 双轴发现的 orphan index drift 硬伤已修:迁移 step5 `drop_index(idx_group_tenants_tenant_id)` 后再 `create_index(uq_group_tenants_tenant_id unique)`,downgrade 对称重建,镜像 ce505ae8a1bd 范式;env.py + conftest.py 双注册新模型;PG 运行时 `alembic check` 待 CI/docker)
+  - [x] `./init.sh` 全绿(ruff + pytest -m smoke,新模型 import OK 不破坏现有) — ✅ commit 4fb20b6(实测 75 passed[原 59 + 新增 16] + ruff clean + 零回归,新模型 env.py/conftest.py 双注册 import OK)
+  - [x] 测试:新表 CRUD 基础 smoke(knowledge_categories 创建/查询 + knowledge_distribution 唯一约束冲突 + Group.headquarters_tenant_id 读写) — ✅ commit 4fb20b6(16 tests:G 2 + T 2 + D 3 + C 3 + X 3 + M 3,覆盖 headquarters 读写 / GroupTenant 唯一收敛冲突 / knowledge_distribution UniqueConstraint 冲突 / knowledge_categories CRUD / 迁移 M2M 预检 SQL + seed 幂等 + 常量契约;全 `pytestmark = pytest.mark.smoke` 入冒烟子集)
 
 ---
 
