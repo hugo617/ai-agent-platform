@@ -1004,3 +1004,281 @@ async def test_create_tenant_step7_failure_rolls_back_whole_tenant(
     assert (
         await db_session.execute(select(GroupTenant))
     ).scalars().all() == []
+
+
+# ===========================================================================
+# Slice 03 — integration verification + feature wrap-up
+# (plan-knowledge-tiered-foundation.md §切片 03, the closing slice)
+#
+# Four end-to-end integration tests confirm slices 01+02 cooperate: the data
+# model (schema) and the permission derivation (service logic) work together
+# through the real create_tenant pipeline and the manual chain-building path.
+# No source change is expected unless these expose a bug (plan §切片 03).
+#
+# - I1. full pipeline (AC1) — create_tenant (auto-group) → is_group_admin=True
+#   → check(knowledge) allows → check(devices) denies. One assertion chain per
+#   the three behaviors the foundation must exhibit end to end.
+# - I2. cross-group isolation (AC2) — group_admin of chain A is NOT group_admin
+#   of chain B (the derivation is group-scoped, not global).
+# - I3. manual chain (AC3) — a hand-built chain (HQ store + branch store under
+#   one group) yields group_admin only for the HQ store's owner/admin; the
+#   branch store's owner does NOT derive group_admin.
+# - I4. distribution reference semantics (AC4) — a distribution row links a
+#   source doc to a target tenant; soft-deleting the source doc leaves the row
+#   in place (audit intact) but the row is_active=True is no longer "effective"
+#   because the source is gone. This slice only asserts the relation-table
+#   semantics; Feature B implements the actual list/retrieve filtering.
+# ===========================================================================
+
+
+@pytest.mark.asyncio
+async def test_integration_full_pipeline_auto_group_to_check_bypass(
+    super_admin_client, db_session
+):
+    """AC1: end-to-end — create_tenant auto-builds the self-group, the HQ owner
+    derives group_admin, and ``check()`` lets them act on knowledge but not on
+    devices.
+
+    This is the single test that ties slice 01 (Group.headquarters_tenant_id +
+    GroupTenant 1:1) to slice 02 (step-7 automation + is_group_admin + check
+    bypass): the auto-grouped tenant produced by the real HTTP pipeline is
+    exactly the shape the bypass expects, so the whole foundation composes.
+
+    The HQ owner is seeded via ``_seed_user_role`` rather than read from
+    ``create_tenant``'s own ``assign_role`` output: the caller of the HTTP
+    pipeline here is super_admin, which ``check()`` short-circuits before the
+    group_admin bypass branch can run. To exercise the bypass we need a *plain*
+    HQ-tenant owner, so the membership is added explicitly — this targets the
+    SCD2-read path of ``is_group_admin`` (``current_role`` over a ``valid_to IS
+    NULL`` row) the same way ``_seed_user_role`` does for the unit tests.
+    """
+    from sqlalchemy import select
+
+    from app.models.group import Group, GroupTenant
+    from app.services.permission_service import is_group_admin, permission_service
+
+    # 1) Real create_tenant pipeline — step 7 auto-builds the self-group.
+    resp = await super_admin_client.post(
+        "/api/v1/tenants/", json={"name": "Integration HQ"}, headers=AUTH
+    )
+    assert resp.status_code == 201, resp.text
+    tenant_id = resp.json()["id"]
+
+    # The auto-group has its headquarters pointing back at this tenant.
+    group = (
+        await db_session.execute(
+            select(Group).where(Group.headquarters_tenant_id == tenant_id)
+        )
+    ).scalar_one()
+
+    # 2) Seed a plain HQ-tenant owner (SCD2 active row) for the bypass target.
+    await _seed_user_role(
+        db_session, user_id="u-int-owner", tenant_id=tenant_id, role="owner"
+    )
+    await db_session.commit()
+
+    # 3) is_group_admin derives True for the HQ owner on this group.
+    assert await is_group_admin(db_session, "u-int-owner", group.id) is True
+
+    # 4) check() bypass lets the HQ owner through on knowledge, not on devices.
+    assert (
+        await permission_service.check(
+            "u-int-owner", tenant_id, "knowledge", "create", db=db_session
+        )
+        is True
+    )
+    assert (
+        await permission_service.check(
+            "u-int-owner", tenant_id, "devices", "create", db=db_session
+        )
+        is False
+    )
+
+    # Sanity: the auto-group attached the tenant (the bypass's reverse lookup
+    # depends on this GroupTenant row existing).
+    links = (
+        await db_session.execute(
+            select(GroupTenant).where(GroupTenant.tenant_id == tenant_id)
+        )
+    ).scalars().all()
+    assert len(links) == 1 and links[0].group_id == group.id
+
+
+@pytest.mark.asyncio
+async def test_integration_cross_group_isolation(db_session):
+    """AC2: a group_admin of chain A is NOT a group_admin of chain B.
+
+    Builds two fully-independent chains (each a self-grouped HQ tenant) and
+    asserts the owner of A's HQ derives group_admin only on A's group — the
+    derivation keys off group.headquarters_tenant_id, so cross-chain elevation
+    must never happen. Mirrors the D1 cross-group isolation edge rule.
+    """
+    from app.models.group import Group, GroupTenant
+    from app.models.tenant import Tenant
+    from app.services.permission_service import is_group_admin, permission_service
+
+    # Chain A — HQ tenant that is the headquarters of group A.
+    hq_a = Tenant(id=_uuid("tnt"), name="HQ A")
+    hq_b = Tenant(id=_uuid("tnt"), name="HQ B")
+    db_session.add_all([hq_a, hq_b])
+    await db_session.flush()
+    group_a = Group(name="Chain A", headquarters_tenant_id=hq_a.id)
+    group_b = Group(name="Chain B", headquarters_tenant_id=hq_b.id)
+    db_session.add_all([group_a, group_b])
+    await db_session.flush()
+    db_session.add_all(
+        [
+            GroupTenant(group_id=group_a.id, tenant_id=hq_a.id),
+            GroupTenant(group_id=group_b.id, tenant_id=hq_b.id),
+        ]
+    )
+    # Owner of A's HQ only — no membership on B.
+    await _seed_user_role(
+        db_session, user_id="u-a-owner", tenant_id=hq_a.id, role="owner"
+    )
+    await db_session.commit()
+
+    # Positive: A's owner is group_admin of A.
+    assert await is_group_admin(db_session, "u-a-owner", group_a.id) is True
+    # Negative: A's owner is NOT group_admin of B.
+    assert await is_group_admin(db_session, "u-a-owner", group_b.id) is False
+
+    # And the bypass reflects this: acting on A's tenant, knowledge is allowed;
+    # acting on B's tenant (where the user has no membership at all), it is not.
+    assert (
+        await permission_service.check(
+            "u-a-owner", hq_a.id, "knowledge", "create", db=db_session
+        )
+        is True
+    )
+    assert (
+        await permission_service.check(
+            "u-a-owner", hq_b.id, "knowledge", "create", db=db_session
+        )
+        is False
+    )
+
+
+@pytest.mark.asyncio
+async def test_integration_manual_chain_only_hq_owner_is_group_admin(db_session):
+    """AC3: a hand-built chain (HQ store + branch store under one group) grants
+    group_admin only to the HQ store's owner/admin — the branch store's owner
+    does NOT derive it.
+
+    ``GroupService.create`` does not accept ``headquarters_tenant_id`` (the
+    schema has no such field), so a multi-tenant chain is wired directly via ORM
+    rows: one Group whose headquarters is the HQ tenant, with both the HQ and a
+    branch tenant attached. This is the realistic "chain with branches" shape
+    that the single-store automation generalizes to once a group grows.
+
+    Known gap (not this slice's scope): a group created via the production
+    ``GroupService.create`` API lands with ``headquarters_tenant_id=None``, so
+    nobody would derive group_admin from it. Giving the create-group API a way
+    to set the headquarters pointer is Feature B's territory (the chain-building
+    UX lives there); this foundation slice only verifies the derivation logic on
+    the shape such a chain will eventually have.
+    """
+    from app.models.group import Group, GroupTenant
+    from app.models.tenant import Tenant
+    from app.services.permission_service import is_group_admin
+
+    hq = Tenant(id=_uuid("tnt"), name="Chain HQ")
+    branch = Tenant(id=_uuid("tnt"), name="Branch 1")
+    db_session.add_all([hq, branch])
+    await db_session.flush()
+
+    # The chain group: headquarters is the HQ tenant (not the branch).
+    chain = Group(name="Manual Chain", headquarters_tenant_id=hq.id)
+    db_session.add(chain)
+    await db_session.flush()
+    db_session.add_all(
+        [
+            GroupTenant(group_id=chain.id, tenant_id=hq.id),
+            GroupTenant(group_id=chain.id, tenant_id=branch.id),
+        ]
+    )
+    # HQ owner and branch owner — both "owners" but only the HQ one derives.
+    await _seed_user_role(
+        db_session, user_id="u-hq-owner", tenant_id=hq.id, role="owner"
+    )
+    await _seed_user_role(
+        db_session, user_id="u-branch-owner", tenant_id=branch.id, role="owner"
+    )
+    await db_session.commit()
+
+    # HQ owner IS the group_admin (derives from headquarters_tenant_id = hq).
+    assert await is_group_admin(db_session, "u-hq-owner", chain.id) is True
+    # Branch owner is NOT — being a branch owner does not make one a chain admin.
+    assert await is_group_admin(db_session, "u-branch-owner", chain.id) is False
+
+
+@pytest.mark.asyncio
+async def test_integration_distribution_reference_semantics(db_session):
+    """AC4: knowledge_distribution is a reference-model link (D4) — it points at
+    a source doc + target tenant, not a copy.
+
+    Two relation-table invariants this slice pins down (the *actual*
+    list/retrieve filtering — the ``is_active=True AND doc.is_deleted=False``
+    combined predicate — lands in Feature B; this test deliberately does NOT
+    encode that query, to avoid pinning Feature B's list semantics here):
+
+      1. A live distribution row (is_active=True) links doc↔target.
+      2. The audit row survives a source soft-delete — ``is_active`` is NOT
+         auto-flipped (the revoke is an explicit Feature B write, kept separate
+         from the source's own lifecycle so the audit trail stays intact).
+    """
+    from sqlalchemy import select
+
+    from app.models.document import Document
+    from app.models.group import GroupTenant  # noqa: F401  (register for create_all)
+    from app.models.knowledge_distribution import KnowledgeDistribution
+    from app.models.tenant import Tenant
+
+    src_tenant = Tenant(id=_uuid("tnt"), name="Source Tenant")
+    target = Tenant(id=_uuid("tnt"), name="Target Store")
+    db_session.add_all([src_tenant, target])
+    await db_session.flush()
+
+    doc = Document(
+        id=_uuid("doc"),
+        tenant_id=src_tenant.id,
+        name="HQ Product Manual",
+        scope="platform",
+    )
+    db_session.add(doc)
+    await db_session.flush()
+
+    dist = KnowledgeDistribution(
+        source_doc_id=doc.id, target_tenant_id=target.id, distributed_by=None
+    )
+    db_session.add(dist)
+    await db_session.commit()
+
+    # 1) Live distribution: the row is active and resolves back to the doc.
+    live = (
+        await db_session.execute(
+            select(KnowledgeDistribution).where(
+                KnowledgeDistribution.target_tenant_id == target.id
+            )
+        )
+    ).scalar_one()
+    assert live.is_active is True
+    assert live.source_doc_id == doc.id
+
+    # 2) Soft-delete the source — the audit row stays (is_active unchanged).
+    #    The revoke is an explicit Feature B write (is_active=False); this
+    #    foundation asserts the source's own soft-delete does NOT silently flip
+    #    the distribution row, so the audit trail is preserved.
+    doc.is_deleted = True
+    await db_session.commit()
+    retained = (
+        await db_session.execute(
+            select(KnowledgeDistribution).where(
+                KnowledgeDistribution.source_doc_id == doc.id
+            )
+        )
+    ).scalar_one()
+    assert retained.is_active is True, (
+        "soft-deleting the source must not auto-flip the distribution row; the "
+        "revoke is an explicit Feature B write that keeps the audit trail intact"
+    )
