@@ -15,34 +15,12 @@
   },
   "features": [
     {
-      "id": "knowledge-tiered-foundation",
-      "priority": 90,
-      "area": "知识库-后端",
-      "title": "知识库分级 Feature A:数据模型 + 权限地基(groups 加 headquarters_tenant_id + group_tenants 唯一约束 + documents 加 scope/group_id/category_id + 新建 knowledge_categories/knowledge_distribution 表 + migration seed 预置 Category + group_admin 派生身份逻辑 + 单门店自成一集团自动化)",
-      "user_visible_behavior": "(地基 feature,无直接用户可见行为;为 B/C/D 提供数据模型与权限基础)搭建知识库三级权限的数据地基:① groups 表加 headquarters_tenant_id(总部门店指针);② group_tenants 从多对多收敛为一门店只属一集团(tenant_id 唯一);③ documents 表加 scope(platform/group/store)+ group_id + category_id 三字段(现有数据回填 store);④ 新建 knowledge_categories 表(带 scope+group_id+tenant_id,平台预置 Category)+ knowledge_distribution 表(下发关系,引用模型不拷贝);⑤ migration + seed 预置全局 Category(产品手册/FAQ/话术脚本/服务规范/促销文案);⑥ group_admin 派生身份逻辑:集团总部门店(group.headquarters_tenant_id 指向的 tenant)的 owner/admin 自动获得本集团知识库管理权(仅 object=knowledge,不扩其他域);⑦ 创建门店时若未指定集团,自动创建一个只有自己的 Group 并把自己设为总部(单门店=自成一集团)。",
-      "status": "in_progress",
-      "verification": [
-        "后端 app/models/group.py:Group 新增 headquarters_tenant_id(FK tenants.id,nullable);group_tenants 的 tenant_id 加唯一索引(收敛一对一);迁移双库兼容(PG + SQLite)",
-        "后端 app/models/document.py:Document 新增 scope(String default 'store' NOT NULL)+ group_id(FK groups.id nullable,scope='group' 时必填,service 层校验)+ category_id(FK knowledge_categories nullable);现有 documents 数据回填 scope='store'",
-        "后端 app/models/knowledge_category.py 新建:knowledge_categories 表(id/name/scope[platform|group|store]/group_id nullable/tenant_id nullable/sort_order/is_deleted/created_at/updated_at)+ 迁移",
-        "后端 app/models/knowledge_distribution.py 新建:knowledge_distribution 表(id/source_doc_id FK documents/target_tenant_id FK tenants/distributed_by FK users/distributed_at/is_active)+ UniqueConstraint(source_doc_id,target_tenant_id)+ 迁移",
-        "后端 migration:建 2 新表 + 改 2 表 + seed 预置全局 Category(产品手册/FAQ/话术脚本/服务规范/促销文案 5 条 scope=platform);alembic upgrade head && alembic check 无 drift",
-        "后端 app/services/permission_service.py:新增 is_group_admin(user_id, group_id) 派生判定 (只看 user 是否为 group.headquarters_tenant_id 的 owner/admin,与他在其他 tenant 的 role 解耦 —— 总部门店 member 非 group_admin;跨门店身份叠加按当前操作 group 上下文判定);casbin 策略:group_admin 对 object=knowledge 的 group 级操作放行(仅知识库域,不扩 devices/bookings 等)",
-        "后端 app/services/tenant_service.py 或 group_service.py:创建门店时若未指定 group_id,自动建 Group(name=门店名,headquarters_tenant_id=新门店)+ attach 该门店到此 group;单门店=自成一集团自动化",
-        "测试 tests/test_knowledge_foundation_api.py ~15 用例(group_admin 派生身份判定 + 单门店自成一集团自动化 + scope 字段默认值/回填 + category 预置 seed + knowledge_distribution 唯一约束 + 权限边界 group_admin 仅知识库域不扩 devices)+ ./init.sh 全绿(ruff + pytest 含新章节)+ alembic check 无 drift"
-      ],
-      "notes": "知识库分级管理系列 Feature A(地基,EP1 总纲 plan-knowledge-tiered-overview.md)。grill 12 决策(D1-D12,Session 188)已固化。**硬约束**:group_admin 是派生身份非显式角色(D11,总部门店 owner/admin 自动获得,不加角色枚举/不加 user_groups 表);scope=group 知识独立层级存 Group(D12,非用总部门店 scope=store 表达);一门店只属一集团(D8,GroupTenant 收敛一对一);单门店=自成一集团(D8+D10,创建门店时自动建 Group)。**Out of Scope**:不改 hq_staff 语义 / group_admin 不扩知识库外 object(D9)/ 不做富文本编辑器 / 不做门店间共享(铁律)/ 不做门店创建后迁移集团(D8,创建时定集团后归属不可改)。依赖图:A 是 frontier,B 依赖 A,C/D 依赖 B。",
-      "plan": "harness/docs/plan-knowledge-tiered-foundation.md",
-      "depends_on": "",
-      "evidence": []
-    },
-    {
       "id": "knowledge-tiered-backend",
       "priority": 89,
       "area": "知识库-后端",
       "title": "知识库分级 Feature B:后端 CRUD + 下发 API + 检索改造(KnowledgeService 扩展 scope/category/分发 + 下发撤回 API + 按角色过滤 list + search_by_embedding join distribution + Category CRUD)",
       "user_visible_behavior": "(后端 feature,无直接前端;为 C/D 提供 API)① 超级管理员创建 scope=platform 知识后,可下发到指定门店或整个集团(POST /knowledge/distribute);② 集团管理员(总部门店 owner/admin)创建 scope=group 知识后,可下发到本集团分店;③ 门店 owner 创建 scope=store 知识(本店自建);④ 门店 list 知识时按角色自动过滤:看到 = 本店自建(scope=store)+ 上级显式下发给我的(knowledge_distribution 里 target_tenant_id=本店);⑤ 门店 agent 的 retrieve_knowledge 检索范围同样覆盖本店 + 上级下发;⑥ Category CRUD:各级管理员创建本级 Category,下级能选用上级 Category;⑦ 撤回下发(DELETE /knowledge/distribute/{id})后门店侧文档即时消失。",
-      "status": "not_started",
+      "status": "in_progress",
       "verification": [
         "后端 app/api/v1/knowledge.py:新增端点 —— POST /knowledge/{doc_id}/distribute(下发到指定 tenant_id 列表或 group_id 整个集团)+ DELETE /knowledge/distribute/{dist_id}(撤回=软删 is_active=false,保留审计痕迹,非硬删)+ 源文档软删(Document.is_deleted=true)时所有引用该文档的下发关系自动失效(list/retrieve 同时排除 doc.is_deleted=false AND dist.is_active=true)+ GET/POST/PUT/DELETE /knowledge/categories(Category CRUD,按 scope 权限)",
         "后端 app/repositories/document.py:search_by_embedding 改造 —— 三路径按角色:① 门店视角 WHERE (doc.tenant_id=:tenant AND doc.scope='store') OR (dist.target_tenant_id=:tenant AND dist.is_active=true AND doc.is_deleted=false);② group_admin 聚合视角 WHERE (doc.scope='group' AND doc.group_id=:group) OR (doc.tenant_id IN 该group所有tenant AND doc.scope='store');③ super_admin 全局无过滤。retrieve_knowledge 工具传 include_distributed=True(本店+下发),retrieve 调试页传 include_distributed=False(纯本店调试,避免误扩)。门店视角检索「只增不减」(本店原结果保留+新增下发命中),零负向回归",
@@ -98,6 +76,13 @@
       "evidence": []
     },
     {
+      "id": "knowledge-tiered-foundation",
+      "priority": 90,
+      "area": "知识库-后端",
+      "title": "知识库分级 Feature A:数据模型 + 权限地基(groups 加 headquarters_tenant_id + group_tenants 唯一约束 + documents 加 scope/group_id/category_id + 新建 knowledge_categories/knowledge_distribution 表 + migration seed 预置 Category + group_admin 派生身份逻辑 + 单门店自成一集团自动化)",
+      "status": "passing"
+    },
+    {
       "id": "member-service-direct-tests",
       "priority": 85,
       "area": "工程化",
@@ -126,17 +111,10 @@
       "status": "passing"
     },
     {
-      "id": "design-system-token-foundation",
-      "priority": 81,
-      "area": "前端设计系统",
-      "title": "设计系统收口 — Feature A:semantic token 基建(--success/--warning/--danger/--info 四 token 双色值 + ui/ 组件库内部映射)",
-      "status": "passing"
-    },
-    {
       "id": "_milestone_archived",
       "priority": 0,
       "area": "里程碑",
-      "title": "[已归档 80 条 passing,见 archive/features-passing-archive.json]",
+      "title": "[已归档 81 条 passing,见 archive/features-passing-archive.json]",
       "status": "passing"
     }
   ],

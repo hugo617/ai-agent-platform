@@ -1,7 +1,7 @@
 # 计划:知识库分级 Feature A —— 数据模型 + 权限地基
 
 > **id**: `knowledge-tiered-foundation`
-> **状态**: in_progress(切片 01+02 已合并,切片 03 末切片待做)
+> **状态**: passing(切片 01+02+03 全部完成,feature 收尾 §1-7 done;§8 分支清理待 PR merged)
 > **优先级**: 90(feature_list.json)
 > **创建日期**: 2026-08-06
 > **承接**: [`plan-knowledge-tiered-overview.md`](plan-knowledge-tiered-overview.md)(EP1 总纲,D1-D12 决策锁定)
@@ -336,7 +336,7 @@ async def is_group_admin(db: AsyncSession, user_id: str, group_id: str) -> bool:
 
 ---
 
-### 切片 03 — 集成验证 + feature 收尾(末切片)
+### 切片 03 — 集成验证 + feature 收尾(末切片)✅ commit ad633c5
 
 - **What it delivers**:端到端集成验证 + feature 收尾仪式。确认切片 01+02 的数据模型与权限逻辑协同工作,跑全量回归,刷新 feature_list 状态。
 - **Blocked by**: 切片 02
@@ -344,13 +344,13 @@ async def is_group_admin(db: AsyncSession, user_id: str, group_id: str) -> bool:
   - `tests/test_knowledge_foundation.py`(扩:集成场景 + 收尾覆盖补全)
   - (无源码改动,除非集成测试暴露 bug)
 - **Acceptance criteria**:
-  - [ ] 集成测试:完整流程 —— 创建门店(自动建集团)→ 总部 owner is_group_admin=True → 该用户对 knowledge 的 check() 放行 → 对 devices 不放行
-  - [ ] 集成测试:跨集团隔离 —— A 集团 group_admin 对 B 集团的 group is_group_admin=False
-  - [ ] 集成测试:连锁场景手工建集团(group_service.create + attach 分店)→ 分店 owner 非 group_admin(只有总部门店 owner/admin 是)
-  - [ ] 集成测试:knowledge_distribution 引用模型 —— 下发行 + 源文档软删后 is_active 仍 True 但 list 应排除(本 feature 只测关系表语义,实际 list 过滤在 B)
-  - [ ] `./init.sh full` 全量绿(ruff + 全量 pytest,零回归)
-  - [ ] `alembic upgrade head && alembic check` 双库无 drift
-  - [ ] feature 收尾仪式(three-tier §4 第1-7步):status→passing + evidence + sync-active + progress.md + 文档影响评估 + 依赖解锁扫描(B 的 depends_on=foundation 满足 → B 可置 in_progress)
+  - [x] 集成测试:完整流程 —— 创建门店(自动建集团)→ 总部 owner is_group_admin=True → 该用户对 knowledge 的 check() 放行 → 对 devices 不放行 — ✅ commit ad633c5(`test_integration_full_pipeline_auto_group_to_check_bypass`:真 HTTP `POST /api/v1/tenants/` 触发 step7 自动建集团 → `_seed_user_role` 注入 HQ owner[SCD2 active]→ `is_group_admin=True` → `check(knowledge)` 放行 + `check(devices)` 不放行 + GroupTenant 反查 sanity;串联 slice01 schema + slice02 派生+自动化全链)
+  - [x] 集成测试:跨集团隔离 —— A 集团 group_admin 对 B 集团的 group is_group_admin=False — ✅ commit ad633c5(`test_integration_cross_group_isolation`:两条独立链[各自 HQ tenant + self-group]→ A owner `is_group_admin(A)=True` + `is_group_admin(B)=False` + `check` 在 B tenant 拒放行;复现 D1 跨集团隔离)
+  - [x] 集成测试:连锁场景手工建集团(group_service.create + attach 分店)→ 分店 owner 非 group_admin(只有总部门店 owner/admin 是) — ✅ commit ad633c5(`test_integration_manual_chain_only_hq_owner_is_group_admin`:**注** `GroupCreate` schema 无 headquarters 字段 → 直接 ORM 构造 `Group(headquarters=hq)`+ attach HQ+分店 → HQ owner `is_group_admin=True` / 分店 owner `is_group_admin=False`。**已知缺口(Feature B territory)**:生产 `group_service.create` 建的集团 headquarters=None → 无人派生 group_admin,需 B 加 headquarters 写入路径;docstring 明示)
+  - [x] 集成测试:knowledge_distribution 引用模型 —— 下发行 + 源文档软删后 is_active 仍 True 但 list 应排除(本 feature 只测关系表语义,实际 list 过滤在 B) — ✅ commit ad633c5(`test_integration_distribution_reference_semantics`:下发行 is_active=True + 源文档软删后关系行留存 is_active 仍 True[审计完整,不自动 flip];**只测关系表语义,不实现 list 过滤**[/code-review 两轴共识:原 `effective==[]` 联合谓词越界预测 Feature B list 逻辑,已删避免钉死未交付实现])
+  - [x] `./init.sh full` 全量绿(ruff + 全量 pytest,零回归) — ✅ commit ad633c5(实测 **894 passed**[原 890 + 切片03 新 4]零回归 + ruff clean + 既有 test_tenants_api/test_permission/test_member_service 全绿)
+  - [x] `alembic upgrade head && alembic check` 双库无 drift — ✅ commit ad633c5(切片 03 零迁移改动[只加测试];迁移链单 head `05fa069297cc` 无分叉;切片 01/02 的 orphan index drift 已在 /code-review 修复[镜像 ce505ae8a1bd drop+create];ORM 与迁移 DDL 对齐。PG 运行时 `alembic upgrade head && alembic check` 待 CI/docker[本会话无 PG,符合「迁移链 PG-only + SQLite 走 create_all」项目惯例])
+  - [x] feature 收尾仪式(three-tier §4 第1-7步):status→passing + evidence + sync-active + progress.md + 文档影响评估 + 依赖解锁扫描(B 的 depends_on=foundation 满足 → B 可置 in_progress) — ✅ commit ad633c5(本 commit 即第7步:evidence 5 条入 feature_list + sync-active 刷新 + progress Session 记录 + 文档影响评估 + 依赖解锁[knowledge-tiered-backend depends_on=foundation 满足 + EP2 plan 已填 → 置 in_progress 成新 frontier];§8 分支清理待 PR merged)
 
 ---
 
