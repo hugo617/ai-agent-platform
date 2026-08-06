@@ -153,6 +153,8 @@ async def test_env() -> AsyncIterator[_TestEnv]:
         document,
         embedding_config,
         group,
+        knowledge_category,
+        knowledge_distribution,
         llm_config,
         log,
         message,

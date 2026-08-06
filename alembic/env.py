@@ -26,6 +26,8 @@ from app.models import (  # noqa: F401
     document,
     embedding_config,
     group,
+    knowledge_category,
+    knowledge_distribution,
     llm_config,
     log,
     message,

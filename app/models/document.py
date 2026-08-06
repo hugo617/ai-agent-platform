@@ -80,6 +80,33 @@ class Document(Base):
         nullable=False,
     )
     name: Mapped[str] = mapped_column(String(255), nullable=False)
+    # Tier the document belongs to (knowledge-tiered foundation):
+    #   'platform' — platform-wide (created by super_admin, distributable to
+    #                any store/group; Feature B's distribute API)
+    #   'group'    — belongs to a chain/group (group_id set; the HQ store's
+    #                group_admin manages it)
+    #   'store'    — this tenant's own document (the pre-tiering default)
+    # NOT NULL with server_default 'store' so the ADD COLUMN migration
+    # back-fills existing rows on both PG and SQLite (plan §4.5 E4).
+    scope: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="store", server_default="store"
+    )
+    # Set when scope='group' (the Group this group-level doc belongs to). NULL
+    # for platform/store. ondelete SET NULL: deleting a group orphans its docs
+    # softly rather than cascade-deleting knowledge. Feature B's service layer
+    # validates scope='group' ⟹ group_id NOT NULL.
+    group_id: Mapped[str | None] = mapped_column(
+        String(32),
+        ForeignKey("groups.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    # Optional Category (platform/group/store tier). NULL = uncategorized.
+    # ondelete SET NULL: deleting a Category leaves documents intact.
+    category_id: Mapped[str | None] = mapped_column(
+        String(32),
+        ForeignKey("knowledge_categories.id", ondelete="SET NULL"),
+        nullable=True,
+    )
     # How the content arrived: "text" (typed in) or "upload" (.txt file).
     source_type: Mapped[str] = mapped_column(String(20), default="text")
     # The full original text. Split into chunks during ingest.

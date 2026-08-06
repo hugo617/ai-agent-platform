@@ -59,6 +59,16 @@ class Group(Base):
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
     name: Mapped[str] = mapped_column(String(200), nullable=False)
+    # Pointer to the tenant that acts as this group's headquarters. The owner/
+    # admin of this tenant derives the ``group_admin`` identity (knowledge-tiered
+    # D11). Nullable: a chain group may be created before its HQ store exists,
+    # and the migrate-from-existing-data path leaves pre-existing groups null
+    # until an HQ is designated. See plan-knowledge-tiered-foundation.md §4.5 E1.
+    headquarters_tenant_id: Mapped[str | None] = mapped_column(
+        String(32),
+        ForeignKey("tenants.id", ondelete="SET NULL"),
+        nullable=True,
+    )
     # Business code (e.g. chain identifier). Nullable: single-store groups may
     # not have one. Uniqueness is enforced only among live rows (see above).
     code: Mapped[str | None] = mapped_column(String(100), nullable=True)
@@ -92,7 +102,10 @@ class GroupTenant(Base):
     __tablename__ = "group_tenants"
     __table_args__ = (
         UniqueConstraint("group_id", "tenant_id", name="uq_group_tenant"),
-        Index("idx_group_tenants_tenant_id", "tenant_id"),
+        # Collapse the M2M to one-store-one-group: a tenant belongs to at most
+        # one group (knowledge-tiered D8). The pair-uniqueness above still
+        # guards against duplicate (group, tenant) rows within that one group.
+        Index("uq_group_tenants_tenant_id", "tenant_id", unique=True),
     )
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
