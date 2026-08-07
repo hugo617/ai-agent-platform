@@ -67,6 +67,17 @@ describe("Badge — semantic token mapping (slice 02)", () => {
     expect(classesOf(badge)).not.toContain("text-white");
   });
 
+  // knowledge-tiered reader-ui slice 01 — group scope 徽章依赖 warning 实心
+  // variant(platform→destructive / group→warning / store→success 三色,plan §4.5
+  // G3)。锁住 warning 实心映射到 semantic token,不回退到 amber-500。
+  it("warning variant 映射到 bg-warning + warning-foreground(reader-ui slice 01)", () => {
+    render(<Badge variant="warning">集团</Badge>);
+    const badge = screen.getByText("集团");
+    expect(classesOf(badge)).toContain("bg-warning");
+    expect(classesOf(badge)).toContain("text-warning-foreground");
+    expect(classesOf(badge)).not.toContain("amber");
+  });
+
   it("中性 dot / dot-muted 不受映射影响(仍 bg-current,无语义色)", () => {
     render(<Badge variant="dot-muted">已确认</Badge>);
     const badge = screen.getByText("已确认");

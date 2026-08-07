@@ -250,6 +250,14 @@ export interface DocumentRead {
   content: string;
   chunk_count: number;
   status: string; // pending | indexed | failed
+  // knowledge-tiered reader-ui slice 01 G6 — scope/group_id/category_id align
+  // with backend DocumentRead (app/schemas/document.py). scope is always
+  // present (server_default 'store'); group_id set only for scope=group;
+  // category_id None when uncategorized. Drives the scope→badge mapping (G3)
+  // and the category-tree grouping (slice 02).
+  scope: KnowledgeScope;
+  group_id: string | null;
+  category_id: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -258,6 +266,39 @@ export interface DocumentCreate {
   name: string;
   content: string;
   source_type?: "text" | "upload";
+}
+
+// knowledge-tiered reader-ui slice 01 G6 — the three-tier origin a knowledge
+// document can belong to. Mirrors backend DocumentRead.scope /
+// KnowledgeCategoryRead.scope Literal["platform","group","store"]
+// (app/schemas/document.py). platform = platform-pushed, group = group-pushed,
+// store = own-store. Drives the scope→badge color mapping (G3): platform→red,
+// group→amber, store→green.
+export type KnowledgeScope = "platform" | "group" | "store";
+
+/**
+ * knowledge-tiered reader-ui slice 01 G6 — one knowledge category row.
+ * Mirrors backend KnowledgeCategoryRead (app/schemas/document.py). Categories
+ * are tiered by ``scope`` with the same mutually-exclusive ownership binding
+ * as DocumentRead: platform → both null, group → group_id set, store →
+ * tenant_id set. The category-tree (slice 02) groups documents by category
+ * within each scope partition.
+ *
+ * ``is_deleted`` mirrors the backend field (the row carries a soft-delete
+ * flag returned to readers; the list endpoint filters deleted rows out, so
+ * non-deleted is the steady state, but the type accepts the field to round-
+ * trip the contract).
+ */
+export interface KnowledgeCategoryRead {
+  id: string;
+  name: string;
+  scope: KnowledgeScope;
+  group_id: string | null;
+  tenant_id: string | null;
+  sort_order: number;
+  is_deleted: boolean;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface RetrieveHit {
