@@ -445,33 +445,37 @@ class DistributeRequest(BaseModel):
 
 ---
 
-### 切片 03 — 下发/撤回 API + distribute 权限码
+### 切片 03 — 下发/撤回 API + distribute 权限码 ✅
 
 - **What it delivers**:集团统一管控门店的落地链路打通。super_admin/group_admin 可下发知识到指定门店或整个集团,可撤回(软删 is_active=false 保留审计)。源文档软删后下发关系自动失效。新权限码 knowledge:distribute(seed owner/admin)。此切片完成后,D3「显式下发」语义端到端跑通,前端 D 的下发 Dialog 有了 API 基石。
 - **Blocked by**: 切片 02(list_visible_for 已就位,下发的文档能被门店看到验证下发链路闭环)
 - **文件清单**:
   - `app/schemas/document.py`(改:+ DistributeRequest [G4 二选一] + KnowledgeDistributionRead)
-  - `app/repositories/knowledge_distribution.py`(扩:create(下发)/ deactivate(撤回)/ list_for_source / list_for_target)
-  - `app/services/knowledge_service.py`(改:+ distribute_document [含 target_group_id 展开成 tenant_ids] / revoke_distribution [软删 is_active=false] + 源文档软删联动)
-  - `app/api/v1/knowledge.py`(改:+ POST /knowledge/{doc_id}/distribute + DELETE /knowledge/distribute/{dist_id} 端点,require knowledge:distribute)
-  - `app/services/permission_service.py`(改:DEFAULT_OWNER/ADMIN_PERMS 加 knowledge:distribute + OBJ_CN/ACT_CN 加中文标签)
-  - `alembic/versions/2026_08_0X_..._add_knowledge_distribute_perm.py`(新:seed knowledge:distribute permission code 到 owner/admin + casbin resync;idempotent INSERT...WHERE NOT EXISTS)
-  - `tests/test_knowledge_backend.py`(扩:下发/撤回 + distribute 权限码 + 源文档软删联动 + 一致性 G7)
+  - `app/repositories/knowledge_distribution.py`(**新建**:create(下发,pre-check upsert)/ find_for_pair / deactivate(撤回)/ list_for_source / list_for_target / get)
+  - `app/services/knowledge_service.py`(改:+ distribute_document [含 target_group_id 展开成 tenant_ids] / revoke_distribution [软删 is_active=false] + 源/撤回所有权校验辅助)
+  - `app/api/v1/knowledge.py`(改:+ POST /knowledge/documents/{doc_id}/distribute + DELETE /knowledge/distributions/{dist_id} 端点,require knowledge:distribute)
+  - `app/services/permission_service.py`(改:DEFAULT_OWNER/ADMIN_PERMS 加 knowledge:distribute + ACT_CN 加「下发」+ BACKFILLABLE_OBJS 加 knowledge)
+  - `scripts/backfill_obj_perms.py`(改:docstring 示例补 knowledge;argparse choices 从 BACKFILLABLE_OBJS 派生自动包含)
+  - `tests/test_knowledge_backend.py`(扩:切片 03 章节 35 tests + conftest `_bind_role`/`_make_casbin` 同步 distribute policy)
+  - `tests/test_permission_service.py`(改:catalogue guard expected 集合加 knowledge:distribute)
+  - ~~`alembic/versions/..._add_knowledge_distribute_perm.py`~~ —— **未建 migration**。权限码走 runtime seed 路径(与 devices/bookings 先例字节对齐):新租户由 `seed_tenant_defaults`(迭代 DEFAULT_*_PERMS)自动 seed,老租户由 `backfill_perm_set_for_existing_tenants`(幂等,seed permissions 目录 + role_permissions SCD2 + casbin 三表同步)。raw SQL migration 只能碰 1/3 表(permissions 目录),留 casbin+SCD2 不一致,违「SCD2+casbin 同步」铁律 —— devices/bookings 因此无 migration。详见下方 AC8 备注。
 - **Acceptance criteria**:
-  - [ ] `DistributeRequest` schema 就位(G4):target_tenant_ids + target_group_id 二选一校验(model_validator 都传或都不传=400);KnowledgeDistributionRead 含 source_doc_id/target_tenant_id/distributed_by/distributed_at/is_active
-  - [ ] `KnowledgeDistributionRepository` 扩展:create(下发,UniqueConstraint 重复冲突处理)/ deactivate(撤回 is_active=false 软标)/ list_for_source(group_admin/super_admin 看某文档的所有下发)/ list_for_target(门店看下发给我的)
-  - [ ] `KnowledgeService.distribute_document` 就位:target_tenant_ids 显式列表下发 / target_group_id 展开成该集团所有 tenant_id 批量插(group_admin 只能下发本集团,跨集团拒绝)/ 重复下发 UniqueConstraint 冲突处理(幂等或 BizError)
-  - [ ] `KnowledgeService.revoke_distribution` 就位:撤回=软删 is_active=false(保留审计痕迹,非硬删);撤回后门店 list/retrieve 排除该文档
-  - [ ] 源文档软删联动:Document.is_deleted=true 时,list_visible_for 和 search_by_embedding 都自动排除(联合谓词 doc.is_deleted=false AND dist.is_active=true,无需手动 flip 下发关系)
-  - [ ] 2 个端点就位:POST /knowledge/{doc_id}/distribute(require knowledge:distribute)+ DELETE /knowledge/distribute/{dist_id}(require knowledge:distribute)
-  - [ ] DEFAULT_OWNER/ADMIN_PERMS 加 knowledge:distribute code;member 不加;OBJ_CN/ACT_CN 加中文标签(知识库/下发)
-  - [ ] migration seed knowledge:distribute idempotent(INSERT...WHERE NOT EXISTS,对齐 foundation Category seed 范式);alembic upgrade head && check 无 drift
-  - [ ] 下发测试:target_tenant_ids 显式列表 / target_group_id 展开集团 / 二选一校验(都传/都不传=400) / 重复下发 UniqueConstraint / group_admin 跨集团下发拒绝 / super_admin 全域下发
-  - [ ] 撤回测试:撤回=软删 is_active=false / 撤回后门店 list/retrieve 排除 / 撤回保留审计行(不硬删)
-  - [ ] 源文档软删联动测试:源文档软删后门店 list 看不到 / retrieve 搜不到 / 下发关系行仍存在但被联合谓词排除(is_active 仍 true,审计完整)
-  - [ ] distribute 权限测试:owner/admin 可下发 / member 拒绝 / group_admin 经 bypass 放行(本集团) / super_admin 全域
-  - [ ] 一致性测试 G7:下发后上级改文档重新 ingest → 门店检索/list 即时看最新(引用模型,共享 chunks)
-  - [ ] `./init.sh full` 全绿(零回归)
+  - [x] `DistributeRequest` schema 就位(G4):target_tenant_ids + target_group_id 二选一校验(XOR 在 service 层 BizError → 400,非 pydantic model_validator —— 避 422 序列化坑,与 BookingCreate/Category 同款铁律);KnowledgeDistributionRead 含 source_doc_id/target_tenant_id/distributed_by/distributed_at/is_active
+  - [x] `KnowledgeDistributionRepository` 扩展:create(下发,pre-check upsert —— find_for_pair 先查,存在则 re-enable,不存在则 insert;UniqueConstraint 仍是竞态硬守卫)/ deactivate(撤回 is_active=false 软标)/ list_for_source(group_admin/super_admin 看某文档的所有下发,active_only 可选)/ list_for_target(门店看下发给我的,仅 active)
+  - [x] `KnowledgeService.distribute_document` 就位:target_tenant_ids 显式列表下发 / target_group_id 展开成该集团所有 tenant_id 批量插(group_admin 只能下发本集团 is_group_admin 校验,跨集团拒绝 BizError;super_admin 全域)/ 重复下发 upsert re-enable(非 BizError,幂等)
+  - [x] `KnowledgeService.revoke_distribution` 就位:撤回=软删 is_active=false(保留审计痕迹,非硬删);撤回后门店 list/retrieve 排除该文档(联合谓词自动生效)
+  - [x] 源文档软删联动:Document.is_deleted=true 时,list_visible_for 和 search_by_embedding 都自动排除(联合谓词 doc.is_deleted=false AND dist.is_active=true,无需手动 flip 下发关系 —— slice 02 已就位,本切片加测试证明)
+  - [x] 2 个端点就位:POST /knowledge/documents/{doc_id}/distribute(require knowledge:distribute)+ DELETE /knowledge/distributions/{dist_id}(require knowledge:distribute)
+  - [x] DEFAULT_OWNER/ADMIN_PERMS 加 knowledge:distribute code;member 不加;ACT_CN 加「下发」(OBJ_CN knowledge「知识库」已存在)
+  - [x] ~~migration seed~~ → **runtime seed 路径已覆盖**:DEFAULT_*_PERMS 加 distribute + BACKFILLABLE_OBJS 加 knowledge → 新租户 seed_tenant_defaults 自动 seed,老租户 backfill_perm_set_for_existing_tenants 幂等三表同步(permissions + role_permissions SCD2 + casbin)。与 devices/bookings 先例一致(均无 migration);偏离 plan 原文的「raw SQL INSERT...WHERE NOT EXISTS」决策,理由:raw SQL 只能碰 1/3 表,违 SCD2+casbin 同步铁律
+  - [x] 下发测试:target_tenant_ids 显式列表 / target_group_id 展开集团 / 二选一校验(都传/都不传=400) / 重复下发 upsert re-enable / group_admin 跨集团下发拒绝 / super_admin 全域下发
+  - [x] 撤回测试:撤回=软删 is_active=false / 撤回后门店 list/retrieve 排除 / 撤回保留审计行(不硬删)
+  - [x] 源文档软删联动测试:源文档软删后门店 list 看不到 / search_by_embedding 联合谓词排除(结构断言)/ 下发关系行仍存在但被联合谓词排除(is_active 仍 true,审计完整)
+  - [x] distribute 权限测试:owner/admin 可下发 / member 拒绝 / group_admin 经 bypass 放行(本集团) / super_admin 全域
+  - [x] 一致性测试 G7:下发后上级改文档重新 ingest → 门店检索/list 即时看最新(引用模型 —— list_visible_for/search_by_embedding 均通过 source_doc_id 引用源文档,非拷贝;结构断言 + 数据级证明)
+  - [x] `./init.sh full` 全绿(979 passed,零回归)
+
+> **✅ 切片 03 完成**(feat/knowledge-tiered-backend-slice-02 分支叠加)。13 AC 全勾。验证:`./init.sh full` **979 passed**(941 slice-02 baseline + 38 新,含 test_knowledge_backend 切片03 35 tests + permission catalogue guard + conftest distribute policy 同步)零回归,ruff clean。实现:`DistributeRequest`(G4 XOR 在 service BizError 非 schema model_validator,避 422 序列化坑)+ `KnowledgeDistributionRepository`(新建,pre-check upsert `find_for_pair` 先查再 insert/re-enable,非 IntegrityError catch —— SQLite/PG flush timing 分叉 + rollback 丢 pending writes;UniqueConstraint 仍是竞态硬守卫)+ `KnowledgeService.distribute_document`(target_group_id 展开 `GroupTenantRepository.list_for_group`,group_admin 跨集团 is_group_admin 校验拒绝)+ `revoke_distribution`(软删 is_active=false 保留审计)+ 源/撤回所有权 `_get_distributable_source`/`_assert_can_revoke`(super_admin 全域 / group_admin 本集团聚合视图 / store 自店)。权限码走 **runtime seed 路径**(非 migration):DEFAULT_OWNER/ADMIN_PERMS 加 distribute + ACT_CN「下发」+ BACKFILLABLE_OBJS 加 knowledge —— 与 devices/bookings 先例字节对齐,偏离 plan 原文 raw SQL migration 决策(理由:raw SQL 只碰 1/3 表违 SCD2+casbin 同步铁律)。**非末切片**(04 集成验证 + feature 收尾待做),不动 feature_list.json status/evidence。下一步:切片 04 集成验证 + feature 收尾仪式。
 
 ---
 
