@@ -1,7 +1,7 @@
 # 计划:知识库分级 Feature C — 前端三栏可视化阅读页
 
 > **id**: `knowledge-tiered-reader-ui`
-> **状态**: draft v1(EP2 回环产物,待 `/to-tickets` 拆切片后进 EP3)
+> **状态**: in_progress(切片 01 ✅ 已交付;切片 02/03 待做)
 > **优先级**: 88(当前最高 not_started frontier;depends_on `knowledge-tiered-backend` p89 ✅ passing 已解锁)
 > **创建日期**: 2026-08-07
 > **来源**: Session 197 `/grill-with-docs` 收敛 7 决策(G1-G7)+ 测试 seam 确认
