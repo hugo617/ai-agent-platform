@@ -702,3 +702,506 @@ async def test_list_visible_store_sees_all_5_platform_seeds(db_session):
     seen_names = {c.name for c in seen}
     # All 5 platform seeds are visible from a store with no group.
     assert set(seed_names) <= seen_names
+
+
+# ======================================================================
+# 切片 02 — list + 检索三路径改造 + G1 bypass 接通 (core slice)
+# Plan: harness/docs/plan-knowledge-tiered-backend.md slice 02.
+#
+# Chapter layout (matches slice 02 AC checklist):
+# - D. Document fixture — multi-tier multi-group docs + distribution rows.
+# - L. list_visible_for — three-path WHERE (AC1: store/ga/super).
+# - S. search_by_embedding — three-path + include_distributed (AC2).
+# - G. G1 bypass 接通 — 5 require/check 加 db=self.db (AC3).
+# - R. retrieve_knowledge tool — include_distributed=True wiring (AC5).
+# - N. Negative regression — soft-deleted source excluded (AC1/AC2).
+# ======================================================================
+
+
+async def _seed_document_fixture(db_session):
+    """Seed a multi-tier multi-group Document layout for slice 02 tests.
+
+    Mirrors ``_seed_category_fixture``'s group topology (t_a1/t_a2/t_b1 +
+    g_a/g_b) but seeds Documents across all three scopes AND inserts
+    ``knowledge_distribution`` rows so the "distributed to me" branch is real:
+
+      - 1 platform doc (not distributed to anyone by default — invisible to stores)
+      - 1 platform doc distributed → t_a1 (the "store sees a push-down" case)
+      - groupA: 1 group doc + storeA1 doc + storeA2 doc
+      - groupB: 1 group doc + storeB1 doc
+
+    Returns a dict of ids for assertions.
+    """
+    from app.models.document import Document
+    from app.models.group import Group, GroupTenant
+    from app.models.knowledge_distribution import KnowledgeDistribution
+    from app.models.tenant import Tenant
+
+    t_a1 = Tenant(id=_uuid("t"), name="A1")
+    t_a2 = Tenant(id=_uuid("t"), name="A2")
+    t_b1 = Tenant(id=_uuid("t"), name="B1")
+    g_a = Group(id=_uuid("g"), name="GroupA")
+    g_b = Group(id=_uuid("g"), name="GroupB")
+    db_session.add_all([t_a1, t_a2, t_b1, g_a, g_b])
+    await db_session.flush()
+    db_session.add_all([
+        GroupTenant(group_id=g_a.id, tenant_id=t_a1.id),
+        GroupTenant(group_id=g_a.id, tenant_id=t_a2.id),
+        GroupTenant(group_id=g_b.id, tenant_id=t_b1.id),
+    ])
+    await db_session.flush()
+
+    docs = {
+        "platform_solo": Document(
+            tenant_id=t_a1.id, name="平台手册(未下发)", scope="platform",
+            content="x", status="indexed", chunk_count=1,
+        ),
+        "platform_to_a1": Document(
+            tenant_id=t_a1.id, name="平台话术(下发A1)", scope="platform",
+            content="x", status="indexed", chunk_count=1,
+        ),
+        "groupA": Document(
+            tenant_id=t_a1.id, name="A集团手册", scope="group", group_id=g_a.id,
+            content="x", status="indexed", chunk_count=1,
+        ),
+        "storeA1": Document(
+            tenant_id=t_a1.id, name="A1店FAQ", scope="store",
+            content="x", status="indexed", chunk_count=1,
+        ),
+        "storeA2": Document(
+            tenant_id=t_a2.id, name="A2店FAQ", scope="store",
+            content="x", status="indexed", chunk_count=1,
+        ),
+        "groupB": Document(
+            tenant_id=t_b1.id, name="B集团手册", scope="group", group_id=g_b.id,
+            content="x", status="indexed", chunk_count=1,
+        ),
+        "storeB1": Document(
+            tenant_id=t_b1.id, name="B1店FAQ", scope="store",
+            content="x", status="indexed", chunk_count=1,
+        ),
+    }
+    db_session.add_all(docs.values())
+    await db_session.flush()
+    # The ONE distribution row: platform_to_a1 → t_a1 (active).
+    db_session.add(KnowledgeDistribution(
+        source_doc_id=docs["platform_to_a1"].id, target_tenant_id=t_a1.id,
+        distributed_by=None, is_active=True,
+    ))
+    await db_session.flush()
+    return {
+        "t_a1": t_a1.id, "t_a2": t_a2.id, "t_b1": t_b1.id,
+        "g_a": g_a.id, "g_b": g_b.id,
+        **{k: v.id for k, v in docs.items()},
+    }
+
+
+# ------------------------------------------------ L. list_visible_for (AC1)
+
+
+@pytest.mark.asyncio
+async def test_list_visible_for_store_sees_own_store_plus_distributed(db_session):
+    """AC1: store view = own scope='store' docs + docs distributed TO it."""
+    from app.repositories.document import DocumentRepository
+
+    ids = await _seed_document_fixture(db_session)
+    repo = DocumentRepository(db_session)
+    seen = await repo.list_visible_for(
+        tenant_id=ids["t_a1"], group_id=ids["g_a"],
+        include_all_tenants=False, is_group_admin=False,
+    )
+    seen_ids = {d.id for d in seen}
+    # own store doc + the platform doc distributed to A1.
+    assert ids["storeA1"] in seen_ids
+    assert ids["platform_to_a1"] in seen_ids
+    # NOT visible: undistributed platform, sibling store, other group.
+    assert ids["platform_solo"] not in seen_ids
+    assert ids["storeA2"] not in seen_ids
+    assert ids["groupA"] not in seen_ids  # group doc NOT distributed → invisible to store
+
+
+@pytest.mark.asyncio
+async def test_list_visible_for_store_cannot_see_other_stores_or_undistributed(db_session):
+    """AC1: a store never sees another store's docs or undistributed platform docs."""
+    from app.repositories.document import DocumentRepository
+
+    ids = await _seed_document_fixture(db_session)
+    repo = DocumentRepository(db_session)
+    seen = await repo.list_visible_for(
+        tenant_id=ids["t_a1"], group_id=ids["g_a"],
+        include_all_tenants=False, is_group_admin=False,
+    )
+    seen_ids = {d.id for d in seen}
+    # cross-store + cross-group isolation.
+    assert ids["storeA2"] not in seen_ids
+    assert ids["storeB1"] not in seen_ids
+    assert ids["groupB"] not in seen_ids
+
+
+@pytest.mark.asyncio
+async def test_list_visible_for_group_admin_aggregates_chain(db_session):
+    """AC1: group_admin view = own group docs + ALL sibling stores' store docs."""
+    from app.repositories.document import DocumentRepository
+
+    ids = await _seed_document_fixture(db_session)
+    repo = DocumentRepository(db_session)
+    seen = await repo.list_visible_for(
+        tenant_id=ids["t_a1"], group_id=ids["g_a"],
+        include_all_tenants=False, is_group_admin=True,
+    )
+    seen_ids = {d.id for d in seen}
+    # groupA doc + both sibling stores (A1 + A2).
+    assert ids["groupA"] in seen_ids
+    assert ids["storeA1"] in seen_ids
+    assert ids["storeA2"] in seen_ids
+    # NOT visible: other group B entirely (cross-group isolation).
+    assert ids["groupB"] not in seen_ids
+    assert ids["storeB1"] not in seen_ids
+    # platform docs are NOT in the group_admin aggregation (they need distribution).
+    assert ids["platform_solo"] not in seen_ids
+    assert ids["platform_to_a1"] not in seen_ids
+
+
+@pytest.mark.asyncio
+async def test_list_visible_for_super_admin_sees_everything(db_session):
+    """AC1: cross-tenant viewer (super_admin/hq_staff) sees every live doc."""
+    from app.repositories.document import DocumentRepository
+
+    ids = await _seed_document_fixture(db_session)
+    repo = DocumentRepository(db_session)
+    seen = await repo.list_visible_for(
+        tenant_id=ids["t_a1"], group_id=ids["g_a"],
+        include_all_tenants=True, is_group_admin=False,
+    )
+    seen_ids = {d.id for d in seen}
+    assert seen_ids == {
+        ids["platform_solo"], ids["platform_to_a1"],
+        ids["groupA"], ids["groupB"],
+        ids["storeA1"], ids["storeA2"], ids["storeB1"],
+    }
+
+
+@pytest.mark.asyncio
+async def test_list_visible_for_cross_group_isolation(db_session):
+    """AC1: a GroupA store cannot see GroupB's group/store docs."""
+    from app.repositories.document import DocumentRepository
+
+    ids = await _seed_document_fixture(db_session)
+    repo = DocumentRepository(db_session)
+    # B1's view: own store doc only (groupB doc needs group_admin, not a store).
+    seen = await repo.list_visible_for(
+        tenant_id=ids["t_b1"], group_id=ids["g_b"],
+        include_all_tenants=False, is_group_admin=False,
+    )
+    seen_names = {d.name for d in seen}
+    assert "B1店FAQ" in seen_names
+    assert "A集团手册" not in seen_names
+    assert "A1店FAQ" not in seen_names
+
+
+@pytest.mark.asyncio
+async def test_list_visible_for_excludes_soft_deleted_source(db_session):
+    """AC1: a soft-deleted source document never surfaces (even via distribution)."""
+    from app.models.document import Document
+    from app.repositories.document import DocumentRepository
+
+    ids = await _seed_document_fixture(db_session)
+    # Soft-delete the distributed platform doc → it must vanish from A1's view.
+    plat = await db_session.get(Document, ids["platform_to_a1"])
+    plat.is_deleted = True
+    await db_session.flush()
+
+    repo = DocumentRepository(db_session)
+    seen = await repo.list_visible_for(
+        tenant_id=ids["t_a1"], group_id=ids["g_a"],
+        include_all_tenants=False, is_group_admin=False,
+    )
+    assert ids["platform_to_a1"] not in {d.id for d in seen}
+
+
+# ---------------------------------------- S. search_by_embedding three-path (AC2)
+# SQLite has no pgvector operator, so these tests do NOT run real vector SQL.
+# They monkeypatch ``search_by_embedding`` to a recorder and assert the ROLE
+# CONTEXT (include_distributed / group_id / include_all_tenants /
+# is_group_admin) is forwarded correctly — the three-path WHERE lives in the
+# repo and the wiring through the service/tool is what's under test.
+
+
+@pytest.mark.asyncio
+async def test_search_by_embedding_defaults_are_backward_compatible(db_session, monkeypatch):
+    """AC2: with all flags default, search reproduces the pre-slice-02 call shape."""
+    from app.repositories.document import DocumentChunkRepository
+
+    captured: dict = {}
+
+    async def _fake(self, **kwargs):
+        captured.update(kwargs)
+        return []
+
+    monkeypatch.setattr(DocumentChunkRepository, "search_by_embedding", _fake)
+    # Invoke via the service so the wiring (service → repo) is what we assert.
+    from app.services.knowledge_service import KnowledgeService
+
+    # retrieve() with defaults must forward defaults to the repo verbatim.
+    svc = KnowledgeService(db_session)
+    # Stub the embedding layer (no HTTP) — only the repo call shape matters.
+    monkeypatch.setattr(svc, "_embedding_service", _stub_embedding_factory())
+    await svc.retrieve("q", "t1", top_k=4)
+    assert captured["tenant_id"] == "t1"
+    assert captured["top_k"] == 4
+    assert captured["include_distributed"] is False
+    assert captured["include_all_tenants"] is False
+    assert captured["is_group_admin"] is False
+    assert captured["group_id"] is None
+
+
+def _stub_embedding_factory():
+    """Return an async function mimicking ``_embedding_service(tenant_id)``.
+
+    ``_embedding_service`` is a coroutine returning an EmbeddingService whose
+    ``embed_query`` returns a fixed vector. Tests only care about the repo call
+    shape, so the embedding layer is stubbed (no HTTP).
+    """
+
+    class _Stub:
+        async def embed_query(self, _q):
+            return [0.0]
+
+    async def _factory(_tenant_id):
+        return _Stub()
+
+    return _factory
+
+
+@pytest.mark.asyncio
+async def test_retrieve_with_include_distributed_forwards_to_repo(db_session, monkeypatch):
+    """AC2: retrieve(include_distributed=True) forwards True to search_by_embedding."""
+    from app.repositories.document import DocumentChunkRepository
+
+    captured: dict = {}
+
+    async def _fake(self, **kwargs):
+        captured.update(kwargs)
+        return []
+
+    monkeypatch.setattr(DocumentChunkRepository, "search_by_embedding", _fake)
+    from app.services.knowledge_service import KnowledgeService
+
+    svc = KnowledgeService(db_session)
+    monkeypatch.setattr(svc, "_embedding_service", _stub_embedding_factory())
+    await svc.retrieve("q", "t1", include_distributed=True)
+    assert captured["include_distributed"] is True
+
+
+@pytest.mark.asyncio
+async def test_retrieve_group_admin_context_forwards_to_repo(db_session, monkeypatch):
+    """AC2: the group_admin / super_admin role context is forwarded to the repo."""
+    from app.repositories.document import DocumentChunkRepository
+
+    captured: dict = {}
+
+    async def _fake(self, **kwargs):
+        captured.update(kwargs)
+        return []
+
+    monkeypatch.setattr(DocumentChunkRepository, "search_by_embedding", _fake)
+    from app.services.knowledge_service import KnowledgeService
+
+    svc = KnowledgeService(db_session)
+    monkeypatch.setattr(svc, "_embedding_service", _stub_embedding_factory())
+    await svc.retrieve(
+        "q", "t1", include_all_tenants=True, is_group_admin=True, group_id="g1",
+    )
+    assert captured["include_all_tenants"] is True
+    assert captured["is_group_admin"] is True
+    assert captured["group_id"] == "g1"
+
+
+@pytest.mark.asyncio
+async def test_retrieve_additive_never_drops_own_hits(db_session, monkeypatch):
+    """AC2: include_distributed is strictly additive (own hits kept, never replaced).
+
+    The repo's store branch uses OR (own store chunks OR distributed doc chunks),
+    so turning include_distributed ON can only ADD hits, never remove the own-store
+    ones. We pin the OR semantics at the SQL-shape level: the own-store predicate
+    is present in BOTH modes.
+    """
+    # Read the source and confirm the branch structure (cheap structural guard).
+    import inspect
+
+    from app.repositories.document import DocumentChunkRepository
+
+    src = inspect.getsource(DocumentChunkRepository.search_by_embedding)
+    # The own-store predicate appears unconditionally in the store branch.
+    assert "DocumentChunk.tenant_id == tenant_id" in src
+    # The distributed expansion is gated behind include_distributed (additive).
+    assert "if include_distributed:" in src
+
+
+# ------------------------------------------------- G. G1 bypass 接通 (AC3)
+# The foundation left check()/require() with an optional ``db`` param so a
+# group_admin bypass could fire for knowledge — but the 5 callers in
+# KnowledgeService + graph.py never passed it, so the bypass was dead. Slice 02
+# wires ``db=...`` through all 5 sites. These tests pin that the bypass now fires
+# AND that D9 holds (knowledge-only; devices never takes the branch).
+
+
+@pytest.mark.asyncio
+async def test_g1_group_admin_bypass_fires_on_knowledge_read(patched_enforcer, db_session):
+    """AC3: a group_admin (HQ owner, no knowledge:read casbin grant) can read knowledge.
+
+    Before slice 02 the require() did not pass ``db`` → the bypass branch never
+    ran → casbin denied (HQ owner has no knowledge policy on the HQ tenant).
+    After G1, ``db=self.db`` lets ``check`` derive is_group_admin → bypass → True.
+    """
+    from sqlalchemy import select
+
+    from app.models.group import Group
+    from app.models.tenant import UserTenant
+    from app.services.knowledge_service import KnowledgeService
+
+    ids = await _seed_document_fixture(db_session)
+    # Promote A1 into GroupA's HQ owner (derives group_admin).
+    g_a = (await db_session.execute(select(Group).where(Group.id == ids["g_a"]))).scalar_one()
+    g_a.headquarters_tenant_id = ids["t_a1"]
+    db_session.add(UserTenant(
+        user_id="u-ga", tenant_id=ids["t_a1"], role="owner", valid_to=None,
+    ))
+    await db_session.flush()
+    # NOTE: deliberately do NOT bind a knowledge policy for u-ga — the bypass
+    # must fire without any casbin knowledge grant.
+
+    svc = KnowledgeService(db_session)
+    # list_documents passes db=self.db (G1). A group_admin with no knowledge
+    # casbin grant must NOT raise PermissionError.
+    docs = await svc.list_documents(
+        user_id="u-ga", tenant_id=ids["t_a1"], platform_role=None,
+    )
+    # group_admin aggregation view includes groupA + sibling stores.
+    names = {d.name for d in docs}
+    assert "A集团手册" in names
+
+
+@pytest.mark.asyncio
+async def test_g1_non_group_admin_passing_db_still_uses_casbin(patched_enforcer, db_session):
+    """AC3: passing db=self.db is safe for non-group_admin callers — they fall through.
+
+    A plain store owner WITH a knowledge:read casbin grant is allowed; one
+    WITHOUT it is denied. The bypass branch only short-circuits for group_admin,
+    so non-group_admin callers see zero behaviour change (regression guard).
+    """
+    from app.services.knowledge_service import KnowledgeService
+
+    ids = await _seed_document_fixture(db_session)
+    # A user with NO role binding and NO knowledge policy → must be denied.
+    svc = KnowledgeService(db_session)
+    with pytest.raises(PermissionError):
+        await svc.list_documents(
+            user_id="u-nobody", tenant_id=ids["t_a1"], platform_role=None,
+        )
+
+
+@pytest.mark.asyncio
+async def test_g1_d9_bypass_is_knowledge_only_not_devices(patched_enforcer, db_session):
+    """AC3/D9: the group_admin bypass is scoped to obj=='knowledge' — devices never fires.
+
+    A group_admin calling a devices check (with db passed) must still go through
+    casbin and be denied (D9: derived identity is knowledge-domain only).
+    """
+    from sqlalchemy import select
+
+    from app.models.group import Group
+    from app.models.tenant import UserTenant
+    from app.services.permission_service import permission_service
+
+    ids = await _seed_document_fixture(db_session)
+    g_a = (await db_session.execute(select(Group).where(Group.id == ids["g_a"]))).scalar_one()
+    g_a.headquarters_tenant_id = ids["t_a1"]
+    db_session.add(UserTenant(
+        user_id="u-ga-dev", tenant_id=ids["t_a1"], role="owner", valid_to=None,
+    ))
+    await db_session.flush()
+
+    # knowledge: bypass fires (True).
+    assert await permission_service.check(
+        "u-ga-dev", ids["t_a1"], "knowledge", "read", platform_role=None, db=db_session,
+    ) is True
+    # devices: bypass must NOT fire → falls through to casbin → no policy → False.
+    assert await permission_service.check(
+        "u-ga-dev", ids["t_a1"], "devices", "read", platform_role=None, db=db_session,
+    ) is False
+
+
+# ------------------------------------ R. retrieve_knowledge tool wiring (AC5)
+# The agent's retrieve_knowledge tool must call retrieve(include_distributed=True)
+# and check(..., db=db). We assert the wiring by reading the tool source (the
+# agent path needs a full LLM run to exercise end-to-end, which is out of scope
+# for this slice's unit tests; the wiring is the contract).
+
+
+def test_retrieve_knowledge_tool_passes_include_distributed_and_db():
+    """AC5: the agent tool wires include_distributed=True + check(db=db)."""
+    import inspect
+
+    from app.agents.graph import _build_tenant_tools
+
+    src = inspect.getsource(_build_tenant_tools)
+    # The tool body must pass include_distributed=True to retrieve(...).
+    assert "include_distributed=True" in src
+    # And check(...) must forward db=db so the group_admin bypass fires.
+    assert '"knowledge", "read", db=db' in src
+
+
+@pytest.mark.asyncio
+async def test_retrieve_for_debug_stays_own_store_only(patched_enforcer, db_session, monkeypatch):
+    """AC5: retrieve_for_debug passes include_distributed=False (debug page = own store).
+
+    The debug page must NOT surface distributed docs (plan §4.6 G3: debug page
+    is for "does my pipeline find the right context?" — distributed docs would
+    muddy that). We assert the wiring by capturing the repo call.
+    """
+    from app.repositories.document import DocumentChunkRepository
+
+    captured: dict = {}
+
+    async def _fake(self, **kwargs):
+        captured.update(kwargs)
+        return []
+
+    monkeypatch.setattr(DocumentChunkRepository, "search_by_embedding", _fake)
+    from app.models.tenant import UserTenant
+    from app.services.knowledge_service import KnowledgeService
+
+    ids = await _seed_document_fixture(db_session)
+    db_session.add(UserTenant(
+        user_id="u-owner-debug", tenant_id=ids["t_a1"], role="owner", valid_to=None,
+    ))
+    await db_session.flush()
+    _bind_role(patched_enforcer, "u-owner-debug", "owner", ids["t_a1"])
+
+    svc = KnowledgeService(db_session)
+    monkeypatch.setattr(svc, "_embedding_service", _stub_embedding_factory())
+    await svc.retrieve_for_debug(
+        user_id="u-owner-debug", tenant_id=ids["t_a1"], query="q", platform_role=None,
+    )
+    # Default include_distributed=False flows through → own store only.
+    assert captured["include_distributed"] is False
+
+
+# ---------------------------------------- N. DocumentRead schema fields (AC4)
+
+
+@pytest.mark.asyncio
+async def test_document_read_exposes_tier_fields(db_session):
+    """AC4: DocumentRead carries scope/group_id/category_id (forward-compatible)."""
+    from app.schemas.document import DocumentRead
+
+    ids = await _seed_document_fixture(db_session)
+    from app.models.document import Document
+
+    # Fetch a group-scoped doc and confirm all three tier fields serialize.
+    group_doc = await db_session.get(Document, ids["groupA"])
+    read = DocumentRead.model_validate(group_doc)
+    assert read.scope == "group"
+    assert read.group_id == ids["g_a"]
+    assert read.category_id is None  # no category assigned in the fixture

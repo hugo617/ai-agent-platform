@@ -27,6 +27,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.document import Document, DocumentChunk
 from app.repositories.document import DocumentChunkRepository, DocumentRepository
+from app.repositories.group import GroupRepository
 from app.schemas.document import (
     DocumentCreate,
     DocumentRead,
@@ -36,7 +37,11 @@ from app.schemas.document import (
 from app.services.embedding_config_service import embedding_config_service
 from app.services.embedding_service import EmbeddingService
 from app.services.errors import NotFoundError
-from app.services.permission_service import permission_service
+from app.services.permission_service import (
+    is_cross_tenant_viewer,
+    is_group_admin,
+    permission_service,
+)
 
 # Chunking defaults — tuned for short-ish FAQ/manual text. Chinese-friendly
 # because the recursive splitter falls back to single-character splitting for
@@ -76,10 +81,29 @@ class KnowledgeService:
         tenant_id: str,
         platform_role: str | None = None,
     ) -> list[DocumentRead]:
+        """Tiered list: cross-tenant viewer / group_admin / store (slice 02 G2).
+
+        The role context (``include_all_tenants`` + ``is_group_admin``) is
+        resolved here and handed down to ``list_visible_for`` as bools — the
+        repo never imports the service layer (AGENTS.md 铁律 #1, mirrors
+        ``KnowledgeCategoryService.list``). ``require`` passes ``db=self.db``
+        so the foundation's group_admin bypass fires on knowledge reads (G1).
+        """
         await permission_service.require(
-            user_id, tenant_id, self.OBJECT, "read", platform_role=platform_role
+            user_id, tenant_id, self.OBJECT, "read",
+            platform_role=platform_role, db=self.db,
         )
-        docs = await self.docs.list_for_tenant(tenant_id)
+        group_id = await self._group_of(tenant_id)
+        is_ga = (
+            group_id is not None
+            and await is_group_admin(self.db, user_id, group_id)
+        )
+        docs = await self.docs.list_visible_for(
+            tenant_id=tenant_id,
+            group_id=group_id,
+            include_all_tenants=is_cross_tenant_viewer(platform_role),
+            is_group_admin=is_ga,
+        )
         return [_to_read(d) for d in docs]
 
     async def create_document(
@@ -90,7 +114,8 @@ class KnowledgeService:
         platform_role: str | None = None,
     ) -> DocumentRead:
         await permission_service.require(
-            user_id, tenant_id, self.OBJECT, "create", platform_role=platform_role
+            user_id, tenant_id, self.OBJECT, "create",
+            platform_role=platform_role, db=self.db,
         )
         doc = Document(
             tenant_id=tenant_id,
@@ -124,7 +149,8 @@ class KnowledgeService:
         platform_role: str | None = None,
     ) -> None:
         await permission_service.require(
-            user_id, tenant_id, self.OBJECT, "delete", platform_role=platform_role
+            user_id, tenant_id, self.OBJECT, "delete",
+            platform_role=platform_role, db=self.db,
         )
         doc = await self.docs.get_for_tenant(document_id, tenant_id)
         if doc is None:
@@ -174,17 +200,35 @@ class KnowledgeService:
         query: str,
         tenant_id: str,
         top_k: int = 4,
+        *,
+        include_distributed: bool = False,
+        group_id: str | None = None,
+        include_all_tenants: bool = False,
+        is_group_admin: bool = False,
     ) -> list[tuple[str, float, str]]:
-        """Vector search for the query across the tenant's chunks.
+        """Vector search for the query, three-path by role (slice 02 G3).
 
         Returns ``(content, similarity, document_id)`` tuples, most similar
         first. Similarity = ``1 - cosine_distance`` (pgvector). Requires
         Postgres — SQLite tests mock this method.
+
+        Role context is handed to ``search_by_embedding`` verbatim (the repo
+        owns the WHERE; 铁律 #1). Defaults reproduce the pre-slice-02
+        own-store-only behaviour: the debug page calls with all flags default
+        (``include_distributed=False``) → own store only. The agent's
+        ``retrieve_knowledge`` tool calls with ``include_distributed=True`` →
+        own store + docs distributed to it (additive, never drops own hits).
         """
         service = await self._embedding_service(tenant_id)
         query_vec = await service.embed_query(query)
         hits = await self.chunks.search_by_embedding(
-            tenant_id=tenant_id, query_embedding=query_vec, top_k=top_k
+            tenant_id=tenant_id,
+            query_embedding=query_vec,
+            top_k=top_k,
+            include_distributed=include_distributed,
+            group_id=group_id,
+            include_all_tenants=include_all_tenants,
+            is_group_admin=is_group_admin,
         )
         # Convert cosine distance to similarity (1.0 = identical direction).
         return [
@@ -200,16 +244,24 @@ class KnowledgeService:
         top_k: int = 4,
         platform_role: str | None = None,
     ) -> RetrieveResult:
-        """Permission-gated retrieval for the debug endpoint.
+        """Permission-gated retrieval for the debug endpoint (own store only).
 
         Returns the matched chunks joined with their source document name so
         the admin UI can show "matched from <doc>".
+
+        ``include_distributed`` is left at its default (``False``) so the debug
+        page searches ONLY this store's own chunks — distributed docs would
+        muddy a "does my pipeline find the right context?" check (plan §4.6 G3
+        decision). ``require`` passes ``db=self.db`` so the group_admin bypass
+        fires on knowledge reads (G1).
         """
         await permission_service.require(
-            user_id, tenant_id, self.OBJECT, "read", platform_role=platform_role
+            user_id, tenant_id, self.OBJECT, "read",
+            platform_role=platform_role, db=self.db,
         )
         triples = await self.retrieve(query, tenant_id, top_k=top_k)
-        # Batch-resolve document names for the hits.
+        # Batch-resolve document names for the hits. Debug page only returns
+        # own-store hits (include_distributed=False), so get_for_tenant suffices.
         doc_ids = list({doc_id for _, _, doc_id in triples})
         doc_names: dict[str, str] = {}
         for did in doc_ids:
@@ -226,3 +278,13 @@ class KnowledgeService:
             for content, score, doc_id in triples
         ]
         return RetrieveResult(query=query, hits=hits)
+
+    async def _group_of(self, tenant_id: str) -> str | None:
+        """The group a tenant belongs to, if any (reverse lookup).
+
+        Sibling of ``KnowledgeCategoryService._group_of``: the group_admin
+        visibility branch needs the caller's group, derived from tenant_id via
+        GroupTenant (1:1 after D8 → at most one).
+        """
+        groups = await GroupRepository(self.db).list_for_tenant(tenant_id)
+        return groups[0].id if groups else None

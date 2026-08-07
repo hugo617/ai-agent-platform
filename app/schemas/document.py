@@ -24,7 +24,17 @@ class DocumentCreate(BaseModel):
 
 
 class DocumentRead(BaseModel):
-    """Document list/detail response."""
+    """Document list/detail response.
+
+    ``scope`` / ``group_id`` / ``category_id`` are exposed so a store viewer can
+    tell platform-distributed vs group-distributed vs own-store documents apart
+    (knowledge-tiered Feature B slice 02). All three are nullable/optional in
+    the sense that older rows pre-date the tiering columns, but the model's
+    ``server_default='store'`` means ``scope`` is always populated — ``group_id``
+    and ``category_id`` are genuinely optional (None for store/platform docs
+    without a category). Forward-compatible: existing responses simply gain
+    three fields.
+    """
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -35,6 +45,12 @@ class DocumentRead(BaseModel):
     content: str
     chunk_count: int
     status: str  # pending | indexed | failed
+    # Tier the document belongs to (knowledge-tiered foundation E4). scope is
+    # always present (server_default 'store'); group_id set only for scope=group;
+    # category_id None when uncategorized.
+    scope: str = "store"
+    group_id: str | None = None
+    category_id: str | None = None
     created_at: datetime
     updated_at: datetime
 
