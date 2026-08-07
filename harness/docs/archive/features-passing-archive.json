@@ -1,7 +1,7 @@
 {
   "project": "ai-agent-platform",
   "description": "已 passing feature 的历史归档(完整字段保留,审计用)",
-  "count": 82,
+  "count": 83,
   "features": [
     {
       "id": "data-export",
@@ -2054,6 +2054,32 @@
         "切片 03 danger 收口(commit 1d2562c,Session 176):5 处 rose/red→danger 映射跨 3 文件(billing/billing-admin/users),全为纯图标 text-danger 非 tint 场景无对比度债。danger 与 destructive 既有命名并存边界守住。",
         "切片 04 info 收口(commit b11911a,Session 177):4 处 blue/cyan→info 映射跨 4 文件(users/notifications/notification-bell/dashboard),无 cyan 残留。role_change tint 债继承切片 05。purple(usage_report)/zinc/Pin-Star 边界全守住。",
         "切片 05 暗色一致性+tint 对比度系统性修复+收尾(commit 239475c,Session 178,末切片):node REPL 精算四范式(四色×亮暗)—— tint 亮色 2.13-3.31❌/solid 双模式 4.72-9.55✓唯一成立/tint+foreground 暗色 1.0❌/alpha 调节无解。关键发现 B3 .badge 定义自身即 tint 范式、亮色 2.07-2.82 < AA(B3 固有债,AC3 与 AC4 互斥)。统一决策(用户确认):场景1 标签(notifications 三色+dashboard-layout Badge)保 tint 忠于 B3 接受债;场景2 警告框(settings/composite/permissions)容器保 bg-warning/10 + 标题/icon 改 text-foreground(亮18.39/暗16.73 双模式 AA)。grep 业务页四语义原色=0 + dark: 冗余=0 + build+oxlint 0/0+test 141/141 + ./init.sh full 842 passed 零回归。/code-review 双轴 Standards PASS+Spec PASS(纯图标范围判断项闭环:5 处纯图标 text-warning 留切片02既有债,不扩展)。已知债登记:B3 亮色 tint WCAG 债 + 切片02纯图标债,均非本 feature 引入留后续。"
+      ]
+    },
+    {
+      "id": "design-system-spacing-card-hierarchy",
+      "priority": 83,
+      "area": "前端设计系统",
+      "title": "设计系统收口 — Feature C:间距与卡片层级规范(shadow card/overlay 语义命名 + 字号任意值 text-[10px] 收口)",
+      "user_visible_behavior": "无直接用户可见行为变化(纯前端 token/className 收口,视觉一致)。两个收口:① 卡片层级语义化——Card 层(shadow-sm,230 处 <Card 依赖)与浮层层(dialog/dropdown/select/toast 的 shadow-lg/md)的阴影层级已有但未命名,在 tailwind.config.js theme.extend.boxShadow 加 card(等价 shadow-sm)/overlay(等价 shadow-lg)语义名,Card + 浮层组件统一引用,让「层级」从代码隐含变命名概念(对齐 B3 数据为尊+hairline chrome 调性)。② 字号任意值收口(顺手项,决策 5)——11 处 text-[10px]/text-[11px] 散落(layout/notification-bell/command-menu/permissions/composite-mode/conversation-list-panel),扩展 text-2xs(10px)+ 归 text-xs(11px→12px 近似),全站 text-[NNpx] grep 归零。间距/圆角任意值实测为 0 无需收口。不推全站字号 token 化(决策 5 边界)。",
+      "status": "passing",
+      "verification": [
+        "text-[NNpx] grep(全 frontend/src)= 0(11 处字号任意值全映射:text-[10px]→text-2xs / text-[11px]→text-xs)",
+        "tailwind.config.js theme.extend.boxShadow 含 surface(等价 shadow-sm,v2 命名)+ overlay(等价 shadow-lg);card.tsx + 浮层组件(dialog/dropdown-menu/select/toast)引用语义名",
+        "230 处 <Card 视觉零变化(shadow-surface 值逐字等价 shadow-sm,切片 01 Playwright 实测为 TRUE)",
+        "cd frontend && npm run build 0 类型错误 + npx oxlint 0/0 + npm test 全绿",
+        "对照 design-demos/B3.html,卡片层级与 B3「数据为尊+hairline chrome」调性一致"
+      ],
+      "notes": "2026-07-31 立项 + 收尾(切片 01 Session 179 + 切片 02 Session 180 末切片)。设计系统收口系列 Feature C,与 A/B 正交。实测:Card 已有 cardVariants cva 体系(default: shadow-sm + glow variant),层级隐含只差语义命名;shadow 用法集中在 ui/(Card shadow-sm / 浮层 shadow-lg-md);间距/圆角/shadow 任意值均为 0(只有字号任意值 11 处)。EP2 单回环 plan 含 2 切片:01 卡片层级语义化(frontier,shadow surface/overlay[v2 命名,原 card 因与 colors.card 碰撞改名]+ Card/浮层引用 + 230 处视觉零变化 Playwright 验证)→ 02 字号任意值收口(text-2xs 扩展 + 11 处映射 + 收尾)。系列收官:A+B 已 passing,本 feature 收尾同步总纲系列状态为 ✅ 全部完成。",
+      "plan": "harness/docs/plan-design-system-spacing-card-hierarchy.md",
+      "depends_on": "",
+      "evidence": [
+        "切片 02(末切片,Session 180,commit aa01a7a):tailwind.config.js theme.extend.fontSize 加 '2xs': ['10px',{lineHeight:'14px'}](命名刻度补到 xs 之下,注释范式对齐切片 01 boxShadow 块 header+bullet)",
+        "切片 02:11 处散落映射全归零(实测 6 处 10px + 5 处 11px,含 plan §4.5② 表格漏记的 conversation-list-panel:369)——text-[10px]→text-2xs(command-menu:135/dashboard-layout:149/notification-bell:88/permissions-page:217,407/conversation-list-panel:363,387);text-[11px]→text-xs(notification-bell:143/composite-mode:415/conversation-list-panel:369,514)",
+        "切片 02 验证:text-[NNpx] grep(全 frontend/src)= 0(grep exit 1 无匹配)✓;编译产物 .text-2xs{font-size:10px;line-height:14px} 逐字等价原 text-[10px] ✓;npm run build 0 类型错误 ✓;npx oxlint 0/0 ✓;npm test 141/141 ✓;./init.sh full 842 passed 后端零回归 ✓",
+        "切片 02 /code-review 双轴:Standards clean(注释风格 nit 已修为 boxShadow 块同范式)、Spec clean(无越界/无缺失,checklist 漏记的 conversation-list-panel:369 由 grep 为准正确处理)",
+        "切片 01(Session 179,merge 639bbfc):shadow-surface(v2 命名,原 card 因与 colors.card 碰撞改名)/overlay 落地;Playwright 实测 shadow-surface===shadow-sm / shadow-overlay===shadow-lg 均 TRUE;230 处 <Card 视觉零变化坐实;Card default/glow variant + dialog/dropdown-menu/select/toast 浮层统一引用语义名;build ✓ + oxlint 0/0 + npm test 141/141",
+        "依赖解锁扫描:本 feature 无下游依赖;A(design-system-token-foundation p81)+ B(design-system-color-sweep p82)均 passing → 总纲 plan-frontend-design-system-overview.md 系列状态更新为 ✅ 全部完成"
       ]
     }
   ]

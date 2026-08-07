@@ -1,7 +1,7 @@
 # 计划:知识库分级 Feature C — 前端三栏可视化阅读页
 
 > **id**: `knowledge-tiered-reader-ui`
-> **状态**: in_progress(切片 01 ✅ 已交付;切片 02/03 待做)
+> **状态**: passing(切片 01+02+03 ✅ 全交付;feature 收尾完成,待 PR 合并后 status→passing 落定)
 > **优先级**: 88(当前最高 not_started frontier;depends_on `knowledge-tiered-backend` p89 ✅ passing 已解锁)
 > **创建日期**: 2026-08-07
 > **来源**: Session 197 `/grill-with-docs` 收敛 7 决策(G1-G7)+ 测试 seam 确认
@@ -279,21 +279,21 @@ react-markdown@10 的 `components` prop 允许自定义节点 render:
   - [x] `__tests__/index.test.tsx`:三栏 smoke(三栏均渲染)+ CategoryTree 点击 → DocumentList 收到 scope+categoryId 过滤 + DocumentList 点击 → MarkdownReader 渲染文档(独有标题 h2)
   - [x] 验证:`npm test` 175 全绿(17 新:7 category-tree + 8 markdown-reader + 3 index)+ `npm run build` 0 错 + `tsc -b` 0 错 + `oxlint` 0/0
 
-### 切片 03 — CRUD Dialog 迁移 + 检索调试页迁移 + 跨角色测试 + feature 收尾(末切片)
+### 切片 03 — CRUD Dialog 迁移 + 检索调试页迁移 + 跨角色测试 + feature 收尾(末切片)✅(分支 feat/knowledge-tiered-reader-ui-slice-03,9/9 AC 全绿;双轴 review:Standards 0 hard / 1 judgement(document-list 表单状态后续可抽 useCreateDocumentForm hook,本次为「逻辑零变化」迁移不抽,登记技术债)/ Spec 0 gap;npm test 189 green(+14)/ tsc 0 / build 0 / oxlint 0-0 / init.sh full 后端 987 零回归)
 
 - **What it delivers**:现有知识库的全部行为在新三栏结构里完整保留 —— 录入文档(手动文本/.txt 上传)与删除的 Dialog 迁进 DocumentList(门店 owner 看到「录入文档」按钮 + 删除菜单,member 只读无写按钮);检索调试页(RetrievalDebugCard)迁移进新结构底部,行为零变化。跨角色视图测试补全(member/owner/group_admin/super_admin)。全量验证 + feature 收尾(状态 passing + 依赖解锁 admin-ui)。
 
 - **Blocked by**: 切片 01 + 切片 02(三栏主体已完成,本片迁移现有功能进新结构 + 收尾)
 
 - **Acceptance criteria**:
-  - [ ] `document-list.tsx`:从旧 `knowledge-page.tsx` 迁入录入 Dialog(name/sourceType/textContent/upload 字段 + handleFilePick + handleCreate)+ 删除确认 Dialog + DropdownMenu 删除项;按钮守卫 `hasPermission(me, "knowledge", "create"|"delete")`(member 只读,与旧页一致);CRUD 行为零回归(录入流程/校验/toast/索引触发一致)
-  - [ ] `retrieval-debug-card.tsx`:从旧 `knowledge-page.tsx` 整体迁入 `RetrievalDebugCard`(query state + handleSearch + retrieveKnowledge 调用 + hits 渲染),**逻辑零变化**;在 `index.tsx` 底部渲染
-  - [ ] `__tests__/document-list.test.tsx` 扩 CRUD:录入 Dialog 弹出 + 填表提交触发 useCreateDocument.mutateAsync + 删除菜单触发 useDeleteDocument + member 角色无写按钮守卫(对齐 devices store-view 范式)
-  - [ ] 跨角色视图测试(group_admin/super_admin 聚合视图由 backend list 返回不同数据,前端渲染一致 —— 测试 mock 不同 useDocuments 返回值断言渲染差异);member 只读守卫
-  - [ ] 空态完整覆盖(categories 空 + documents 空 + selectedDoc null)
-  - [ ] grep 残留:`pages/knowledge-page` 旧路径外部 import 仅 App.tsx barrel;旧 knowledge-page.tsx 已改 barrel 或删除
-  - [ ] 验证(plan §10 AC 全绿):`npm test` 全绿(目标 ~20 用例,三栏渲染 + scope 分区 + category 树筛选 + 文档卡片徽章 + Markdown 阅读器 + 目录大纲 + 搜索高亮 + 空态 + 跨角色视图差异 + 响应式窄屏折叠 + msw API 契约)+ `npm run build` 0 错 + `oxlint` 0/0 + `./init.sh full` 后端零回归(纯前端 feature,后端测试数不变)
-  - [ ] feature 收尾仪式(three-tier §4 第1-7步):`./init.sh full` 全绿 + feature_list.json status `in_progress → passing` + evidence + sync-active 刷新 + progress.md 更新 + 文档影响评估 + 依赖解锁扫描(admin-ui p87 depends_on backend 已满足)
+  - [x] `document-list.tsx`:从旧 `knowledge-page.tsx` 迁入录入 Dialog(name/sourceType/textContent/upload 字段 + handleFilePick + handleCreate)+ 删除确认 Dialog + DropdownMenu 删除项;按钮守卫 `hasPermission(me, "knowledge", "create"|"delete")`(member 只读,与旧页一致);CRUD 行为零回归(录入流程/校验/toast/索引触发一致)
+  - [x] `retrieval-debug-card.tsx`:从旧 `knowledge-page.tsx` 整体迁入 `RetrievalDebugCard`(query state + handleSearch + retrieveKnowledge 调用 + hits 渲染),**逻辑零变化**;在 `index.tsx` 底部渲染
+  - [x] `__tests__/document-list.test.tsx` 扩 CRUD:录入 Dialog 弹出 + 填表提交触发 useCreateDocument.mutateAsync + 删除菜单触发 useDeleteDocument + member 角色无写按钮守卫(对齐 devices store-view 范式)
+  - [x] 跨角色视图测试(group_admin/super_admin 聚合视图由 backend list 返回不同数据,前端渲染一致 —— 测试 mock 不同 useDocuments 返回值断言渲染差异);member 只读守卫
+  - [x] 空态完整覆盖(categories 空 + documents 空 + selectedDoc null)
+  - [x] grep 残留:`pages/knowledge-page` 旧路径外部 import 仅 App.tsx barrel;旧 knowledge-page.tsx 已改 barrel 或删除
+  - [x] 验证(plan §10 AC 全绿):`npm test` 全绿(目标 ~20 用例,三栏渲染 + scope 分区 + category 树筛选 + 文档卡片徽章 + Markdown 阅读器 + 目录大纲 + 搜索高亮 + 空态 + 跨角色视图差异 + 响应式窄屏折叠 + msw API 契约)+ `npm run build` 0 错 + `oxlint` 0/0 + `./init.sh full` 后端零回归(纯前端 feature,后端测试数不变)
+  - [x] feature 收尾仪式(three-tier §4 第1-7步):`./init.sh full` 全绿 + feature_list.json status `in_progress → passing` + evidence + sync-active 刷新 + progress.md 更新 + 文档影响评估 + 依赖解锁扫描(admin-ui p87 depends_on backend 已满足)
 
 ---
 
