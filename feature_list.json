@@ -65,7 +65,7 @@
         "DataScope/Role.data_scope/DEFAULT_*_PERMS/casbin policy 零回归(group_admin 派生身份仅知识库域);retrieve_knowledge 现有调用点零行为回归(门店 agent 检索范围只增不减)"
       ],
       "notes": "知识库分级管理系列 Feature B(后端,依赖 A)。**硬约束**:下发是引用模型(D4,共享 chunks 不拷贝,上级改门店即时看到最新,撤回=软删 is_active=false 保留审计);RAG 检索三路径(D6:门店本店+下发 / group_admin 聚合 / super_admin 全局);Category 预置+扩展(D5,平台预置+各级自建);group_admin 仅知识库域(D9)。**Out of Scope**:不做富文本编辑/不做 PDF 预览/不改门店间隔离。验证核心:跨 scope 可见性矩阵 + 引用一致性 + 跨租户隔离铁律不破。",
-      "plan": "harness/docs/plan-knowledge-tiered-overview.md",
+      "plan": "harness/docs/plan-knowledge-tiered-backend.md",
       "depends_on": "knowledge-tiered-foundation",
       "evidence": []
     },
