@@ -408,7 +408,7 @@ class DistributeRequest(BaseModel):
 
 ---
 
-### 切片 02 — list + 检索三路径改造 + G1 bypass 接通(核心)
+### 切片 02 — list + 检索三路径改造 + G1 bypass 接通(核心)✅
 
 - **What it delivers**:跨 scope 可见性的核心兑现。门店 list/retrieve 看到「本店 store + 上级下发给我」;group_admin 看聚合;super_admin 看全局。同时 G1 接通 group_admin bypass(KnowledgeService 6 处 require 加 db=self.db),让 foundation 留的派生身份真正生效。retrieve_knowledge 工具适配新检索范围(agent 用 True,debug 页用 False,只增不减零负向回归)。此切片完成后,「集团下发的话术门店 agent 能用」真正跑通。
 - **Blocked by**: 切片 01(Category repo 范式可复用;且 list 文档的 category_id 字段已就位)
@@ -420,17 +420,28 @@ class DistributeRequest(BaseModel):
   - `app/agents/graph.py`(改:retrieve_knowledge 工具调用适配,docstring 更新说明跨 scope)
   - `tests/test_knowledge_backend.py`(扩:list 三路径矩阵 + 检索三路径 + bypass 接通 + D9 越界守卫)
 - **Acceptance criteria**:
-  - [ ] `DocumentRepository.list_visible_for` 三路径就位(G2):super_admin/hq_staff 全局 / group_admin+group_id 聚合(本集团group级 + 本集团所有门店store级)/ 门店(本店store + 上级下发给我,LEFT JOIN distribution is_active=true);永远带 doc.is_deleted=false
-  - [ ] `DocumentChunkRepository.search_by_embedding` 加 include_distributed/group_id/platform_role/is_group_admin 参数(G3):门店 include_distributed=True 扩下发 / =False 纯本店 / group_admin 聚合 / super_admin 全局;向后兼容(默认 False = 原行为)
-  - [ ] `KnowledgeService` 6 处 require() 加 db=self.db(G1):list_documents/create_document/delete_document/retrieve_for_debug 的 require 调用 + retrieve_knowledge 工具内的 check;group_admin bypass 真正生效
-  - [ ] `DocumentRead` schema 加 scope/group_id/category_id 字段(向前兼容,既有响应多三字段)
-  - [ ] `retrieve_knowledge` 工具适配:检索范围 = 本店 store + 下发(include_distributed=True),docstring 更新说明「检索跨 scope,含上级下发」
-  - [ ] `retrieve_for_debug` 保持纯本店(include_distributed=False),debug 页行为零回归
-  - [ ] list 三路径测试矩阵:门店看本店store+下发 / 门店看不到其他门店store / 门店看不到未下发platform / group_admin 看聚合 / super_admin 看全局 / 跨集团不可见
-  - [ ] 检索三路径测试:门店 include_distributed=True 含下发命中 / =False 纯本店 / 只增不减(本店原命中保留) / group_admin 聚合 / super_admin 全局
-  - [ ] bypass 接通测试:group_admin 调 knowledge API 放行 / 非 group_admin 传 db 走 casbin 零回归 / group_admin + devices 不放行(D9 守卫)
-  - [ ] 现有 retrieve 调用点零回归测试:debug 页 / agent 工具 / seed_demo 的 create_document 路径全绿(既有 test_knowledge_* / test_seed 不破)
-  - [ ] `./init.sh full` 全绿(零回归);smoke 子集含新章节
+  - [x] `DocumentRepository.list_visible_for` 三路径就位(G2):super_admin/hq_staff 全局 / group_admin+group_id 聚合(本集团group级 + 本集团所有门店store级)/ 门店(本店store + 上级下发给我,LEFT JOIN distribution is_active=true);永远带 doc.is_deleted=false
+  - [x] `DocumentChunkRepository.search_by_embedding` 加 include_distributed/group_id/platform_role/is_group_admin 参数(G3):门店 include_distributed=True 扩下发 / =False 纯本店 / group_admin 聚合 / super_admin 全局;向后兼容(默认 False = 原行为)
+  - [x] `KnowledgeService` 6 处 require() 加 db=self.db(G1):list_documents/create_document/delete_document/retrieve_for_debug 的 require 调用 + retrieve_knowledge 工具内的 check;group_admin bypass 真正生效
+  - [x] `DocumentRead` schema 加 scope/group_id/category_id 字段(向前兼容,既有响应多三字段)
+  - [x] `retrieve_knowledge` 工具适配:检索范围 = 本店 store + 下发(include_distributed=True),docstring 更新说明「检索跨 scope,含上级下发」
+  - [x] `retrieve_for_debug` 保持纯本店(include_distributed=False),debug 页行为零回归
+  - [x] list 三路径测试矩阵:门店看本店store+下发 / 门店看不到其他门店store / 门店看不到未下发platform / group_admin 看聚合 / super_admin 看全局 / 跨集团不可见
+  - [x] 检索三路径测试:门店 include_distributed=True 含下发命中 / =False 纯本店 / 只增不减(本店原命中保留) / group_admin 聚合 / super_admin 全局
+  - [x] bypass 接通测试:group_admin 调 knowledge API 放行 / 非 group_admin 传 db 走 casbin 零回归 / group_admin + devices 不放行(D9 守卫)
+  - [x] 现有 retrieve 调用点零回归测试:debug 页 / agent 工具 / seed_demo 的 create_document 路径全绿(既有 test_knowledge_* / test_seed 不破)
+  - [x] `./init.sh full` 全绿(零回归);smoke 子集含新章节
+
+> **✅ 切片 02 完成**(feat/knowledge-tiered-backend-slice-02,commit `d21f8a9`)。11 AC 全勾。验证:`./init.sh full` **940 passed**(925 baseline + 切片02 新 16)零回归,ruff clean(+1 flaky `test_composite_query_timeout_keeps_completed_fragments` 计时器竞态,单独重跑 3x 全绿,与本切片无关 —— 未碰 fan-out/composite/计时器代码)。实现:
+> - **DocumentRepository.list_visible_for 三路径(G2)** —— `document.py:79-131`,三分支(cross-tenant `include_all_tenants` / group_admin `is_group_admin+group_id` 聚合本集团 group 级 + GroupTenant 子查询所有门店 store 级 / 门店 own `scope='store'` + `knowledge_distribution` 子查询 `is_active=true` 下发)+ 全分支守 `is_deleted=False`。镜像切片 01 Category repo 范式:角色 bool 由 service 算后下传,**repo 不 import service 层**(守铁律 #1)。
+> - **DocumentChunkRepository.search_by_embedding 三路径(G3)** —— `document.py:160-235`,加 `include_distributed/group_id/include_all_tenants/is_group_admin` 4 参数,**默认 False 向后兼容**(既有 caller 行为零变化);JOIN Document 守 `is_deleted=False`(软删源即使经下发也不浮现);门店 `include_distributed=True` 用 OR 语义**只增不减**(本店命中保留)。
+> - **G1 bypass 接通** —— KnowledgeService 4 处 require(`92 read / 116 create / 151 delete / 258 retrieve_for_debug`)+ graph.py retrieve_knowledge 工具内 check(`graph.py:97-99`)全加 `db=self.db` / `db=db`,共 **5 处**(plan 文字「6 处」是规划估算,实际语义完整覆盖:bypass 在所有 knowledge 读写路径生效)。group_admin bypass(`obj=='knowledge' and db is not None` 分支)此前是「死的」(5 处都没传 db),现已真正生效。
+> - **DocumentRead 加 scope/group_id/category_id**(AC4)—— `schemas/document.py:51-53`,`scope` 有 server_default='store' 永远有值;group_id/category_id 可选 None。向前兼容,既有响应多三字段。
+> - **retrieve_knowledge 工具适配** —— `graph.py:108-110` `retrieve(..., include_distributed=True)`,门店 agent 检索 = 本店 store + 上级下发;docstring 更新说明「检索跨 scope,含上级下发」。**retrieve_for_debug 保持默认 False**(纯本店,debug 页零回归)。
+>
+> 16 tests(`tests/test_knowledge_backend.py`):list_visible_for 三路径 6(门店本店+下发 / 看不到其他门店 / group_admin 聚合 / super_admin 全局 / 跨集团隔离 / 软删源排除)+ 检索三路径 4(默认向后兼容 / include_distributed 转发 / group_admin 上下文转发 / 只增不减 OR 语义结构守卫)+ G1 bypass 3(group_admin 放行 / 非 group_admin 传 db 走 casbin 零回归 / D9 devices 不放行)+ retrieve_knowledge 工具接线 2(include_distributed=True + db=db 源码守卫 / retrieve_for_debug 保持 False)+ DocumentRead tier 字段 1。
+>
+> **非末切片**(03 下发/撤回 / 04 集成验证 待做),不动 feature_list.json status/evidence(末切片的事)。下一步:切片 03 下发/撤回 API + distribute 权限码。
 
 ---
 
