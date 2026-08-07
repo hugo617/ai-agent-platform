@@ -1,7 +1,7 @@
 # 计划:知识库分级 Feature B —— 后端 CRUD + 下发 API + 检索改造
 
 > **id**: `knowledge-tiered-backend`
-> **状态**: ✅ passing(切片 01+02+03+04 全部完成,feature 收尾 §1-7 done,987 passed 零回归;§8 分支清理待 PR 合并后补)
+> **状态**: ✅ passing(切片 01+02+03+04 全部完成,feature 收尾 §1-7 done,987 passed 零回归;§8 分支清理待 **PR #154 合并**后补 —— PR MERGEABLE,CI 跑 pytest+ruff+alembic)
 > **优先级**: 89(feature_list.json)
 > **创建日期**: 2026-08-06
 > **承接**: [`plan-knowledge-tiered-overview.md`](plan-knowledge-tiered-overview.md)(EP1 总纲,D1-D12 决策锁定)+ [`plan-knowledge-tiered-foundation.md`](plan-knowledge-tiered-foundation.md)(Feature A ✅ passing,数据模型 + 权限派生地基已交付)
