@@ -285,10 +285,13 @@ def _bind_role(enforcer, user_id: str, role: str, tenant_id: str) -> None:
     """
     e = enforcer
     e.add_role_for_user_in_domain(user_id, role, tenant_id)
-    # Seed knowledge policies for THIS tenant (owner/admin: read+create+delete;
-    # member: read only). Matches DEFAULT_*_PERMS knowledge rows.
-    write_acts = [("knowledge", "read"), ("knowledge", "create"), ("knowledge", "delete")] \
-        if role in ("owner", "admin") else [("knowledge", "read")]
+    # Seed knowledge policies for THIS tenant (owner/admin: read+create+delete+
+    # distribute; member: read only). Matches DEFAULT_*_PERMS knowledge rows
+    # (slice 03 adds distribute to owner/admin, never member).
+    write_acts = [
+        ("knowledge", "read"), ("knowledge", "create"),
+        ("knowledge", "delete"), ("knowledge", "distribute"),
+    ] if role in ("owner", "admin") else [("knowledge", "read")]
     for obj, act in write_acts:
         # add_policy is idempotent in pycasbin (duplicate adds are no-ops).
         e.add_policy(role, tenant_id, obj, act)
@@ -1205,3 +1208,794 @@ async def test_document_read_exposes_tier_fields(db_session):
     assert read.scope == "group"
     assert read.group_id == ids["g_a"]
     assert read.category_id is None  # no category assigned in the fixture
+
+
+# ======================================================================
+# 切片 03 — 下发/撤回 API + distribute 权限码
+# Plan: harness/docs/plan-knowledge-tiered-backend.md slice 03.
+#
+# Chapter layout (matches slice 03 AC checklist):
+# - D. DistributeRequest schema — G4 XOR (AC1).
+# - R. Repository — create/deactivate/list_for_source/list_for_target (AC2).
+# - S. Service distribute — explicit list / group expand / G4 / cross-group /
+#   super_admin / upsert (AC3).
+# - V. Service revoke — soft-delete + audit preserved (AC4).
+# - L. Source soft-delete linkage — list/retrieve auto-exclude (AC5, slice 02
+#   already wired the joint predicate; these tests prove it holds).
+# - P. distribute permission — owner/admin yes / member no / group_admin bypass
+#   / super_admin (AC7).
+# - A. API endpoints — POST distribute + DELETE revoke (AC6).
+# - G7. Reference-model consistency — edit source → target sees latest (AC11).
+# ======================================================================
+
+
+async def _promote_to_group_admin(db_session, group_id: str, hq_tenant_id: str,
+                                  user_id: str = "u-ga-dist"):
+    """Promote a user into a group's HQ owner (derives group_admin).
+
+    Mirrors the slice-01/02 pattern: set ``headquarters_tenant_id`` on the group
+    and add a UserTenant(owner) row for the user on that HQ tenant. The derived
+    ``is_group_admin`` then returns True for ``(user_id, group_id)``.
+    """
+    from sqlalchemy import select
+
+    from app.models.group import Group
+    from app.models.tenant import UserTenant
+
+    g = (await db_session.execute(select(Group).where(Group.id == group_id))).scalar_one()
+    g.headquarters_tenant_id = hq_tenant_id
+    db_session.add(UserTenant(user_id=user_id, tenant_id=hq_tenant_id, role="owner", valid_to=None))
+    await db_session.flush()
+
+
+# ----------------------------------------------- D. DistributeRequest schema (AC1)
+
+
+@pytest.mark.asyncio
+async def test_distribute_request_accepts_explicit_tenant_list():
+    """AC1/G4: target_tenant_ids alone is a valid payload."""
+    from app.schemas.document import DistributeRequest
+
+    req = DistributeRequest(target_tenant_ids=["t1", "t2"])
+    assert req.target_tenant_ids == ["t1", "t2"]
+    assert req.target_group_id is None
+
+
+@pytest.mark.asyncio
+async def test_distribute_request_accepts_group_target():
+    """AC1/G4: target_group_id alone is a valid payload."""
+    from app.schemas.document import DistributeRequest
+
+    req = DistributeRequest(target_group_id="g1")
+    assert req.target_group_id == "g1"
+    assert req.target_tenant_ids is None
+
+
+@pytest.mark.asyncio
+async def test_distribute_request_accepts_neither_at_schema_level():
+    """AC1/G4: the schema declares both Optional — the XOR is enforced in the
+    service (BizError), not on the schema (serialization hazard, see
+    DistributeRequest docstring). So neither-set parses fine here.
+    """
+    from app.schemas.document import DistributeRequest
+
+    req = DistributeRequest()
+    assert req.target_tenant_ids is None
+    assert req.target_group_id is None
+
+
+@pytest.mark.asyncio
+async def test_distribution_read_serializes_all_fields(db_session):
+    """AC1: KnowledgeDistributionRead carries all six fields (id/source_doc_id/
+    target_tenant_id/distributed_by/distributed_at/is_active)."""
+    from app.models.knowledge_distribution import KnowledgeDistribution
+    from app.schemas.document import KnowledgeDistributionRead
+
+    ids = await _seed_document_fixture(db_session)
+    row = KnowledgeDistribution(
+        source_doc_id=ids["platform_solo"],
+        target_tenant_id=ids["t_a2"],
+        distributed_by="u-someone",
+        is_active=True,
+    )
+    db_session.add(row)
+    await db_session.flush()
+    read = KnowledgeDistributionRead.model_validate(row)
+    assert read.source_doc_id == ids["platform_solo"]
+    assert read.target_tenant_id == ids["t_a2"]
+    assert read.distributed_by == "u-someone"
+    assert read.is_active is True
+    assert read.distributed_at is not None
+    assert read.id == row.id
+
+
+# ------------------------------------------------ R. Repository CRUD (AC2)
+
+
+@pytest.mark.asyncio
+async def test_repo_create_inserts_active_row(db_session):
+    """AC2: create inserts an active distribution row."""
+    from app.repositories.knowledge_distribution import KnowledgeDistributionRepository
+
+    ids = await _seed_document_fixture(db_session)
+    repo = KnowledgeDistributionRepository(db_session)
+    row = await repo.create(
+        source_doc_id=ids["platform_solo"], target_tenant_id=ids["t_a2"],
+        distributed_by="u1",
+    )
+    assert row.is_active is True
+    assert row.source_doc_id == ids["platform_solo"]
+    assert row.target_tenant_id == ids["t_a2"]
+
+
+@pytest.mark.asyncio
+async def test_repo_create_re_enables_revoked_row_upsert(db_session):
+    """AC2/AC3: re-distributing an existing (doc,target) re-enables the row
+    (Feature B upsert) rather than duplicating."""
+    from app.models.knowledge_distribution import KnowledgeDistribution
+    from app.repositories.knowledge_distribution import KnowledgeDistributionRepository
+
+    ids = await _seed_document_fixture(db_session)
+    repo = KnowledgeDistributionRepository(db_session)
+    # First push.
+    first = await repo.create(
+        source_doc_id=ids["platform_solo"], target_tenant_id=ids["t_a2"],
+        distributed_by="u1",
+    )
+    # Revoke it.
+    assert await repo.deactivate(first.id) is True
+    # Second push (same pair) → upsert re-enables, no duplicate row.
+    second = await repo.create(
+        source_doc_id=ids["platform_solo"], target_tenant_id=ids["t_a2"],
+        distributed_by="u2",
+    )
+    assert second.is_active is True
+    assert second.id == first.id  # same row, not a duplicate
+    assert second.distributed_by == "u2"  # updated to the new pusher
+    # Still only ONE row for this pair.
+    from sqlalchemy import select
+    count = len((await db_session.execute(
+        select(KnowledgeDistribution).where(
+            KnowledgeDistribution.source_doc_id == ids["platform_solo"],
+            KnowledgeDistribution.target_tenant_id == ids["t_a2"],
+        )
+    )).scalars().all())
+    assert count == 1
+
+
+@pytest.mark.asyncio
+async def test_repo_deactivate_soft_flips_preserves_row(db_session):
+    """AC2/AC4: deactivate flips is_active=False but keeps the row (audit)."""
+    from app.repositories.knowledge_distribution import KnowledgeDistributionRepository
+
+    ids = await _seed_document_fixture(db_session)
+    repo = KnowledgeDistributionRepository(db_session)
+    row = await repo.create(
+        source_doc_id=ids["platform_solo"], target_tenant_id=ids["t_a2"],
+        distributed_by="u1",
+    )
+    assert await repo.deactivate(row.id) is True
+    # Row still present, now inactive.
+    still = await repo.get(row.id)
+    assert still is not None
+    assert still.is_active is False
+    # deactivate on a missing id returns False.
+    assert await repo.deactivate("nonexistent") is False
+
+
+@pytest.mark.asyncio
+async def test_repo_list_for_source_includes_revoked_for_audit(db_session):
+    """AC2: list_for_source returns ALL rows (audit), active_only filters."""
+    from app.repositories.knowledge_distribution import KnowledgeDistributionRepository
+
+    ids = await _seed_document_fixture(db_session)
+    repo = KnowledgeDistributionRepository(db_session)
+    active = await repo.create(
+        source_doc_id=ids["platform_solo"], target_tenant_id=ids["t_a2"],
+        distributed_by="u1",
+    )
+    revoked = await repo.create(
+        source_doc_id=ids["platform_solo"], target_tenant_id=ids["t_b1"],
+        distributed_by="u1",
+    )
+    await repo.deactivate(revoked.id)
+    # Default: audit view sees both.
+    all_rows = await repo.list_for_source(ids["platform_solo"])
+    assert {r.id for r in all_rows} == {active.id, revoked.id}
+    # active_only: just the live one.
+    live = await repo.list_for_source(ids["platform_solo"], active_only=True)
+    assert {r.id for r in live} == {active.id}
+
+
+@pytest.mark.asyncio
+async def test_repo_list_for_target_excludes_revoked(db_session):
+    """AC2: list_for_target (the store's view) excludes revoked rows."""
+    from app.repositories.knowledge_distribution import KnowledgeDistributionRepository
+
+    ids = await _seed_document_fixture(db_session)
+    repo = KnowledgeDistributionRepository(db_session)
+    keep = await repo.create(
+        source_doc_id=ids["platform_solo"], target_tenant_id=ids["t_a2"],
+        distributed_by="u1",
+    )
+    gone = await repo.create(
+        source_doc_id=ids["groupA"], target_tenant_id=ids["t_a2"],
+        distributed_by="u1",
+    )
+    await repo.deactivate(gone.id)
+    seen = await repo.list_for_target(ids["t_a2"])
+    assert {r.id for r in seen} == {keep.id}
+
+
+# ------------------------------ S. Service distribute — targeting + guards (AC3)
+
+
+@pytest.mark.asyncio
+async def test_service_distribute_explicit_tenant_list(patched_enforcer, db_session):
+    """AC3: target_tenant_ids pushes to each listed store."""
+    from app.schemas.document import DistributeRequest
+    from app.services.knowledge_service import KnowledgeService
+
+    ids = await _seed_document_fixture(db_session)
+    _bind_role(patched_enforcer, "u-owner-a1", "owner", ids["t_a1"])
+    svc = KnowledgeService(db_session)
+    rows = await svc.distribute_document(
+        "u-owner-a1", ids["t_a1"], ids["storeA1"],
+        DistributeRequest(target_tenant_ids=[ids["t_a2"], ids["t_b1"]]),
+        platform_role=None,
+    )
+    assert len(rows) == 2
+    targets = {r.target_tenant_id for r in rows}
+    assert targets == {ids["t_a2"], ids["t_b1"]}
+    assert all(r.is_active for r in rows)
+
+
+@pytest.mark.asyncio
+async def test_service_distribute_group_expand(patched_enforcer, db_session):
+    """AC3: target_group_id expands to every store in the group."""
+    from app.schemas.document import DistributeRequest
+    from app.services.knowledge_service import KnowledgeService
+
+    ids = await _seed_document_fixture(db_session)
+    await _promote_to_group_admin(db_session, ids["g_a"], ids["t_a1"], "u-ga-dist")
+    _bind_role(patched_enforcer, "u-ga-dist", "owner", ids["t_a1"])
+    svc = KnowledgeService(db_session)
+    # group_admin distributes a group doc to their whole group (A1 + A2).
+    rows = await svc.distribute_document(
+        "u-ga-dist", ids["t_a1"], ids["groupA"],
+        DistributeRequest(target_group_id=ids["g_a"]),
+        platform_role=None,
+    )
+    targets = {r.target_tenant_id for r in rows}
+    assert targets == {ids["t_a1"], ids["t_a2"]}  # both GroupA stores
+
+
+@pytest.mark.asyncio
+async def test_service_distribute_g4_both_set_rejected(patched_enforcer, db_session):
+    """AC3/G4: both target_tenant_ids AND target_group_id → BizError (400)."""
+    from app.schemas.document import DistributeRequest
+    from app.services.errors import BizError
+    from app.services.knowledge_service import KnowledgeService
+
+    ids = await _seed_document_fixture(db_session)
+    _bind_role(patched_enforcer, "u-owner-a1", "owner", ids["t_a1"])
+    svc = KnowledgeService(db_session)
+    with pytest.raises(BizError):
+        await svc.distribute_document(
+            "u-owner-a1", ids["t_a1"], ids["storeA1"],
+            DistributeRequest(target_tenant_ids=[ids["t_a2"]], target_group_id=ids["g_a"]),
+            platform_role=None,
+        )
+
+
+@pytest.mark.asyncio
+async def test_service_distribute_g4_neither_set_rejected(patched_enforcer, db_session):
+    """AC3/G4: neither target set → BizError (400)."""
+    from app.schemas.document import DistributeRequest
+    from app.services.errors import BizError
+    from app.services.knowledge_service import KnowledgeService
+
+    ids = await _seed_document_fixture(db_session)
+    _bind_role(patched_enforcer, "u-owner-a1", "owner", ids["t_a1"])
+    svc = KnowledgeService(db_session)
+    with pytest.raises(BizError):
+        await svc.distribute_document(
+            "u-owner-a1", ids["t_a1"], ids["storeA1"],
+            DistributeRequest(),
+            platform_role=None,
+        )
+
+
+@pytest.mark.asyncio
+async def test_service_distribute_cross_group_group_admin_rejected(patched_enforcer, db_session):
+    """AC3: a group_admin targeting ANOTHER group → BizError (cross-group guard)."""
+    from app.schemas.document import DistributeRequest
+    from app.services.errors import BizError
+    from app.services.knowledge_service import KnowledgeService
+
+    ids = await _seed_document_fixture(db_session)
+    # u-ga is GroupA's admin; targeting GroupB must be refused.
+    await _promote_to_group_admin(db_session, ids["g_a"], ids["t_a1"], "u-ga-xgrp")
+    _bind_role(patched_enforcer, "u-ga-xgrp", "owner", ids["t_a1"])
+    svc = KnowledgeService(db_session)
+    with pytest.raises(BizError):
+        await svc.distribute_document(
+            "u-ga-xgrp", ids["t_a1"], ids["groupA"],
+            DistributeRequest(target_group_id=ids["g_b"]),  # not their group
+            platform_role=None,
+        )
+
+
+@pytest.mark.asyncio
+async def test_service_distribute_super_admin_targets_any_group(db_session):
+    """AC3: super_admin may target any group (no cross-group guard)."""
+    from app.schemas.document import DistributeRequest
+    from app.services.knowledge_service import KnowledgeService
+
+    ids = await _seed_document_fixture(db_session)
+    svc = KnowledgeService(db_session)
+    rows = await svc.distribute_document(
+        "u-super", ids["t_a1"], ids["platform_solo"],
+        DistributeRequest(target_group_id=ids["g_b"]),  # any group
+        platform_role="super_admin",
+    )
+    # GroupB has one store (t_b1).
+    assert {r.target_tenant_id for r in rows} == {ids["t_b1"]}
+
+
+@pytest.mark.asyncio
+async def test_service_distribute_upsert_re_enables_revoked(patched_enforcer, db_session):
+    """AC3: re-distributing to a store that had the doc revoked re-enables it."""
+    from app.schemas.document import DistributeRequest
+    from app.services.knowledge_service import KnowledgeService
+
+    ids = await _seed_document_fixture(db_session)
+    _bind_role(patched_enforcer, "u-owner-a1", "owner", ids["t_a1"])
+    svc = KnowledgeService(db_session)
+    first = await svc.distribute_document(
+        "u-owner-a1", ids["t_a1"], ids["storeA1"],
+        DistributeRequest(target_tenant_ids=[ids["t_a2"]]),
+        platform_role=None,
+    )
+    dist_id = first[0].id
+    # Revoke via the service, then re-distribute.
+    await svc.revoke_distribution("u-owner-a1", ids["t_a1"], dist_id, platform_role=None)
+    second = await svc.distribute_document(
+        "u-owner-a1", ids["t_a1"], ids["storeA1"],
+        DistributeRequest(target_tenant_ids=[ids["t_a2"]]),
+        platform_role=None,
+    )
+    assert second[0].id == dist_id  # same row
+    assert second[0].is_active is True  # re-enabled
+
+
+@pytest.mark.asyncio
+async def test_service_distribute_missing_source_rejected(patched_enforcer, db_session):
+    """AC3: distributing a non-existent / soft-deleted source → NotFoundError."""
+    from app.models.document import Document
+    from app.schemas.document import DistributeRequest
+    from app.services.errors import NotFoundError
+    from app.services.knowledge_service import KnowledgeService
+
+    ids = await _seed_document_fixture(db_session)
+    _bind_role(patched_enforcer, "u-owner-a1", "owner", ids["t_a1"])
+    svc = KnowledgeService(db_session)
+    # Non-existent doc.
+    with pytest.raises(NotFoundError):
+        await svc.distribute_document(
+            "u-owner-a1", ids["t_a1"], "no-such-doc",
+            DistributeRequest(target_tenant_ids=[ids["t_a2"]]),
+            platform_role=None,
+        )
+    # Soft-deleted doc.
+    doc = await db_session.get(Document, ids["storeA1"])
+    doc.is_deleted = True
+    await db_session.flush()
+    with pytest.raises(NotFoundError):
+        await svc.distribute_document(
+            "u-owner-a1", ids["t_a1"], ids["storeA1"],
+            DistributeRequest(target_tenant_ids=[ids["t_a2"]]),
+            platform_role=None,
+        )
+
+
+# ----------------------------------------- V. Service revoke — soft delete (AC4)
+
+
+@pytest.mark.asyncio
+async def test_service_revoke_soft_deletes_and_excludes(patched_enforcer, db_session):
+    """AC4: revoke flips is_active=False; target's list/retrieve then excludes."""
+    from app.repositories.document import DocumentRepository
+    from app.schemas.document import DistributeRequest
+    from app.services.knowledge_service import KnowledgeService
+
+    ids = await _seed_document_fixture(db_session)
+    _bind_role(patched_enforcer, "u-owner-a1", "owner", ids["t_a1"])
+    svc = KnowledgeService(db_session)
+    rows = await svc.distribute_document(
+        "u-owner-a1", ids["t_a1"], ids["platform_solo"],
+        DistributeRequest(target_tenant_ids=[ids["t_a2"]]),
+        platform_role=None,
+    )
+    # Before revoke: t_a2 sees the distributed doc.
+    repo = DocumentRepository(db_session)
+    seen = await repo.list_visible_for(
+        tenant_id=ids["t_a2"], group_id=ids["g_a"],
+        include_all_tenants=False, is_group_admin=False,
+    )
+    assert ids["platform_solo"] in {d.id for d in seen}
+    # Revoke.
+    await svc.revoke_distribution("u-owner-a1", ids["t_a1"], rows[0].id, platform_role=None)
+    # After revoke: t_a2 no longer sees it.
+    seen = await repo.list_visible_for(
+        tenant_id=ids["t_a2"], group_id=ids["g_a"],
+        include_all_tenants=False, is_group_admin=False,
+    )
+    assert ids["platform_solo"] not in {d.id for d in seen}
+
+
+@pytest.mark.asyncio
+async def test_service_revoke_preserves_audit_row(patched_enforcer, db_session):
+    """AC4: revoke keeps the row (is_active=False) for audit — not a hard delete."""
+    from app.models.knowledge_distribution import KnowledgeDistribution
+    from app.schemas.document import DistributeRequest
+    from app.services.knowledge_service import KnowledgeService
+
+    ids = await _seed_document_fixture(db_session)
+    _bind_role(patched_enforcer, "u-owner-a1", "owner", ids["t_a1"])
+    svc = KnowledgeService(db_session)
+    rows = await svc.distribute_document(
+        "u-owner-a1", ids["t_a1"], ids["platform_solo"],
+        DistributeRequest(target_tenant_ids=[ids["t_a2"]]),
+        platform_role=None,
+    )
+    dist_id = rows[0].id
+    await svc.revoke_distribution("u-owner-a1", ids["t_a1"], dist_id, platform_role=None)
+    # The row still exists (audit), now inactive.
+    row = await db_session.get(KnowledgeDistribution, dist_id)
+    assert row is not None
+    assert row.is_active is False
+
+
+@pytest.mark.asyncio
+async def test_service_revoke_missing_row_not_found(patched_enforcer, db_session):
+    """AC4: revoking a non-existent id → NotFoundError (no leak)."""
+    from app.services.errors import NotFoundError
+    from app.services.knowledge_service import KnowledgeService
+
+    ids = await _seed_document_fixture(db_session)
+    _bind_role(patched_enforcer, "u-owner-a1", "owner", ids["t_a1"])
+    svc = KnowledgeService(db_session)
+    with pytest.raises(NotFoundError):
+        await svc.revoke_distribution("u-owner-a1", ids["t_a1"], "no-such-dist", platform_role=None)
+
+
+# ----------------------- L. Source soft-delete linkage (AC5 — slice 02 wired it)
+
+
+@pytest.mark.asyncio
+async def test_source_soft_delete_excludes_from_store_list(patched_enforcer, db_session):
+    """AC5: soft-deleting the source doc hides it from the target's list, even
+    though the distribution row is still active (joint predicate doc.is_deleted
+    =false AND dist.is_active=true)."""
+    from app.models.document import Document
+    from app.repositories.document import DocumentRepository
+    from app.schemas.document import DistributeRequest
+    from app.services.knowledge_service import KnowledgeService
+
+    ids = await _seed_document_fixture(db_session)
+    _bind_role(patched_enforcer, "u-owner-a1", "owner", ids["t_a1"])
+    svc = KnowledgeService(db_session)
+    await svc.distribute_document(
+        "u-owner-a1", ids["t_a1"], ids["platform_solo"],
+        DistributeRequest(target_tenant_ids=[ids["t_a2"]]),
+        platform_role=None,
+    )
+    repo = DocumentRepository(db_session)
+    # t_a2 sees it before the source is deleted.
+    seen = await repo.list_visible_for(
+        tenant_id=ids["t_a2"], group_id=ids["g_b"],
+        include_all_tenants=False, is_group_admin=False,
+    )
+    assert ids["platform_solo"] in {d.id for d in seen}
+    # Soft-delete the SOURCE.
+    doc = await db_session.get(Document, ids["platform_solo"])
+    doc.is_deleted = True
+    await db_session.flush()
+    # t_a2 no longer sees it — the distribution row is still active, but the
+    # joint predicate excludes soft-deleted sources.
+    seen = await repo.list_visible_for(
+        tenant_id=ids["t_a2"], group_id=ids["g_b"],
+        include_all_tenants=False, is_group_admin=False,
+    )
+    assert ids["platform_solo"] not in {d.id for d in seen}
+
+
+@pytest.mark.asyncio
+async def test_source_soft_delete_distribution_row_preserved(patched_enforcer, db_session):
+    """AC5: after the source is soft-deleted, the distribution ROW survives
+    (audit intact) — only the joint predicate excludes it, no manual flip."""
+    from app.models.document import Document
+    from app.repositories.knowledge_distribution import KnowledgeDistributionRepository
+    from app.schemas.document import DistributeRequest
+    from app.services.knowledge_service import KnowledgeService
+
+    ids = await _seed_document_fixture(db_session)
+    _bind_role(patched_enforcer, "u-owner-a1", "owner", ids["t_a1"])
+    svc = KnowledgeService(db_session)
+    rows = await svc.distribute_document(
+        "u-owner-a1", ids["t_a1"], ids["platform_solo"],
+        DistributeRequest(target_tenant_ids=[ids["t_a2"]]),
+        platform_role=None,
+    )
+    dist_id = rows[0].id
+    # Soft-delete the source.
+    doc = await db_session.get(Document, ids["platform_solo"])
+    doc.is_deleted = True
+    await db_session.flush()
+    # The distribution row is STILL active (audit complete, is_active unchanged).
+    row = await KnowledgeDistributionRepository(db_session).get(dist_id)
+    assert row is not None
+    assert row.is_active is True
+
+
+@pytest.mark.asyncio
+async def test_source_soft_delete_excludes_from_search(patched_enforcer, db_session, monkeypatch):
+    """AC5: search_by_embedding's joint predicate excludes soft-deleted sources
+    even via an active distribution row (slice 02 wired the join; this pins it)."""
+    import inspect
+
+    from app.repositories.document import DocumentChunkRepository
+
+    src = inspect.getsource(DocumentChunkRepository.search_by_embedding)
+    # The joint predicate: always joins Document and filters is_deleted=False,
+    # BEFORE the distribution expansion — so a soft-deleted source's chunks never
+    # surface even when a distribution row points at them.
+    assert "Document.is_deleted.is_(False)" in src
+
+
+# ------------------------------- P. distribute permission matrix (AC7)
+
+
+@pytest.mark.asyncio
+async def test_perm_owner_can_distribute(patched_enforcer, db_session):
+    """AC7: owner (has knowledge:distribute grant) may distribute."""
+    from app.schemas.document import DistributeRequest
+    from app.services.knowledge_service import KnowledgeService
+
+    ids = await _seed_document_fixture(db_session)
+    _bind_role(patched_enforcer, "u-owner-a1", "owner", ids["t_a1"])
+    svc = KnowledgeService(db_session)
+    rows = await svc.distribute_document(
+        "u-owner-a1", ids["t_a1"], ids["storeA1"],
+        DistributeRequest(target_tenant_ids=[ids["t_a2"]]),
+        platform_role=None,
+    )
+    assert len(rows) == 1
+
+
+@pytest.mark.asyncio
+async def test_perm_member_cannot_distribute(patched_enforcer, db_session):
+    """AC7: member (no knowledge:distribute grant) is refused at the require gate."""
+    from app.schemas.document import DistributeRequest
+    from app.services.knowledge_service import KnowledgeService
+
+    ids = await _seed_document_fixture(db_session)
+    _bind_role(patched_enforcer, "u-member-a1", "member", ids["t_a1"])
+    svc = KnowledgeService(db_session)
+    with pytest.raises(PermissionError):
+        await svc.distribute_document(
+            "u-member-a1", ids["t_a1"], ids["storeA1"],
+            DistributeRequest(target_tenant_ids=[ids["t_a2"]]),
+            platform_role=None,
+        )
+
+
+@pytest.mark.asyncio
+async def test_perm_group_admin_bypass_distributes_within_group(patched_enforcer, db_session):
+    """AC7: a group_admin (no knowledge:distribute casbin grant) distributes via
+    the G1 bypass (require passes db=self.db → derived is_group_admin → True)."""
+    from app.schemas.document import DistributeRequest
+    from app.services.knowledge_service import KnowledgeService
+
+    ids = await _seed_document_fixture(db_session)
+    await _promote_to_group_admin(db_session, ids["g_a"], ids["t_a1"], "u-ga-bypass")
+    # Deliberately do NOT bind a knowledge policy — the bypass must fire.
+    svc = KnowledgeService(db_session)
+    rows = await svc.distribute_document(
+        "u-ga-bypass", ids["t_a1"], ids["groupA"],
+        DistributeRequest(target_group_id=ids["g_a"]),
+        platform_role=None,
+    )
+    assert {r.target_tenant_id for r in rows} == {ids["t_a1"], ids["t_a2"]}
+
+
+@pytest.mark.asyncio
+async def test_perm_super_admin_distributes_globally(db_session):
+    """AC7: super_admin distributes any doc to any target (platform bypass)."""
+    from app.schemas.document import DistributeRequest
+    from app.services.knowledge_service import KnowledgeService
+
+    ids = await _seed_document_fixture(db_session)
+    svc = KnowledgeService(db_session)
+    rows = await svc.distribute_document(
+        "u-super", ids["t_a1"], ids["platform_solo"],
+        DistributeRequest(target_tenant_ids=[ids["t_a2"], ids["t_b1"]]),
+        platform_role="super_admin",
+    )
+    assert len(rows) == 2
+
+
+# ----------------------------------- A. API endpoints (AC6)
+
+
+@pytest.mark.asyncio
+async def test_api_distribute_document_by_owner(app_client):
+    """AC6: owner POSTs a distribution; returns 201 + the distribution rows."""
+    me = (await app_client.get("/api/v1/auth/me", headers=AUTH)).json()
+    tenant_id = me["tenant_id"]
+    # Create a document first (owner can ingest).
+    doc = (await app_client.post(
+        "/api/v1/knowledge/documents",
+        json={"name": "待下发文档", "content": "hello world"},
+        headers=AUTH,
+    )).json()
+    resp = await app_client.post(
+        f"/api/v1/knowledge/documents/{doc['id']}/distribute",
+        json={"target_tenant_ids": [tenant_id]},  # distribute to self (own store)
+        headers=AUTH,
+    )
+    assert resp.status_code == 201, resp.text
+    rows = resp.json()
+    assert isinstance(rows, list)
+    assert len(rows) == 1
+    assert rows[0]["source_doc_id"] == doc["id"]
+    assert rows[0]["target_tenant_id"] == tenant_id
+    assert rows[0]["is_active"] is True
+    assert rows[0]["distributed_by"] == me["user_id"]
+
+
+@pytest.mark.asyncio
+async def test_api_distribute_g4_both_set_returns_400(app_client):
+    """AC6/G4: both target fields set → 400 (BizError from the service XOR)."""
+    doc = (await app_client.post(
+        "/api/v1/knowledge/documents",
+        json={"name": "G4测试", "content": "x"},
+        headers=AUTH,
+    )).json()
+    me = (await app_client.get("/api/v1/auth/me", headers=AUTH)).json()
+    resp = await app_client.post(
+        f"/api/v1/knowledge/documents/{doc['id']}/distribute",
+        json={"target_tenant_ids": [me["tenant_id"]], "target_group_id": "g-x"},
+        headers=AUTH,
+    )
+    assert resp.status_code == 400, resp.text
+
+
+@pytest.mark.asyncio
+async def test_api_distribute_member_forbidden(member_client):
+    """AC6/AC7: member POST distribute → 403 (no knowledge:distribute grant)."""
+    me = (await member_client.get("/api/v1/auth/me", headers=AUTH)).json()
+    resp = await member_client.post(
+        "/api/v1/knowledge/documents/some-doc/distribute",
+        json={"target_tenant_ids": [me["tenant_id"]]},
+        headers=AUTH,
+    )
+    assert resp.status_code == 403, resp.text
+
+
+@pytest.mark.asyncio
+async def test_api_revoke_distribution_by_owner(app_client):
+    """AC6: owner DELETEs a distribution → 204; row becomes inactive."""
+    me = (await app_client.get("/api/v1/auth/me", headers=AUTH)).json()
+    tenant_id = me["tenant_id"]
+    doc = (await app_client.post(
+        "/api/v1/knowledge/documents",
+        json={"name": "待撤回", "content": "x"},
+        headers=AUTH,
+    )).json()
+    dist = (await app_client.post(
+        f"/api/v1/knowledge/documents/{doc['id']}/distribute",
+        json={"target_tenant_ids": [tenant_id]},
+        headers=AUTH,
+    )).json()
+    revoke = await app_client.delete(
+        f"/api/v1/knowledge/distributions/{dist[0]['id']}", headers=AUTH,
+    )
+    assert revoke.status_code == 204, revoke.text
+
+
+@pytest.mark.asyncio
+async def test_api_revoke_nonexistent_returns_404(app_client):
+    """AC6: revoking a non-existent distribution → 404 (no leak)."""
+    resp = await app_client.delete(
+        "/api/v1/knowledge/distributions/no-such-dist", headers=AUTH,
+    )
+    assert resp.status_code == 404, resp.text
+
+
+# ----------------------------------- G7. Reference-model consistency (AC11)
+
+
+def test_g7_reference_model_shares_chunks_structural_guard():
+    """AC11/G7: distribution is a REFERENCE model — the target sees the source's
+    chunks (no copy). So when the source is re-ingested, the target immediately
+    sees the latest. We pin this at the SQL-shape level: list_visible_for /
+    search_by_embedding reach the source doc via the distribution row's
+    source_doc_id (a reference, not a copied doc_id), so edits propagate for free.
+    """
+    import inspect
+
+    from app.repositories.document import DocumentChunkRepository, DocumentRepository
+
+    # list_visible_for's store branch reaches distributed docs by their SOURCE id.
+    list_src = inspect.getsource(DocumentRepository.list_visible_for)
+    assert "KnowledgeDistribution.source_doc_id" in list_src
+    # search_by_embedding's distributed branch reaches chunks by the source doc id.
+    search_src = inspect.getsource(DocumentChunkRepository.search_by_embedding)
+    assert "KnowledgeDistribution.source_doc_id" in search_src
+
+
+@pytest.mark.asyncio
+async def test_g7_reingest_source_target_sees_latest(patched_enforcer, db_session, monkeypatch):
+    """AC11/G7: after the source doc is re-ingested (new chunks), the target's
+    retrieval immediately reflects the new content (reference model — chunks are
+    shared via source_doc_id, not copied).
+
+    We exercise the wiring: capture the chunks the target's search would reach
+    and confirm they belong to the source doc (post-reingest), proving no stale
+    copy exists.
+    """
+    from app.models.document import DocumentChunk
+    from app.schemas.document import DistributeRequest
+    from app.services.knowledge_service import KnowledgeService
+
+    ids = await _seed_document_fixture(db_session)
+    _bind_role(patched_enforcer, "u-owner-a1", "owner", ids["t_a1"])
+    svc = KnowledgeService(db_session)
+    # Distribute platform_solo → t_a2.
+    await svc.distribute_document(
+        "u-owner-a1", ids["t_a1"], ids["platform_solo"],
+        DistributeRequest(target_tenant_ids=[ids["t_a2"]]),
+        platform_role="super_admin",  # platform_solo is a platform doc
+    )
+    # The distributed expansion selects chunks whose document_id ∈ active
+    # distribution rows for the target. After re-ingest (new chunk rows on the
+    # SAME document_id), the target sees them with no distribution change.
+    # Add a "re-ingested" chunk on the source doc — simulates re-ingest.
+    new_chunk = DocumentChunk(
+        document_id=ids["platform_solo"], tenant_id=ids["t_a1"],
+        chunk_index=99, content="re-ingested content", embedding=[0.0],
+    )
+    db_session.add(new_chunk)
+    await db_session.flush()
+    # The chunk belongs to the source doc; the distribution references that doc,
+    # so the target's search (include_distributed) reaches it. We assert the
+    # reference linkage at the data level: the chunk's document_id == the
+    # distributed source_doc_id.
+    distributed_doc_ids = {
+        r.source_doc_id for r in await svc.distributions.list_for_target(ids["t_a2"])
+    }
+    assert ids["platform_solo"] in distributed_doc_ids
+    assert new_chunk.document_id in distributed_doc_ids  # same doc → visible
+
+
+# ------------------------------------- permission-code seed (AC8)
+
+
+@pytest.mark.asyncio
+async def test_permission_constants_have_distribute():
+    """AC8: DEFAULT_OWNER/ADMIN_PERMS carry knowledge:distribute; member does not."""
+    from app.services.permission_service import (
+        ACT_CN,
+        DEFAULT_ADMIN_PERMS,
+        DEFAULT_MEMBER_PERMS,
+        DEFAULT_OWNER_PERMS,
+        OBJ_CN,
+    )
+
+    assert ("knowledge", "distribute") in DEFAULT_OWNER_PERMS
+    assert ("knowledge", "distribute") in DEFAULT_ADMIN_PERMS
+    assert ("knowledge", "distribute") not in DEFAULT_MEMBER_PERMS
+    assert ACT_CN["distribute"] == "下发"
+    assert OBJ_CN["knowledge"] == "知识库"

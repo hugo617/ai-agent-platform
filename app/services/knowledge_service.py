@@ -26,17 +26,21 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.document import Document, DocumentChunk
+from app.models.knowledge_distribution import KnowledgeDistribution
 from app.repositories.document import DocumentChunkRepository, DocumentRepository
-from app.repositories.group import GroupRepository
+from app.repositories.group import GroupRepository, GroupTenantRepository
+from app.repositories.knowledge_distribution import KnowledgeDistributionRepository
 from app.schemas.document import (
+    DistributeRequest,
     DocumentCreate,
     DocumentRead,
+    KnowledgeDistributionRead,
     RetrieveHit,
     RetrieveResult,
 )
 from app.services.embedding_config_service import embedding_config_service
 from app.services.embedding_service import EmbeddingService
-from app.services.errors import NotFoundError
+from app.services.errors import BizError, NotFoundError
 from app.services.permission_service import (
     is_cross_tenant_viewer,
     is_group_admin,
@@ -63,6 +67,7 @@ class KnowledgeService:
         self.db = db
         self.docs = DocumentRepository(db)
         self.chunks = DocumentChunkRepository(db)
+        self.distributions = KnowledgeDistributionRepository(db)
 
     # ------------------------------------------------------------- embedding
 
@@ -278,6 +283,239 @@ class KnowledgeService:
             for content, score, doc_id in triples
         ]
         return RetrieveResult(query=query, hits=hits)
+
+    # ------------------------------------------------------------ distribution
+    # D3 "explicit distribution" write path (slice 03). A superior pushes a source
+    # document to one or more target stores by writing knowledge_distribution
+    # rows — the reference-model link (D4, never a copy). Two targeting shapes
+    # (G4 XOR): an explicit tenant_id list, or a whole group (expanded server-side
+    # to every store in it). Revoking a push is a soft flip (is_active=false),
+    # not a hard delete, so the audit trail survives.
+
+    async def distribute_document(
+        self,
+        user_id: str,
+        tenant_id: str,
+        document_id: str,
+        payload: DistributeRequest,
+        platform_role: str | None = None,
+    ) -> list[KnowledgeDistributionRead]:
+        """Push a source document to target store(s) — D3 explicit distribution.
+
+        Permission gate: ``require("knowledge", "distribute", db=self.db)`` so
+        the group_admin bypass fires for knowledge (G1) — a group_admin with no
+        casbin ``knowledge:distribute`` grant can still distribute within their
+        group. member is rejected at the gate (no distribute grant).
+
+        G4 targeting (XOR enforced HERE, not on the schema — see
+        ``DistributeRequest`` docstring for the serialization hazard): exactly
+        one of ``target_tenant_ids`` / ``target_group_id``. Both-set or
+        neither-set → BizError (400).
+
+        Target resolution:
+          - ``target_tenant_ids`` → distribute to each listed store.
+          - ``target_group_id``   → expand to every store in that group
+            (``GroupTenantRepository.list_for_group``).
+
+        Cross-group guard: a group_admin may only distribute TO their own group
+        (``is_group_admin(self.db, user_id, target_group_id)``). super_admin is
+        unrestricted. A store owner/admin distributing to an explicit tenant list
+        is allowed (the targets are explicit; the source ownership check below
+        still applies).
+
+        Source ownership: the source document must be visible to the caller.
+        super_admin → any doc; group_admin → docs in their group's aggregated
+        view; store → own-store docs. Soft-deleted sources are refused
+        (``NotFoundError``) — distributing a deleted doc is a no-op.
+
+        Returns the resulting (re-enabled or new) distribution rows so the caller
+        sees exactly which stores the doc is now pushed to. Each row is an upsert
+        (``KnowledgeDistributionRepository.create``): re-distributing to a store
+        that already has a row re-enables it rather than duplicating.
+        """
+        await permission_service.require(
+            user_id, tenant_id, self.OBJECT, "distribute",
+            platform_role=platform_role, db=self.db,
+        )
+
+        # G4 XOR: exactly one targeting shape.
+        has_list = payload.target_tenant_ids is not None
+        has_group = payload.target_group_id is not None
+        if has_list and has_group:
+            raise BizError("不能同时指定 target_tenant_ids 和 target_group_id")
+        if not has_list and not has_group:
+            raise BizError("必须指定 target_tenant_ids 或 target_group_id 之一")
+
+        # Resolve the target tenant_id set.
+        if has_group:
+            group_id = payload.target_group_id  # type: ignore[assignment]
+            # Cross-group guard: a group_admin may only target their own group.
+            # super_admin is unrestricted; store roles reaching here with a group
+            # target are refused (they have no group-admin authority).
+            if platform_role != "super_admin":
+                if not await is_group_admin(self.db, user_id, group_id):
+                    raise BizError("只能下发到自己管理的集团")
+            targets = [
+                gt.tenant_id
+                for gt in await GroupTenantRepository(self.db).list_for_group(group_id)
+            ]
+            if not targets:
+                # Empty group (no stores attached) — nothing to push to. Return
+                # an empty result rather than erroring: the call is well-formed,
+                # the group just has no members yet.
+                return []
+        else:
+            targets = list(payload.target_tenant_ids or [])
+            # Dedupe so the per-target upsert is idempotent even if the caller
+            # listed a store twice.
+            seen: set[str] = set()
+            deduped: list[str] = []
+            for tid in targets:
+                if tid not in seen:
+                    seen.add(tid)
+                    deduped.append(tid)
+            targets = deduped
+
+        # Fetch the source document and confirm the caller may distribute it.
+        doc = await self._get_distributable_source(
+            user_id, tenant_id, document_id, platform_role
+        )
+
+        # Write one upsert row per target (the repo's create handles the
+        # UniqueConstraint re-enable). Collect the resulting rows.
+        result: list[KnowledgeDistribution] = []
+        for target_tid in targets:
+            row = await self.distributions.create(
+                source_doc_id=doc.id,
+                target_tenant_id=target_tid,
+                distributed_by=user_id,
+            )
+            result.append(row)
+        await self.db.commit()
+        return [KnowledgeDistributionRead.model_validate(r) for r in result]
+
+    async def revoke_distribution(
+        self,
+        user_id: str,
+        tenant_id: str,
+        distribution_id: str,
+        platform_role: str | None = None,
+    ) -> None:
+        """Soft-revoke a distribution: flip ``is_active`` to False (D4).
+
+        The row is preserved (not deleted) so the audit trail of who-pushed-what-
+        when stays intact. After revoke, the target store's ``list_visible_for``
+        and ``search_by_embedding`` automatically exclude the document (their
+        ``dist.is_active=True`` predicate drops it) — no manual flip needed.
+
+        Permission gate mirrors distribute: ``knowledge:distribute`` + the
+        group_admin bypass (a group_admin may revoke within their group). The
+        caller must own the distribution: super_admin → any; group_admin → only
+        rows whose source doc belongs to their group; store → only rows they
+        pushed (``distributed_by == user_id``). Otherwise ``NotFoundError`` (a
+        cross-tenant probe leaks no information).
+        """
+        await permission_service.require(
+            user_id, tenant_id, self.OBJECT, "distribute",
+            platform_role=platform_role, db=self.db,
+        )
+
+        row = await self.distributions.get(distribution_id)
+        if row is None:
+            raise NotFoundError(f"下发记录 {distribution_id} 不存在")
+
+        # Ownership check — refuse (as NotFound) if the caller doesn't own it.
+        await self._assert_can_revoke(user_id, tenant_id, row, platform_role)
+
+        await self.distributions.deactivate(distribution_id)
+        await self.db.commit()
+
+    async def _get_distributable_source(
+        self,
+        user_id: str,
+        tenant_id: str,
+        document_id: str,
+        platform_role: str | None,
+    ) -> Document:
+        """Fetch the source document and confirm the caller may distribute it.
+
+        super_admin → any live doc. group_admin → a doc in their group's
+        aggregated view (own group scope + sibling stores' store docs). store
+        owner/admin → own-store doc. Soft-deleted or non-existent → NotFoundError
+        (distributing a deleted doc is a no-op; a cross-tenant probe leaks
+        nothing).
+        """
+        doc = await self.docs.get(document_id)
+        if doc is None or doc.is_deleted:
+            raise NotFoundError(f"文档 {document_id} 不存在")
+
+        if platform_role == "super_admin":
+            return doc
+        if is_cross_tenant_viewer(platform_role):
+            # hq_staff is a read-only cross-tenant viewer; distribute is a write
+            # act, so only super_admin (handled above) may distribute globally.
+            # hq_staff falls through to the store/group check below and is
+            # refused there unless they own the doc.
+            pass
+        # group_admin: allow if the doc lives in their group's aggregated view.
+        group_id = await self._group_of(tenant_id)
+        if (
+            group_id is not None
+            and await is_group_admin(self.db, user_id, group_id)
+        ):
+            if await self._doc_in_group_view(doc, group_id):
+                return doc
+            raise NotFoundError(f"文档 {document_id} 不存在")
+        # store owner/admin: own-store doc only.
+        if doc.tenant_id == tenant_id:
+            return doc
+        raise NotFoundError(f"文档 {document_id} 不存在")
+
+    async def _doc_in_group_view(self, doc: Document, group_id: str) -> bool:
+        """True if ``doc`` is visible in a group_admin's aggregated view.
+
+        Mirrors ``_group_admin_visibility_clause``: the group's scope='group' docs
+        PLUS every sibling store's scope='store' docs. Platform docs are NOT in
+        the group view (they need an explicit distribution to reach a store).
+        """
+        if doc.scope == "group" and doc.group_id == group_id:
+            return True
+        if doc.scope == "store":
+            sibling_ids = {
+                gt.tenant_id
+                for gt in await GroupTenantRepository(self.db).list_for_group(group_id)
+            }
+            return doc.tenant_id in sibling_ids
+        return False
+
+    async def _assert_can_revoke(
+        self,
+        user_id: str,
+        tenant_id: str,
+        row: KnowledgeDistribution,
+        platform_role: str | None,
+    ) -> None:
+        """Confirm the caller may revoke this distribution row, else NotFoundError.
+
+        super_admin → any. group_admin → rows whose source doc is in their group
+        view. store → rows they pushed (distributed_by == user_id). The
+        NotFoundError (not PermissionError) on refusal keeps a cross-tenant probe
+        from learning whether a row exists.
+        """
+        if platform_role == "super_admin":
+            return
+        group_id = await self._group_of(tenant_id)
+        if (
+            group_id is not None
+            and await is_group_admin(self.db, user_id, group_id)
+        ):
+            doc = await self.docs.get(row.source_doc_id)
+            if doc is not None and await self._doc_in_group_view(doc, group_id):
+                return
+            raise NotFoundError(f"下发记录 {row.id} 不存在")
+        if row.distributed_by == user_id:
+            return
+        raise NotFoundError(f"下发记录 {row.id} 不存在")
 
     async def _group_of(self, tenant_id: str) -> str | None:
         """The group a tenant belongs to, if any (reverse lookup).

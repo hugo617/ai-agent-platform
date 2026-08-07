@@ -229,6 +229,10 @@ def test_default_owner_perms_cover_full_catalogue():
         ("logs", "read"),
         ("knowledge", "read"), ("knowledge", "create"),
         ("knowledge", "delete"),
+        # knowledge:distribute (knowledge-tiered slice 03): owner may push a
+        # source doc to target stores. The catalogue integrity test pins this so
+        # a future edit cannot silently drop the distribute perm.
+        ("knowledge", "distribute"),
         # devices (devices-crud-ui slice 02): owner has full CRUD — mirrors
         # customers. The catalogue integrity test pins this so a future edit
         # cannot silently drop the devices perm set.

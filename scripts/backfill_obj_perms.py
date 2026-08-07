@@ -32,6 +32,7 @@ rebuild).
 Usage:
     python scripts/backfill_obj_perms.py --obj devices
     python scripts/backfill_obj_perms.py --obj bookings
+    python scripts/backfill_obj_perms.py --obj knowledge  # slice 03: distribute act
     python scripts/backfill_obj_perms.py --obj devices --dry-run  # report only
 
 Run AFTER deploying the obj's code (no schema change — this is a data

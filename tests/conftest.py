@@ -54,6 +54,11 @@ def _make_casbin(owner_user: str, tenant_id: str):
         ("logs", "read"),
         ("knowledge", "read"), ("knowledge", "create"),
         ("knowledge", "delete"),
+        # knowledge:distribute (knowledge-tiered slice 03): owner may push a
+        # source doc to target stores. Backfilled in production via
+        # backfill_perm_set_for_existing_tenants; the fixture simulates a
+        # backfilled tenant so slice-03 tests exercise the distribute path.
+        ("knowledge", "distribute"),
         # devices (devices-crud-ui slice 01): owner full CRUD. NOTE: production
         # DEFAULT_OWNER_PERMS gets these in slice 02 (backfill) — the fixture
         # simulates a tenant that has already been backfilled so slice-01 tests
@@ -90,6 +95,9 @@ def _make_casbin(owner_user: str, tenant_id: str):
         ("billing", "read"),
         ("logs", "read"),
         ("knowledge", "read"), ("knowledge", "create"),
+        # knowledge:distribute (knowledge-tiered slice 03): admin may distribute
+        # too (a chain admin pushes docs to stores). Backfilled in production.
+        ("knowledge", "distribute"),
         # devices (devices-crud-ui slice 01): admin reads + writes, no delete
         # (mirrors the customer convention). Backfilled in slice 02.
         ("devices", "read"), ("devices", "create"), ("devices", "update"),

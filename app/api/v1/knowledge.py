@@ -17,11 +17,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import CurrentUser, get_current_user, require_permission
 from app.core.database import get_db
 from app.schemas.document import (
+    DistributeRequest,
     DocumentCreate,
     DocumentRead,
     KnowledgeCategoryCreate,
     KnowledgeCategoryRead,
     KnowledgeCategoryUpdate,
+    KnowledgeDistributionRead,
     RetrieveRequest,
     RetrieveResult,
 )
@@ -106,6 +108,65 @@ async def retrieve(
         user.tenant_id,
         payload.query,
         top_k=payload.top_k,
+        platform_role=user.platform_role,
+    )
+
+
+# --------------------------------------------------- distribution (slice 03)
+# D3 explicit distribution: a superior pushes a source document to target store(s)
+# by writing knowledge_distribution rows (the reference-model link, D4). Two
+# endpoints — POST to distribute (G4: target_tenant_ids XOR target_group_id),
+# DELETE to revoke (soft flip is_active=false, audit preserved). Both require the
+# new ``knowledge:distribute`` perm (seeded for owner/admin, not member; the
+# group_admin bypass fires via the service's require(db=self.db)).
+
+
+@router.post(
+    "/documents/{document_id}/distribute",
+    response_model=list[KnowledgeDistributionRead],
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_permission("knowledge", "distribute"))],
+)
+async def distribute_document(
+    document_id: str,
+    payload: DistributeRequest,
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> list[KnowledgeDistributionRead]:
+    """Push a source document to target store(s).
+
+    Body is G4 XOR: ``target_tenant_ids`` (explicit list) OR ``target_group_id``
+    (expand to every store in that group). group_admin may only target their own
+    group; super_admin is unrestricted. Returns the resulting distribution rows.
+    """
+    return await KnowledgeService(db).distribute_document(
+        user.user_id,
+        user.tenant_id,
+        document_id,
+        payload,
+        platform_role=user.platform_role,
+    )
+
+
+@router.delete(
+    "/distributions/{distribution_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(require_permission("knowledge", "distribute"))],
+)
+async def revoke_distribution(
+    distribution_id: str,
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    """Soft-revoke a distribution (is_active=false; audit row preserved).
+
+    After revoke the target store's list/retrieve automatically exclude the doc
+    (their ``dist.is_active=True`` predicate drops it) — no manual flip needed.
+    """
+    await KnowledgeService(db).revoke_distribution(
+        user.user_id,
+        user.tenant_id,
+        distribution_id,
         platform_role=user.platform_role,
     )
 

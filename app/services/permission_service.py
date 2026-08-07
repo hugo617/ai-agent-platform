@@ -555,6 +555,10 @@ DEFAULT_OWNER_PERMS: list[tuple[str, str]] = [
     # knowledge: no "update" act — documents have no edit path (delete +
     # recreate), so only read/create/delete are seeded. See knowledge_service.
     ("knowledge", "read"), ("knowledge", "create"), ("knowledge", "delete"),
+    # knowledge:distribute (knowledge-tiered slice 03): owner may push a source
+    # doc to target stores (explicit list or own group). Mirrors the customer/
+    # device "owner owns the full lifecycle" convention.
+    ("knowledge", "distribute"),
     # devices (devices-crud-ui slice 02): owner full CRUD — mirrors customers.
     ("devices", "read"), ("devices", "create"), ("devices", "update"), ("devices", "delete"),
     # bookings (device-booking slice 02): owner full CRUD + cancel (cancel
@@ -574,6 +578,9 @@ DEFAULT_ADMIN_PERMS: list[tuple[str, str]] = [
     ("billing", "read"),
     ("logs", "read"),
     ("knowledge", "read"), ("knowledge", "create"),
+    # knowledge:distribute (knowledge-tiered slice 03): admin may distribute too
+    # (a chain admin pushes docs to stores). member stays read-only (no grant).
+    ("knowledge", "distribute"),
     # devices (devices-crud-ui slice 02): admin writes, NO delete — mirrors
     # the customer convention (admin cannot delete business records).
     ("devices", "read"), ("devices", "create"), ("devices", "update"),
@@ -670,6 +677,9 @@ ACT_CN: dict[str, str] = {
     "chat": "对话",
     "export": "导出",
     "manage": "管理",  # legacy, kept for backfill of old rows
+    # knowledge-tiered slice 03: the distribute act ("push a source doc to
+    # target stores"). Labelled "下发" so the catalogue reads "知识库-下发".
+    "distribute": "下发",
 }
 
 # Chinese labels for the *menu code* part of a menu permission (the ``act`` of
@@ -826,7 +836,10 @@ async def _is_group_admin_of(
 # Only tenant-scoped business records that ship AFTER the first tenants exist
 # need a backfill. Other objs (agents/customers/users/...) are seeded for every
 # tenant from day one by ``seed_tenant_defaults`` and so never need backfilling.
-BACKFILLABLE_OBJS: frozenset[str] = frozenset({"devices", "bookings"})
+# knowledge (knowledge-tiered slice 03): the distribute act ships after the
+# first tenants existed, so existing tenants need the knowledge:distribute grant
+# backfilled (new tenants get it from seed_tenant_defaults automatically).
+BACKFILLABLE_OBJS: frozenset[str] = frozenset({"devices", "bookings", "knowledge"})
 
 
 async def backfill_perm_set_for_existing_tenants(

@@ -78,6 +78,52 @@ class RetrieveResult(BaseModel):
     hits: list[RetrieveHit]
 
 
+# ------------------------------------------------------------ distribution (G4)
+# Distributing a document pushes it to one or more target stores
+# (knowledge-tiered Feature B slice 03). The caller picks EXACTLY ONE of two
+# targeting shapes:
+#   - ``target_tenant_ids`` — an explicit list of store tenant_ids.
+#   - ``target_group_id``   — every store in that group (expanded server-side).
+# Both-set or neither-set is a 400 (G4). Like ``KnowledgeCategoryCreate``'s
+# scope↔(group_id, tenant_id) binding, this cross-field XOR lives in the SERVICE
+# as a ``BizError`` rather than a pydantic ``model_validator``: a hand-rolled
+# validator raising ``ValueError`` embeds the raw exception in the error's
+# ``ctx``, which FastAPI's validation-error handler then fails to JSON-serialize
+# (see BookingCreate / KnowledgeCategoryCreate docstrings for the same hazard).
+# The schema therefore declares both fields Optional and leaves the XOR to the
+# service, which serializes cleanly.
+
+
+class DistributeRequest(BaseModel):
+    """Payload for POST /knowledge/documents/{doc_id}/distribute (G4).
+
+    Exactly one of ``target_tenant_ids`` / ``target_group_id`` must be set; the
+    XOR is enforced in ``KnowledgeService.distribute_document`` (BizError → 400).
+    """
+
+    target_tenant_ids: list[str] | None = None
+    target_group_id: str | None = None
+
+
+class KnowledgeDistributionRead(BaseModel):
+    """One distribution row — the reference-model link (D4) doc→store.
+
+    Returned from the distribute endpoint so the caller sees which stores a doc
+    was pushed to, by whom, and whether the push is still active. ``distributed_by``
+    is nullable (SET NULL on user delete, see the model docstring) and
+    ``is_active`` carries the soft-revoke state (D4: revoke = flip, not delete).
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    source_doc_id: str
+    target_tenant_id: str
+    distributed_by: str | None
+    distributed_at: datetime
+    is_active: bool
+
+
 # ---------------------------------------------------------------- categories
 # Knowledge categories are tiered by ``scope`` (knowledge-tiered Feature B,
 # slice 01). The scope↔(group_id, tenant_id) binding is mutually exclusive:
