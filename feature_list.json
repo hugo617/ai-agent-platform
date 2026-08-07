@@ -81,7 +81,7 @@
       "area": "知识库-前端",
       "title": "知识库分级 Feature C:前端三栏可视化阅读页(分类目录树 + 文档列表卡片 + Markdown 在线阅读器 + scope 来源标识 + 全文搜索,门店视角直观)",
       "user_visible_behavior": "门店 owner/admin/member 打开知识库页,看到三栏布局:【左:分类目录树】scope 分区(平台下发/集团下发/本店)+ category 分组(产品手册/FAQ/话术等),树形导航点击筛选;【中:文档列表】按选中分类展示文档卡片,每卡显示标题/状态徽章(indexed/failed)/scope 来源标识(平台🔴/集团🟡/本店🟢)/更新时间/chunk 数,支持排序;【右:在线阅读器】点击文档后渲染 Markdown,带目录大纲(自动从标题提取)+ 全文搜索高亮 + 滚动定位。门店视角一眼区分「这是平台下发的/这是集团的/这是我自己加的」。super_admin/group_admin 看到聚合视图(group_admin 看本集团所有门店的 store 级 + 本集团 group 级)。响应式适配(窄屏折叠左栏)。",
-      "status": "in_progress",
+      "status": "passing",
       "verification": [
         "前端 frontend/src/pages/knowledge/ 重构(或新建文件夹):knowledge-page.tsx 三栏布局 barrel + category-tree.tsx(左栏目录树,scope 分区 + category 分组,递归渲染)+ document-list.tsx(中栏列表卡片,scope 来源徽章 + 状态徽章 + 排序)+ markdown-reader.tsx(右栏阅读器,react-markdown 渲染 + 目录大纲提取 + 全文搜索高亮)",
         "前端 frontend/src/hooks/queries.ts:扩展 useDocuments(带 scope/category 过滤参数)+ useKnowledgeCategories(scope 可见 = platform + 本集团 group + 本店)+ useDistributeDocuments(group_admin/super_admin 视角看下发关系);frontend/src/api/endpoints.ts 对应 fetch 函数",
@@ -93,7 +93,11 @@
       "notes": "知识库分级管理系列 Feature C(前端阅读,依赖 B)。**硬约束(D7)**:三栏布局(目录树+列表+阅读器);scope 来源标识用 semantic token(对齐 design-system 收口,不复用硬编码色);Markdown 阅读器用 react-markdown(已有依赖,不新增);不做 PDF/Word 预览(超范围);不做富文本编辑器(只读+管理CRUD,编辑留后续)。**门店处理得非常好**:门店 owner 一眼看出「平台下发/集团下发/本店自建」三色分区。镜像现有 page-split 范式(三栏 barrel)。**Out of Scope**:富文本编辑 / PDF 预览 / 文档版本树。**EP2 已完成(Session 197)**:grill 7 决策(G1-G7)+ to-spec + to-tickets 3 切片落地 plan-knowledge-tiered-reader-ui.md;G3 scope 用实心 badge(destructive/warning/success)与状态 dot badge 分层;G5 搜索高亮用 react-markdown components 自定义 render 不引新依赖;G6 类型层补齐纳入本 feature(DocumentRead 加 scope/group_id/category_id + KnowledgeCategoryRead);引入 msw 补 API 集成测试层(偏离既有 mock-hook 范式,经确认)。",
       "plan": "harness/docs/plan-knowledge-tiered-reader-ui.md",
       "depends_on": "knowledge-tiered-backend",
-      "evidence": []
+      "evidence": [
+        "切片 03(commit 19ac358,分支 feat/knowledge-tiered-reader-ui-slice-03,待 PR):CRUD Dialog 从 legacy-page.tsx 迁入 document-list.tsx(录入/删除 + DropdownMenu + member 只读守卫 hasPermission)+ RetrievalDebugCard 迁入 retrieval-debug-card.tsx(逻辑零变化)+ index.tsx 底部渲染 + legacy-page.tsx 删除;测试 document-list 12 用例(卡片/scope/状态/空态/filter/选中态 + CRUD 录入/删除/校验 + member 只读)+ index 10 用例(三栏 smoke+联动 + 跨角色 group_admin/super_admin/owner/member + 空态三态);双轴 code-review:Standards 0 hard / 1 judgement(document-list 表单状态后续可抽 useCreateDocumentForm hook,本次为「逻辑零变化」迁移不抽)/ Spec 0 gap;npm test 189 green / tsc 0 / build 0 错 / oxlint 0-0 / init.sh full 后端 987 passed 零回归",
+        "切片 02(PR #156,commit de8ff4e,merged):CategoryTree 左栏(scope 分区 + category 分组 + 树形点击筛选)+ MarkdownReader 右栏(react-markdown 渲染 + 目录大纲 G7 + 搜索高亮 G5)+ 响应式折叠(lg 断点 Sheet);切片 03 grep 确认无 legacy 残留",
+        "切片 01(PR #155,commit 2df9e91,merged):类型层(DocumentRead 加 scope/group_id/category_id + KnowledgeCategoryRead)+ msw 基建 + barrel 骨架 + DocumentList 卡片 + scope-badge 三色(platform🔴destructive/group🟡warning/store🟢success)"
+      ]
     },
     {
       "id": "knowledge-tiered-admin-ui",
