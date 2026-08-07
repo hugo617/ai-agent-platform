@@ -5,12 +5,13 @@
  * 「按角色二叉路由(super/hq vs store)」不同:knowledge 是「三栏布局」对所有角色
  * 同结构(差异在 backend list 返回数据,前端只渲染)。
  *
- * 切片 02 范围(三栏完整 + 响应式):
+ * 切片 03 范围(三栏完整 + 迁移收尾):
  *   - 左栏:CategoryTree(自调 useKnowledgeCategories,点击 category 筛选中栏)
- *   - 中栏:DocumentList(自调 useDocuments({scope, category_id}),点击卡片选中下传)
+ *   - 中栏:DocumentList(自调 useDocuments({scope, category_id}) + 切片 03 迁入
+ *     录入/删除 Dialog + member 只读守卫,点击卡片选中下传)
  *   - 右栏:MarkdownReader(纯渲染 selectedDoc,目录大纲 G7 + 搜索高亮 G5)
- *   - 底部:<LegacyKnowledgePage/> —— 旧 page 全部行为(列表 Table + 录入/删除
- *     Dialog + 检索调试卡)整体保留,plan G2 + AC5 行为零回归。切片 03 拆掉。
+ *   - 底部:<RetrievalDebugCard/> —— 切片 03 从旧 legacy-page 迁入,逻辑零变化
+ *     (旧 legacy-page.tsx 已删除,CRUD 进 document-list,调试卡独立成本组件)。
  *
  * 选中态(切片 02 三栏联动):
  *   - selectedScope / selectedCategoryId:CategoryTree 点击后设置 → 下传 DocumentList
@@ -40,7 +41,7 @@ import type { DocumentRead, KnowledgeScope } from "@/api/types";
 import { CategoryTree } from "./category-tree";
 import { DocumentList } from "./document-list";
 import { MarkdownReader } from "./markdown-reader";
-import { LegacyKnowledgePage } from "./legacy-page";
+import { RetrievalDebugCard } from "./retrieval-debug-card";
 
 export function KnowledgePage() {
   // selectedScope / selectedCategoryId —— CategoryTree 点击驱动(过滤 DocumentList)。
@@ -122,10 +123,9 @@ export function KnowledgePage() {
         </Sheet>
       </div>
 
-      {/* 旧 page 全部行为 —— 切片 02 过渡期保留,plan G2 + AC5 行为零回归。
-          切片 03 把这里的 CRUD 迁进 document-list.tsx、RetrievalDebugCard 独立,
-          然后删除 LegacyKnowledgePage。 */}
-      <LegacyKnowledgePage />
+      {/* 检索调试 —— 切片 03 从旧 legacy-page 迁入,逻辑零变化。
+          放三栏底部(三栏是阅读主体,调试卡是辅助工具,不抢主视觉)。 */}
+      <RetrievalDebugCard />
     </div>
   );
 }
