@@ -261,23 +261,23 @@ react-markdown@10 的 `components` prop 允许自定义节点 render:
   - [x] `__tests__/knowledge-api.test.ts`(msw 集成):fetchDocuments({scope, category_id}) 请求构造正确 + fetchKnowledgeCategories 响应解析 + DocumentRead 新字段类型契约
   - [x] 验证:`npm test` 全绿(新测试 + 零回归)+ `npm run build` 0 错 + `tsc -b` 0 错 + `oxlint` 0/0
 
-### 切片 02 — 左栏目录树 + 右栏 Markdown 阅读器 + 响应式折叠
+### 切片 02 — 左栏目录树 + 右栏 Markdown 阅读器 + 响应式折叠 ✅(分支 feat/knowledge-tiered-reader-ui-slice-02,10/10 AC 全绿;双轴 review:Standards 1 hard(stale require('react') 注释 + 重复注释行)已修 / Spec 1 gap(AC8 点击大纲跳转未真测)已补 click+scrollIntoView spy 测试;npm test 175 green / tsc 0 / build 0 / oxlint 0-0)
 
 - **What it delivers**:门店 owner 看到完整三栏:左栏分类目录树(scope 分区「平台下发/集团下发/本店」+ 每个 scope 下 category 分组,树形导航点击筛选中栏);右栏点击文档后渲染 Markdown 全文 —— 带目录大纲(自动从 ## / ### 提取,点击跳转 scrollIntoView)+ 全文搜索高亮(输入关键词 → 匹配处 `<mark>` 高亮 + 计数 + 上/下跳转)。窄屏(lg 以下)左栏自动收进 Sheet 抽屉 + 中右纵叠。三栏阅读形态(D7)完整兑现。
 
 - **Blocked by**: 切片 01(消费类型层 + scope-badge + barrel 骨架 + msw 基建)
 
 - **Acceptance criteria**:
-  - [ ] `category-tree.tsx`:自调 `useKnowledgeCategories()`;按 scope 分区(平台🔴/集团🟡/本店🟢 分组,用 scope-badge 标识)+ 每个 scope 下 category 分组(按 sort_order);树形渲染(支持 category 折叠/展开);点击 category → `onSelect({scope, categoryId})` 回调通知父层
-  - [ ] `index.tsx`:接 CategoryTree 的 onSelect → 设置 selectedScope/selectedCategoryId → 下传给 DocumentList 作为 useDocuments 参数;DocumentList 选中文档 → 设置 selectedDoc → 下传给 MarkdownReader
-  - [ ] `markdown-reader.tsx`:纯渲染组件,props `{ doc: DocumentRead | null }`;用 react-markdown(`components` 自定义 h2/h3 加 id)+ remark-gfm + rehype-highlight 渲染 `doc.content`;空态(doc=null)显示「选择左侧文档查看」
-  - [ ] 目录大纲(G7):正则 `/^(#{2,3})\s+(.+)$/gm` 提取标题生成大纲列表;react-markdown `components.h2`/`components.h3` render 时加 `id={anchor}`;点大纲项 → `getElementById(anchor).scrollIntoView({behavior:"smooth"})`;无标题时大纲区空
-  - [ ] 搜索高亮(G5):阅读器顶部搜索框 + 关键词 state;`components.text` 自定义 render 把含关键词文本拆「前 + `<mark>` + 后」;高亮计数(「N/M」)+ 上一个/下一个按钮 → 收集所有 `<mark>` ref + scrollIntoView 跳转;关键词空时正常渲染无 `<mark>`;**不引新依赖**(用现有 react-markdown components,不加 rehype/remark 插件)
-  - [ ] 响应式(G4):`lg` 断点;`lg+` 三栏并排(grid/flex);`lg-` 左栏收进 Sheet(shadcn Sheet,默认关,汉堡按钮展开)+ 中右纵叠(列表上阅读器下)
-  - [ ] `__tests__/category-tree.test.tsx`:树渲染 + scope 三分区显示 + category 分组 + 点击触发 onSelect 回调 + 空态(无 category)
-  - [ ] `__tests__/markdown-reader.test.tsx`:Markdown 渲染(标题/段落/代码块)+ 目录大纲提取(有标题/无标题)+ 点击大纲跳转 + 搜索高亮(有关键词 `<mark>` 出现 + 计数 + 无关键词无 mark)+ 空态(doc=null)
-  - [ ] `__tests__/index.test.tsx`:三栏 smoke(三栏均渲染)+ CategoryTree 点击 → DocumentList 过滤 + DocumentList 点击 → MarkdownReader 显示
-  - [ ] 验证:`npm test` 全绿 + `npm run build` 0 错 + `oxlint` 0/0
+  - [x] `category-tree.tsx`:自调 `useKnowledgeCategories()`;按 scope 分区(平台🔴/集团🟡/本店🟢 分组,用 scope-badge 标识)+ 每个 scope 下 category 分组(按 sort_order);树形渲染(支持 category 折叠/展开);点击 category → `onSelect({scope, categoryId})` 回调通知父层
+  - [x] `index.tsx`:接 CategoryTree 的 onSelect → 设置 selectedScope/selectedCategoryId → 下传给 DocumentList 作为 useDocuments 参数;DocumentList 选中文档 → 设置 selectedDoc → 下传给 MarkdownReader
+  - [x] `markdown-reader.tsx`:纯渲染组件,props `{ doc: DocumentRead | null }`;用 react-markdown(`components` 自定义 h2/h3 加 id)+ remark-gfm + rehype-highlight 渲染 `doc.content`;空态(doc=null)显示「选择左侧文档查看」
+  - [x] 目录大纲(G7):正则 `/^(#{2,3})\s+(.+)$/gm` 提取标题生成大纲列表;react-markdown `components.h2`/`components.h3` render 时加 `id={anchor}`;点大纲项 → `getElementById(anchor).scrollIntoView({behavior:"smooth"})`;无标题时大纲区空
+  - [x] 搜索高亮(G5):阅读器顶部搜索框 + 关键词 state;**实现偏离(已文档化)**:react-markdown v10 的 `components.text` 不拦截 hast text 节点(实测 `<mark>` 不出现),改为在文本容器元素(p/li/strong/em/td/th/h2-h6/blockquote/a)的 render 里对直接字符串片段拆「前 + `<mark>` + 后」;高亮计数(「N/M」)+ 上一个/下一个按钮 → 用 container ref `querySelectorAll('mark')` 收集 + scrollIntoView 跳转;关键词空时正常渲染无 `<mark>`;**不引新依赖**(用现有 react-markdown components,不加 rehype/remark 插件)。行为等价 G5 意图(自定义 render + `<mark>` + 跳转 + 计数),偏离仅是实现层「text key → 文本容器 key」
+  - [x] 响应式(G4):`lg` 断点;`lg+` 三栏并排(grid);`lg-` 左栏收进 Sheet(shadcn Sheet,默认关,汉堡按钮展开)+ 中右纵叠(列表上阅读器下)
+  - [x] `__tests__/category-tree.test.tsx`:树渲染 + scope 三分区显示 + category 分组(sort_order)+ 点击触发 onSelect 回调 + 选中态高亮 + 折叠/展开 + is_deleted 兜底过滤 + 空态(无 category)
+  - [x] `__tests__/markdown-reader.test.tsx`:Markdown 渲染(标题/段落/代码块)+ 目录大纲提取(有标题/无标题)+ **点击大纲项触发 scrollIntoView 跳转(spy 断言)** + 搜索高亮(有关键词 `<mark>` 出现 + 计数 + 大小写不敏感 + 无关键词无 mark)+ 空态(doc=null)
+  - [x] `__tests__/index.test.tsx`:三栏 smoke(三栏均渲染)+ CategoryTree 点击 → DocumentList 收到 scope+categoryId 过滤 + DocumentList 点击 → MarkdownReader 渲染文档(独有标题 h2)
+  - [x] 验证:`npm test` 175 全绿(17 新:7 category-tree + 8 markdown-reader + 3 index)+ `npm run build` 0 错 + `tsc -b` 0 错 + `oxlint` 0/0
 
 ### 切片 03 — CRUD Dialog 迁移 + 检索调试页迁移 + 跨角色测试 + feature 收尾(末切片)
 
