@@ -84,12 +84,18 @@ def _build_tenant_tools(user_id: str, tenant_id: str, db: AsyncSession) -> list[
         Call this when the user asks about business-specific content the
         assistant would not otherwise know — product manuals, FAQs, service
         scripts, store policies. Returns the most relevant passages joined by
-        a separator, or a 'not found' notice if nothing matches. Only searches
-        the current tenant's documents (cross-tenant isolation enforced in the
-        repository layer).
+        a separator, or a 'not found' notice if nothing matches.
+
+        Search scope (knowledge-tiered Feature B slice 02): the agent searches
+        the store's own ``scope='store'`` documents PLUS documents distributed
+        to this store from above (platform/group docs pushed down via the
+        distribute API). Cross-tenant isolation still holds at the repository
+        layer — a store never sees another store's undistributed docs. The
+        group_admin bypass is wired through ``check(..., db=db)`` so a
+        group_admin using the agent in their HQ store is not blocked by casbin.
         """
         allowed = await permission_service.check(
-            user_id, tenant_id, "knowledge", "read"
+            user_id, tenant_id, "knowledge", "read", db=db
         )
         if not allowed:
             return "ERROR: permission denied"
@@ -99,7 +105,9 @@ def _build_tenant_tools(user_id: str, tenant_id: str, db: AsyncSession) -> list[
         from app.services.knowledge_service import KnowledgeService
 
         try:
-            hits = await KnowledgeService(db).retrieve(query, tenant_id, top_k=4)
+            hits = await KnowledgeService(db).retrieve(
+                query, tenant_id, top_k=4, include_distributed=True
+            )
         except Exception:
             # Embedding/vector failures must never break the conversation —
             # surface a benign "not found" so the agent keeps chatting.

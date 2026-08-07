@@ -15,27 +15,6 @@
   },
   "features": [
     {
-      "id": "knowledge-tiered-backend",
-      "priority": 89,
-      "area": "知识库-后端",
-      "title": "知识库分级 Feature B:后端 CRUD + 下发 API + 检索改造(KnowledgeService 扩展 scope/category/分发 + 下发撤回 API + 按角色过滤 list + search_by_embedding join distribution + Category CRUD)",
-      "user_visible_behavior": "(后端 feature,无直接前端;为 C/D 提供 API)① 超级管理员创建 scope=platform 知识后,可下发到指定门店或整个集团(POST /knowledge/distribute);② 集团管理员(总部门店 owner/admin)创建 scope=group 知识后,可下发到本集团分店;③ 门店 owner 创建 scope=store 知识(本店自建);④ 门店 list 知识时按角色自动过滤:看到 = 本店自建(scope=store)+ 上级显式下发给我的(knowledge_distribution 里 target_tenant_id=本店);⑤ 门店 agent 的 retrieve_knowledge 检索范围同样覆盖本店 + 上级下发;⑥ Category CRUD:各级管理员创建本级 Category,下级能选用上级 Category;⑦ 撤回下发(DELETE /knowledge/distribute/{id})后门店侧文档即时消失。",
-      "status": "in_progress",
-      "verification": [
-        "后端 app/api/v1/knowledge.py:新增端点 —— POST /knowledge/{doc_id}/distribute(下发到指定 tenant_id 列表或 group_id 整个集团)+ DELETE /knowledge/distribute/{dist_id}(撤回=软删 is_active=false,保留审计痕迹,非硬删)+ 源文档软删(Document.is_deleted=true)时所有引用该文档的下发关系自动失效(list/retrieve 同时排除 doc.is_deleted=false AND dist.is_active=true)+ GET/POST/PUT/DELETE /knowledge/categories(Category CRUD,按 scope 权限)",
-        "后端 app/repositories/document.py:search_by_embedding 改造 —— 三路径按角色:① 门店视角 WHERE (doc.tenant_id=:tenant AND doc.scope='store') OR (dist.target_tenant_id=:tenant AND dist.is_active=true AND doc.is_deleted=false);② group_admin 聚合视角 WHERE (doc.scope='group' AND doc.group_id=:group) OR (doc.tenant_id IN 该group所有tenant AND doc.scope='store');③ super_admin 全局无过滤。retrieve_knowledge 工具传 include_distributed=True(本店+下发),retrieve 调试页传 include_distributed=False(纯本店调试,避免误扩)。门店视角检索「只增不减」(本店原结果保留+新增下发命中),零负向回归",
-        "后端 app/api/v1/knowledge.py:新增端点 —— POST /knowledge/{doc_id}/distribute(下发到指定 tenant_id 列表或 group_id 整个集团)+ DELETE /knowledge/distribute/{dist_id}(撤回=软删 is_active=false,保留审计痕迹,非硬删)+ 源文档软删(Document.is_deleted=true)时所有引用该文档的下发关系自动失效(list/retrieve 同时排除 doc.is_deleted=false AND dist.is_active=true)+ GET/POST/PUT/DELETE /knowledge/categories(Category CRUD,按 scope 权限)",
-        "后端 app/services/category_service.py 新建:Category CRUD + scope 权限(super_admin 建 platform / group_admin 建 group / 门店建 store)+ 下级能 list 上级 Category(list 可见 = platform 全部 + 本集团 group + 本店 store)",
-        "后端 app/agents/graph.py:_build_tenant_tools 的 retrieve_knowledge 适配新检索范围(本店 store + 下发),docstring 更新说明检索跨 scope",
-        "后端 app/api/v1/knowledge.py:新增端点 —— POST /knowledge/{doc_id}/distribute(下发到指定 tenant_id 列表或 group_id 整个集团)+ DELETE /knowledge/distribute/{dist_id}(撤回=软删 is_active=false,保留审计痕迹,非硬删)+ 源文档软删(Document.is_deleted=true)时所有引用该文档的下发关系自动失效(list/retrieve 同时排除 doc.is_deleted=false AND dist.is_active=true)+ GET/POST/PUT/DELETE /knowledge/categories(Category CRUD,按 scope 权限)",
-        "DataScope/Role.data_scope/DEFAULT_*_PERMS/casbin policy 零回归(group_admin 派生身份仅知识库域);retrieve_knowledge 现有调用点零行为回归(门店 agent 检索范围只增不减)"
-      ],
-      "notes": "知识库分级管理系列 Feature B(后端,依赖 A)。**硬约束**:下发是引用模型(D4,共享 chunks 不拷贝,上级改门店即时看到最新,撤回=软删 is_active=false 保留审计);RAG 检索三路径(D6:门店本店+下发 / group_admin 聚合 / super_admin 全局);Category 预置+扩展(D5,平台预置+各级自建);group_admin 仅知识库域(D9)。**Out of Scope**:不做富文本编辑/不做 PDF 预览/不改门店间隔离。验证核心:跨 scope 可见性矩阵 + 引用一致性 + 跨租户隔离铁律不破。",
-      "plan": "harness/docs/plan-knowledge-tiered-overview.md",
-      "depends_on": "knowledge-tiered-foundation",
-      "evidence": []
-    },
-    {
       "id": "knowledge-tiered-reader-ui",
       "priority": 88,
       "area": "知识库-前端",
@@ -83,6 +62,13 @@
       "status": "passing"
     },
     {
+      "id": "knowledge-tiered-backend",
+      "priority": 89,
+      "area": "知识库-后端",
+      "title": "知识库分级 Feature B:后端 CRUD + 下发 API + 检索改造(KnowledgeService 扩展 scope/category/分发 + 下发撤回 API + 按角色过滤 list + search_by_embedding join distribution + Category CRUD)",
+      "status": "passing"
+    },
+    {
       "id": "member-service-direct-tests",
       "priority": 85,
       "area": "工程化",
@@ -104,17 +90,10 @@
       "status": "passing"
     },
     {
-      "id": "design-system-color-sweep",
-      "priority": 82,
-      "area": "前端设计系统",
-      "title": "设计系统收口 — Feature B:业务页硬编码色扫荡(emerald/amber/rose/cyan/blue → semantic token,跨 ~12 文件)",
-      "status": "passing"
-    },
-    {
       "id": "_milestone_archived",
       "priority": 0,
       "area": "里程碑",
-      "title": "[已归档 81 条 passing,见 archive/features-passing-archive.json]",
+      "title": "[已归档 82 条 passing,见 archive/features-passing-archive.json]",
       "status": "passing"
     }
   ],
