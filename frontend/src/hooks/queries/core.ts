@@ -52,8 +52,18 @@ export const qk = {
   // embedding config (RAG, priority 57). Mirror the LLM config key shape.
   embeddingConfigPlatform: ["settings", "embedding", "platform"] as const,
   embeddingConfigTenant: ["settings", "embedding", "tenant"] as const,
-  // knowledge base documents (RAG, priority 57).
-  documents: ["knowledge", "documents"] as const,
+  // knowledge base documents (RAG, priority 57). Key is parameterised by the
+  // optional {scope, category_id} filter (knowledge-tiered reader-ui slice 01)
+  // so each distinct filter set caches independently — clicking a different
+  // category in the tree produces a new key and refetches only that cell.
+  // Empty filter collapses to the bare key for the common unfiltered case.
+  documents: (filter?: { scope?: string; category_id?: string }) =>
+    (filter && (filter.scope || filter.category_id)
+      ? (["knowledge", "documents", filter] as const)
+      : (["knowledge", "documents"] as const)),
+  // knowledge-tiered reader-ui slice 01 G6 — categories for the left-pane tree.
+  // Flat key (no params): the category list is one global read per caller role.
+  knowledgeCategories: ["knowledge", "categories"] as const,
   // tenant branding config (white-label). One row per tenant; read is open to
   // any authenticated member of the tenant, write is owner/admin only.
   tenantConfig: ["tenant-config"] as const,

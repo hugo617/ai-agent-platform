@@ -16,6 +16,13 @@ const badgeVariants = cva(
         outline: "text-foreground",
         success:
           "border-transparent bg-success text-success-foreground hover:bg-success/80",
+        // Solid warning pill — pairs with destructive / success as the solid
+        // semantic set (knowledge-tiered reader-ui slice 01 scope badge: group
+        // origin). Mirrors the dot-warning variant's token; the solid form lets
+        // a "scope origin" badge read at a glance against the dot-* "pipeline
+        // status" badges (plan §4.5 G3 — 实心 vs dot 视觉分层).
+        warning:
+          "border-transparent bg-warning text-warning-foreground hover:bg-warning/80",
         /** Muted pill with a leading status dot — "运行中" / "已停用" etc. The
          *  dot is drawn via ::before so it travels with the badge and stays a
          *  fixed size. Pair with a short status word (not a long label). */
