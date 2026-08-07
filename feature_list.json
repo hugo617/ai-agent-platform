@@ -54,7 +54,7 @@
       "area": "知识库-后端",
       "title": "知识库分级 Feature B:后端 CRUD + 下发 API + 检索改造(KnowledgeService 扩展 scope/category/分发 + 下发撤回 API + 按角色过滤 list + search_by_embedding join distribution + Category CRUD)",
       "user_visible_behavior": "(后端 feature,无直接前端;为 C/D 提供 API)① 超级管理员创建 scope=platform 知识后,可下发到指定门店或整个集团(POST /knowledge/distribute);② 集团管理员(总部门店 owner/admin)创建 scope=group 知识后,可下发到本集团分店;③ 门店 owner 创建 scope=store 知识(本店自建);④ 门店 list 知识时按角色自动过滤:看到 = 本店自建(scope=store)+ 上级显式下发给我的(knowledge_distribution 里 target_tenant_id=本店);⑤ 门店 agent 的 retrieve_knowledge 检索范围同样覆盖本店 + 上级下发;⑥ Category CRUD:各级管理员创建本级 Category,下级能选用上级 Category;⑦ 撤回下发(DELETE /knowledge/distribute/{id})后门店侧文档即时消失。",
-      "status": "in_progress",
+      "status": "passing",
       "verification": [
         "后端 app/api/v1/knowledge.py:新增端点 —— POST /knowledge/{doc_id}/distribute(下发到指定 tenant_id 列表或 group_id 整个集团)+ DELETE /knowledge/distribute/{dist_id}(撤回=软删 is_active=false,保留审计痕迹,非硬删)+ 源文档软删(Document.is_deleted=true)时所有引用该文档的下发关系自动失效(list/retrieve 同时排除 doc.is_deleted=false AND dist.is_active=true)+ GET/POST/PUT/DELETE /knowledge/categories(Category CRUD,按 scope 权限)",
         "后端 app/repositories/document.py:search_by_embedding 改造 —— 三路径按角色:① 门店视角 WHERE (doc.tenant_id=:tenant AND doc.scope='store') OR (dist.target_tenant_id=:tenant AND dist.is_active=true AND doc.is_deleted=false);② group_admin 聚合视角 WHERE (doc.scope='group' AND doc.group_id=:group) OR (doc.tenant_id IN 该group所有tenant AND doc.scope='store');③ super_admin 全局无过滤。retrieve_knowledge 工具传 include_distributed=True(本店+下发),retrieve 调试页传 include_distributed=False(纯本店调试,避免误扩)。门店视角检索「只增不减」(本店原结果保留+新增下发命中),零负向回归",
@@ -67,7 +67,13 @@
       "notes": "知识库分级管理系列 Feature B(后端,依赖 A)。**硬约束**:下发是引用模型(D4,共享 chunks 不拷贝,上级改门店即时看到最新,撤回=软删 is_active=false 保留审计);RAG 检索三路径(D6:门店本店+下发 / group_admin 聚合 / super_admin 全局);Category 预置+扩展(D5,平台预置+各级自建);group_admin 仅知识库域(D9)。**Out of Scope**:不做富文本编辑/不做 PDF 预览/不改门店间隔离。验证核心:跨 scope 可见性矩阵 + 引用一致性 + 跨租户隔离铁律不破。",
       "plan": "harness/docs/plan-knowledge-tiered-backend.md",
       "depends_on": "knowledge-tiered-foundation",
-      "evidence": []
+      "evidence": [
+        "./init.sh full 实测 987 passed(979 slice-03 baseline + 切片04 新增 8 集成测试)零回归 + ruff clean;4 切片共 90 tests 入 tests/test_knowledge_backend.py 全 pytestmark=smoke(切片01 31 + 切片02 16 + 切片03 35 + 切片04 8)",
+        "切片01 Category CRUD + scope 分级(commit e7297cd):KnowledgeCategoryService + KnowledgeCategoryRepository(list_visible 三路径,is_cross_tenant_viewer 由 service 计算传 bool 避铁律#1 反向依赖)+ schemas(跨字段 binding 走 service BizError 避 model_validator 422 序列化坑,对齐 BookingCreate)+ 4 端点(update 复用 knowledge:create code,G6 不加新码)。31 tests。/code-review 双轴:Standards 1 硬违规(repo→service 反向 import→采纳 bool 下传)+ 3 判断项采纳",
+        "切片02 list+检索三路径 + G1 bypass(commit d21f8a9):list_visible_for 三路径(store 本店+下发 / group_admin 聚合 / super_admin 全局)+ search_by_embedding 三路径(join Document.is_deleted=False 守卫)+ retrieve role flag 转发 + G1 group_admin bypass 接通(require 传 db)+ retrieve_knowledge 工具 include_distributed=True / retrieve_for_debug False。16 tests。940 passed 零回归",
+        "切片03 下发/撤回 API + distribute 权限码(commit dd43c0d):DistributeRequest(G4 XOR 在 service BizError 非 schema)+ KnowledgeDistributionRepository(pre-check upsert find_for_pair 非 IntegrityError catch,避 SQLite/PG flush timing 分叉)+ distribute_document(group 展开 + 跨集团拒绝)+ revoke_distribution(软删保留审计)+ 权限码 runtime seed 路径(非 migration,守 SCD2+casbin 同步铁律,对齐 devices/bookings 先例)。35 tests 含 conftest distribute policy 同步。979 passed 零回归",
+        "切片04 集成验证 + feature 收尾(commit 962d7ff):6 AC 集成场景(+2 补强)走 service/repository 层 —— 完整下发链路 / group_admin 链路 / Category 跨级可见 / 源软删联动 / 跨租户隔离铁律三重 / D9 越界守卫(devices+bookings)。retrieve 语义 SQLite 无 pgvector 用「数据层断言+wiring 断言」双保险(spec §5 授权 mock)。/code-review 双轴:Standards 0 硬违规 / Spec AC3 生产边界(create_document 不接 category_id 是 plan 范围外 future feature)docstring 标注。987 passed 零回归。AC8 alembic:4 切片零新 migration,平凡满足"
+      ]
     },
     {
       "id": "knowledge-tiered-reader-ui",

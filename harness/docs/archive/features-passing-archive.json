@@ -1,7 +1,7 @@
 {
   "project": "ai-agent-platform",
   "description": "已 passing feature 的历史归档(完整字段保留,审计用)",
-  "count": 81,
+  "count": 82,
   "features": [
     {
       "id": "data-export",
@@ -2029,6 +2029,31 @@
         "切片 02 ✅ commit 8398ab2(分支 feat/design-system-token-foundation-slice-02):ui/ 组件库内部语义色映射 —— badge.tsx 4 处(success variant bg-emerald-500 text-white → bg-success text-success-foreground + dot-success/warning/destructive [&::before]:bg-emerald/amber/red-500 → bg-success/warning/danger)+ toast.tsx 2 处(success/destructive 浅底深字 emerald/red-50/200/900 三件套 → 实心 bg-success/danger + 深 foreground,对齐 badge/button destructive 范式)。avatar.tsx 零改动(8 色环保留,AC 第3条)。verification[3] grep:badge.tsx + toast.tsx 语义硬编码归 0(avatar 8 色环 + badge 注释文字 amber 不计)。新增 badge-toast-avatar.test.tsx 10 测试锁映射不回退。verification[5] npm run build 0 错 + oxlint 0/0 + npm test 141/141(131 baseline + 10 新)。",
         "【/code-review Spec #3 修复 + WCAG 对比度手算 verification[4]】初版 toast 用 tint(bg-success/10 + text-success DEFAULT),亮色对比度 2.96 / 暗色 1.18 不达 WCAG AA 4.5(Spec agent 精准拦截)。修复改实心 bg-success text-success-foreground:亮 5.42(success)/ 4.72(danger)+ 暗 8.31 / 5.28,双模式全过 AA 4.5(node WCAG 公式实测)。badge success variant 同模式亮色 5.42 / 暗 8.31。注:verification[3] 原措辞「前景 0 0% 100%」为 plan v1 过时(plan §4.5① v2 改深 slate 222.2 47.4% 11.2%),实测深前景版本。verification[6] B3 视觉一致:对照 design-demos/B3.html,B3 定稿底色值逐字落地 index.css,toast 实心 + badge dot 映射后亮色渲染与 B3 一致(暗色 danger 提亮 0 80% 64% vs destructive 暗色 0 62.8% 30.6%,按 plan §4.5② 记录 danger 暗色比 destructive 更亮的设计差异)。",
         "【feature 收尾 verification 全绿】./init.sh full 842 passed(后端零改动零回归,纯前端 feature)+ cd frontend && npm run build 0 类型错误 + npx oxlint 0 warning 0 error + npm test 141/141(131 baseline + 10 新切片02测试,零行为回归)+ grep ui/badge.tsx + ui/toast.tsx 语义硬编码归 0(avatar 8 色环保留 + badge 注释文字不计)+ feature_list.json status in_progress → passing + sync-active-features.sh 刷新 + 依赖解锁:Feature B(design-system-color-sweep)depends_on 本 feature,本 feature passing 后 B 可置 in_progress。"
+      ]
+    },
+    {
+      "id": "design-system-color-sweep",
+      "priority": 82,
+      "area": "前端设计系统",
+      "title": "设计系统收口 — Feature B:业务页硬编码色扫荡(emerald/amber/rose/cyan/blue → semantic token,跨 ~12 文件)",
+      "user_visible_behavior": "无直接用户可见行为变化(纯前端 className 映射,视觉一致)。Feature A 建好 semantic token 后,把业务页(settings/permissions/billing/billing-admin/users/notifications/dashboard/composite-mode)+ layout(notification-bell/dashboard-layout)+ chat(conversation-list-panel)散落的 ~30 处语义性硬编码原色逐个映射到 token:emerald/green→success(成功/收入/充值)、amber→warning(警告/余额预警)、rose/red→danger(危险/支出/锁定)、blue/cyan→info(信息/角色变更)。手写的 dark:text-amber-* 等 dark: 冗余变体删除(token 接管暗色)。浅底深字组合(-100/-800)统一用 bg-xxx/10 + text-xxx(DEFAULT)+ border-xxx/30 alpha 约定。代码块主题色 zinc(markdown-view)+ Pin/Star 强调色 amber(conversation-list-panel,EP3 核对边界)保留不动。avatar 8 色环 + chart-1..5 保留(Feature A 边界)。",
+      "status": "passing",
+      "verification": [
+        "业务页+layout+chat 内语义性硬编码原色(emerald/amber/rose/red/blue/cyan/green 表达 success/warning/danger/info)grep = 0(排除 markdown-view zinc + conversation-list-panel Pin/Star 边界 + avatar/chart 设计性多色)",
+        "手写 dark: 冗余变体(与 token 暗色重复的)已清理",
+        "cd frontend && npm run build 0 类型错误 + npx oxlint 0/0 + npm test 全绿",
+        "映射后暗色下状态色 WCAG AA 对比度达标(复用 Feature A token 暗色变体验证)",
+        "对照 design-demos/B3.html,关键页面(billing/users/notifications)亮/暗双模式视觉一致"
+      ],
+      "notes": "2026-07-31 立项。设计系统收口系列 Feature B,depends_on design-system-token-foundation(A 提供 token 才能映射)。C(spacing-card)与本 feature 正交。实测硬编码色按文件分布:settings(5)/permissions(5)/billing(5)/users(4)/notifications(3)/dashboard(3)/composite-mode(3)/billing-admin(2)/conversation-list-panel(2)/notification-bell(3)/markdown-view(2,zinc 代码块保留)/dashboard-layout(1)。EP2 单回环 plan 含 5 切片:按色系分组(非页面)——01 success 收口(frontier)→ 02 warning/03 danger/04 info 并行 blocked by 01 → 05 暗色一致性+收尾。浅底深字 alpha 约定(/10 底 / /30 边 / DEFAULT 字)由切片 01 建立范式供 02-04 复用。2026-07-31 Session 178 全 5 切片完成 status→passing。",
+      "plan": "harness/docs/plan-design-system-color-sweep.md",
+      "depends_on": "design-system-token-foundation",
+      "evidence": [
+        "切片 01 success 收口(commit 5146312,Session 174):12 处 emerald/green→success 映射跨 8 文件(settings/permissions/billing/billing-admin/users/notifications/notification-bell/dashboard)。建立 alpha 范式(/10 底 / /30 边 / DEFAULT 字)+ dark: 清理规则供 02-04 复用。grep emerald/green 业务页=0(残留全在边界 avatar 8 色环 + badge-toast-avatar.test Feature A 锁)。build+oxlint 0/0+test 141/141 全绿。",
+        "切片 02 warning 收口(commit 07b3b95,Session 175):14 处 amber→warning 映射跨 8 文件,dark: 清理首次落地(删 permissions 2×dark:text-amber-500 + dark:bg-amber-950/20 + settings dark:text-amber-400 共 4 处)。Pin/Star amber 强调色边界保留正确。Spec 轴发现 tint 范式亮色对比度 2.13 < AA,登记切片 05 系统性收口。",
+        "切片 03 danger 收口(commit 1d2562c,Session 176):5 处 rose/red→danger 映射跨 3 文件(billing/billing-admin/users),全为纯图标 text-danger 非 tint 场景无对比度债。danger 与 destructive 既有命名并存边界守住。",
+        "切片 04 info 收口(commit b11911a,Session 177):4 处 blue/cyan→info 映射跨 4 文件(users/notifications/notification-bell/dashboard),无 cyan 残留。role_change tint 债继承切片 05。purple(usage_report)/zinc/Pin-Star 边界全守住。",
+        "切片 05 暗色一致性+tint 对比度系统性修复+收尾(commit 239475c,Session 178,末切片):node REPL 精算四范式(四色×亮暗)—— tint 亮色 2.13-3.31❌/solid 双模式 4.72-9.55✓唯一成立/tint+foreground 暗色 1.0❌/alpha 调节无解。关键发现 B3 .badge 定义自身即 tint 范式、亮色 2.07-2.82 < AA(B3 固有债,AC3 与 AC4 互斥)。统一决策(用户确认):场景1 标签(notifications 三色+dashboard-layout Badge)保 tint 忠于 B3 接受债;场景2 警告框(settings/composite/permissions)容器保 bg-warning/10 + 标题/icon 改 text-foreground(亮18.39/暗16.73 双模式 AA)。grep 业务页四语义原色=0 + dark: 冗余=0 + build+oxlint 0/0+test 141/141 + ./init.sh full 842 passed 零回归。/code-review 双轴 Standards PASS+Spec PASS(纯图标范围判断项闭环:5 处纯图标 text-warning 留切片02既有债,不扩展)。已知债登记:B3 亮色 tint WCAG 债 + 切片02纯图标债,均非本 feature 引入留后续。"
       ]
     }
   ]

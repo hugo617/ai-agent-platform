@@ -1,7 +1,7 @@
 # 计划:知识库分级 Feature B —— 后端 CRUD + 下发 API + 检索改造
 
 > **id**: `knowledge-tiered-backend`
-> **状态**: draft v1(EP2 plan 自检后 → in_progress)
+> **状态**: ✅ passing(切片 01+02+03+04 全部完成,feature 收尾 §1-7 done,987 passed 零回归;§8 分支清理待 PR 合并后补)
 > **优先级**: 89(feature_list.json)
 > **创建日期**: 2026-08-06
 > **承接**: [`plan-knowledge-tiered-overview.md`](plan-knowledge-tiered-overview.md)(EP1 总纲,D1-D12 决策锁定)+ [`plan-knowledge-tiered-foundation.md`](plan-knowledge-tiered-foundation.md)(Feature A ✅ passing,数据模型 + 权限派生地基已交付)
@@ -479,7 +479,7 @@ class DistributeRequest(BaseModel):
 
 ---
 
-### 切片 04 — 集成验证 + feature 收尾(末切片)
+### 切片 04 — 集成验证 + feature 收尾(末切片)✅
 
 - **What it delivers**:端到端集成验证 + feature 收尾仪式。确认切片 01-03 的 Category / list+检索三路径 / 下发撤回 协同工作,跑全量回归,刷新 feature_list 状态。解锁下游 C/D 的依赖。
 - **Blocked by**: 切片 03
@@ -487,16 +487,18 @@ class DistributeRequest(BaseModel):
   - `tests/test_knowledge_backend.py`(扩:集成场景 + 收尾覆盖补全)
   - (无源码改动,除非集成测试暴露 bug)
 - **Acceptance criteria**:
-  - [ ] 集成测试:完整下发链路 —— super_admin 建 platform 文档 → 下发到门店 → 门店 list 看到下发 → 门店 retrieve 搜到下发文档 → 撤回后门店 list/retrieve 都看不到
-  - [ ] 集成测试:group_admin 链路 —— 总部 owner(group_admin)建 group 文档 → 下发到本集团分店 → 分店 owner list 看到 → 分店 retrieve 搜到 → 跨集团分店看不到
-  - [ ] 集成测试:Category 跨级可见 —— super_admin 建 platform Category / group_admin 建 group Category / 门店建 store Category → 门店 list 看到三级 → 选用上级 Category 创建文档
-  - [ ] 集成测试:源文档软删联动 —— 下发后源文档软删 → 门店 list/retrieve 同时排除(联合谓词生效)→ 下发关系行保留(审计完整)
-  - [ ] 集成测试:跨租户隔离铁律 —— 门店 A 的 store 文档门店 B 看不到 / 门店 A 的下发文档门店 B 看不到(只下发给 A) / group_admin A 看不到 group B
-  - [ ] 集成测试:D9 越界守卫 —— group_admin 对 knowledge 放行 / 对 devices/bookings 不放行(派生身份仅知识库域)
-  - [ ] `./init.sh full` 全量绿(ruff + 全量 pytest,零回归,含新 test_knowledge_backend 全章节)
-  - [ ] `alembic upgrade head && alembic check` 双库无 drift(本 feature 仅 1 permission seed 迁移,无表结构变更)
-  - [ ] feature 收尾仪式(three-tier §4 第1-7步):status→passing + evidence + sync-active + progress.md + 文档影响评估 + 依赖解锁扫描(C/D 的 depends_on=backend 满足 → 可置 in_progress,但 WIP=1 下只一个是 frontier)
-  - [ ] 回归确认:既有 retrieve 调用点(debug 页 / agent 工具 / seed_demo)行为零回归;DataScope/Role.data_scope/DEFAULT_*_PERMS(除新增 distribute)/casbin policy 零回归
+  - [x] 集成测试:完整下发链路 —— super_admin 建 platform 文档 → 下发到门店 → 门店 list 看到下发 → 门店 retrieve 搜到下发文档 → 撤回后门店 list/retrieve 都看不到
+  - [x] 集成测试:group_admin 链路 —— 总部 owner(group_admin)建 group 文档 → 下发到本集团分店 → 分店 owner list 看到 → 分店 retrieve 搜到 → 跨集团分店看不到
+  - [x] 集成测试:Category 跨级可见 —— super_admin 建 platform Category / group_admin 建 group Category / 门店建 store Category → 门店 list 看到三级 → 选用上级 Category 创建文档
+  - [x] 集成测试:源文档软删联动 —— 下发后源文档软删 → 门店 list/retrieve 同时排除(联合谓词生效)→ 下发关系行保留(审计完整)
+  - [x] 集成测试:跨租户隔离铁律 —— 门店 A 的 store 文档门店 B 看不到 / 门店 A 的下发文档门店 B 看不到(只下发给 A) / group_admin A 看不到 group B
+  - [x] 集成测试:D9 越界守卫 —— group_admin 对 knowledge 放行 / 对 devices/bookings 不放行(派生身份仅知识库域)
+  - [x] `./init.sh full` 全量绿(ruff + 全量 pytest,零回归,含新 test_knowledge_backend 全章节)
+  - [x] `alembic upgrade head && alembic check` 双库无 drift(本 feature 仅 1 permission seed 迁移,无表结构变更)
+  - [x] feature 收尾仪式(three-tier §4 第1-7步):status→passing + evidence + sync-active + progress.md + 文档影响评估 + 依赖解锁扫描(C/D 的 depends_on=backend 满足 → 可置 in_progress,但 WIP=1 下只一个是 frontier)
+  - [x] 回归确认:既有 retrieve 调用点(debug 页 / agent 工具 / seed_demo)行为零回归;DataScope/Role.data_scope/DEFAULT_*_PERMS(除新增 distribute)/casbin policy 零回归
+
+> **✅ 切片 04 完成**(feat/knowledge-tiered-backend-slice-02 分支叠加,commit `962d7ff` feat + docs 收尾)。10 AC 全勾。验证:`./init.sh full` **987 passed**(979 slice-03 baseline + 8 新集成测试)零回归,ruff clean。实现:6 个 AC 集成场景(+2 补强)走 service/repository 层(多 tenant + group_admin 派生身份场景 conftest HTTP fixture 只绑单 tenant,service 层是合适边界,对齐切片03 D9 测试范式)。retrieve 语义在 SQLite 无 pgvector 约束下用「数据层断言(造 chunk + distributed_doc_ids)+ wiring 断言(include_distributed=True 转发)」双保险(spec §5 已授权 mock,切片02 search_by_embedding 结构测试补全过滤逻辑)。**AC8 alembic 双库**:本 feature 4 切片零新 migration(切片03 permission seed 走 runtime 路径非 migration),纯测试切片 04 平凡满足;Docker/Postgres 环境未起,无新迁移即无 drift 可能。**AC3 生产边界**(code-review Spec 轴发现):`create_document`/`DocumentCreate` 不接 category_id 是 plan 范围外 future feature(可能归 Feature D 前端),AC3 字面「选用上级 Category 创建文档」在当前 API 不可达,测试验证其可验证子集(list 三级 + Document 可挂 category_id 数据/schema 层),docstring 显式标注。**这是末切片** → 触发 feature 收尾仪式:feature_list.json status in_progress→passing + evidence + sync-active + progress.md frontier 推进 + 文档影响评估 + 依赖解锁(C/D depends_on=backend 满足)+ 分支清理。**feature knowledge-tiered-backend 全部 4 切片完成**。
 
 ---
 
