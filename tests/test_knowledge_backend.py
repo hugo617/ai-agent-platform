@@ -1999,3 +1999,436 @@ async def test_permission_constants_have_distribute():
     assert ("knowledge", "distribute") not in DEFAULT_MEMBER_PERMS
     assert ACT_CN["distribute"] == "下发"
     assert OBJ_CN["knowledge"] == "知识库"
+
+
+# ======================================================================
+# 切片 04 — 集成验证 + feature 收尾(末切片)
+# Plan: harness/docs/plan-knowledge-tiered-backend.md slice 04.
+#
+# 六个端到端集成场景,验证切片 01-03 的组件(Category CRUD / list+检索三路径 /
+# 下发撤回 API)协同工作。这些不是新的单元覆盖(切片 01-03 已穷尽单组件),
+# 而是「把它们串起来」的场景测试 —— 回答 plan §4 的核心问题:跨 scope 可见性
+# 矩阵 + 引用一致性 + 跨租户隔离铁律不破,在同一真实数据库会话里一起成立。
+#
+# 走 service / repository 层(非 HTTP):这些场景需要多 tenant + group_admin 派生
+# 身份,conftest 的 HTTP client fixtures 只绑单 tenant/单角色,改造 成本高;而
+# ``_seed_document_fixture`` / ``_seed_category_fixture`` + ``patched_enforcer`` +
+# 直接调 service 正是切片 03 已验证的范式(D9 测试即 service 层直调)。集成验证
+# 关心「链路协同」,service 层是合适的边界。
+#
+# Chapter layout (matches slice 04 AC checklist):
+# - I1. 完整下发链路:platform 文档 → 下发 → 门店 list/retrieve → 撤回 → 不可见
+# - I2. group_admin 链路:group 文档 → 下发到本集团分店 → 分店看到 / 跨集团看不到
+# - I3. Category 跨级可见:三级 Category + 门店看到三级 + 上级 Category 可挂文档
+# - I4. 源文档软删联动:list/retrieve 同时排除(联合谓词) + 下发行保留审计
+# - I5. 跨租户隔离铁律:store 文档 / 下发文档 / group_admin 视图 三重隔离
+# - I6. D9 越界守卫:group_admin 对 knowledge 放行,对 devices/bookings 不放行
+
+
+async def _promote_to_group_admin_and_bind(
+    db_session, enforcer, *, group_id, hq_tenant_id, user_id,
+):
+    """Promote a user to group_admin of ``group_id`` AND bind the owner casbin role.
+
+    Wraps the slice-03 ``_promote_to_group_admin`` (sets ``headquarters_tenant_id``
+    + seeds UserTenant owner → derives is_group_admin True) with an extra
+    ``_bind_role`` so the impersonated owner's casbin policies are seeded for the
+    test tenant. The slice-03 helper alone suffices for tests that go via the
+    group_admin bypass or platform_role; the integration tests here drive the
+    real service ``require`` gate, so they need the owner role bound too.
+    Used by I2/I5/I6.
+    """
+    await _promote_to_group_admin(db_session, group_id, hq_tenant_id, user_id)
+    _bind_role(enforcer, user_id, "owner", hq_tenant_id)
+
+
+# -------------------------------------------------- I1. 完整下发链路(AC1)
+
+
+@pytest.mark.asyncio
+async def test_integration_full_distribute_chain_platform_to_store(patched_enforcer, db_session):
+    """AC1: super_admin 建 platform 文档 → 下发到门店 → 门店 list 看到 → 门店
+    retrieve 搜到 → 撤回后门店 list/retrieve 都看不到。
+
+    端到端串联 distribute_document → list_visible_for → retrieve(数据层可达) →
+    revoke_distribution → list/retrieve 双排除。super_admin 用 platform_solo
+    (scope=platform, _get_distributable_source 对 super_admin 放行 any doc)。
+    """
+    from app.models.document import DocumentChunk
+    from app.repositories.document import DocumentRepository
+    from app.schemas.document import DistributeRequest
+    from app.services.knowledge_service import KnowledgeService
+
+    ids = await _seed_document_fixture(db_session)
+    _bind_role(patched_enforcer, "u-super", "owner", ids["t_a1"])
+    svc = KnowledgeService(db_session)
+
+    # 下发 platform_solo → t_a2(super_admin 全域放行)。
+    rows = await svc.distribute_document(
+        "u-super", ids["t_a1"], ids["platform_solo"],
+        DistributeRequest(target_tenant_ids=[ids["t_a2"]]),
+        platform_role="super_admin",
+    )
+    assert len(rows) == 1
+
+    repo = DocumentRepository(db_session)
+    # ① 下发后:t_a2 list 看到该 platform 文档。
+    seen = await repo.list_visible_for(
+        tenant_id=ids["t_a2"], group_id=ids["g_a"],
+        include_all_tenants=False, is_group_admin=False,
+    )
+    assert ids["platform_solo"] in {d.id for d in seen}
+
+    # ② retrieve 搜到:造源文档的 chunk,断言它经由 distributed_doc_ids 可达
+    # (引用模型 —— chunk 属于源 doc,distribution 引用 doc_id,故目标检索命中)。
+    chunk = DocumentChunk(
+        document_id=ids["platform_solo"], tenant_id=ids["t_a1"],
+        chunk_index=0, content="平台手册内容", embedding=[0.0],
+    )
+    db_session.add(chunk)
+    await db_session.flush()
+    # 数据层前置条件:下发关系存在 + chunk 归属于该下发文档。retrieve 的 store
+    # 分支(search_by_embedding 的 document_id.in_(distributed_doc_ids))在此前提
+    # 下会命中该 chunk —— 但 SQLite 无 pgvector,真实向量过滤跑不了,故此处只证
+    # 「分发关系 + chunk 归属」数据可达;retrieve 的实际过滤由切片02 search_by_embedding
+    # 结构测试 + 紧随其后的 wiring 断言(include_distributed=True 转发)共同补全。
+    distributed_doc_ids = {
+        r.source_doc_id for r in await svc.distributions.list_for_target(ids["t_a2"])
+    }
+    assert chunk.document_id in distributed_doc_ids
+
+    # ③ 撤回。
+    await svc.revoke_distribution("u-super", ids["t_a1"], rows[0].id, platform_role="super_admin")
+
+    # ④ 撤回后:t_a2 list 不再看到。
+    seen = await repo.list_visible_for(
+        tenant_id=ids["t_a2"], group_id=ids["g_a"],
+        include_all_tenants=False, is_group_admin=False,
+    )
+    assert ids["platform_solo"] not in {d.id for d in seen}
+    # retrieve 也不可达:list_for_target 已排除 revoked(is_active=False)。
+    active_doc_ids = {
+        r.source_doc_id
+        for r in await svc.distributions.list_for_target(ids["t_a2"])
+    }
+    assert ids["platform_solo"] not in active_doc_ids
+
+
+@pytest.mark.asyncio
+async def test_integration_retrieve_wires_include_distributed_for_store(patched_enforcer, db_session, monkeypatch):
+    """AC1 补强:门店视角 retrieve(include_distributed=True) 真的把 include_distributed=True
+    转发到 search_by_embedding —— 这是「retrieve 搜到下发文档」的 service→repo 协同契约。
+
+    SQLite 无 pgvector,真实向量 SQL 跑不了;这里 monkeypatch search_by_embedding
+    为 recorder,断言门店 agent 路径(retrieve_knowledge 工具)的 role flag 正确下发。
+    与 I1 的数据层断言互为补充(wiring + 数据可达双保险)。
+    """
+    from app.repositories.document import DocumentChunkRepository
+    from app.services.knowledge_service import KnowledgeService
+
+    captured: dict = {}
+
+    async def _fake(self, **kwargs):
+        captured.update(kwargs)
+        return []
+
+    monkeypatch.setattr(DocumentChunkRepository, "search_by_embedding", _fake)
+    ids = await _seed_document_fixture(db_session)
+    svc = KnowledgeService(db_session)
+    monkeypatch.setattr(svc, "_embedding_service", _stub_embedding_factory())
+    # 门店 agent 路径:include_distributed=True(本店 + 下发)。
+    await svc.retrieve("q", ids["t_a2"], include_distributed=True)
+    assert captured["include_distributed"] is True
+    assert captured["tenant_id"] == ids["t_a2"]
+
+
+# -------------------------------------------------- I2. group_admin 链路(AC2)
+
+
+@pytest.mark.asyncio
+async def test_integration_group_admin_distribute_within_group(patched_enforcer, db_session):
+    """AC2:总部 owner(group_admin)建 group 文档 → 下发到本集团分店 → 分店 list
+    看到 → 分店 retrieve 可达 → 跨集团分店看不到。
+
+    提升 t_a1 owner 为 groupA 的 group_admin → 下发 groupA(scope=group)→ t_a2(同
+    集团)→ t_a2 list 看到 → t_b1(跨集团)list 看不到。group_admin 走 bypass
+    (G1),无需 casbin knowledge:distribute 策略。
+    """
+    from app.models.document import DocumentChunk
+    from app.repositories.document import DocumentRepository
+    from app.schemas.document import DistributeRequest
+    from app.services.knowledge_service import KnowledgeService
+
+    ids = await _seed_document_fixture(db_session)
+    await _promote_to_group_admin_and_bind(
+        db_session, patched_enforcer,
+        user_id="u-ga", hq_tenant_id=ids["t_a1"], group_id=ids["g_a"],
+    )
+    svc = KnowledgeService(db_session)
+
+    # group_admin 下发 groupA(scope=group)→ t_a2(本集团分店)。走 bypass(G1)。
+    rows = await svc.distribute_document(
+        "u-ga", ids["t_a1"], ids["groupA"],
+        DistributeRequest(target_tenant_ids=[ids["t_a2"]]),
+        platform_role=None,
+    )
+    assert len(rows) == 1
+
+    repo = DocumentRepository(db_session)
+    # ① t_a2(同集团分店)list 看到。
+    seen_a2 = await repo.list_visible_for(
+        tenant_id=ids["t_a2"], group_id=ids["g_a"],
+        include_all_tenants=False, is_group_admin=False,
+    )
+    assert ids["groupA"] in {d.id for d in seen_a2}
+
+    # ② t_a2 retrieve 可达(造 chunk,断言经由 distributed_doc_ids)。
+    chunk = DocumentChunk(
+        document_id=ids["groupA"], tenant_id=ids["t_a1"],
+        chunk_index=0, content="集团手册内容", embedding=[0.0],
+    )
+    db_session.add(chunk)
+    await db_session.flush()
+    distributed_doc_ids = {
+        r.source_doc_id for r in await svc.distributions.list_for_target(ids["t_a2"])
+    }
+    assert ids["groupA"] in distributed_doc_ids
+
+    # ③ t_b1(跨集团分店)list 看不到 —— 只下发到 t_a2,未下发到 t_b1。
+    seen_b1 = await repo.list_visible_for(
+        tenant_id=ids["t_b1"], group_id=ids["g_b"],
+        include_all_tenants=False, is_group_admin=False,
+    )
+    assert ids["groupA"] not in {d.id for d in seen_b1}
+
+
+@pytest.mark.asyncio
+async def test_integration_group_admin_cannot_distribute_cross_group(patched_enforcer, db_session):
+    """AC2 补强:group_admin 不能下发到其他集团(target_group_id 跨集团拒绝)。
+
+    groupA 的 group_admin 用 target_group_id=groupB 下发 → BizError「只能下发到
+    自己管理的集团」。这是 group_admin 域边界的写侧守卫(D9 在读侧,这里是写侧)。
+    """
+    from app.schemas.document import DistributeRequest
+    from app.services.errors import BizError
+    from app.services.knowledge_service import KnowledgeService
+
+    ids = await _seed_document_fixture(db_session)
+    await _promote_to_group_admin_and_bind(
+        db_session, patched_enforcer,
+        user_id="u-ga", hq_tenant_id=ids["t_a1"], group_id=ids["g_a"],
+    )
+    svc = KnowledgeService(db_session)
+    # groupA 的 group_admin 试图用 target_group_id=groupB 展开 → 拒绝。
+    with pytest.raises(BizError):
+        await svc.distribute_document(
+            "u-ga", ids["t_a1"], ids["groupA"],
+            DistributeRequest(target_group_id=ids["g_b"]),
+            platform_role=None,
+        )
+
+
+# ------------------------------------------ I3. Category 跨级可见(AC3)
+
+
+@pytest.mark.asyncio
+async def test_integration_category_cross_tier_visibility_and_attach(patched_enforcer, db_session):
+    """AC3:super_admin 建 platform Category / group_admin 建 group Category / 门店建
+    store Category → 门店 list 看到三级 → 选用上级 Category 创建文档(category_id 挂载)。
+
+    生产代码边界(重要):``DocumentCreate`` schema 与 ``KnowledgeService.create_document``
+    当前不接 ``scope``/``group_id``/``category_id`` —— 写时挂 Category 属 plan 范围外的
+    future feature(可能归 Feature D 前端管理 UI)。故 AC3 字面「选用上级 Category 创建文档」
+    在当前 API 层不可达;本测试验证其可验证子集:① 门店 list 看到三级 Category(协同链路);
+    ② Document 模型支持挂上级 category_id + DocumentRead 正确暴露(数据/schema 层向前兼容,
+    切片03 test_document_read_exposes_tier_fields 已验字段映射,这里验「list 到上级 → 可挂」
+    的端到端语义)。待 create_document 接 category_id 后,此处应改为真调 service 创建。
+    """
+    from app.models.document import Document
+    from app.schemas.document import DocumentRead
+    from app.services.category_service import KnowledgeCategoryService
+
+    ids = await _seed_category_fixture(db_session)
+    _bind_role(patched_enforcer, "u-owner-a1", "owner", ids["t_a1"])
+
+    # 门店 A1 list Category:看到 platform + groupA + storeA1 三级。
+    cat_svc = KnowledgeCategoryService(db_session)
+    visible = await cat_svc.list(actor_id="u-owner-a1", tenant_id=ids["t_a1"], platform_role=None)
+    visible_ids = {c.id for c in visible}
+    assert {ids["platform"], ids["groupA"], ids["storeA1"]} <= visible_ids
+    # 看不到兄弟店 / 跨集团。
+    assert ids["storeA2"] not in visible_ids
+    assert ids["groupB"] not in visible_ids
+    assert ids["storeB1"] not in visible_ids
+
+    # 选用上级(platform)Category 创建文档:挂 category_id,DocumentRead 暴露。
+    doc = Document(
+        tenant_id=ids["t_a1"], name="挂平台类目的文档", scope="store",
+        content="x", status="indexed", chunk_count=0,
+        category_id=ids["platform"],
+    )
+    db_session.add(doc)
+    await db_session.flush()
+    read = DocumentRead.model_validate(doc)
+    assert read.category_id == ids["platform"]
+    assert read.scope == "store"
+
+
+# -------------------------------------- I4. 源文档软删联动(AC4)
+
+
+@pytest.mark.asyncio
+async def test_integration_source_soft_delete_list_and_retrieve_exclude(patched_enforcer, db_session):
+    """AC4:下发后源文档软删 → 门店 list/retrieve 同时排除(联合谓词 doc.is_deleted
+    =false AND dist.is_active=true 生效)→ 下发关系行保留(审计完整)。
+
+    端到端串联:distribute → 软删源 → list_visible_for 排除(list 路径 join Document
+    带 is_deleted=False)+ retrieve 排除(search 路径 join Document 带 is_deleted=False)
+    + distribution 行仍存在(is_active=True,审计完整)。这是切片02 联合谓词 + 切片03
+    下发 + 软删语义的协同验证。
+    """
+    from app.models.document import Document
+    from app.models.knowledge_distribution import KnowledgeDistribution
+    from app.repositories.document import DocumentRepository
+    from app.schemas.document import DistributeRequest
+    from app.services.knowledge_service import KnowledgeService
+
+    ids = await _seed_document_fixture(db_session)
+    _bind_role(patched_enforcer, "u-super", "owner", ids["t_a1"])
+    svc = KnowledgeService(db_session)
+
+    rows = await svc.distribute_document(
+        "u-super", ids["t_a1"], ids["platform_solo"],
+        DistributeRequest(target_tenant_ids=[ids["t_a2"]]),
+        platform_role="super_admin",
+    )
+    dist_id = rows[0].id
+
+    repo = DocumentRepository(db_session)
+    # 软删前:t_a2 list 看到。
+    seen = await repo.list_visible_for(
+        tenant_id=ids["t_a2"], group_id=ids["g_a"],
+        include_all_tenants=False, is_group_admin=False,
+    )
+    assert ids["platform_solo"] in {d.id for d in seen}
+
+    # 软删源文档。
+    doc = await db_session.get(Document, ids["platform_solo"])
+    doc.is_deleted = True
+    await db_session.flush()
+
+    # ① list 排除(联合谓词 doc.is_deleted=false 生效,distribution 行仍 active)。
+    seen = await repo.list_visible_for(
+        tenant_id=ids["t_a2"], group_id=ids["g_a"],
+        include_all_tenants=False, is_group_admin=False,
+    )
+    assert ids["platform_solo"] not in {d.id for d in seen}
+
+    # ② retrieve 同理排除 + 反证排除来源:list_for_target(active)仍含该 doc,
+    # 但 list_visible_for 排除了它 —— 两者唯一差别是 list 带 Document.is_deleted=False
+    # 联合谓词,故排除必然来自 doc.is_deleted,而非 distribution 失效。retrieve 的
+    # search_by_embedding 路径有同样的 join Document.is_deleted 守卫(切片02 line 206-208
+    # 已固化),故 retrieve 同理排除软删源 chunks(SQLite 无 pgvector,真实向量过滤由
+    # 切片02 search 结构测试覆盖,此处证联合谓词的数据层前提)。
+    target_docs = await svc.distributions.list_for_target(ids["t_a2"])
+    active_doc_ids = {r.source_doc_id for r in target_docs if r.is_active}
+    assert ids["platform_solo"] in active_doc_ids  # distribution 行未失效
+
+    # ③ 下发关系行保留(审计完整):is_active 仍 True,行未硬删(软删源不影响下发行)。
+    row = await db_session.get(KnowledgeDistribution, dist_id)
+    assert row is not None
+    assert row.is_active is True
+
+
+# -------------------------------------- I5. 跨租户隔离铁律(AC5)
+
+
+@pytest.mark.asyncio
+async def test_integration_cross_tenant_isolation_triple(patched_enforcer, db_session):
+    """AC5:跨租户隔离铁律三重验证 —— ① 门店 A 的 store 文档门店 B 看不到;
+    ② 门店 A 的下发文档(只下发给 A)门店 B 看不到;③ group_admin A 看不到 group B。
+
+    三重隔离在同一布局里一起成立,证明跨租户隔离不破。门店间隔离是 SaaS 多租户
+    的基石(AGENTS.md 铁律 #2),下发是「显式 opt-in」打破隔离的唯一受控通道。
+    """
+    from app.repositories.document import DocumentRepository
+    from app.schemas.document import DistributeRequest
+    from app.services.knowledge_service import KnowledgeService
+
+    ids = await _seed_document_fixture(db_session)
+    _bind_role(patched_enforcer, "u-super", "owner", ids["t_a1"])
+    svc = KnowledgeService(db_session)
+    repo = DocumentRepository(db_session)
+
+    # ① 门店 A1 的 store 文档(storeA1)门店 A2 看不到(store 间默认隔离)。
+    seen_a2 = await repo.list_visible_for(
+        tenant_id=ids["t_a2"], group_id=ids["g_a"],
+        include_all_tenants=False, is_group_admin=False,
+    )
+    assert ids["storeA1"] not in {d.id for d in seen_a2}
+
+    # ② super_admin 下发 storeA1 → t_a1(只下发给 A1),门店 A2 看不到。
+    await svc.distribute_document(
+        "u-super", ids["t_a1"], ids["storeA1"],
+        DistributeRequest(target_tenant_ids=[ids["t_a1"]]),
+        platform_role="super_admin",
+    )
+    seen_a2 = await repo.list_visible_for(
+        tenant_id=ids["t_a2"], group_id=ids["g_a"],
+        include_all_tenants=False, is_group_admin=False,
+    )
+    assert ids["storeA1"] not in {d.id for d in seen_a2}  # 只下发 A1,A2 看不到
+    # 但 A1 自己能看到下发来的 storeA1(下发是显式 opt-in)。
+    seen_a1 = await repo.list_visible_for(
+        tenant_id=ids["t_a1"], group_id=ids["g_a"],
+        include_all_tenants=False, is_group_admin=False,
+    )
+    assert ids["storeA1"] in {d.id for d in seen_a1}
+
+    # ③ group_admin A 看不到 group B:提升 t_a1 owner 为 groupA 的 group_admin,
+    # 其聚合视图只含 groupA(group + 兄弟 stores),不含 groupB。
+    await _promote_to_group_admin_and_bind(
+        db_session, patched_enforcer,
+        user_id="u-ga", hq_tenant_id=ids["t_a1"], group_id=ids["g_a"],
+    )
+    seen_ga = await repo.list_visible_for(
+        tenant_id=ids["t_a1"], group_id=ids["g_a"],
+        include_all_tenants=False, is_group_admin=True,
+    )
+    seen_ids = {d.id for d in seen_ga}
+    assert ids["groupA"] in seen_ids  # 本集团 group 文档可见
+    assert ids["groupB"] not in seen_ids  # 跨集团 group 文档不可见
+    assert ids["storeB1"] not in seen_ids  # 跨集团 store 文档不可见
+
+
+# ------------------------------------------ I6. D9 越界守卫(AC6)
+
+
+@pytest.mark.asyncio
+async def test_integration_d9_group_admin_bypass_knowledge_only(patched_enforcer, db_session):
+    """AC6/D9:group_admin 派生身份仅知识库域 —— 对 knowledge 放行(check=True),
+    对 devices/bookings 不放行(check 落 casbin → 无策略 → False)。
+
+    扩展切片03 的 test_g1_d9_bypass_is_knowledge_only_not_devices:除了 devices,
+    再覆盖 bookings 域(确认派生身份不渗漏到其他业务域)。这是 D9 决策的越界守卫。
+    """
+    from app.services.permission_service import permission_service
+
+    ids = await _seed_document_fixture(db_session)
+    await _promote_to_group_admin_and_bind(
+        db_session, patched_enforcer,
+        user_id="u-ga-d9", hq_tenant_id=ids["t_a1"], group_id=ids["g_a"],
+    )
+
+    # knowledge:派生身份 bypass 放行(True)。
+    assert await permission_service.check(
+        "u-ga-d9", ids["t_a1"], "knowledge", "read", platform_role=None, db=db_session,
+    ) is True
+    # devices:bypass 不触发 → 落 casbin → 无策略 → False。
+    assert await permission_service.check(
+        "u-ga-d9", ids["t_a1"], "devices", "read", platform_role=None, db=db_session,
+    ) is False
+    # bookings:bypass 不触发 → 落 casbin → 无策略 → False。
+    assert await permission_service.check(
+        "u-ga-d9", ids["t_a1"], "bookings", "read", platform_role=None, db=db_session,
+    ) is False
