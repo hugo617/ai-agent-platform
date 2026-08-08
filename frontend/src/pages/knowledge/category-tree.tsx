@@ -31,11 +31,10 @@ import { ListState } from "@/components/ui/list-state";
 import { useKnowledgeCategories } from "@/hooks/queries";
 import type { KnowledgeCategoryRead, KnowledgeScope } from "@/api/types";
 import { cn } from "@/lib/utils";
-import { ScopeBadge } from "./scope-badge";
+import { ScopeBadge, SCOPE_ORDER } from "./scope-badge";
 
-// scope 分区显示顺序:平台 → 集团 → 本店(从高到低,符合「上级下发在前」直觉)。
-// 后端返回的 categories 可能任意顺序,前端按此固定顺序分组渲染。
-const SCOPE_ORDER: KnowledgeScope[] = ["platform", "group", "store"];
+// SCOPE_ORDER(platform→group→store)现从 scope-badge 共享 —— 与 category-manager
+// 同一份顺序常量(符合「上级下发在前」直觉;后端返回顺序不定,前端固定顺序分组)。
 
 // scope → 中文分区标题(分区头大字,与 ScopeBadge 的短标签「平台/集团/本店」区分)。
 const SCOPE_SECTION_TITLE: Record<KnowledgeScope, string> = {

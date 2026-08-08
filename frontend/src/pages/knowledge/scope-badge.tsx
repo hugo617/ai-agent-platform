@@ -39,6 +39,10 @@ export const SCOPE_LABEL: Record<KnowledgeScope, string> = {
   store: "本店",
 };
 
+// scope 固定渲染顺序(platform → group → store)。导出供 category-tree /
+// category-manager 共用(避免第二份顺序常量扩散 —— admin-ui slice 04 code-review 修复)。
+export const SCOPE_ORDER: KnowledgeScope[] = ["platform", "group", "store"];
+
 export function ScopeBadge({ scope }: { scope: KnowledgeScope }) {
   return <Badge variant={SCOPE_VARIANT[scope]}>{SCOPE_LABEL[scope]}</Badge>;
 }
