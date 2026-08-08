@@ -8,9 +8,11 @@
  * 无 alert-dialog.tsx 组件 —— 镜像 document-list 的删除确认范式),确认后调
  * useRevokeDistribution;hook 成功失效 qk.documentDistributions(docId) 自动刷新。
  *
- * 门店名解析:KnowledgeDistributionRead 只带 target_tenant_id,无 name。用
- * useGroups(group.tenants[])+ useAllTenants(super 全量)拼 tenant→name 映射;
- * 查不到(如门店已删)fallback 显示 id 前 8 位,不报错阻断渲染。
+ * 门店名解析:KnowledgeDistributionRead 只带 target_tenant_id,无 name。仅用
+ * useGroups(group.tenants[])拼 tenant→name 映射 —— group_admin 看本集团分店、
+ * super 看全部集团分店,两者都能覆盖各自可见的下发目标;不调 useAllTenants
+ * (非超管打 /tenants/all 必 403,且 useGroups 已足够)。查不到(门店已删)
+ * fallback 显示 id 前 8 位,不阻断渲染。
  */
 import { useMemo, useState } from "react";
 
@@ -28,7 +30,6 @@ import { ListState } from "@/components/ui/list-state";
 import { useToast } from "@/components/ui/toast";
 import { apiErrorMessage } from "@/api/client";
 import {
-  useAllTenants,
   useDistributions,
   useGroups,
   useRevokeDistribution,
@@ -53,10 +54,6 @@ export function DistributionListDialog({
   const { data, isLoading, isError, error, refetch } = useDistributions(docId);
   const revokeMut = useRevokeDistribution(docId);
   const { data: groups } = useGroups();
-  // useAllTenants 默认 enabled=true;对非 super 会发请求(group_admin 的后端按
-  // /tenants/all 权限可能 403)。这里始终调用以拿门店名,后端若 403 则 data
-  // undefined,fallback 到 useGroups 的 tenants[] —— 两条路径任一拿到名即可。
-  const { data: allTenants } = useAllTenants();
 
   const list = data ?? [];
 
@@ -64,18 +61,18 @@ export function DistributionListDialog({
   const [revokeTarget, setRevokeTarget] =
     useState<KnowledgeDistributionRead | null>(null);
 
-  // tenant→name 映射:优先 useAllTenants(super 全量,带 name),不足则补
-  // useGroups 的 tenants[](group.tenants 是 TenantBrief,也有 name)。
+  // tenant→name 映射:仅从 useGroups 的 tenants[] 拼装(group_admin 看本集团分店、
+  // super 看全部集团分店,均可覆盖各自可见的下发目标)。不调 useAllTenants —— 非
+  // 超管打 /tenants/all 必 403,且 useGroups 已足够覆盖门店名解析。
   const tenantNameMap = useMemo(() => {
     const m = new Map<string, string>();
-    for (const t of allTenants ?? []) m.set(t.id, t.name);
     for (const g of groups ?? []) {
       for (const t of g.tenants) {
         if (!m.has(t.id)) m.set(t.id, t.name ?? t.id);
       }
     }
     return m;
-  }, [allTenants, groups]);
+  }, [groups]);
 
   const tenantLabel = (id: string) => {
     const name = tenantNameMap.get(id);

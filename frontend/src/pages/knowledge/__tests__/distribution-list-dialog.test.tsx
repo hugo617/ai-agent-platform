@@ -7,8 +7,8 @@
 //   - 撤回二次确认:点撤回 → 出现「确认撤回」Dialog → 确认 → mutateAsync(distId)。
 //   - 空态:返回 [] → 「该文档暂无下发关系」。
 //
-// mock 策略:stub useDistributions / useRevokeDistribution / useAllTenants /
-// useGroups(门店名解析)。toast 部分保留 ToastProvider。
+// mock 策略:stub useDistributions / useRevokeDistribution / useGroups(门店名
+// 解析)。toast 部分保留 ToastProvider。
 import {
   afterEach,
   describe,
@@ -26,7 +26,6 @@ import type { Group, KnowledgeDistributionRead } from "@/api/types";
 const mocks = vi.hoisted(() => ({
   useDistributions: vi.fn() as Mock,
   useRevokeDistribution: vi.fn() as Mock,
-  useAllTenants: vi.fn() as Mock,
   useGroups: vi.fn() as Mock,
   useToast: vi.fn() as Mock,
 }));
@@ -34,7 +33,6 @@ const mocks = vi.hoisted(() => ({
 vi.mock("@/hooks/queries", () => ({
   useDistributions: mocks.useDistributions,
   useRevokeDistribution: mocks.useRevokeDistribution,
-  useAllTenants: mocks.useAllTenants,
   useGroups: mocks.useGroups,
 }));
 
@@ -100,7 +98,6 @@ function stubList(dists: KnowledgeDistributionRead[]) {
     mutateAsync: vi.fn().mockResolvedValue(undefined),
     isPending: false,
   });
-  mocks.useAllTenants.mockReturnValue({ data: [] });
   mocks.useGroups.mockReturnValue({ data: [makeGroup()] });
   mocks.useToast.mockReturnValue(makeToast());
 }
@@ -169,7 +166,6 @@ describe("DistributionListDialog 撤回流程(admin-ui slice 03 F5)", () => {
       refetch: vi.fn(),
     });
     mocks.useRevokeDistribution.mockReturnValue({ mutateAsync, isPending: false });
-    mocks.useAllTenants.mockReturnValue({ data: [] });
     mocks.useGroups.mockReturnValue({ data: [makeGroup()] });
     mocks.useToast.mockReturnValue(makeToast());
     const user = userEvent.setup();
