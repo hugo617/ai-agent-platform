@@ -464,24 +464,26 @@ category 下拉:按所选 scope 过滤 useKnowledgeCategories(scope 匹配 + 可
 
 ---
 
-### 切片 02 — 管理 tab 框架 + 创建文档表单(F1 同页 Tabs + F2 子 Tabs + F3 getAvailableScopes)
+### 切片 02 — 管理 tab 框架 + 创建文档表单(F1 同页 Tabs + F2 子 Tabs + F3 getAvailableScopes)✅
 
 - **What it delivers**:admin-ui 的「骨架 + 第一块功能」落地。知识库页顶部出现「阅读」/「管理」两个 tab(管理对 owner/admin 可见,member 隐藏)。切「管理」进子 Tabs(文档与下发 / 分类管理)。文档与下发子 tab 先交付「创建文档」表单 —— super_admin 看到 scope 下拉(platform/group/store 全选)+ group/tenant/category 联动;group_admin 看到 scope(group/store)+ group 锁定本集团;门店 owner 看到 scope(仅 store)+ 创建按钮在管理 tab 隐藏(职责切割,门店创建走 reader-ui)。配套 `lib/permission.ts` 加 `isGroupAdmin` + `getAvailableScopes` helper。此切片完成后,管理 tab 骨架就位,下发/Category 可在后续切片填入。
 
 - **Blocked by**: 切片 01(B1 me.is_group_admin + B2 DocumentCreate scope 字段 + B3 类型层)
 
 - **Acceptance criteria**:
-  - [ ] `frontend/src/api/types.ts` 扩:DocumentCreate 加 `scope?/group_id?/tenant_id?/category_id?` 可选;MeResponse 加 `group_id: string | null` + `is_group_admin: boolean`;新 `KnowledgeDistributionRead`(id/source_doc_id/target_tenant_id/distributed_by/distributed_at/is_active)
-  - [ ] `frontend/src/api/endpoints/knowledge.ts` 扩:`createDocument` 透传 scope/group_id/tenant_id/category_id(可选);新增 `distributeDocument(docId, payload)` + `revokeDistribution(distId)` + `listDistributions(docId)` + `createCategory/updateCategory/deleteCategory`(后两者切片04 用,本切片先落 endpoint)
-  - [ ] `frontend/src/hooks/queries/knowledge.ts` 扩:`useCreateDocument` 透传新字段;qk 加 `documentDistributions(docId)`;新增 `useDistributeDocument`/`useRevokeDistribution`/`useDistributions(docId)`/`useCreateCategory`/`useUpdateCategory`/`useDeleteCategory`
-  - [ ] `frontend/src/lib/permission.ts` 加:`isGroupAdmin(me) = !!me?.is_group_admin` + `getAvailableScopes(me)`(super→[platform,group,store] / group_admin→[group,store] / owner/admin→[store] / member→[])
-  - [ ] `frontend/src/pages/knowledge/index.tsx` 改:顶部 shadcn `<Tabs>`(「阅读」= 现有三栏 / 「管理」= `<AdminPanel/>`);默认阅读 tab;管理 tab 可见性 `hasPermission(me, "knowledge", "create")`;选中态只在阅读 tab 用
-  - [ ] `frontend/src/pages/knowledge/admin-panel.tsx` 新建:子 `<Tabs>`(文档与下发 / 分类管理);文档与下发子 tab 渲染文档表格(useDocuments)+ 顶部「创建文档」按钮(仅 `isGroupAdmin(me) || isSuperAdmin(me)` 可见,F7 职责切割)+ 占位「分类管理」子 tab(切片04 填)
-  - [ ] `frontend/src/pages/knowledge/document-form.tsx` 新建:admin 创建文档表单 Dialog;scope Select(getAvailableScopes 过滤)+ scope 联动(scope=platform 隐藏 group/tenant / scope=group 显示 group 锁定 me.group_id,super_admin 可选 useGroups / scope=store 显示 tenant 默认 me.tenant_id)+ category 下拉(按所选 scope 过滤 useKnowledgeCategories)+ name/content/source_type(沿用 reader-ui 范式);提交调 useCreateDocument 透传 scope/group_id/tenant_id/category_id
-  - [ ] `__tests__/admin-panel.test.tsx`: Tabs 渲染(阅读/管理)+ member 无管理 tab + owner/admin 有管理 tab + 子 Tabs 切换
-  - [ ] `__tests__/document-form.test.tsx`:scope 下拉按角色过滤(member 空 / owner 仅 store / group_admin group+store / super 全)+ scope 联动 group/tenant 显隐 + group_admin group 锁定 + category 下拉过滤 + 提交透传字段
-  - [ ] 扩 `__tests__/knowledge-api.test.ts`(msw):createDocument 带 scope/group_id 请求构造 + distributeDocument XOR 请求构造 + listDistributions GET 契约(锁新端点契约)
-  - [ ] 验证:`npm test` 全绿 + `npm run build` 0 错 + `tsc -b` 0 错 + `oxlint` 0/0;reader-ui 三栏阅读零回归(阅读 tab 渲染原结构)
+  - [x] `frontend/src/api/types.ts` 扩:DocumentCreate 加 `scope?/group_id?/tenant_id?/category_id?` 可选;MeResponse 加 `group_id: string | null` + `is_group_admin: boolean`;新 `KnowledgeDistributionRead`(id/source_doc_id/target_tenant_id/distributed_by/distributed_at/is_active)
+  - [x] `frontend/src/api/endpoints/knowledge.ts` 扩:`createDocument` 透传 scope/group_id/tenant_id/category_id(可选);新增 `distributeDocument(docId, payload)` + `revokeDistribution(distId)` + `listDistributions(docId)` + `createCategory/updateCategory/deleteCategory`(后两者切片04 用,本切片先落 endpoint)
+  - [x] `frontend/src/hooks/queries/knowledge.ts` 扩:`useCreateDocument` 透传新字段;qk 加 `documentDistributions(docId)`;新增 `useDistributeDocument`/`useRevokeDistribution`/`useDistributions(docId)`/`useCreateCategory`/`useUpdateCategory`/`useDeleteCategory`
+  - [x] `frontend/src/lib/permission.ts` 加:`isGroupAdmin(me) = !!me?.is_group_admin` + `getAvailableScopes(me)`(super→[platform,group,store] / group_admin→[group,store] / owner/admin→[store] / member→[])
+  - [x] `frontend/src/pages/knowledge/index.tsx` 改:顶部 shadcn `<Tabs>`(「阅读」= 现有三栏 / 「管理」= `<AdminPanel/>`);默认阅读 tab;管理 tab 可见性 `hasPermission(me, "knowledge", "create")`;选中态只在阅读 tab 用
+  - [x] `frontend/src/pages/knowledge/admin-panel.tsx` 新建:子 `<Tabs>`(文档与下发 / 分类管理);文档与下发子 tab 渲染文档表格(useDocuments)+ 顶部「创建文档」按钮(仅 `isGroupAdmin(me) || isSuperAdmin(me)` 可见,F7 职责切割)+ 占位「分类管理」子 tab(切片04 填)
+  - [x] `frontend/src/pages/knowledge/document-form.tsx` 新建:admin 创建文档表单 Dialog;scope Select(getAvailableScopes 过滤)+ scope 联动(scope=platform 隐藏 group/tenant / scope=group 显示 group 锁定 me.group_id,super_admin 可选 useGroups / scope=store 显示 tenant 默认 me.tenant_id)+ category 下拉(按所选 scope 过滤 useKnowledgeCategories)+ name/content/source_type(沿用 reader-ui 范式);提交调 useCreateDocument 透传 scope/group_id/tenant_id/category_id
+  - [x] `__tests__/admin-panel.test.tsx`: Tabs 渲染(阅读/管理)+ member 无管理 tab + owner/admin 有管理 tab + 子 Tabs 切换
+  - [x] `__tests__/document-form.test.tsx`:scope 下拉按角色过滤(member 空 / owner 仅 store / group_admin group+store / super 全)+ scope 联动 group/tenant 显隐 + group_admin group 锁定 + category 下拉过滤 + 提交透传字段
+  - [x] 扩 `__tests__/knowledge-api.test.ts`(msw):createDocument 带 scope/group_id 请求构造 + distributeDocument XOR 请求构造 + listDistributions GET 契约(锁新端点契约)
+  - [x] 验证:`npm test` 全绿 + `npm run build` 0 错 + `tsc -b` 0 错 + `oxlint` 0/0;reader-ui 三栏阅读零回归(阅读 tab 渲染原结构)
+
+> **实现偏离(AC5/AC6,用户确认)**:plan 字面写「shadcn `<Tabs>`」,实际用「plain button list + useState activeId」范式(镜像 settings-page.tsx,项目惯例)。原因:`@radix-ui/react-tabs` 在 package.json 声明但 node_modules 未装、src 零引用,settings-page 注释明示「no new Radix Tabs wrapper component」。功能等价(Tabs 切换 + 可见性守卫),零新依赖。code-review 双轴(Standards 0 硬违规 + Spec 0 偏差)确认可接受。
 
 > **非末切片**(03-05 待做),不动 feature_list.json status/evidence。
 
