@@ -534,18 +534,18 @@ category 下拉:按所选 scope 过滤 useKnowledgeCategories(scope 匹配 + 可
 
 ---
 
-### 切片 05 — reader-ui category 联动 B4 + 集成验证 + feature 收尾(末切片)
+### 切片 05 — reader-ui category 联动 B4 + 集成验证 + feature 收尾(末切片)✅
 
 - **What it delivers**:reader-ui 的门店录入 Dialog 加 category 下拉(B4),门店 owner 录入时可归类(零行为回归)。全量集成验证 + feature 收尾仪式。此切片是末切片,完成后 admin-ui feature 全部 5 切片交付,分级管理的「管理侧」UI 完整闭环。
 
 - **Blocked by**: 切片 01 + 02 + 03 + 04(类型层 + DocumentCreate category_id + 管理主体全部完成,本片做 reader 联动 + 收尾)
 
 - **Acceptance criteria**:
-  - [ ] `frontend/src/pages/knowledge/document-list.tsx` 录入 Dialog 加 category 下拉:数据源 useKnowledgeCategories(按本店可见过滤:platform + 本集团 group + 本店 store);可选不选(默认 undefined 等价不传,零回归);scope 固定 store(门店用户不能选);提交时透传 category_id 或 undefined
-  - [ ] 扩 `__tests__/document-list.test.tsx`:录入 Dialog category 下拉渲染 + 选中提交透传 category_id + 不选默认 undefined 零回归 + 现有 CRUD 测试不破
-  - [ ] 集成验证:跨角色权限矩阵测试(member 无管理 tab / owner 有管理 tab 无下发按钮 + reader 录入加 category / group_admin 全套管理 + 创建 group scope / super_admin 全套 + 创建 platform scope)
-  - [ ] grep 残留:`pages/knowledge-page` 旧路径外部 import 仅 App.tsx barrel;旧 knowledge-page.tsx barrel 不变
-  - [ ] 验证(plan §10 AC 全绿):`npm test` 全绿(目标 ~38 用例,含后端 ~10 + 前端组件 ~20 + msw ~8)+ `npm run build` 0 错 + `tsc -b` 0 错 + `oxlint` 0/0 + `./init.sh full` 后端零回归(后端改动是补接缝,backend feature 987 测试不破)
+  - [x] `frontend/src/pages/knowledge/document-list.tsx` 录入 Dialog 加 category 下拉:数据源 useKnowledgeCategories(按本店可见过滤:platform + 本集团 group + 本店 store);可选不选(默认 undefined 等价不传,零回归);scope 固定 store(门店用户不能选);提交时透传 category_id 或 undefined
+  - [x] 扩 `__tests__/document-list.test.tsx`:录入 Dialog category 下拉渲染 + 选中提交透传 category_id + 不选默认 undefined 零回归 + 现有 CRUD 测试不破
+  - [x] 集成验证:跨角色权限矩阵测试(member 无管理 tab / owner 有管理 tab 无下发按钮 + reader 录入加 category / group_admin 全套管理 + 创建 group scope / super_admin 全套 + 创建 platform scope)
+  - [x] grep 残留:`pages/knowledge-page` 旧路径外部 import 仅 App.tsx barrel;旧 knowledge-page.tsx barrel 不变
+  - [x] 验证(plan §10 AC 全绿):`npm test` 全绿(目标 ~38 用例,含后端 ~10 + 前端组件 ~20 + msw ~8)+ `npm run build` 0 错 + `tsc -b` 0 错 + `oxlint` 0/0 + `./init.sh full` 后端零回归(后端改动是补接缝,backend feature 987 测试不破)
   - [ ] feature 收尾仪式(three-tier §4 第1-7步):`./init.sh full` 全绿 + feature_list.json status `in_progress → passing` + evidence + sync-active 刷新 + progress.md 更新 + 文档影响评估 + 依赖解锁扫描(本 feature 是知识库分级系列最后一片,系列收官时 overview 加「系列状态:✅ 全部完成」段)
 
 ---
