@@ -56,13 +56,7 @@ import type {
   KnowledgeCategoryRead,
   KnowledgeScope,
 } from "@/api/types";
-
-// scope → 中文标签(对齐 ScopeBadge 的展示语义)。
-const SCOPE_LABEL: Record<KnowledgeScope, string> = {
-  platform: "平台",
-  group: "集团",
-  store: "本店",
-};
+import { SCOPE_LABEL } from "./scope-badge";
 
 export interface DocumentFormProps {
   open: boolean;

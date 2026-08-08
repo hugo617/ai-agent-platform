@@ -31,8 +31,9 @@ const SCOPE_VARIANT: Record<
   store: "success",
 };
 
-// scope → 中文短标签(徽章上显示的文字)。
-const SCOPE_LABEL: Record<KnowledgeScope, string> = {
+// scope → 中文短标签(徽章上显示的文字)。导出供 document-form 的 scope Select 复用
+// (admin-ui slice 02:同一份 scope→中文映射,避免第二份字典扩散)。
+export const SCOPE_LABEL: Record<KnowledgeScope, string> = {
   platform: "平台",
   group: "集团",
   store: "本店",
