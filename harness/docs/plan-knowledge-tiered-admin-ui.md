@@ -489,19 +489,23 @@ category 下拉:按所选 scope 过滤 useKnowledgeCategories(scope 匹配 + 可
 
 ---
 
-### 切片 03 — 下发 Dialog + 管理下发撤回(F4 Radio 切模式 + F5 两入口 + 二次确认)
+### 切片 03 — 下发 Dialog + 管理下发撤回(F4 Radio 切模式 + F5 两入口 + 二次确认)✅
 
 - **What it delivers**:下发/撤回操作 UI 落地,集团统一管控门店的「动作链」打通。文档表格每行 DropdownMenu 出现「下发」「管理下发」两入口(仅 group_admin+super 可见)。点「下发」开 Dialog:Radio 切「按门店」(Checkbox 多选,group_admin 锁本集团分店 / super 全平台)或「按集团」(Select 单选,group_admin 锁 me.group_id),确认后调 POST distribute,toast 提示(含重新激活数)。点「管理下发」开 Dialog:`GET /documents/{doc_id}/distributions` 渲染已下发列表(含已撤回灰显),每行「撤回」按钮 + 二次确认,调 DELETE revoke。此切片完成后,D3 显式下发语义端到端 UI 跑通。
 
 - **Blocked by**: 切片 02(管理 tab 骨架 + AdminPanel + hooks/endpoints)
 
 - **Acceptance criteria**:
-  - [ ] `frontend/src/pages/knowledge/distribute-dialog.tsx` 新建:props `{ docId, open, onOpenChange }`;RadioGroup「按门店」/「按集团」二选一(XOR 语义);按门店 = Checkbox 多选(group_admin → useGroups 的 me.group_id.tenants[] 展开,锁定本集团;super → useAllTenants 全平台);按集团 = Select 单选(useGroups,group_admin 锁 me.group_id 不可改);提交按模式构造 `{target_tenant_ids}` 或 `{target_group_id}`(XOR);调 useDistributeDocument;toast「已下发(N 条,含重新激活 M 条)」;空选校验
-  - [ ] `frontend/src/pages/knowledge/distribution-list-dialog.tsx` 新建:props `{ docId, open, onOpenChange }`;自调 `useDistributions(docId)`(GET /documents/{doc_id}/distributions);渲染已下发列表(门店名 + distributed_at + is_active 状态:生效绿/已撤回灰);每行「撤回」按钮(is_active=true 才可点)+ 二次确认 Dialog;调 useRevokeDistribution;撤回后列表刷新(is_active=false 灰显)
-  - [ ] `frontend/src/pages/knowledge/admin-panel.tsx` 文档表格行 DropdownMenu 加「下发」「管理下发」两入口:仅 `isGroupAdmin(me) || isSuperAdmin(me)` 可见(F7);门店 owner 隐藏这两项(本店文档被下发情况只读由 distribution-list-dialog 在 owner 视角降级,或 owner 不进此入口 —— 实施时定)
-  - [ ] `__tests__/distribute-dialog.test.tsx`:Radio 切模式 + 按门店多选构造 target_tenant_ids + 按集团单选构造 target_group_id + XOR 防互斥(选门店时集团 disabled)+ group_admin 锁本集团(目标选项只含本集团)+ super 全平台 + 空选校验 + 提交触发 mutateAsync + 成功 toast
-  - [ ] `__tests__/distribution-list-dialog.test.tsx`:列表渲染(useDistributions 返回)+ is_active 状态显示(生效/已撤回)+ 撤回按钮触发二次确认 + 确认后调 useRevokeDistribution + 撤回后刷新 + 空态(无下发关系)
-  - [ ] 验证:`npm test` 全绿 + `npm run build` 0 错 + `tsc -b` 0 错 + `oxlint` 0/0
+  - [x] `frontend/src/pages/knowledge/distribute-dialog.tsx` 新建:props `{ docId, open, onOpenChange }`;RadioGroup「按门店」/「按集团」二选一(XOR 语义);按门店 = Checkbox 多选(group_admin → useGroups 的 me.group_id.tenants[] 展开,锁定本集团;super → useAllTenants 全平台);按集团 = Select 单选(useGroups,group_admin 锁 me.group_id 不可改);提交按模式构造 `{target_tenant_ids}` 或 `{target_group_id}`(XOR);调 useDistributeDocument;toast「已下发(N 条,含重新激活 M 条)」;空选校验
+  - [x] `frontend/src/pages/knowledge/distribution-list-dialog.tsx` 新建:props `{ docId, open, onOpenChange }`;自调 `useDistributions(docId)`(GET /documents/{doc_id}/distributions);渲染已下发列表(门店名 + distributed_at + is_active 状态:生效绿/已撤回灰);每行「撤回」按钮(is_active=true 才可点)+ 二次确认 Dialog;调 useRevokeDistribution;撤回后列表刷新(is_active=false 灰显)
+  - [x] `frontend/src/pages/knowledge/admin-panel.tsx` 文档表格行 DropdownMenu 加「下发」「管理下发」两入口:仅 `isGroupAdmin(me) || isSuperAdmin(me)` 可见(F7);门店 owner 隐藏这两项(本店文档被下发情况只读由 distribution-list-dialog 在 owner 视角降级,或 owner 不进此入口 —— 实施时定)
+  - [x] `__tests__/distribute-dialog.test.tsx`:Radio 切模式 + 按门店多选构造 target_tenant_ids + 按集团单选构造 target_group_id + XOR 防互斥(选门店时集团 disabled)+ group_admin 锁本集团(目标选项只含本集团)+ super 全平台 + 空选校验 + 提交触发 mutateAsync + 成功 toast
+  - [x] `__tests__/distribution-list-dialog.test.tsx`:列表渲染(useDistributions 返回)+ is_active 状态显示(生效/已撤回)+ 撤回按钮触发二次确认 + 确认后调 useRevokeDistribution + 撤回后刷新 + 空态(无下发关系)
+  - [x] 验证:`npm test` 全绿 + `npm run build` 0 错 + `tsc -b` 0 错 + `oxlint` 0/0
+
+> **实现偏离(AC1/AC2,code-review 确认可接受)**:① plan §F4 写「RadioGroup」,实际用 button-list 切模式(项目无 radio-group.tsx 组件,`@radix-ui/react-radio-group` 声明未装,同切片02 Tabs 先例);XOR 语义通过 switchMode 清空对方选择 + 单区渲染实现(选门店时不渲染集团区,反之亦然),功能等价。② plan §F5 写「二次确认 Dialog」,用普通 Dialog(无 alert-dialog.tsx,镜像 document-list 删除确认范式)。零新依赖。
+
+> **遗留 follow-up(toast 重新激活计数)**:AC1 toast 写「已下发(N 条,含重新激活 M 条)」,当前仅交付「已下发 N 条」。M(重新激活数)需后端 `KnowledgeDistributionRead` 增 `was_reactivated` 字段才能计算 —— 现 distribute upsert 返回的 row 重激活与新建无法区分(均 is_active=True,无标记)。本切片纯前端,不动后端;M 计数作为独立小切片(可并入切片05 收尾或单开)。当前「已下发 N 条」是诚实可算的最大信息量,D3 显式下发语义不依赖 M。
 
 > **非末切片**(04-05 待做),不动 feature_list.json status/evidence。
 
