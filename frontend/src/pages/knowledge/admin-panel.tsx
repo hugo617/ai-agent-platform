@@ -18,7 +18,7 @@
  *     (本店 store Category)+ 本店被下发情况(只读,切片03 的 distribution-list)。
  */
 import { useState } from "react";
-import { Plus } from "lucide-react";
+import { MoreHorizontal, Plus, Send, ListChecks } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -28,6 +28,12 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { ListState } from "@/components/ui/list-state";
 import {
   Table,
@@ -40,9 +46,12 @@ import {
 import { useAuth } from "@/components/auth/auth-context";
 import { isGroupAdmin, isSuperAdmin } from "@/lib/permission";
 import { useDocuments } from "@/hooks/queries";
+import type { DocumentRead } from "@/api/types";
 import { ScopeBadge } from "./scope-badge";
 import { statusBadge } from "./shared";
 import { DocumentForm } from "./document-form";
+import { DistributeDialog } from "./distribute-dialog";
+import { DistributionListDialog } from "./distribution-list-dialog";
 import { formatDateTime as fmt } from "@/lib/format";
 
 type SubTab = "docs" | "categories";
@@ -93,9 +102,14 @@ export function AdminPanel() {
   );
 }
 
-/** 文档与发放子 tab:文档表格 + 创建文档按钮(仅上级)。 */
+/** 文档与发放子 tab:文档表格 + 创建文档按钮(仅上级)+ 行操作「下发/管理下发」。 */
 function DocsSubTab({ canCreateUpper }: { canCreateUpper: boolean }) {
   const [createOpen, setCreateOpen] = useState(false);
+  // 下发/管理下发 两入口的行级目标(F5:DropdownMenu → 开对应 Dialog)。
+  const [distributeTarget, setDistributeTarget] = useState<DocumentRead | null>(
+    null,
+  );
+  const [listTarget, setListTarget] = useState<DocumentRead | null>(null);
   const { data: docs, isLoading, isError, error, refetch } = useDocuments();
   const list = docs ?? [];
 
@@ -138,6 +152,8 @@ function DocsSubTab({ canCreateUpper }: { canCreateUpper: boolean }) {
                 <TableHead>层级</TableHead>
                 <TableHead>状态</TableHead>
                 <TableHead>更新时间</TableHead>
+                {/* 操作列仅上级可见(F7:owner 进管理 tab 只看本店文档,无下发权)。 */}
+                {canCreateUpper && <TableHead className="w-12">操作</TableHead>}
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -151,6 +167,27 @@ function DocsSubTab({ canCreateUpper }: { canCreateUpper: boolean }) {
                   <TableCell className="text-muted-foreground">
                     {fmt(d.updated_at)}
                   </TableCell>
+                  {canCreateUpper && (
+                    <TableCell>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="ghost" size="icon" aria-label="文档操作">
+                            <MoreHorizontal className="h-4 w-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem
+                            onClick={() => setDistributeTarget(d)}
+                          >
+                            <Send className="mr-2 h-4 w-4" /> 下发
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => setListTarget(d)}>
+                            <ListChecks className="mr-2 h-4 w-4" /> 管理下发
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </TableCell>
+                  )}
                 </TableRow>
               ))}
             </TableBody>
@@ -159,6 +196,25 @@ function DocsSubTab({ canCreateUpper }: { canCreateUpper: boolean }) {
       </CardContent>
 
       <DocumentForm open={createOpen} onOpenChange={setCreateOpen} />
+
+      {/* 下发 / 管理下发 Dialog —— 目标为空时卸载(条件挂载),避免 docId=""
+          触发空请求;每次打开重新挂载拉最新数据(数据时效 > 关闭动画)。 */}
+      {distributeTarget && (
+        <DistributeDialog
+          docId={distributeTarget.id}
+          docName={distributeTarget.name}
+          open
+          onOpenChange={(o) => !o && setDistributeTarget(null)}
+        />
+      )}
+      {listTarget && (
+        <DistributionListDialog
+          docId={listTarget.id}
+          docName={listTarget.name}
+          open
+          onOpenChange={(o) => !o && setListTarget(null)}
+        />
+      )}
     </Card>
   );
 }

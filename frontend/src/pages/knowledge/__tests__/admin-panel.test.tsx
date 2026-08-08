@@ -217,3 +217,98 @@ describe("AdminPanel 子 Tabs(admin-ui slice 02 F2)", () => {
     expect(getByTestId("document-form-stub")).toBeTruthy();
   });
 });
+
+// ============================================================================
+// F5:文档表格行操作菜单「下发」「管理下发」(admin-ui slice 03)
+// ============================================================================
+
+// 切片 03 加的行操作 Dialog 在本测试 mock 成 stub(避免触发真实 distribution hooks)。
+vi.mock("../distribute-dialog", () => ({
+  DistributeDialog: ({ open }: { open: boolean }) =>
+    open ? <div data-testid="distribute-dialog-stub">distribute</div> : null,
+}));
+vi.mock("../distribution-list-dialog", () => ({
+  DistributionListDialog: ({ open }: { open: boolean }) =>
+    open ? (
+      <div data-testid="distribution-list-dialog-stub">distribution-list</div>
+    ) : null,
+}));
+
+function makeDoc(overrides: Partial<{
+  id: string;
+  name: string;
+  scope: "platform" | "group" | "store";
+  status: string;
+}> = {}) {
+  return {
+    id: "doc_1",
+    name: "集团话术手册",
+    content: "...",
+    source_type: "text" as const,
+    scope: "group" as const,
+    group_id: "grp_1",
+    tenant_id: null,
+    category_id: null,
+    status: "indexed",
+    embedding_count: 4,
+    created_at: "2026-08-07T09:00:00Z",
+    updated_at: "2026-08-07T09:00:00Z",
+    ...overrides,
+  };
+}
+
+describe("AdminPanel 行操作「下发/管理下发」(admin-ui slice 03 F5)", () => {
+  it("group_admin:文档行有操作菜单,点开见「下发」「管理下发」", async () => {
+    stubBasics(makeGroupAdminMe());
+    mocks.useDocuments.mockReturnValue({
+      data: [makeDoc()],
+      isLoading: false,
+    });
+    const user = userEvent.setup();
+    const { getByRole, getByText } = renderWithProviders(<AdminPanel />);
+    await user.click(getByRole("button", { name: "文档操作" }));
+    // DropdownMenu 展开后两入口可见。
+    await vi.waitFor(() => {
+      expect(getByText("下发")).toBeTruthy();
+      expect(getByText("管理下发")).toBeTruthy();
+    });
+  });
+
+  it("owner:文档行无操作菜单(F7 职责切割,owner 无下发权)", () => {
+    stubBasics(makeOwnerMe());
+    mocks.useDocuments.mockReturnValue({
+      data: [makeDoc()],
+      isLoading: false,
+    });
+    const { queryByText } = renderWithProviders(<AdminPanel />);
+    // owner 进管理 tab 看文档表格,但无「操作」列、无下发入口。
+    expect(queryByText("下发")).toBeNull();
+    expect(queryByText("管理下发")).toBeNull();
+  });
+
+  it("group_admin 点「下发」:打开 DistributeDialog stub", async () => {
+    stubBasics(makeGroupAdminMe());
+    mocks.useDocuments.mockReturnValue({
+      data: [makeDoc()],
+      isLoading: false,
+    });
+    const user = userEvent.setup();
+    const { getByRole, getByText, getByTestId } = renderWithProviders(<AdminPanel />);
+    await user.click(getByRole("button", { name: "文档操作" }));
+    await user.click(getByText("下发"));
+    expect(getByTestId("distribute-dialog-stub")).toBeTruthy();
+  });
+
+  it("group_admin 点「管理下发」:打开 DistributionListDialog stub", async () => {
+    stubBasics(makeGroupAdminMe());
+    mocks.useDocuments.mockReturnValue({
+      data: [makeDoc()],
+      isLoading: false,
+    });
+    const user = userEvent.setup();
+    const { getByRole, getByText, getByTestId } = renderWithProviders(<AdminPanel />);
+    await user.click(getByRole("button", { name: "文档操作" }));
+    await user.click(getByText("管理下发"));
+    expect(getByTestId("distribution-list-dialog-stub")).toBeTruthy();
+  });
+});
