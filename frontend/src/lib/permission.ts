@@ -14,7 +14,7 @@
  * something slips through.
  */
 
-import type { MeResponse } from "@/api/types";
+import type { KnowledgeScope, MeResponse } from "@/api/types";
 
 /**
  * Is the current user a platform super admin?
@@ -95,4 +95,52 @@ export function canViewMenu(
   if (!me) return false;
   if (me.platform_role === "super_admin") return true;
   return me.permissions.includes(menuCode);
+}
+
+/**
+ * Is the current user a derived group admin (knowledge-tiered)?
+ *
+ * knowledge-tiered admin-ui F3 — ``me.is_group_admin`` is the backend-derived
+ * flag: true when the user is the owner/admin of a group's headquarters tenant
+ * (see ``_build_me_response`` in app/api/v1/auth.py). A group_admin has
+ * cross-store management rights *within their own group* only — distribute to
+ * branch stores, create scope=group documents/categories, see aggregate views.
+ *
+ * Distinct from ``isSuperAdmin`` (platform-level everything) and ``isHQStaff``
+ * (read-only panorama). Use ``isGroupAdmin(me) || isSuperAdmin(me)`` for the
+ * "may distribute / see manage-distribution" gate (F5/F7), since both roles
+ * hold ``knowledge:distribute`` but group_admin is scoped to own group.
+ *
+ * Mirrors ``is_group_admin(db, user_id, group_id)`` on the backend — the MeResponse
+ * flag is populated so the frontend never has to re-derive it.
+ */
+export function isGroupAdmin(me: MeResponse | null | undefined): boolean {
+  return !!me?.is_group_admin;
+}
+
+/**
+ * Which document/category scopes may the current user create? (F3)
+ *
+ * knowledge-tiered admin-ui F3 — drives the scope dropdown in the admin create-
+ * document form and the category-manager. Mirrors the backend
+ * ``_resolve_create_target`` / ``_enforce_scope_role`` role→scope mapping so
+ * the frontend's offered scopes exactly match what the backend will accept
+ * (prevents "UI shows platform but API 400s"):
+ *
+ *   super_admin  → [platform, group, store]  (may create any tier)
+ *   group_admin  → [group, store]            (own group + own store; never platform)
+ *   owner/admin  → [store]                   (own store only)
+ *   member       → []                         (no create; manage tab hidden anyway)
+ *
+ * Note: a derived group_admin is NOT a super_admin, so platform is withheld
+ * even though they have cross-store rights — pinned by backend test
+ * ``test_service_create_platform_category_by_group_admin_rejected``.
+ */
+export function getAvailableScopes(
+  me: MeResponse | null | undefined,
+): KnowledgeScope[] {
+  if (isSuperAdmin(me)) return ["platform", "group", "store"];
+  if (isGroupAdmin(me)) return ["group", "store"];
+  if (hasPermission(me, "knowledge", "create")) return ["store"];
+  return [];
 }

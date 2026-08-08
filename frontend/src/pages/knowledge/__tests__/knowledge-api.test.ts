@@ -15,12 +15,16 @@
 // baseURL = /api/v1(见 src/api/client.ts),msw handler 路径要带 /api/v1 前缀。
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import {
+  createDocument,
+  distributeDocument,
   fetchDocuments,
   fetchKnowledgeCategories,
+  listDistributions,
 } from "@/api/endpoints";
 import type {
   DocumentRead,
   KnowledgeCategoryRead,
+  KnowledgeDistributionRead,
 } from "@/api/types";
 import { http, server } from "@/test/msw-server";
 
@@ -211,5 +215,145 @@ describe("knowledge API — fetchKnowledgeCategories 响应解析(msw)", () => {
 
     const cats = await fetchKnowledgeCategories();
     expect(cats).toEqual([]);
+  });
+});
+
+// ============================================================================
+// admin-ui slice 02:新端点契约(createDocument 带 scope + distribute XOR +
+// listDistributions GET)。锁「前端类型层 ↔ 后端 API 契约」连接点 —— endpoint 层
+// 发出的请求 + 解析的响应一旦偏离后端 schema,这里变红。
+// ============================================================================
+
+function makeDistribution(
+  overrides: Partial<KnowledgeDistributionRead> = {},
+): KnowledgeDistributionRead {
+  return {
+    id: "dist_1",
+    source_doc_id: "doc_1",
+    target_tenant_id: "tn_2",
+    distributed_by: "u_ga",
+    distributed_at: "2026-08-08T09:00:00Z",
+    is_active: true,
+    ...overrides,
+  };
+}
+
+describe("knowledge API — createDocument 带 scope 请求构造(admin-ui slice 02)", () => {
+  it("带 scope=group + group_id:POST body 透传两个字段", async () => {
+    let capturedBody: Record<string, unknown> = {};
+    server.use(
+      http.post(`${API}/knowledge/documents`, async ({ request }) => {
+        capturedBody = (await request.json()) as Record<string, unknown>;
+        return Response.json(makeDocument({ scope: "group", group_id: "grp_1" }));
+      }),
+    );
+
+    const doc = await createDocument({
+      name: "集团统一话术",
+      content: "开场欢迎",
+      scope: "group",
+      group_id: "grp_1",
+    });
+
+    // 请求构造:scope + group_id 进 body。
+    expect(capturedBody.scope).toBe("group");
+    expect(capturedBody.group_id).toBe("grp_1");
+    // 响应解析:DocumentRead 带回 scope/group_id。
+    expect(doc.scope).toBe("group");
+    expect(doc.group_id).toBe("grp_1");
+  });
+
+  it("不带 scope:POST body 无 scope 字段(reader-ui 零回归路径)", async () => {
+    let capturedBody: Record<string, unknown> = {};
+    server.use(
+      http.post(`${API}/knowledge/documents`, async ({ request }) => {
+        capturedBody = (await request.json()) as Record<string, unknown>;
+        return Response.json(makeDocument());
+      }),
+    );
+
+    await createDocument({ name: "本店话术", content: "内容" });
+
+    // reader-ui 旧路径:不传 scope → body 无 scope/group_id/tenant_id/category_id。
+    expect(capturedBody.scope).toBeUndefined();
+    expect(capturedBody.group_id).toBeUndefined();
+    expect(capturedBody.tenant_id).toBeUndefined();
+  });
+});
+
+describe("knowledge API — distributeDocument XOR 请求构造(admin-ui slice 02)", () => {
+  it("按门店:POST body 含 target_tenant_ids,无 target_group_id", async () => {
+    let capturedBody: Record<string, unknown> = {};
+    server.use(
+      http.post(`${API}/knowledge/documents/doc_1/distribute`, async ({ request }) => {
+        capturedBody = (await request.json()) as Record<string, unknown>;
+        return Response.json([makeDistribution()]);
+      }),
+    );
+
+    const dists = await distributeDocument("doc_1", {
+      target_tenant_ids: ["tn_2", "tn_3"],
+    });
+
+    // XOR:按门店 → target_tenant_ids 设,target_group_id 不出现(undefined 不进 body)。
+    expect(capturedBody.target_tenant_ids).toEqual(["tn_2", "tn_3"]);
+    expect(capturedBody.target_group_id).toBeUndefined();
+    // 响应解析:返回 KnowledgeDistributionRead[]。
+    expect(dists).toHaveLength(1);
+    expect(dists[0].target_tenant_id).toBe("tn_2");
+  });
+
+  it("按集团:POST body 含 target_group_id,无 target_tenant_ids", async () => {
+    let capturedBody: Record<string, unknown> = {};
+    server.use(
+      http.post(`${API}/knowledge/documents/doc_1/distribute`, async ({ request }) => {
+        capturedBody = (await request.json()) as Record<string, unknown>;
+        return Response.json([makeDistribution(), makeDistribution({ id: "dist_2", target_tenant_id: "tn_3" })]);
+      }),
+    );
+
+    await distributeDocument("doc_1", { target_group_id: "grp_1" });
+
+    // XOR:按集团 → target_group_id 设,target_tenant_ids 不出现。
+    expect(capturedBody.target_group_id).toBe("grp_1");
+    expect(capturedBody.target_tenant_ids).toBeUndefined();
+  });
+});
+
+describe("knowledge API — listDistributions GET 契约(admin-ui slice 02 B3)", () => {
+  it("GET /knowledge/documents/{docId}/distributions 返回 KnowledgeDistributionRead[]", async () => {
+    let capturedUrl = "";
+    server.use(
+      http.get(`${API}/knowledge/documents/doc_1/distributions`, ({ request }) => {
+        capturedUrl = request.url;
+        return Response.json([
+          makeDistribution({ id: "d_active", is_active: true }),
+          makeDistribution({ id: "d_revoked", is_active: false, target_tenant_id: "tn_3" }),
+        ]);
+      }),
+    );
+
+    const dists = await listDistributions("doc_1");
+
+    // URL 路径对齐后端端点(切片01 B3 新增)。
+    const u = new URL(capturedUrl);
+    expect(u.pathname).toBe(`${API}/knowledge/documents/doc_1/distributions`);
+    // 响应解析:含已撤回 is_active=false(「管理下发」视图区分生效/已撤回)。
+    expect(dists).toHaveLength(2);
+    expect(dists[0].is_active).toBe(true);
+    expect(dists[1].is_active).toBe(false);
+    // distributed_by 可 null(后端 SET NULL on user delete)。
+    expect(dists[0].distributed_by).toBe("u_ga");
+  });
+
+  it("空下发关系:返回 [](文档从未下发)", async () => {
+    server.use(
+      http.get(`${API}/knowledge/documents/doc_1/distributions`, () =>
+        Response.json([]),
+      ),
+    );
+
+    const dists = await listDistributions("doc_1");
+    expect(dists).toEqual([]);
   });
 });
