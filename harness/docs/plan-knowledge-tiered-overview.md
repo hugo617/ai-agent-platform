@@ -5,6 +5,14 @@
 > 本文档是后续各 feature 的 `/to-spec`(落 plan-<id>.md)+ `/to-tickets`(拆切片)的输入。
 > 对应 feature_list.json 待登记的 `id`(见 §6 系列 feature 拆分)。
 > **承接** [`plan-knowledge-base-rag.md`](plan-knowledge-base-rag.md)(p57 ✅ passing,已激活 pgvector + Document/Chunk + embedding 管线 + retrieve_knowledge 工具)。本系列在其之上叠加**三级权限 + 分类 + 下发 + 可视化阅读**。
+>
+> **🎯 系列状态:✅ 全部完成(2026-08-08)**。4 feature 全 passing:
+> - **Feature A** `knowledge-tiered-foundation` p90 ✅(数据模型 + 权限地基,全 3 切片)
+> - **Feature B** `knowledge-tiered-backend` p89 ✅(后端 CRUD + 下发 API + 检索改造,全 4 切片,PR #154)
+> - **Feature C** `knowledge-tiered-reader-ui` p88 ✅(前端三栏可视化阅读,全 3 切片,PR #155/#156/#157)
+> - **Feature D** `knowledge-tiered-admin-ui` p87 ✅(前端分类管理 + 下发操作 UI + 后端接缝补齐,全 5 切片,PR #158/#159/#160/#161)
+>
+> 三级权限(super_admin / group_admin 派生身份 / 门店 owner-admin-member)+ 双维度分类(scope + category)+ 显式下发(引用模型,撤回软删)+ 三栏阅读 + 管理操作 UI 全部端到端交付。「门店=最小 OPC 产业单元」。**遗留 follow-up**:toast「重新激活 M 条」需后端 `KnowledgeDistributionRead` 加 `was_reactivated` 字段(独立小切片,已记入 admin-ui plan)。
 
 ---
 
