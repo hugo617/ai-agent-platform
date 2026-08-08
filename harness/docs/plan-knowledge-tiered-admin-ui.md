@@ -1,7 +1,7 @@
 # 计划:知识库分级 Feature D — 前端分类管理 + 下发操作 UI(含后端接缝补齐)
 
 > **id**: `knowledge-tiered-admin-ui`
-> **状态**: draft v1(EP2 回环产出,待进 EP3 实施切片 01)
+> **状态**: in_progress(切片 01+02 ✅ 已交付;切片 03-05 待续。与 feature_list.json status=in_progress 一致)
 > **优先级**: 87(feature_list.json;depends_on `knowledge-tiered-backend` p89 ✅ passing 已解锁)
 > **创建日期**: 2026-08-07
 > **来源**: Session 198 `/grill-with-docs` 收敛 13 决策(B1-B4 后端接缝补齐 + F1-F7 前端形态 + T1-T2 测试切片)
