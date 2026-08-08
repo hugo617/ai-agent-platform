@@ -7,7 +7,8 @@
  *   - 「文档与发放」(本切片):文档表格(useDocuments)+ 顶部「创建文档」按钮
  *     (仅 isGroupAdmin(me)||isSuperAdmin(me) 可见,F7 职责切割 —— 门店 owner 的
  *     本店创建走 reader-ui,不在此重复)。行操作「下发」「管理下发」在切片03 加。
- *   - 「分类管理」(切片04 填):本切片先占位 Card,提示「即将上线」。
+ *   - 「分类管理」(切片04):Category CRUD UI(category-manager.tsx),按 scope
+ *     分组渲染 platform/group/store 三区块,新建/编辑/删除 Dialog。
  *
  * 与 reader-ui 三栏阅读页的关系(职责正交):
  *   - reader-ui = 所有角色的「阅读 + 门店 CRUD」(owner/admin/member 同结构,差异在
@@ -52,6 +53,7 @@ import { statusBadge } from "./shared";
 import { DocumentForm } from "./document-form";
 import { DistributeDialog } from "./distribute-dialog";
 import { DistributionListDialog } from "./distribution-list-dialog";
+import { CategoryManager } from "./category-manager";
 import { formatDateTime as fmt } from "@/lib/format";
 
 type SubTab = "docs" | "categories";
@@ -96,7 +98,7 @@ export function AdminPanel() {
       {subTab === "docs" ? (
         <DocsSubTab canCreateUpper={canCreateUpper} />
       ) : (
-        <CategoriesSubTabPlaceholder />
+        <CategoryManager />
       )}
     </div>
   );
@@ -215,21 +217,6 @@ function DocsSubTab({ canCreateUpper }: { canCreateUpper: boolean }) {
           onOpenChange={(o) => !o && setListTarget(null)}
         />
       )}
-    </Card>
-  );
-}
-
-/** 分类管理子 tab 占位(切片04 实现 Category CRUD)。 */
-function CategoriesSubTabPlaceholder() {
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle>分类管理</CardTitle>
-        <CardDescription>按层级(platform/group/store)管理知识分类。</CardDescription>
-      </CardHeader>
-      <CardContent className="py-8 text-center text-sm text-muted-foreground">
-        分类管理即将上线(Category CRUD 在后续切片交付)。
-      </CardContent>
     </Card>
   );
 }

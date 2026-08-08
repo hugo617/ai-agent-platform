@@ -511,19 +511,24 @@ category 下拉:按所选 scope 过滤 useKnowledgeCategories(scope 匹配 + 可
 
 ---
 
-### 切片 04 — Category 管理 CRUD(F6 scope 分组 + 新建/编辑/删除 Dialog)
+### 切片 04 — Category 管理 CRUD(F6 scope 分组 + 新建/编辑/删除 Dialog)✅
 
 - **What it delivers**:Category 管理的完整 CRUD UI 落地。管理 tab 的「分类管理」子 tab 渲染 Category 列表按 scope 分组(platform/group/store 三个 Card 区块,对齐 reader-ui category-tree 范式)。顶部「新建分类」按钮开 Dialog:scope 下拉(getAvailableScopes 过滤)+ name + sort_order;scope=group 时 group_id 默认 me.group_id(隐藏)/scope=store 时 tenant_id 默认 me.tenant_id(隐藏)/scope=platform 两者 null。每行 Category「编辑」(只改 name/sort_order,scope 不可改对齐后端 KnowledgeCategoryUpdate schema)「删除」(二次确认,软删)。此切片完成后,D5 预置+扩展的 Category 管理前端闭环。
 
 - **Blocked by**: 切片 02(AdminPanel 子 Tabs + hooks/endpoints)
 
 - **Acceptance criteria**:
-  - [ ] `frontend/src/pages/knowledge/category-manager.tsx` 新建:自调 `useKnowledgeCategories()`;按 scope 分组渲染(platform/group/store 三个 Card 区块,用 ScopeBadge 标识);每行 Category 显示 name + sort_order + DropdownMenu(编辑/删除)
-  - [ ] 新建 Dialog:scope Select(getAvailableScopes 过滤)+ name Input + sort_order Input;scope 联动(scope=group → group_id 默认 me.group_id 隐藏 / scope=store → tenant_id 默认 me.tenant_id 隐藏 / scope=platform → 两者 null);提交调 useCreateCategory
-  - [ ] 编辑 Dialog:只改 name + sort_order(scope 不可改 + group_id/tenant_id 不可改,对齐后端 KnowledgeCategoryUpdate schema);提交调 useUpdateCategory
-  - [ ] 删除:二次确认 Dialog + 调 useDeleteCategory(软删)
-  - [ ] `__tests__/category-manager.test.tsx`:scope 分组渲染(platform/group/store 三区块)+ 新建 Dialog scope 过滤(角色映射)+ scope 联动 group/tenant 隐藏 + 编辑只改 name/sort_order(scope 不可改)+ 删除二次确认 + member 无新建/编辑/删除按钮(member 在管理 tab 隐藏,但 helper 守卫仍测)
-  - [ ] 验证:`npm test` 全绿 + `npm run build` 0 错 + `tsc -b` 0 错 + `oxlint` 0/0
+  - [x] `frontend/src/pages/knowledge/category-manager.tsx` 新建:自调 `useKnowledgeCategories()`;按 scope 分组渲染(platform/group/store 三个 Card 区块,用 ScopeBadge 标识);每行 Category 显示 name + sort_order + DropdownMenu(编辑/删除)
+  - [x] 新建 Dialog:scope Select(getAvailableScopes 过滤)+ name Input + sort_order Input;scope 联动(scope=group → group_id 默认 me.group_id 隐藏 / scope=store → tenant_id 默认 me.tenant_id 隐藏 / scope=platform → 两者 null);提交调 useCreateCategory
+  - [x] 编辑 Dialog:只改 name + sort_order(scope 不可改 + group_id/tenant_id 不可改,对齐后端 KnowledgeCategoryUpdate schema);提交调 useUpdateCategory
+  - [x] 删除:二次确认 Dialog + 调 useDeleteCategory(软删)
+  - [x] `__tests__/category-manager.test.tsx`:scope 分组渲染(platform/group/store 三区块)+ 新建 Dialog scope 过滤(角色映射)+ scope 联动 group/tenant 隐藏 + 编辑只改 name/sort_order(scope 不可改)+ 删除二次确认 + member 无新建/编辑/删除按钮(member 在管理 tab 隐藏,但 helper 守卫仍测)
+  - [x] 验证:`npm test` 全绿(244/244)+ `npm run build` 0 错 + `tsc -b` 0 错 + `oxlint` 0/0
+
+> **实现说明**:
+> - 删除二次确认用普通 Dialog(无 alert-dialog.tsx 组件,镜像切片03 distribution-list 撤回确认 + document-list 删除确认范式),零新依赖。
+> - code-review 双轴:Standards 0 硬违规 + 2 判断项已修(① `SCOPE_ORDER` 从 category-manager.tsx + category-tree.tsx 两处本地声明提升到 scope-badge.tsx 共享,与 `SCOPE_LABEL` 先例一致消除重复;② category-manager 区块内按 sort_order 升序,对齐 reader-ui category-tree,消除「行打印排序 N 但列表无序」的 admin 歧义);Spec 6 AC 全绿 0 缺失 0 误 0 偏差。
+> - admin-panel.test.tsx 顺带更新:切片04 前测「分类管理占位 Card 即将上线」→ 改测「渲染 CategoryManager 平台层级分类」;stubBasics 补 useCreateCategory/useUpdateCategory/useDeleteCategory 兜底(CategoryManager 渲染需要)。
 
 > **非末切片**(05 待做),不动 feature_list.json status/evidence。
 

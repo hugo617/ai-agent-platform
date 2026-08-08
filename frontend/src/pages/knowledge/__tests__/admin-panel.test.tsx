@@ -38,6 +38,12 @@ const mocks = vi.hoisted(() => ({
   // 以防 AdminPanel 直接渲染路径触发)。
   useGroups: vi.fn() as Mock,
   useAllTenants: vi.fn() as Mock,
+  // CategoryManager(切片04)用的 category CRUD hook —— admin-panel 测试聚焦 tab/
+  // 文档表格行为,category CRUD 单测在 category-manager.test.tsx;这里给兜底 stub
+  // 避免 CategoryManager 渲染时 useCreateCategory 等返回 undefined 报错。
+  useCreateCategory: vi.fn() as Mock,
+  useUpdateCategory: vi.fn() as Mock,
+  useDeleteCategory: vi.fn() as Mock,
 }));
 
 vi.mock("@/hooks/queries", () => ({
@@ -47,6 +53,9 @@ vi.mock("@/hooks/queries", () => ({
   useDeleteDocument: mocks.useDeleteDocument,
   useGroups: mocks.useGroups,
   useAllTenants: mocks.useAllTenants,
+  useCreateCategory: mocks.useCreateCategory,
+  useUpdateCategory: mocks.useUpdateCategory,
+  useDeleteCategory: mocks.useDeleteCategory,
 }));
 
 vi.mock("@/components/auth/auth-context", () => ({
@@ -120,6 +129,10 @@ function stubBasics(me: MeResponse) {
   mocks.useDeleteDocument.mockReturnValue(makeMut());
   mocks.useGroups.mockReturnValue({ data: [] });
   mocks.useAllTenants.mockReturnValue({ data: [] });
+  // CategoryManager 的 category CRUD hook 兜底(admin-panel 测试不验 category 写流程)。
+  mocks.useCreateCategory.mockReturnValue(makeMut());
+  mocks.useUpdateCategory.mockReturnValue(makeMut());
+  mocks.useDeleteCategory.mockReturnValue(makeMut());
 }
 
 afterEach(() => vi.clearAllMocks());
@@ -183,12 +196,13 @@ describe("AdminPanel 子 Tabs(admin-ui slice 02 F2)", () => {
     expect(getAllByText(/共 0 篇文档/).length).toBeGreaterThanOrEqual(1);
   });
 
-  it("切到「分类管理」子 tab:渲染占位 Card(切片04 未实现)", async () => {
+  it("切到「分类管理」子 tab:渲染 CategoryManager(切片04 已落地)", async () => {
     stubBasics(makeOwnerMe());
     const user = userEvent.setup();
     const { getByText } = renderWithProviders(<AdminPanel />);
     await user.click(getByText("分类管理"));
-    expect(getByText(/即将上线/)).toBeTruthy();
+    // CategoryManager 按 scope 分组渲染三区块标题(平台/集团/本店层级分类)。
+    expect(getByText("平台层级分类")).toBeTruthy();
   });
 
   it("owner 进管理 tab:看不到「创建文档」按钮(F7 职责切割,本店创建走 reader-ui)", () => {
