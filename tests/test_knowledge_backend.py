@@ -2432,3 +2432,360 @@ async def test_integration_d9_group_admin_bypass_knowledge_only(patched_enforcer
     assert await permission_service.check(
         "u-ga-d9", ids["t_a1"], "bookings", "read", platform_role=None, db=db_session,
     ) is False
+
+
+# ============================================================== admin-ui slice 01
+# B1 MeResponse group_admin + B2 DocumentCreate scope + B3 list distributions.
+# Plan: harness/docs/plan-knowledge-tiered-admin-ui.md 切片 01 AC.
+# Reuses the slice-02/03 fixtures (_seed_document_fixture, _promote_to_group_admin,
+# _bind_role) so the multi-group topology (g_a/g_b + t_a1/t_a2/t_b1) is consistent.
+
+
+# ------------------------------------------- B1. _build_me_response group_admin (AC1)
+
+
+@pytest.mark.asyncio
+async def test_b1_me_response_group_admin_user_gets_group_id(patched_enforcer, db_session):
+    """B1/AC1: a group's HQ-store owner → MeResponse.group_id set + is_group_admin True.
+
+    Mirrors permission_service.is_group_admin exactly so the frontend display
+    and the backend require() gate never disagree. The user is the owner of
+    t_a1, which is group_a's headquarters_tenant_id.
+    """
+    from app.api.deps import CurrentUser
+    from app.api.v1.auth import _build_me_response
+
+    ids = await _seed_document_fixture(db_session)
+    await _promote_to_group_admin(db_session, ids["g_a"], ids["t_a1"], "u-ga-me")
+    me = await _build_me_response(
+        CurrentUser(user_id="u-ga-me", tenant_id=ids["t_a1"]), db_session
+    )
+    assert me.is_group_admin is True
+    assert me.group_id == ids["g_a"]
+
+
+@pytest.mark.asyncio
+async def test_b1_me_response_plain_store_owner_is_not_group_admin(patched_enforcer, db_session):
+    """B1/AC1: a store owner whose store is NOT a group HQ → null + False.
+
+    t_a2 is in group_a but group_a's HQ is t_a1 (not t_a2), so an owner of t_a2
+    is a plain store owner, not a group_admin.
+    """
+    from app.api.deps import CurrentUser
+    from app.api.v1.auth import _build_me_response
+
+    ids = await _seed_document_fixture(db_session)
+    # group_a's HQ is t_a1; seed an owner on t_a2 (a member store, not HQ).
+    await _promote_to_group_admin(db_session, ids["g_a"], ids["t_a1"], "u-hq-a1")
+    from app.models.tenant import UserTenant
+    db_session.add(UserTenant(user_id="u-owner-a2", tenant_id=ids["t_a2"], role="owner", valid_to=None))
+    await db_session.flush()
+    me = await _build_me_response(
+        CurrentUser(user_id="u-owner-a2", tenant_id=ids["t_a2"]), db_session
+    )
+    assert me.is_group_admin is False
+    assert me.group_id is None
+
+
+@pytest.mark.asyncio
+async def test_b1_me_response_super_admin_is_not_group_admin(patched_enforcer, db_session):
+    """B1/AC1: super_admin is a platform-level identity, never a derived group_admin.
+
+    Even if a super_admin happens to sit in a group's HQ store, is_group_admin
+    stays False — the frontend branches super_admin off platform_role, not the
+    derived group_admin flag (plan §B1: super_admin → null/False).
+    """
+    from app.api.deps import CurrentUser
+    from app.api.v1.auth import _build_me_response
+
+    ids = await _seed_document_fixture(db_session)
+    # super_admin sits on t_a1, which is group_a's HQ — still must NOT read as
+    # group_admin (short-circuited on platform_role == super_admin).
+    await _promote_to_group_admin(db_session, ids["g_a"], ids["t_a1"], "u-super-me")
+    me = await _build_me_response(
+        CurrentUser(user_id="u-super-me", tenant_id=ids["t_a1"], platform_role="super_admin"),
+        db_session,
+    )
+    assert me.is_group_admin is False
+    assert me.group_id is None
+
+
+# ------------------------------------------- B2. create_document scope matrix (AC2)
+
+
+@pytest.mark.asyncio
+async def test_b2_create_scope_none_zero_regression_store(patched_enforcer, db_session):
+    """B2/AC2: scope=None → derive 'store' + caller tenant (reader-ui zero-regression)."""
+    from app.schemas.document import DocumentCreate
+    from app.services.knowledge_service import KnowledgeService
+
+    ids = await _seed_document_fixture(db_session)
+    _bind_role(patched_enforcer, "u-owner-a1", "owner", ids["t_a1"])
+    svc = KnowledgeService(db_session)
+    doc = await svc.create_document(
+        "u-owner-a1", ids["t_a1"],
+        DocumentCreate(name="reader风格文档", content="x"),  # no scope field
+        platform_role=None,
+    )
+    assert doc.scope == "store"
+    assert doc.group_id is None
+    assert doc.tenant_id == ids["t_a1"]
+
+
+@pytest.mark.asyncio
+async def test_b2_create_scope_store_own_tenant_succeeds(patched_enforcer, db_session):
+    """B2/AC2: scope=store + own tenant_id (or None) → store doc."""
+    from app.schemas.document import DocumentCreate
+    from app.services.knowledge_service import KnowledgeService
+
+    ids = await _seed_document_fixture(db_session)
+    _bind_role(patched_enforcer, "u-owner-a1", "owner", ids["t_a1"])
+    svc = KnowledgeService(db_session)
+    doc = await svc.create_document(
+        "u-owner-a1", ids["t_a1"],
+        DocumentCreate(name="本店文档", content="x", scope="store", tenant_id=ids["t_a1"]),
+        platform_role=None,
+    )
+    assert doc.scope == "store"
+    assert doc.tenant_id == ids["t_a1"]
+
+
+@pytest.mark.asyncio
+async def test_b2_create_scope_store_cross_tenant_rejected(patched_enforcer, db_session):
+    """B2/AC2: scope=store + another store's tenant_id → BizError (cross-tenant)."""
+    from app.schemas.document import DocumentCreate
+    from app.services.errors import BizError
+    from app.services.knowledge_service import KnowledgeService
+
+    ids = await _seed_document_fixture(db_session)
+    _bind_role(patched_enforcer, "u-owner-a1", "owner", ids["t_a1"])
+    svc = KnowledgeService(db_session)
+    with pytest.raises(BizError):
+        await svc.create_document(
+            "u-owner-a1", ids["t_a1"],
+            DocumentCreate(name="跨店文档", content="x", scope="store", tenant_id=ids["t_a2"]),
+            platform_role=None,
+        )
+
+
+@pytest.mark.asyncio
+async def test_b2_create_scope_store_with_group_id_rejected(patched_enforcer, db_session):
+    """B2/AC2: scope=store + group_id → BizError (binding conflict)."""
+    from app.schemas.document import DocumentCreate
+    from app.services.errors import BizError
+    from app.services.knowledge_service import KnowledgeService
+
+    ids = await _seed_document_fixture(db_session)
+    _bind_role(patched_enforcer, "u-owner-a1", "owner", ids["t_a1"])
+    svc = KnowledgeService(db_session)
+    with pytest.raises(BizError):
+        await svc.create_document(
+            "u-owner-a1", ids["t_a1"],
+            DocumentCreate(name="带group的store", content="x", scope="store", group_id=ids["g_a"]),
+            platform_role=None,
+        )
+
+
+@pytest.mark.asyncio
+async def test_b2_create_scope_group_by_group_admin_succeeds(patched_enforcer, db_session):
+    """B2/AC2: scope=group + group_admin of that group → group doc."""
+    from app.schemas.document import DocumentCreate
+    from app.services.knowledge_service import KnowledgeService
+
+    ids = await _seed_document_fixture(db_session)
+    await _promote_to_group_admin(db_session, ids["g_a"], ids["t_a1"], "u-ga-create")
+    _bind_role(patched_enforcer, "u-ga-create", "owner", ids["t_a1"])
+    svc = KnowledgeService(db_session)
+    doc = await svc.create_document(
+        "u-ga-create", ids["t_a1"],
+        DocumentCreate(name="集团手册", content="x", scope="group", group_id=ids["g_a"]),
+        platform_role=None,
+    )
+    assert doc.scope == "group"
+    assert doc.group_id == ids["g_a"]
+
+
+@pytest.mark.asyncio
+async def test_b2_create_scope_group_by_non_group_admin_rejected(patched_enforcer, db_session):
+    """B2/AC2: scope=group by a plain store owner (not group_admin) → BizError."""
+    from app.schemas.document import DocumentCreate
+    from app.services.errors import BizError
+    from app.services.knowledge_service import KnowledgeService
+
+    ids = await _seed_document_fixture(db_session)
+    _bind_role(patched_enforcer, "u-owner-a1", "owner", ids["t_a1"])
+    svc = KnowledgeService(db_session)
+    with pytest.raises(BizError):
+        await svc.create_document(
+            "u-owner-a1", ids["t_a1"],
+            DocumentCreate(name="非group_admin建group", content="x", scope="group", group_id=ids["g_a"]),
+            platform_role=None,
+        )
+
+
+@pytest.mark.asyncio
+async def test_b2_create_scope_platform_by_super_admin_succeeds(db_session):
+    """B2/AC2: scope=platform + super_admin → platform doc."""
+    from app.schemas.document import DocumentCreate
+    from app.services.knowledge_service import KnowledgeService
+
+    ids = await _seed_document_fixture(db_session)
+    svc = KnowledgeService(db_session)
+    doc = await svc.create_document(
+        "u-super", ids["t_a1"],
+        DocumentCreate(name="平台文档", content="x", scope="platform"),
+        platform_role="super_admin",
+    )
+    assert doc.scope == "platform"
+    assert doc.group_id is None
+
+
+@pytest.mark.asyncio
+async def test_b2_create_scope_platform_by_non_super_rejected(patched_enforcer, db_session):
+    """B2/AC2: scope=platform by a non-super → BizError."""
+    from app.schemas.document import DocumentCreate
+    from app.services.errors import BizError
+    from app.services.knowledge_service import KnowledgeService
+
+    ids = await _seed_document_fixture(db_session)
+    _bind_role(patched_enforcer, "u-owner-a1", "owner", ids["t_a1"])
+    svc = KnowledgeService(db_session)
+    with pytest.raises(BizError):
+        await svc.create_document(
+            "u-owner-a1", ids["t_a1"],
+            DocumentCreate(name="非超管建平台", content="x", scope="platform"),
+            platform_role=None,
+        )
+
+
+@pytest.mark.asyncio
+async def test_b2_create_with_nonexistent_category_rejected(patched_enforcer, db_session):
+    """B2/AC2: category_id pointing to a non-existent Category → BizError.
+
+    category_id is optional, but when present it must reference a live row so
+    the document isn't orphaned under a deleted/non-existent Category.
+    """
+    from app.schemas.document import DocumentCreate
+    from app.services.errors import BizError
+    from app.services.knowledge_service import KnowledgeService
+
+    ids = await _seed_document_fixture(db_session)
+    _bind_role(patched_enforcer, "u-owner-a1", "owner", ids["t_a1"])
+    svc = KnowledgeService(db_session)
+    with pytest.raises(BizError):
+        await svc.create_document(
+            "u-owner-a1", ids["t_a1"],
+            DocumentCreate(name="孤儿类目文档", content="x", category_id="nonexistent-cat"),
+            platform_role=None,
+        )
+
+
+# ------------------------------------------- B3. list_distributions_for_source (AC3)
+
+
+@pytest.mark.asyncio
+async def test_b3_list_distributions_super_admin_sees_all(patched_enforcer, db_session):
+    """B3/AC3: super_admin lists every distribution row for any doc (active + revoked)."""
+    from app.schemas.document import DistributeRequest
+    from app.services.knowledge_service import KnowledgeService
+
+    ids = await _seed_document_fixture(db_session)
+    svc = KnowledgeService(db_session)
+    # platform_solo is a platform doc; distribute to t_a1, then revoke.
+    rows = await svc.distribute_document(
+        "u-super", ids["t_a1"], ids["platform_solo"],
+        DistributeRequest(target_tenant_ids=[ids["t_a1"], ids["t_a2"]]),
+        platform_role="super_admin",
+    )
+    # revoke one so both active + revoked appear.
+    await svc.revoke_distribution("u-super", ids["t_a1"], rows[0].id, platform_role="super_admin")
+    seen = await svc.list_distributions_for_source(
+        "u-super", ids["t_a1"], ids["platform_solo"], platform_role="super_admin"
+    )
+    assert len(seen) == 2  # one active, one revoked
+    statuses = {r.is_active for r in seen}
+    assert statuses == {True, False}
+
+
+@pytest.mark.asyncio
+async def test_b3_list_distributions_group_admin_own_group(patched_enforcer, db_session):
+    """B3/AC3: group_admin lists distributions for a doc in their group's aggregated view."""
+    from app.schemas.document import DistributeRequest
+    from app.services.knowledge_service import KnowledgeService
+
+    ids = await _seed_document_fixture(db_session)
+    await _promote_to_group_admin(db_session, ids["g_a"], ids["t_a1"], "u-ga-list")
+    _bind_role(patched_enforcer, "u-ga-list", "owner", ids["t_a1"])
+    svc = KnowledgeService(db_session)
+    # groupA doc distributed to t_a2 — group_admin sees it.
+    await svc.distribute_document(
+        "u-ga-list", ids["t_a1"], ids["groupA"],
+        DistributeRequest(target_tenant_ids=[ids["t_a2"]]),
+        platform_role=None,
+    )
+    seen = await svc.list_distributions_for_source(
+        "u-ga-list", ids["t_a1"], ids["groupA"], platform_role=None
+    )
+    assert len(seen) == 1
+    assert seen[0].target_tenant_id == ids["t_a2"]
+
+
+@pytest.mark.asyncio
+async def test_b3_list_distributions_store_owner_own_doc(patched_enforcer, db_session):
+    """B3/AC3: store owner lists distributions for their own store doc."""
+    from app.schemas.document import DistributeRequest
+    from app.services.knowledge_service import KnowledgeService
+
+    ids = await _seed_document_fixture(db_session)
+    _bind_role(patched_enforcer, "u-owner-a1", "owner", ids["t_a1"])
+    svc = KnowledgeService(db_session)
+    # storeA1 doc distributed to t_a2.
+    await svc.distribute_document(
+        "u-owner-a1", ids["t_a1"], ids["storeA1"],
+        DistributeRequest(target_tenant_ids=[ids["t_a2"]]),
+        platform_role=None,
+    )
+    seen = await svc.list_distributions_for_source(
+        "u-owner-a1", ids["t_a1"], ids["storeA1"], platform_role=None
+    )
+    assert len(seen) == 1
+    assert seen[0].target_tenant_id == ids["t_a2"]
+
+
+@pytest.mark.asyncio
+async def test_b3_list_distributions_cross_group_returns_not_found(patched_enforcer, db_session):
+    """B3/AC3: a group_admin probing a doc in ANOTHER group → NotFoundError (404).
+
+    Cross-tenant/cross-group probes leak no information (no "exists but
+    forbidden" — just 404). groupA's group_admin probes groupB's group doc.
+    """
+    from app.services.errors import NotFoundError
+    from app.services.knowledge_service import KnowledgeService
+
+    ids = await _seed_document_fixture(db_session)
+    await _promote_to_group_admin(db_session, ids["g_a"], ids["t_a1"], "u-ga-cross")
+    _bind_role(patched_enforcer, "u-ga-cross", "owner", ids["t_a1"])
+    svc = KnowledgeService(db_session)
+    with pytest.raises(NotFoundError):
+        await svc.list_distributions_for_source(
+            "u-ga-cross", ids["t_a1"], ids["groupB"], platform_role=None
+        )
+
+
+@pytest.mark.asyncio
+async def test_b3_list_distributions_empty_returns_empty_list(patched_enforcer, db_session):
+    """B3/AC3: a doc with no distributions → empty list (not error).
+
+    Well-formed call on a doc with no rows yet returns [] so the UI shows an
+    empty state rather than erroring.
+    """
+    from app.services.knowledge_service import KnowledgeService
+
+    ids = await _seed_document_fixture(db_session)
+    _bind_role(patched_enforcer, "u-owner-a1", "owner", ids["t_a1"])
+    svc = KnowledgeService(db_session)
+    # storeA2 is owned by t_a2, but storeA1's owner can see storeA1 (own doc).
+    seen = await svc.list_distributions_for_source(
+        "u-owner-a1", ids["t_a1"], ids["storeA1"], platform_role=None
+    )
+    assert seen == []

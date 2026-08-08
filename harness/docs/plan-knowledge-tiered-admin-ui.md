@@ -442,23 +442,23 @@ category 下拉:按所选 scope 过滤 useKnowledgeCategories(scope 匹配 + 可
 
 ---
 
-### 切片 01 — 后端接缝补齐(B1 MeResponse + B2 DocumentCreate scope + B3 list distributions)(frontier)
+### 切片 01 — 后端接缝补齐(B1 MeResponse + B2 DocumentCreate scope + B3 list distributions)✅
 
 - **What it delivers**:补齐阻挡 admin-ui 的 3 个后端接缝,让前端有数据可用。① `/me` 返回 `group_id` + `is_group_admin`(用户作为哪个集团的 HQ 门店 owner/admin,前端可判 group_admin 派生身份);② `create_document` 接受可选 `scope/group_id/tenant_id/category_id`,service 层 `_resolve_create_target` 按 scope↔角色校验(super_admin 建 platform / group_admin 建 group / 门店 owner 建 store,跨集团/跨字段冲突 BizError → 400),scope=None 零回归路径保 reader-ui 旧行为;③ 新增 `GET /knowledge/documents/{doc_id}/distributions` 端点(list 某文档已下发给哪些门店,含已撤回 is_active=false),service 层三路径权限(super_admin 全部 / group_admin 本集团 / 门店 owner 本店)。此切片完成后,前端 admin-ui 的所有数据依赖就位,切片 02-05 可纯前端推进。
 
 - **Blocked by**: 无(frontier,可立即开工)
 
 - **Acceptance criteria**:
-  - [ ] `app/schemas/auth.py` MeResponse 加 `group_id: str | None = None` + `is_group_admin: bool = False`(向前兼容,既有响应多两字段)
-  - [ ] `app/api/v1/auth.py` `_build_me_response` 扩展:反查用户 `tenant_id` 所属 group → 该 group 的 `headquarters_tenant_id` 是否 = 用户 tenant_id → 用户在该 HQ 门店 role 是否 owner/admin(SCD2 valid_to IS NULL)→ 填 `group_id` + `is_group_admin=True`;否则 null+False。反查逻辑与 `is_group_admin(db, user_id, group_id)` helper 判定条件一致(避免前端显示与后端 require 撕裂)
-  - [ ] `app/schemas/document.py` DocumentCreate 加可选 `scope: str | None = None` + `group_id: str | None = None` + `tenant_id: str | None = None` + `category_id: str | None = None`(默认 None 保持 reader-ui 零回归)
-  - [ ] `app/services/knowledge_service.py` `create_document` 加 `_resolve_create_target(user, payload)`:scope=None → 推导 store+本店 tenant(零回归)/ scope=store → 校验 tenant_id=本店或 None + group_id None / scope=group → 校验 `is_group_admin(db, user_id, group_id)` + tenant_id None / scope=platform → 校验 `is_cross_tenant_viewer(platform_role)` + group_id/tenant_id None;跨字段 binding 冲突 BizError → 400(非 pydantic model_validator,避 422 序列化坑,对齐 CategoryCreate/BookingCreate 范式);category_id 可选(非空时校验存在)
-  - [ ] `app/repositories/knowledge_distribution.py` 加 `list_for_source(doc_id, active_only=False)` 方法:返回某文档所有下发关系(含 is_active=false),backend feature 切片03 已建 repo,本切片补该方法
-  - [ ] `app/services/knowledge_service.py` 加 `list_distributions_for_source(doc_id, user, platform_role)` 三路径权限:super_admin 看任意 / group_admin 看「doc 属于本集团(scope=group AND group_id=本集团)OR doc.tenant_id IN 本集团门店」/ 门店 owner 看「doc.tenant_id=本店」;跨集团/跨门店 NotFoundError(404 不泄露)
-  - [ ] `app/api/v1/knowledge.py` 新增 `GET /knowledge/documents/{doc_id}/distributions` 端点,require `knowledge:distribute`,响应 `list[KnowledgeDistributionRead]`(含 is_active=false)
-  - [ ] 测试扩 `tests/test_knowledge_backend.py`:B1 MeResponse(group_admin 用户 group_id 正确 / 普通门店 null / super_admin null / 用户在非 HQ 门店是 owner 非 group_admin)+ B2 create_document scope 矩阵(scope=None 零回归 / store 本店 / group is_group_admin 通过 + 跨集团拒绝 / platform super_admin 通过 + 非 super 拒绝 / 跨字段 binding 冲突 400 / category_id 可选)+ B3 list_distributions 三路径(super_admin 全部 / group_admin 本集团 / 门店 owner 本店 / 跨集团 404 / 跨门店 404 / 含 is_active=false)
-  - [ ] `./init.sh full` 全绿(backend feature 987 baseline 零回归,含新章节);ruff clean
-  - [ ] 现有 reader-ui 调用 createDocument 路径零回归(scope=None 推导本店,行为不变)
+  - [x] `app/schemas/auth.py` MeResponse 加 `group_id: str | None = None` + `is_group_admin: bool = False`(向前兼容,既有响应多两字段)
+  - [x] `app/api/v1/auth.py` `_build_me_response` 扩展:反查用户 `tenant_id` 所属 group → 该 group 的 `headquarters_tenant_id` 是否 = 用户 tenant_id → 用户在该 HQ 门店 role 是否 owner/admin(SCD2 valid_to IS NULL)→ 填 `group_id` + `is_group_admin=True`;否则 null+False。反查逻辑与 `is_group_admin(db, user_id, group_id)` helper 判定条件一致(避免前端显示与后端 require 撕裂)
+  - [x] `app/schemas/document.py` DocumentCreate 加可选 `scope: str | None = None` + `group_id: str | None = None` + `tenant_id: str | None = None` + `category_id: str | None = None`(默认 None 保持 reader-ui 零回归)
+  - [x] `app/services/knowledge_service.py` `create_document` 加 `_resolve_create_target(user, payload)`:scope=None → 推导 store+本店 tenant(零回归)/ scope=store → 校验 tenant_id=本店或 None + group_id None / scope=group → 校验 `is_group_admin(db, user_id, group_id)` + tenant_id None / scope=platform → 校验 `is_cross_tenant_viewer(platform_role)` + group_id/tenant_id None;跨字段 binding 冲突 BizError → 400(非 pydantic model_validator,避 422 序列化坑,对齐 CategoryCreate/BookingCreate 范式);category_id 可选(非空时校验存在)
+  - [x] `app/repositories/knowledge_distribution.py` 加 `list_for_source(doc_id, active_only=False)` 方法:返回某文档所有下发关系(含 is_active=false),backend feature 切片03 已建 repo,本切片补该方法
+  - [x] `app/services/knowledge_service.py` 加 `list_distributions_for_source(doc_id, user, platform_role)` 三路径权限:super_admin 看任意 / group_admin 看「doc 属于本集团(scope=group AND group_id=本集团)OR doc.tenant_id IN 本集团门店」/ 门店 owner 看「doc.tenant_id=本店」;跨集团/跨门店 NotFoundError(404 不泄露)
+  - [x] `app/api/v1/knowledge.py` 新增 `GET /knowledge/documents/{doc_id}/distributions` 端点,require `knowledge:distribute`,响应 `list[KnowledgeDistributionRead]`(含 is_active=false)
+  - [x] 测试扩 `tests/test_knowledge_backend.py`:B1 MeResponse(group_admin 用户 group_id 正确 / 普通门店 null / super_admin null / 用户在非 HQ 门店是 owner 非 group_admin)+ B2 create_document scope 矩阵(scope=None 零回归 / store 本店 / group is_group_admin 通过 + 跨集团拒绝 / platform super_admin 通过 + 非 super 拒绝 / 跨字段 binding 冲突 400 / category_id 可选)+ B3 list_distributions 三路径(super_admin 全部 / group_admin 本集团 / 门店 owner 本店 / 跨集团 404 / 跨门店 404 / 含 is_active=false)
+  - [x] `./init.sh full` 全绿(backend feature 987 baseline 零回归,含新章节);ruff clean
+  - [x] 现有 reader-ui 调用 createDocument 路径零回归(scope=None 推导本店,行为不变)
 
 > **非末切片**(02-05 待做),不动 feature_list.json status/evidence(末切片的事)。
 

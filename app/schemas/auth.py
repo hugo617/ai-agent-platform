@@ -32,6 +32,15 @@ class MeResponse(BaseModel):
     real_name: str | None = None
     phone: str | None = None
     avatar: str | None = None
+    # knowledge-tiered admin-ui slice 01 B1 — derived group_admin identity, so
+    # the frontend can branch the admin panel / scope selectors without a second
+    # round-trip. group_id is the group the user is the HQ-store owner/admin of
+    # (single-valued: a user manages at most one group's knowledge, per D11);
+    # is_group_admin mirrors permission_service.is_group_admin exactly so the
+    # frontend display and the backend require() gate never disagree. Both
+    # default to None/False so every pre-existing response stays valid.
+    group_id: str | None = None
+    is_group_admin: bool = False
 
 
 class LoginRequest(BaseModel):

@@ -171,6 +171,31 @@ async def revoke_distribution(
     )
 
 
+@router.get(
+    "/documents/{document_id}/distributions",
+    response_model=list[KnowledgeDistributionRead],
+    dependencies=[Depends(require_permission("knowledge", "distribute"))],
+)
+async def list_document_distributions(
+    document_id: str,
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> list[KnowledgeDistributionRead]:
+    """List every distribution row originating from a document (admin-ui B3).
+
+    Returns BOTH active and revoked rows (``is_active=False``) so the admin
+    "manage distributions" dialog shows the full audit trail. The caller must be
+    able to distribute the source doc (super_admin → any; group_admin → their
+    group's docs; store → own-store docs); otherwise 404 (no cross-tenant leak).
+    """
+    return await KnowledgeService(db).list_distributions_for_source(
+        user.user_id,
+        user.tenant_id,
+        document_id,
+        platform_role=user.platform_role,
+    )
+
+
 # -------------------------------------------------------- categories (slice 01)
 # Tiered Category CRUD (plan-knowledge-tiered-backend slice 01). The casbin
 # gate reuses the existing knowledge:read/create/delete codes (G6: no new code);

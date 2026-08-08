@@ -19,6 +19,7 @@ from app.core.config import settings
 from app.core.database import get_db
 from app.core.password import hash_password, verify_password
 from app.core.security import TokenError, decode_token
+from app.repositories.group import GroupRepository
 from app.repositories.tenant import UserRepository
 from app.schemas.auth import (
     LoginHint,
@@ -30,7 +31,7 @@ from app.schemas.auth import (
     TokenResponse,
 )
 from app.services.auth_service import AuthError, AuthService
-from app.services.permission_service import permission_service
+from app.services.permission_service import _is_group_admin_of, permission_service
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -55,6 +56,26 @@ async def _build_me_response(user: CurrentUser, db: AsyncSession) -> MeResponse:
         )
         permissions = [f"{row[2]}:{row[3]}" for row in implicit if len(row) >= 4]
 
+    # knowledge-tiered admin-ui slice 01 B1 — derive the group_admin identity so
+    # the frontend can branch the admin panel / scope selectors without a second
+    # round-trip. Mirrors permission_service.is_group_admin's logic exactly: the
+    # user's tenant → its group → is the user the owner/admin of that group's
+    # headquarters store? super_admin is a platform-level identity (not a
+    # per-group derived one), so it is short-circuited to None/False — its
+    # frontend branch keys off platform_role, not is_group_admin (plan §B1).
+    # _is_group_admin_of is reused (not is_group_admin) to skip the redundant
+    # GroupRepository.get round-trip, since list_for_tenant already fetched the
+    # group.
+    group_id_derived: str | None = None
+    is_group_admin_derived = False
+    if platform_role != "super_admin" and user.tenant_id is not None:
+        groups = await GroupRepository(db).list_for_tenant(user.tenant_id)
+        if groups:
+            ga_group = groups[0]
+            if await _is_group_admin_of(db, user.user_id, ga_group):
+                group_id_derived = ga_group.id
+                is_group_admin_derived = True
+
     return MeResponse(
         user_id=user.user_id,
         tenant_id=user.tenant_id,
@@ -71,6 +92,8 @@ async def _build_me_response(user: CurrentUser, db: AsyncSession) -> MeResponse:
         real_name=db_user.real_name if db_user else None,
         phone=db_user.phone if db_user else None,
         avatar=db_user.avatar if db_user else None,
+        group_id=group_id_derived,
+        is_group_admin=is_group_admin_derived,
     )
 
 
