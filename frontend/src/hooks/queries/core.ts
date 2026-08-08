@@ -64,6 +64,11 @@ export const qk = {
   // knowledge-tiered reader-ui slice 01 G6 — categories for the left-pane tree.
   // Flat key (no params): the category list is one global read per caller role.
   knowledgeCategories: ["knowledge", "categories"] as const,
+  // knowledge-tiered admin-ui slice 02 — per-doc distribution list. Keyed by
+  // docId so each doc's "管理下发" dialog caches independently; revoke (a write)
+  // invalidates by the same key so the list refetches the flipped is_active.
+  documentDistributions: (docId: string) =>
+    ["knowledge", "documents", docId, "distributions"] as const,
   // tenant branding config (white-label). One row per tenant; read is open to
   // any authenticated member of the tenant, write is owner/admin only.
   tenantConfig: ["tenant-config"] as const,

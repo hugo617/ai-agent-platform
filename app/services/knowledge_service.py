@@ -29,6 +29,7 @@ from app.models.document import Document, DocumentChunk
 from app.models.knowledge_distribution import KnowledgeDistribution
 from app.repositories.document import DocumentChunkRepository, DocumentRepository
 from app.repositories.group import GroupRepository, GroupTenantRepository
+from app.repositories.knowledge_category import KnowledgeCategoryRepository
 from app.repositories.knowledge_distribution import KnowledgeDistributionRepository
 from app.schemas.document import (
     DistributeRequest,
@@ -122,11 +123,31 @@ class KnowledgeService:
             user_id, tenant_id, self.OBJECT, "create",
             platform_role=platform_role, db=self.db,
         )
+        # admin-ui slice 01 B2 — resolve the tiering target (scope, group_id,
+        # tenant_id) from the payload + caller role BEFORE creating the row, so
+        # an illegal scope/binding is rejected as a BizError (400) rather than
+        # persisting a wrong-tier document. scope=None keeps the reader-ui
+        # zero-regression path (derive store + caller tenant).
+        resolved_scope, resolved_group_id, resolved_tenant_id = (
+            await self._resolve_create_target(
+                user_id, tenant_id, payload, platform_role
+            )
+        )
+        # category_id is optional; when present it must reference a live row so
+        # the document isn't orphaned under a deleted/non-existent Category.
+        resolved_category_id = payload.category_id
+        if resolved_category_id is not None:
+            cat = await KnowledgeCategoryRepository(self.db).get(resolved_category_id)
+            if cat is None:
+                raise BizError(f"类目 {resolved_category_id} 不存在")
         doc = Document(
-            tenant_id=tenant_id,
+            tenant_id=resolved_tenant_id,
             name=payload.name,
             source_type=payload.source_type,
             content=payload.content,
+            scope=resolved_scope,
+            group_id=resolved_group_id,
+            category_id=resolved_category_id,
             status="pending",
         )
         await self.docs.add(doc)
@@ -139,12 +160,68 @@ class KnowledgeService:
         except Exception:
             doc.status = "failed"
             await self.db.commit()
-        # Re-fetch a fresh, fully-loaded row. The commits above expire the ORM
-        # object, so ``updated_at`` (set by onupdate) would otherwise trigger a
+        # Re-load the row so ``updated_at`` (set by onupdate during the commits
+        # above, which expired the ORM object) is populated without triggering a
         # lazy load outside an async context. Mirrors customer_service's
-        # commit-then-refetch pattern.
-        fresh = await self.docs.get_for_tenant(doc.id, tenant_id)
-        return _to_read(fresh or doc)
+        # commit-then-refresh pattern. ``refresh`` is used (not the scoped
+        # ``get_for_tenant``) because a platform/group document's home store is
+        # the creator's tenant (B2) — refresh reloads the in-hand object directly
+        # rather than re-stating the tenant scoping assumption for cross-tier
+        # creates. The row was just created so the soft-delete filter is moot.
+        await self.db.refresh(doc)
+        return _to_read(doc)
+
+    async def _resolve_create_target(
+        self,
+        user_id: str,
+        tenant_id: str,
+        payload: DocumentCreate,
+        platform_role: str | None,
+    ) -> tuple[str, str | None, str]:
+        """Resolve (scope, group_id, tenant_id) for a new document (B2).
+
+        scope=None keeps the reader-ui zero-regression path: derive 'store' +
+        the caller's tenant. An explicit scope is authorized against the
+        caller's role and the cross-field (scope, group_id, tenant_id) binding
+        is checked — both as BizError → 400 (not a pydantic model_validator;
+        mirrors KnowledgeCategoryCreate / BookingCreate's serialization-safe
+        pattern). Returns the resolved (scope, group_id, tenant_id) so the
+        caller can persist a correctly-tiered row.
+        """
+        scope = payload.scope
+        if scope is None:
+            # Reader-ui path: own-store document. tenant_id is the caller's.
+            return "store", None, tenant_id
+        if scope == "store":
+            # tenant_id must be the caller's own store (or None → derive it);
+            # group_id is forbidden on a store-scoped document.
+            if payload.group_id is not None:
+                raise BizError("scope=store 不允许带 group_id")
+            doc_tenant = payload.tenant_id if payload.tenant_id is not None else tenant_id
+            if doc_tenant != tenant_id:
+                raise BizError("不能为其他门店创建文档")
+            return "store", None, doc_tenant
+        if scope == "group":
+            # group_id is required; the caller must be that group's group_admin;
+            # tenant_id must be None (group docs carry no home store).
+            if payload.group_id is None:
+                raise BizError("scope=group 必须带 group_id")
+            if payload.tenant_id is not None:
+                raise BizError("scope=group 不允许带 tenant_id")
+            if platform_role == "super_admin":
+                # super_admin may create a group-scoped doc in any group; no
+                # extra membership check (mirrors category_service's platform
+                # bypass for super_admin).
+                return "group", payload.group_id, tenant_id
+            if not await is_group_admin(self.db, user_id, payload.group_id):
+                raise BizError("创建 scope=group 文档需要该集团的 group_admin 权限")
+            return "group", payload.group_id, tenant_id
+        # scope == "platform"
+        if payload.group_id is not None or payload.tenant_id is not None:
+            raise BizError("scope=platform 不允许带 group_id 或 tenant_id")
+        if not is_cross_tenant_viewer(platform_role):
+            raise BizError("创建 scope=platform 文档需要超级管理员权限")
+        return "platform", None, tenant_id
 
     async def delete_document(
         self,
@@ -429,6 +506,34 @@ class KnowledgeService:
 
         await self.distributions.deactivate(distribution_id)
         await self.db.commit()
+
+    async def list_distributions_for_source(
+        self,
+        user_id: str,
+        tenant_id: str,
+        document_id: str,
+        platform_role: str | None = None,
+    ) -> list[KnowledgeDistributionRead]:
+        """List every distribution row originating from a document (admin-ui B3).
+
+        Returns BOTH active and revoked rows (``is_active=False`` greyed out in
+        the UI) so an admin following a doc's distribution footprint sees the
+        full audit trail. Permission gate is the distribute code + the same
+        source-ownership rule as distribute (``_get_distributable_source``):
+        super_admin → any doc; group_admin → docs in their group's aggregated
+        view; store → own-store docs. A caller who can't distribute the doc gets
+        ``NotFoundError`` (404) — a cross-tenant probe leaks no information.
+        """
+        await permission_service.require(
+            user_id, tenant_id, self.OBJECT, "distribute",
+            platform_role=platform_role, db=self.db,
+        )
+        # Confirm the caller may view this source (refuses as NotFound when not).
+        await self._get_distributable_source(
+            user_id, tenant_id, document_id, platform_role
+        )
+        rows = await self.distributions.list_for_source(document_id)
+        return [KnowledgeDistributionRead.model_validate(r) for r in rows]
 
     async def _get_distributable_source(
         self,

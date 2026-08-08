@@ -16,11 +16,30 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class DocumentCreate(BaseModel):
-    """Payload for POST /knowledge/documents/."""
+    """Payload for POST /knowledge/documents/.
+
+    The knowledge-tiered fields (``scope`` / ``group_id`` / ``tenant_id`` /
+    ``category_id``) are all optional and default to None — a reader-ui store
+    create sends only name/content/source_type and the service derives
+    scope='store' + the caller's tenant (zero-regression path, admin-ui slice
+    01 B2). An admin-ui superior create sends scope + the matching binding
+    fields; the cross-field (scope, group_id, tenant_id) consistency and the
+    scope↔role authorization are enforced in ``KnowledgeService.create_document``
+    as a ``BizError`` → 400 (NOT a pydantic ``model_validator``, for the same
+    JSON-serialization hazard ``KnowledgeCategoryCreate`` / ``BookingCreate``
+    document). ``category_id`` is optional and simply stored when present (the
+    category-existence check is also in the service).
+    """
 
     name: str = Field(..., min_length=1, max_length=255)
     content: str = Field(..., min_length=1)
     source_type: str = Field("text", pattern="^(text|upload)$")
+    # knowledge-tiered admin-ui slice 01 B2 — optional tiering fields; see class
+    # docstring. scope=None means "derive from caller" (store path, reader-ui).
+    scope: str | None = Field(default=None, pattern="^(platform|group|store)$")
+    group_id: str | None = None
+    tenant_id: str | None = None
+    category_id: str | None = None
 
 
 class DocumentRead(BaseModel):

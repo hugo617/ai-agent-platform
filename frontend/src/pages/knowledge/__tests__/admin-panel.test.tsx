@@ -1,0 +1,219 @@
+// KnowledgePage 顶层 Tabs + AdminPanel 子 Tabs(admin-ui slice 02 F1 + F2)。
+//
+// 验证:
+//   - F1 同页 Tabs:owner/admin 看到「阅读」+「管理」两 tab;member 只看到「阅读」
+//     (管理 tab 隐藏,hasPermission 守卫)。
+//   - F2 子 Tabs:管理 tab 内「文档与发放」/「分类管理」两子 tab + 切换。
+//   - F7 职责切割:「创建文档」按钮仅 group_admin/super 可见(owner 进管理 tab 看不到)。
+//   - reader-ui 零回归:阅读 tab 渲染原三栏(CategoryTree/DocumentList/MarkdownReader 标题在)。
+//
+// mock 策略:
+//   - 顶层 KnowledgePage 渲染需要 CategoryTree/DocumentList/MarkdownReader/RetrievalDebugCard
+//     的 hook,全部 stub(useKnowledgeCategories/useDocuments/useCreateDocument/useDeleteDocument)。
+//   - AdminPanel 内的 DocumentForm(Select portal)mock 掉,聚焦 tab/表格行为;
+//     DocumentForm 的 scope 联动单测在 document-form.test.tsx。
+import {
+  afterEach,
+  describe,
+  expect,
+  it,
+  vi,
+  type Mock,
+} from "vitest";
+import userEvent from "@testing-library/user-event";
+import { renderWithProviders } from "@/test/test-utils";
+import { KnowledgePage } from "../index";
+import { AdminPanel } from "../admin-panel";
+import type { MeResponse } from "@/api/types";
+
+// ---- mock wiring ----
+// KnowledgePage 渲染链路涉及的 hook 全 stub。
+const mocks = vi.hoisted(() => ({
+  useKnowledgeCategories: vi.fn() as Mock,
+  useDocuments: vi.fn() as Mock,
+  useCreateDocument: vi.fn() as Mock,
+  useDeleteDocument: vi.fn() as Mock,
+  useAuth: vi.fn() as Mock,
+  // DocumentForm 内的 hook(mock DocumentForm 整体后这些不会被调用,但保留 stub
+  // 以防 AdminPanel 直接渲染路径触发)。
+  useGroups: vi.fn() as Mock,
+  useAllTenants: vi.fn() as Mock,
+}));
+
+vi.mock("@/hooks/queries", () => ({
+  useKnowledgeCategories: mocks.useKnowledgeCategories,
+  useDocuments: mocks.useDocuments,
+  useCreateDocument: mocks.useCreateDocument,
+  useDeleteDocument: mocks.useDeleteDocument,
+  useGroups: mocks.useGroups,
+  useAllTenants: mocks.useAllTenants,
+}));
+
+vi.mock("@/components/auth/auth-context", () => ({
+  useAuth: mocks.useAuth,
+}));
+
+// DocumentForm 是 Select portal 重组件,scope 联动在 document-form.test.tsx 单测。
+// 这里 mock 成一个简单的占位 Dialog,只验「创建文档」按钮点击后能打开。
+vi.mock("../document-form", () => ({
+  DocumentForm: ({ open }: { open: boolean }) =>
+    open ? <div data-testid="document-form-stub">document-form</div> : null,
+}));
+
+// ---- 角色工厂 ----
+function makeOwnerMe(): MeResponse {
+  return {
+    user_id: "u_owner",
+    tenant_id: "tn_1",
+    email: "owner@example.com",
+    platform_role: null,
+    roles: ["owner"],
+    permissions: ["knowledge:read", "knowledge:create", "knowledge:delete"],
+    customer_id: null,
+  };
+}
+function makeMemberMe(): MeResponse {
+  return {
+    user_id: "u_member",
+    tenant_id: "tn_1",
+    email: "member@example.com",
+    platform_role: null,
+    roles: ["member"],
+    permissions: ["knowledge:read"],
+    customer_id: null,
+  };
+}
+function makeGroupAdminMe(): MeResponse {
+  return {
+    user_id: "u_ga",
+    tenant_id: "tn_1",
+    email: "ga@example.com",
+    platform_role: null,
+    roles: ["group_admin"],
+    permissions: ["knowledge:read", "knowledge:create", "knowledge:delete"],
+    customer_id: null,
+    group_id: "grp_1",
+    is_group_admin: true,
+  };
+}
+function makeSuperAdminMe(): MeResponse {
+  return {
+    user_id: "u_sa",
+    tenant_id: "tn_1",
+    email: "sa@example.com",
+    platform_role: "super_admin",
+    roles: [],
+    permissions: [],
+    customer_id: null,
+  };
+}
+
+function makeMut() {
+  return { mutateAsync: vi.fn().mockResolvedValue(undefined), isPending: false };
+}
+
+function stubBasics(me: MeResponse) {
+  mocks.useAuth.mockReturnValue({ me });
+  mocks.useKnowledgeCategories.mockReturnValue({ data: [], isLoading: false });
+  mocks.useDocuments.mockReturnValue({ data: [], isLoading: false });
+  mocks.useCreateDocument.mockReturnValue(makeMut());
+  mocks.useDeleteDocument.mockReturnValue(makeMut());
+  mocks.useGroups.mockReturnValue({ data: [] });
+  mocks.useAllTenants.mockReturnValue({ data: [] });
+}
+
+afterEach(() => vi.clearAllMocks());
+
+// ============================================================================
+// F1:顶层 Tabs(阅读/管理)可见性
+// ============================================================================
+
+describe("KnowledgePage 顶层 Tabs(admin-ui slice 02 F1)", () => {
+  it("owner:看到「阅读」+「管理」两个 tab,默认阅读", () => {
+    stubBasics(makeOwnerMe());
+    const { getByText, queryByText } = renderWithProviders(<KnowledgePage />);
+    expect(getByText("阅读")).toBeTruthy();
+    expect(getByText("管理")).toBeTruthy();
+    // 默认阅读 tab:三栏标题在(分类目录 + 文档列表 + 阅读器)。
+    expect(queryByText("文档与发放")).toBeNull(); // 管理 tab 内容未渲染
+  });
+
+  it("member:只看到「阅读」tab,管理 tab 隐藏(F7)", () => {
+    stubBasics(makeMemberMe());
+    const { getByText, queryByText } = renderWithProviders(<KnowledgePage />);
+    expect(getByText("阅读")).toBeTruthy();
+    expect(queryByText("管理")).toBeNull();
+  });
+
+  it("group_admin:看到两个 tab(管理 tab 可见)", () => {
+    stubBasics(makeGroupAdminMe());
+    const { getByText } = renderWithProviders(<KnowledgePage />);
+    expect(getByText("阅读")).toBeTruthy();
+    expect(getByText("管理")).toBeTruthy();
+  });
+
+  it("super_admin:看到两个 tab(管理 tab 可见)", () => {
+    stubBasics(makeSuperAdminMe());
+    const { getByText } = renderWithProviders(<KnowledgePage />);
+    expect(getByText("阅读")).toBeTruthy();
+    expect(getByText("管理")).toBeTruthy();
+  });
+
+  it("切到管理 tab:渲染 AdminPanel(文档与发放子 tab)", async () => {
+    stubBasics(makeOwnerMe());
+    const user = userEvent.setup();
+    const { getByText, getAllByText } = renderWithProviders(<KnowledgePage />);
+    await user.click(getByText("管理"));
+    // AdminPanel 子 tab 标题出现(子 tab 按钮 + CardTitle 各一处 → getAllByText)。
+    expect(getAllByText("文档与发放").length).toBeGreaterThanOrEqual(1);
+    expect(getByText("分类管理")).toBeTruthy();
+  });
+});
+
+// ============================================================================
+// F2:AdminPanel 子 Tabs(文档与发放 / 分类管理)
+// ============================================================================
+
+describe("AdminPanel 子 Tabs(admin-ui slice 02 F2)", () => {
+  it("默认「文档与发放」子 tab:渲染文档表格标题 + 文档数", () => {
+    stubBasics(makeOwnerMe());
+    const { getAllByText } = renderWithProviders(<AdminPanel />);
+    // 子 tab 按钮 + CardTitle 各一处。
+    expect(getAllByText("文档与发放").length).toBeGreaterThanOrEqual(1);
+    expect(getAllByText(/共 0 篇文档/).length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("切到「分类管理」子 tab:渲染占位 Card(切片04 未实现)", async () => {
+    stubBasics(makeOwnerMe());
+    const user = userEvent.setup();
+    const { getByText } = renderWithProviders(<AdminPanel />);
+    await user.click(getByText("分类管理"));
+    expect(getByText(/即将上线/)).toBeTruthy();
+  });
+
+  it("owner 进管理 tab:看不到「创建文档」按钮(F7 职责切割,本店创建走 reader-ui)", () => {
+    stubBasics(makeOwnerMe());
+    const { queryByText } = renderWithProviders(<AdminPanel />);
+    expect(queryByText("创建文档")).toBeNull();
+  });
+
+  it("group_admin:看到「创建文档」按钮(F7,上级创建)", () => {
+    stubBasics(makeGroupAdminMe());
+    const { getByText } = renderWithProviders(<AdminPanel />);
+    expect(getByText("创建文档")).toBeTruthy();
+  });
+
+  it("super_admin:看到「创建文档」按钮", () => {
+    stubBasics(makeSuperAdminMe());
+    const { getByText } = renderWithProviders(<AdminPanel />);
+    expect(getByText("创建文档")).toBeTruthy();
+  });
+
+  it("group_admin 点「创建文档」:打开 DocumentForm(mock stub)", async () => {
+    stubBasics(makeGroupAdminMe());
+    const user = userEvent.setup();
+    const { getByText, getByTestId } = renderWithProviders(<AdminPanel />);
+    await user.click(getByText("创建文档"));
+    expect(getByTestId("document-form-stub")).toBeTruthy();
+  });
+});

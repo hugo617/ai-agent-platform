@@ -266,6 +266,66 @@ export interface DocumentCreate {
   name: string;
   content: string;
   source_type?: "text" | "upload";
+  // knowledge-tiered admin-ui slice 02(B2 前端接缝):scope/group_id/tenant_id
+  // 对齐后端 DocumentCreate(app/schemas/document.py)。全部可选,默认 undefined
+  // → reader-ui 旧路径零回归(scope=None 时后端推导本店 store)。上级创建时:
+  //   - scope=platform → group_id/tenant_id 留 undefined
+  //   - scope=group    → group_id 必填(super_admin 可选任意 / group_admin 锁本集团)
+  //   - scope=store    → tenant_id 默认本店(super_admin 可选任意)
+  // category_id 可选归类(B4 reader-ui 切片05 也启用)。
+  scope?: KnowledgeScope;
+  group_id?: string;
+  tenant_id?: string;
+  category_id?: string;
+}
+
+/**
+ * knowledge-tiered admin-ui slice 02(B3 前端接缝)— 一条下发关系。
+ * Mirrors backend KnowledgeDistributionRead(app/schemas/document.py)。
+ * distributed_by 可 null(用户删除 SET NULL);is_active 携带软撤回态
+ * (D4:撤回 = 翻转,非硬删)。distribute-dialog 的「管理下发」视图渲染此列表。
+ */
+export interface KnowledgeDistributionRead {
+  id: string;
+  source_doc_id: string;
+  target_tenant_id: string;
+  distributed_by: string | null;
+  distributed_at: string;
+  is_active: boolean;
+}
+
+/**
+ * knowledge-tiered admin-ui slice 02(B3 前端接缝)— POST distribute 载荷。
+ * Mirrors backend DistributeRequest(app/schemas/document.py)。XOR:
+ * target_tenant_ids 与 target_group_id 二选一(后端 service 层 BizError→400)。
+ */
+export interface DistributeRequest {
+  target_tenant_ids?: string[];
+  target_group_id?: string;
+}
+
+/**
+ * knowledge-tiered admin-ui slice 02 — POST create category 载荷。
+ * Mirrors backend KnowledgeCategoryCreate。(scope, group_id, tenant_id) 一致性
+ * 由后端 CategoryService BizError→400 校验(scope=platform 两 null / scope=group
+ * group_id 设 tenant_id null / scope=store tenant_id 设 group_id null)。
+ */
+export interface KnowledgeCategoryCreate {
+  name: string;
+  scope: KnowledgeScope;
+  group_id?: string;
+  tenant_id?: string;
+  sort_order?: number;
+}
+
+/**
+ * knowledge-tiered admin-ui slice 02 — PUT update category 载荷。
+ * Mirrors backend KnowledgeCategoryUpdate —— 只改 name/sort_order;scope 与
+ * ownership(group_id/tenant_id)创建后不可改(对齐后端 schema;re-tier = 删除+重建)。
+ */
+export interface KnowledgeCategoryUpdate {
+  name?: string;
+  sort_order?: number;
 }
 
 // knowledge-tiered reader-ui slice 01 G6 — the three-tier origin a knowledge
@@ -425,6 +485,15 @@ export interface MeResponse {
   real_name?: string | null;
   phone?: string | null;
   avatar?: string | null;
+  // knowledge-tiered admin-ui slice 02(B1 前端接缝)— group_admin 派生身份。
+  // 后端 _build_me_response 反查用户作为哪个集团的 HQ 门店 owner/admin:若是则
+  // group_id = 该 group.id + is_group_admin = true,否则两者 null/false。super_admin
+  // 短路(平台级身份不读为派生 group_admin)。单值假定:一人至多管一个集团
+  // (对齐后端 is_group_admin 单 group_id 参数化;未来需多集团扩 admin_groups[])。
+  // 前端 isGroupAdmin(me) + getAvailableScopes(me) 消费此字段驱动 scope 下拉 +
+  // 下发按钮可见性(F3 + F7)。
+  group_id?: string | null;
+  is_group_admin?: boolean;
 }
 
 // Self-service profile edit (PUT /auth/me). Only editable profile columns —

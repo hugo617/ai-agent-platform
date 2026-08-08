@@ -105,17 +105,19 @@
       "area": "知识库-前端",
       "title": "知识库分级 Feature D:前端分类管理 + 下发操作 UI(Category 管理 + 下发/撤回操作流程 + 权限按钮控制 + scope 切换的文档创建表单)",
       "user_visible_behavior": "① group_admin/super_admin 在知识库管理页可「下发」按钮:选中文档后弹 Dialog 选择目标(指定门店列表 或 整个集团),确认后下发,目标门店即时可见;② 可「撤回下发」(列表中已下发项有撤回按钮,撤回后门店侧文档消失);③ Category 管理:各级管理员(super_admin/group_admin/门店 owner)可创建本级 Category,Category 列表按 scope 分组显示;④ 创建文档表单:scope 下拉(platform/group/store,按当前角色可选范围过滤)+ category 下拉(按 scope 可见的 Category)+ 内容输入;⑤ 权限按钮控制:仅 group_admin/super_admin 看到「下发」按钮,门店 owner 只看到「本店创建」。",
-      "status": "not_started",
+      "status": "in_progress",
       "verification": [
-        "前端 frontend/src/pages/knowledge/distribute-dialog.tsx:下发 Dialog(选目标 = 门店多选 或 集团单选整组,调 POST /knowledge/{id}/distribute)+ 撤回操作(调 DELETE /knowledge/distribute/{id},二次确认)",
-        "前端 frontend/src/pages/knowledge/category-manager.tsx:Category CRUD Dialog(按 scope 权限:super_admin 建 platform/group_admin 建 group/门店建 store)+ Category 列表 scope 分组显示",
-        "前端 frontend/src/pages/knowledge/document-form.tsx:创建文档表单(scope 下拉按角色过滤可选范围 + category 下拉按 scope 可见 + 内容 textarea),scope=group 时 group_id 默认当前集团,scope=store 时 tenant_id 当前门店",
-        "前端 frontend/src/hooks/queries.ts:useDistributeDocument/useRevokeDistribution/useCreateCategory/useUpdateCategory/useDeleteCategory mutation hooks;权限按钮控制(group_admin/super_admin 才能下发,门店 owner 只能本店创建)",
-        "测试 knowledge-admin UI ~12 用例(下发 Dialog 选目标门店/集团 + 撤回二次确认 + Category CRUD 按 scope 权限 + 创建文档表单 scope 过滤 + 权限按钮隐藏[门店 owner 看不到下发按钮] + group_admin 视角 + 跨角色权限矩阵)+ npm test 全绿 + npm run build 0 错 + oxlint 0/0",
-        "现有 knowledge 相关前端零行为回归"
+        "后端接缝补齐(切片01):app/schemas/auth.py MeResponse 加 group_id+is_group_admin + _build_me_response 反查;app/schemas/document.py DocumentCreate 加可选 scope/group_id/tenant_id/category_id;KnowledgeService.create_document 加 _resolve_create_target scope↔角色校验(scope=None 零回归/store 本店/group is_group_admin/platform super_admin,跨字段 binding 冲突 BizError 400);新增 GET /knowledge/documents/{doc_id}/distributions 端点(require knowledge:distribute)+ list_distributions_for_source 三路径权限(super_admin 全部/group_admin 本集团/门店 owner 本店)",
+        "前端管理 tab 框架(切片02):pages/knowledge/index.tsx 加 Tabs(阅读/管理,管理对 owner/admin 可见 member 隐藏);admin-panel.tsx 子 Tabs(文档与下发/分类管理);document-form.tsx admin 创建表单(scope 下拉 getAvailableScopes 过滤 + group/tenant 联动 + category 下拉);lib/permission.ts 加 isGroupAdmin + getAvailableScopes(super→全 / group_admin→group+store / owner→store / member→空)",
+        "下发/撤回 UI(切片03):distribute-dialog.tsx(Radio 切按门店 Checkbox/按集团 Select + XOR 构造 DistributeRequest + group_admin 锁本集团)+ distribution-list-dialog.tsx(GET list 渲染已下发 + 每行撤回二次确认);hooks 加 useDistributeDocument/useRevokeDistribution/useDistributions;行菜单「下发」「管理下发」两入口(仅 group_admin+super 可见)",
+        "Category 管理 CRUD(切片04):category-manager.tsx scope 分组列表(platform/group/store Card)+ 新建 Dialog(scope 过滤 + name + sort_order)+ 编辑 Dialog(只改 name/sort_order,scope 不可改对齐后端 schema)+ 删除二次确认;endpoints/hooks 加 create/update/deleteCategory",
+        "reader-ui category 联动(切片05):document-list.tsx 录入 Dialog 加 category 下拉(按本店可见过滤,可选,默认 undefined 零回归)",
+        "类型层:api/types.ts DocumentCreate 加 scope/group_id/tenant_id/category_id 可选 + MeResponse 加 group_id/is_group_admin + 新 KnowledgeDistributionRead;api/endpoints/knowledge.ts 扩;hooks/queries/knowledge.ts 扩",
+        "测试 ~38 用例(后端 ~10 扩 test_knowledge_backend:MeResponse/create_document scope 矩阵/list_distributions 三路径 + 前端组件 ~20:admin-panel/document-form/distribute-dialog/distribution-list-dialog/category-manager 角色矩阵 + msw ~8:锁新端点契约 + reader document-list category 联动)+ npm test 全绿 + npm run build 0 错 + tsc -b 0 错 + oxlint 0/0 + ./init.sh full 后端零回归",
+        "零行为回归:reader-ui 三栏阅读 + CRUD + RetrievalDebugCard 行为不变(B4 只加可选 category);现有 knowledge 端点 read/create/delete/retrieve 行为零变化(B2 scope=None 零回归路径)"
       ],
-      "notes": "知识库分级管理系列 Feature D(前端管理+下发,依赖 B,可与 C 并行)。**硬约束**:下发/撤回是核心交互(集团统一管控门店的落地);权限按钮控制严格(仅 group_admin/super_admin 可下发);Category CRUD 按 scope 权限分级(D5 预置+扩展);scope 下拉按角色过滤(门店 owner 只能选 store,group_admin 可选 group/store,super_admin 全选)。**Out of Scope**:富文本编辑器(表单只 textarea 纯文本)/ 批量重新下发(单个操作)/ 下发定时(即时)。",
-      "plan": "harness/docs/plan-knowledge-tiered-overview.md",
+      "notes": "知识库分级管理系列 Feature D(前端管理+下发 + 后端接缝补齐,依赖 B)。**硬约束**:下发/撤回是核心交互(集团统一管控门店的落地);权限按钮控制严格(仅 group_admin/super_admin 可下发);Category CRUD 按 scope 权限分级(D5 预置+扩展);scope 下拉按角色过滤(门店 owner 只能选 store,group_admin 可选 group/store,super_admin 全选)。**Out of Scope**:富文本编辑器(表单只 textarea 纯文本)/ 批量重新下发(单个操作)/ 下发定时(即时)/ Category scope 创建后迁移 / 一人管多集团(group_id 单值)。**范围扩展声明(EP2)**:本 feature 含 3 个后端接缝补齐(① /me 加 group_id+is_group_admin 让前端判 group_admin 派生身份;② DocumentCreate 加 scope/group_id/tenant_id/category_id 让上级创建 platform/group 文档;③ 新增 GET list distributions 让下发 Dialog 显示已下发+撤回),对齐 reader-ui 含类型层补齐先例。**EP2 已完成(Session 198)**:grill 13 决策(B1-B4 后端接缝 + F1-F7 前端形态 + T1-T2 测试切片)+ to-spec + to-tickets 5 切片落地 plan-knowledge-tiered-admin-ui.md;F1 同页 Tabs(阅读/管理,管理对 owner/admin 可见);F2 管理内子 Tabs(文档与下发/分类管理);F3 getAvailableScopes(me) helper 前端角色→scope 映射;F4 下发 Dialog Radio 切按门店/按集团 XOR;F5 撤回两入口(下发/管理下发)+ 二次确认;F6 Category scope 分组列表 + CRUD Dialog(scope 不可改);F7 owner/admin 可见管理 tab 按角色条件渲染;T1 5 切片线性(后端1+前端4);T2 后端单 seam 扩 + 前端 mock-hook+msw 双 seam。B4 reader-ui 录入加 category 下拉零回归。frontier=切片01 后端接缝补齐。",
+      "plan": "harness/docs/plan-knowledge-tiered-admin-ui.md",
       "depends_on": "knowledge-tiered-backend",
       "evidence": []
     },
