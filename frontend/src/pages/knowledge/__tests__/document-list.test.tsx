@@ -30,7 +30,7 @@ import {
 import userEvent from "@testing-library/user-event";
 import { renderWithProviders } from "@/test/test-utils";
 import { DocumentList } from "../document-list";
-import type { DocumentRead, MeResponse } from "@/api/types";
+import type { DocumentRead, KnowledgeCategoryRead, MeResponse } from "@/api/types";
 
 // ---- mock wiring ----
 // ``vi.mock`` 工厂在 hoist 作用域执行,引用的变量必须用 ``vi.hoisted`` 提前。
@@ -38,6 +38,7 @@ const mocks = vi.hoisted(() => ({
   useDocuments: vi.fn() as Mock,
   useCreateDocument: vi.fn() as Mock,
   useDeleteDocument: vi.fn() as Mock,
+  useKnowledgeCategories: vi.fn() as Mock,
   useAuth: vi.fn() as Mock,
 }));
 
@@ -45,6 +46,7 @@ vi.mock("@/hooks/queries", () => ({
   useDocuments: mocks.useDocuments,
   useCreateDocument: mocks.useCreateDocument,
   useDeleteDocument: mocks.useDeleteDocument,
+  useKnowledgeCategories: mocks.useKnowledgeCategories,
 }));
 
 vi.mock("@/components/auth/auth-context", () => ({
@@ -110,11 +112,14 @@ function makeMut() {
 }
 
 // 把所有 use* hooks 喂成稳定 stub,避免每个用例重复设置。``me`` 决定按钮可见性。
+// useKnowledgeCategories 默认返回空数组(slice 05:reader 录入 Dialog 的 category 下拉
+// 数据源;现有 slice 01/03 测试不关心 category,空数组 → 下拉不渲染,零回归)。
 function stubBasics(me: MeResponse) {
   mocks.useAuth.mockReturnValue({ me });
   mocks.useDocuments.mockReturnValue({ data: [], isLoading: false });
   mocks.useCreateDocument.mockReturnValue(makeMut());
   mocks.useDeleteDocument.mockReturnValue(makeMut());
+  mocks.useKnowledgeCategories.mockReturnValue({ data: [] });
 }
 
 afterEach(() => vi.clearAllMocks());
@@ -387,5 +392,184 @@ describe("DocumentList — CRUD Dialog + member 只读守卫(slice 03)", () => {
     await user.click(confirmBtn);
 
     expect(deleteMut.mutateAsync).toHaveBeenCalledWith("doc_1");
+  });
+});
+
+// ============================================================================
+// slice 05 AC2:reader 录入 Dialog 加 category 下拉(B4 零行为回归)
+//   - 数据源 useKnowledgeCategories(后端按本店可见返回 platform + 本集团 group +
+//     本店 store 三层)。
+//   - 可选不选(默认 __none__ → 提交不透传 category_id,等价现有行为)。
+//   - scope 固定 store(reader 录入不选 scope),提交 payload 无 scope 字段。
+// ============================================================================
+
+// category factory:默认 store scope,每用例 override。
+function makeCategory(
+  overrides: Partial<KnowledgeCategoryRead> = {},
+): KnowledgeCategoryRead {
+  return {
+    id: "cat_store_1",
+    name: "门店FAQ",
+    scope: "store",
+    group_id: null,
+    tenant_id: "tn_1",
+    sort_order: 0,
+    is_deleted: false,
+    created_at: "2026-08-07T09:00:00Z",
+    updated_at: "2026-08-07T09:00:00Z",
+    ...overrides,
+  };
+}
+
+describe("DocumentList — reader 录入 Dialog category 下拉(slice 05 B4)", () => {
+  it("录入 Dialog 弹出后渲染 category 下拉,含后端返回的本店可见分类(三层)", async () => {
+    const user = userEvent.setup();
+    stubBasics(makeOwnerMe());
+    mocks.useKnowledgeCategories.mockReturnValue({
+      data: [
+        makeCategory({ id: "cat_p", name: "平台手册", scope: "platform" }),
+        makeCategory({ id: "cat_g", name: "集团话术", scope: "group" }),
+        makeCategory({ id: "cat_s", name: "门店FAQ", scope: "store" }),
+      ],
+    });
+    mocks.useDocuments.mockReturnValue({ data: [], isLoading: false });
+
+    const { getByText } = renderWithProviders(<DocumentList />);
+
+    await user.click(getByText("录入文档"));
+    // Dialog 弹出 + category 字段标签可见(下拉数据源为本店可见的全部分类)。
+    expect(getByText("分类(可选)")).toBeTruthy();
+
+    // 打开 category Select,三层分类都出现在选项里(后端已按角色过滤)。
+    const trigger = document.querySelector(
+      '[role="combobox"]',
+    ) as HTMLElement;
+    await user.click(trigger);
+    const options = Array.from(
+      document.querySelectorAll('[role="option"]'),
+    ).map((o) => o.textContent ?? "");
+    expect(options).toContain("平台手册");
+    expect(options).toContain("集团话术");
+    expect(options).toContain("门店FAQ");
+    // 默认「不归类」选项存在(可选不选的语义入口)。
+    expect(options).toContain("不归类");
+  });
+
+  it("选中 category 提交:useCreateDocument 收到 category_id(scope 固定 store 不在 payload)", async () => {
+    const user = userEvent.setup();
+    const createMut = makeMut();
+    stubBasics(makeOwnerMe());
+    mocks.useCreateDocument.mockReturnValue(createMut);
+    mocks.useKnowledgeCategories.mockReturnValue({
+      data: [makeCategory({ id: "cat_store_1", name: "门店FAQ" })],
+    });
+    mocks.useDocuments.mockReturnValue({ data: [], isLoading: false });
+
+    const { getByText, getByPlaceholderText } =
+      renderWithProviders(<DocumentList />);
+
+    await user.click(getByText("录入文档"));
+
+    await user.type(
+      getByPlaceholderText("如 颈椎理疗服务话术"),
+      "颈椎理疗话术",
+    );
+    await user.type(
+      getByPlaceholderText(
+        "粘贴或输入知识库文本(产品说明、FAQ、话术等)...",
+      ),
+      "欢迎光临。",
+    );
+
+    // 选 category:打开 Select → 点「门店FAQ」option。
+    const trigger = document.querySelector(
+      '[role="combobox"]',
+    ) as HTMLElement;
+    await user.click(trigger);
+    const option = Array.from(document.querySelectorAll('[role="option"]')).find(
+      (o) => o.textContent === "门店FAQ",
+    ) as HTMLElement;
+    await user.click(option);
+
+    await user.click(getByText("创建并索引"));
+
+    // payload 含 category_id(reader scope 固定 store,不下拉,故无 scope 字段)。
+    expect(createMut.mutateAsync).toHaveBeenCalledWith({
+      name: "颈椎理疗话术",
+      content: "欢迎光临。",
+      source_type: "text",
+      category_id: "cat_store_1",
+    });
+  });
+
+  it("不选 category(默认「不归类」)提交:payload 无 category_id(零行为回归)", async () => {
+    const user = userEvent.setup();
+    const createMut = makeMut();
+    stubBasics(makeOwnerMe());
+    mocks.useCreateDocument.mockReturnValue(createMut);
+    // 有分类可选,但用户不动 category 下拉(保持默认不归类)。
+    mocks.useKnowledgeCategories.mockReturnValue({
+      data: [makeCategory({ id: "cat_store_1", name: "门店FAQ" })],
+    });
+    mocks.useDocuments.mockReturnValue({ data: [], isLoading: false });
+
+    const { getByText, getByPlaceholderText } =
+      renderWithProviders(<DocumentList />);
+
+    await user.click(getByText("录入文档"));
+    await user.type(
+      getByPlaceholderText("如 颈椎理疗服务话术"),
+      "颈椎理疗话术",
+    );
+    await user.type(
+      getByPlaceholderText(
+        "粘贴或输入知识库文本(产品说明、FAQ、话术等)...",
+      ),
+      "欢迎光临。",
+    );
+    // 不碰 category Select,直接提交。
+    await user.click(getByText("创建并索引"));
+
+    // payload 与现有 slice 03 行为完全一致(无 category_id)。
+    expect(createMut.mutateAsync).toHaveBeenCalledWith({
+      name: "颈椎理疗话术",
+      content: "欢迎光临。",
+      source_type: "text",
+    });
+  });
+
+  it("无可见分类时(useKnowledgeCategories 返回空):不渲染 category 下拉,提交零回归", async () => {
+    const user = userEvent.setup();
+    const createMut = makeMut();
+    stubBasics(makeOwnerMe());
+    mocks.useCreateDocument.mockReturnValue(createMut);
+    // 无分类 → 下拉不渲染。
+    mocks.useKnowledgeCategories.mockReturnValue({ data: [] });
+    mocks.useDocuments.mockReturnValue({ data: [], isLoading: false });
+
+    const { getByText, getByPlaceholderText, queryByText } =
+      renderWithProviders(<DocumentList />);
+
+    await user.click(getByText("录入文档"));
+    // 无分类 → 不渲染 category 字段(空态降级,不阻挡录入)。
+    expect(queryByText("分类(可选)")).toBeNull();
+
+    await user.type(
+      getByPlaceholderText("如 颈椎理疗服务话术"),
+      "颈椎理疗话术",
+    );
+    await user.type(
+      getByPlaceholderText(
+        "粘贴或输入知识库文本(产品说明、FAQ、话术等)...",
+      ),
+      "欢迎光临。",
+    );
+    await user.click(getByText("创建并索引"));
+
+    expect(createMut.mutateAsync).toHaveBeenCalledWith({
+      name: "颈椎理疗话术",
+      content: "欢迎光临。",
+      source_type: "text",
+    });
   });
 });

@@ -14,6 +14,12 @@
  * textContent/upload 字段 + handleFilePick + handleCreate)+ 删除确认 Dialog +
  * DropdownMenu 删除项 + 按钮守卫。逻辑零变化(plan G2 + AC5:CRUD 行为零回归)。
  *
+ * 切片 05 范围(B4 reader-ui category 联动):录入 Dialog 加 category 下拉,数据源
+ * ``useKnowledgeCategories``(后端按本店可见返回 platform + 本集团 group + 本店 store
+ * 三层)。scope 固定 store(门店用户不选 scope,与 admin document-form 区别);category
+ * 可选不选(默认 ``__none__`` → 提交不透传 category_id,等价旧行为零回归);提交时
+ * category_id 非 ``__none__`` 才透传。
+ *
  * 选中态:本组件接收 ``selectedId`` + ``onSelectDoc`` 回调,点击卡片高亮选中并通知
  * 父层(切片 02 的 MarkdownReader 联动基础)。
  */
@@ -44,6 +50,13 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { ListState } from "@/components/ui/list-state";
 import { useToast } from "@/components/ui/toast";
 import { apiErrorMessage } from "@/api/client";
@@ -53,6 +66,7 @@ import {
   useCreateDocument,
   useDeleteDocument,
   useDocuments,
+  useKnowledgeCategories,
 } from "@/hooks/queries";
 import type { DocumentRead } from "@/api/types";
 import { cn } from "@/lib/utils";
@@ -84,6 +98,10 @@ export function DocumentList({
   });
   const createMut = useCreateDocument();
   const deleteMut = useDeleteDocument();
+  // slice 05 B4:录入 Dialog 的 category 下拉数据源。后端按本店可见返回 platform +
+  // 本集团 group + 本店 store 三层分类,前端不再按 scope 过滤(门店录入的文档虽固定
+  // store scope,但可归到任意可见分类,与 category-tree 左栏三层分组语义一致)。
+  const { data: categories } = useKnowledgeCategories();
 
   // Button-level guards. super_admin bypasses (hasPermission returns true);
   // members only hold knowledge:read so the write actions stay hidden
@@ -102,6 +120,9 @@ export function DocumentList({
   // backend stores raw text, not the uploaded URL — ingest splits it).
   const [uploadContent, setUploadContent] = useState("");
   const [uploadFileName, setUploadFileName] = useState("");
+  // slice 05 B4:可选归类。``__none__`` = 不归类(提交不透传 category_id,零回归)。
+  // 注意命名与 props ``categoryId``(filter 透传)区分 —— 本 state 是录入表单内态。
+  const [formCategoryId, setFormCategoryId] = useState<string>("__none__");
 
   const resetForm = () => {
     setName("");
@@ -109,6 +130,7 @@ export function DocumentList({
     setTextContent("");
     setUploadContent("");
     setUploadFileName("");
+    setFormCategoryId("__none__");
   };
 
   const openCreate = () => {
@@ -143,10 +165,15 @@ export function DocumentList({
       return;
     }
     try {
+      // slice 05 B4:category_id 仅在选了具体分类(非 __none__)时透传。scope 固定
+      // store(reader 入口不下拉 scope),与 admin document-form 区别。
       await createMut.mutateAsync({
         name: trimmedName,
         content,
         source_type: sourceType,
+        ...(formCategoryId !== "__none__"
+          ? { category_id: formCategoryId }
+          : {}),
       });
       toast.success("已创建文档", trimmedName);
       setCreateOpen(false);
@@ -307,6 +334,29 @@ export function DocumentList({
                 </Button>
               </div>
             </div>
+
+            {/* slice 05 B4:可选归类。仅当有本店可见分类时渲染(空态降级,不阻挡录入)。 */}
+            {(categories ?? []).length > 0 && (
+              <div className="space-y-2">
+                <Label>分类(可选)</Label>
+                <Select
+                  value={formCategoryId}
+                  onValueChange={setFormCategoryId}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="不选则不归类" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__">不归类</SelectItem>
+                    {(categories ?? []).map((c) => (
+                      <SelectItem key={c.id} value={c.id}>
+                        {c.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
 
             {sourceType === "text" ? (
               <div className="space-y-2">
