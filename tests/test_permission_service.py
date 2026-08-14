@@ -205,8 +205,8 @@ async def test_check_restricted_gate_cleared_after_reset(enforcer):
 # the evaluation order (single source of truth). These snapshot tests pin the
 # chain shape so a reordered/edited/extended rule table fails CI instead of
 # silently shifting permission boundaries. The exhaustive invariant tests
-# (obj-domain disjointness, applies() boundaries, verdict short-circuit) land
-# in slice 02.
+# (obj-domain disjointness, applies() boundaries, verdict short-circuit) are
+# in the slice-02 section right below.
 # ---------------------------------------------------------------------------
 
 
@@ -268,6 +268,194 @@ def test_check_rules_metadata_snapshot():
     assert by_name["group_admin_knowledge"].acts is None
     assert by_name["group_admin_knowledge"].needs_db is True
     assert by_name["group_admin_knowledge"].decision == "allow"
+
+
+# ---------------------------------------------------------------------------
+# CHECK_RULES exhaustive invariant tests (perm-check-bypass slice 02).
+#
+# The snapshot above pins the chain's SHAPE; these pin its SEMANTICS so an
+# edit that keeps the metadata but shifts behaviour still fails CI:
+#   * obj-domain disjointness — two ALLOW rules claiming the same obj would
+#     silently decide which bypass wins by tuple order alone;
+#   * applies() boundaries — applicability is computed from metadata and
+#     NEVER by the predicate;
+#   * verdict short-circuit — a hit rule returns its verdict without
+#     consulting casbin; a miss continues down the chain to casbin.
+# ---------------------------------------------------------------------------
+
+
+def test_check_rules_allow_obj_domains_pairwise_disjoint():
+    """不变式 4:ALLOW 型 rule 中声明 objs 的两两交集为 ∅。
+
+    主守卫是上面的元数据快照(加规则/扩域必改快照);本断言是补充性
+    保守约束 —— 捕获「两条声明 objs 的 ALLOW 规则意外重叠」这类未来
+    friction。objs=None 的角色型全域豁免不属于 obj 域划分对象,由快照
+    守卫,不在此列。
+    """
+    from itertools import combinations
+
+    from app.services.permission_service import CHECK_RULES
+
+    declared = [
+        r.objs
+        for r in CHECK_RULES
+        if r.decision == "allow" and r.objs is not None
+    ]
+    # 数量快照:当前链上恰有两条(platform_writer / group_admin_knowledge)。
+    # 若变为 1,combinations 退化为空断言(恒过);若 >2 也该有人审一眼。
+    assert len(declared) == 2
+    for a, b in combinations(declared, 2):
+        assert a.isdisjoint(b), f"ALLOW rule obj domains overlap: {a} ∩ {b}"
+
+
+def test_check_rule_applies_boundaries_never_call_predicate():
+    """D5/不变式 5:适用域由元数据统一计算 —— 谓词零调用。
+
+    用「被调用即炸」的哨兵谓词直测 applies():objs/acts/needs_db 任一
+    不过 → False;全过 → True;全程不触谓词(声明式适用域,不是谓词
+    自己的 if —— 那会把边界逻辑藏进谓词,穷举断言就测不到了)。
+    """
+    from app.services.permission_service import CheckContext, CheckRule
+
+    async def _boom(_ctx):
+        raise AssertionError(
+            "applies() must decide applicability without calling the predicate"
+        )
+
+    rule = CheckRule(
+        name="probe",
+        objs=frozenset({"knowledge"}),
+        acts=frozenset({"read"}),
+        needs_db=True,
+        decision="allow",
+        predicate=_boom,
+    )
+
+    def ctx(**over):
+        base = dict(
+            user_id="u",
+            tenant_id="t",
+            obj="knowledge",
+            act="read",
+            platform_role=None,
+            db=object(),  # 非 None 即可 —— applies() 只判空,不使用句柄
+            token_ctx=None,
+        )
+        base.update(over)
+        return CheckContext(**base)
+
+    # needs_db rule 在 db=None → 不适用(安全降级:继续链落 casbin)。
+    assert rule.applies(ctx(db=None)) is False
+    # objs 不匹配 → 不适用。
+    assert rule.applies(ctx(obj="devices")) is False
+    # acts 不匹配 → 不适用。
+    assert rule.applies(ctx(act="delete")) is False
+    # 全匹配 → 适用(谓词仍零调用 —— applies() 只读元数据)。
+    assert rule.applies(ctx()) is True
+
+
+def test_group_admin_rule_degrades_safely_without_db():
+    """不变式 5 落到真实注册表:⑤ group_admin_knowledge(needs_db=True)
+    在 db=None 时 applies=False → 不触发 bypass → 落 casbin。与重构前
+    「不传 db 的调用点从不走 group_admin 分支」逐字等价。
+    """
+    from app.services.permission_service import CHECK_RULES, CheckContext
+
+    rule = next(r for r in CHECK_RULES if r.name == "group_admin_knowledge")
+    assert rule.needs_db is True
+    assert (
+        rule.applies(
+            CheckContext(
+                user_id="u",
+                tenant_id="t",
+                obj="knowledge",
+                act="read",
+                platform_role=None,
+                db=None,
+                token_ctx=None,
+            )
+        )
+        is False
+    )
+
+
+def _patch_casbin_to_explode(monkeypatch):
+    """让任何 casbin 触达都炸 —— 证明 rule 命中短路后根本没走到兜底。"""
+
+    def _explode():
+        raise AssertionError("casbin must not be consulted when a rule hits")
+
+    monkeypatch.setattr(casbin_mod, "get_enforcer", _explode)
+
+
+@pytest.mark.asyncio
+async def test_deny_rule_hit_short_circuits_false_before_casbin(monkeypatch):
+    """verdict 短路(①DENY):restricted token 的 scope 之外的动作 →
+    check 返回 False 且不触 casbin —— 即使链上后方的 super_admin 本可
+    豁免(闸门在链首,不变式 3 的运行时证据)。
+    """
+    from app.api.token_context import TokenCtx, current_token_ctx
+
+    _patch_casbin_to_explode(monkeypatch)
+    token_set = current_token_ctx.set(
+        TokenCtx(token_id="t", scopes=["agents:read"], scope_mode="restricted")
+    )
+    try:
+        svc = PermissionService()
+        denied = await svc.check(
+            MEMBER, TENANT, "users", "delete", platform_role="super_admin"
+        )
+        assert denied is False
+    finally:
+        current_token_ctx.reset(token_set)
+
+
+@pytest.mark.asyncio
+async def test_allow_rule_hit_short_circuits_true_before_casbin(monkeypatch):
+    """verdict 短路(②ALLOW):无 token 上下文 + super_admin → True 且
+    不触 casbin(ALLOW 命中同样短路,不是「放行到 casbin 再判」)。
+    """
+    from app.api.token_context import current_token_ctx
+
+    assert current_token_ctx.get() is None  # JWT 路径,闸门不适用
+    _patch_casbin_to_explode(monkeypatch)
+    svc = PermissionService()
+    allowed = await svc.check(
+        MEMBER, TENANT, "users", "delete", platform_role="super_admin"
+    )
+    assert allowed is True
+
+
+@pytest.mark.asyncio
+async def test_deny_rule_miss_continues_chain(enforcer):
+    """①不命中的反向用例:restricted + scope 满足 → 不在闸门短路,链
+    继续往后走。三段证据:
+
+    - + super_admin → 落 ② ALLOW → True(链穿过了闸门到后续 rule);
+    - + MEMBER(无 users 策略)→ 全链不命中 → casbin → False;
+    - + OWNER(有 users:delete 策略)→ 全链不命中 → casbin → True。
+
+    后两段真的触达 casbin(enforcer fixture 真种子),证明链走完了
+    全程而非中途静默 False。
+    """
+    from app.api.token_context import TokenCtx, current_token_ctx
+
+    token_set = current_token_ctx.set(
+        TokenCtx(token_id="t", scopes=["users:delete"], scope_mode="restricted")
+    )
+    try:
+        svc = PermissionService()
+        # scope 满足(users:delete 直配)→ ①不命中 → ②命中 → True。
+        bypassed = await svc.check(
+            MEMBER, TENANT, "users", "delete", platform_role="super_admin"
+        )
+        assert bypassed is True
+        # 无 bypass 可用 → 落 casbin 兜底:member 无策略 False…
+        assert await svc.check(MEMBER, TENANT, "users", "delete") is False
+        # …owner 有策略 True —— 两段都走了 casbin,链确实没断。
+        assert await svc.check(OWNER, TENANT, "users", "delete") is True
+    finally:
+        current_token_ctx.reset(token_set)
 
 
 # ---------------------------------------------------------------------------

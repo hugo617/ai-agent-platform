@@ -67,41 +67,22 @@ class PermissionService:
         *,
         db: AsyncSession | None = None,
     ) -> bool:
-        """Return True if ``user_id`` may perform ``act`` on ``obj`` in ``tenant_id`.
+        """Return True if ``user_id`` may perform ``act`` on ``obj`` in ``tenant_id``.
 
-        Platform super admins bypass all permission checks. ``hq_staff``(总部
-        业务员)is a cross-tenant viewer: any ``read`` is allowed, and writes on
-        ``devices`` / ``bookings`` are also allowed (platform-cross-tenant-write
-        — the service body then enforces the cross-tenant contract via
-        ``resolve_target_tenant``). Writes on other objects (customers / groups /
-        users / …) fall through to casbin → 403 (hq_staff has no tenant role),
-        so hq_staff stays read-only outside devices/bookings.
+        判定链(Decision Chain):依序遍历 ``CHECK_RULES``(模块底部注册
+        表,顺序即元组下标 = 判定顺序的唯一真相源)。rule 命中即按其
+        verdict(allow/deny)短路;全链不命中落 casbin enforce 兜底
+        (授权引擎本体,不进注册表)。各 bypass 的适用域、层间顺序契约
+        与边界语义都在对应 rule 的定义处 —— 新增/修改豁免改注册表,
+        不改本函数体。
 
-        API token scope gate (api-token-fine-grained-scopes): when the request
-        is authenticated by an ``ahp_`` token in ``restricted`` mode, the token
-        may only do what its ``scopes`` allow — and the gate runs BEFORE the
-        super_admin / hq_staff bypass, so even a super_admin-issued restricted
-        token is bound by its scopes. Writes (update/delete/create) and
-        conversational/export actions imply the ``read`` on the same object, so
-        a token scoped to ``customers:update`` automatically satisfies a
-        ``customers:read`` check. ``scope_mode="full"`` and the JWT path
-        (``current_token_ctx is None``) skip this gate entirely.
-
-        group_admin derived bypass (knowledge-tiered slice 02): when ``db`` is
-        supplied and ``obj == "knowledge"``, the group context is derived from
-        ``tenant_id`` (group_tenants 1:1 after D8) and, if the user is that
-        group's admin (``is_group_admin``), the check short-circuits to True.
-        Strictly scoped to knowledge (D9) — devices/bookings/etc. never take
-        this branch. ``db`` defaults None, so the 60+ existing callers that do
-        not pass it keep the pre-slice-02 behavior exactly (the branch never
-        runs); callers that DO pass it opt into the bypass. Signature is thus
-        backward-compatible: the new param is keyword-only and optional.
+        ``db`` 仅由持有 session 的调用方显式传入(group_admin 反查
+        knowledge 归属用);不传 = 该 bypass 永不触发,既有调用点行为
+        不变(keyword-only 可选参数,向后兼容)。
         """
-        # 判定链:构造上下文(token_ctx 在入口一次性捕获,D3)→ 依序遍历
-        # CHECK_RULES(适用域过了才调谓词,命中即按 verdict 短路)→ 全链
-        # 不命中落 casbin 兜底(显式终点,D4)。规则本体、层间顺序契约与
-        # 各 bypass 的边界注释都在模块底部 CHECK_RULES section —— 那里是
-        # 判定顺序的唯一真相源。
+        # 判定顺序/边界语义的唯一真相源是 docstring 指向的 CHECK_RULES;
+        # 这里只留机制注:token_ctx 在入口一次性捕获(D3),规则适用域
+        # 过了才调谓词,命中即按 decision 短路。
         ctx = CheckContext(
             user_id=user_id,
             tenant_id=tenant_id,
