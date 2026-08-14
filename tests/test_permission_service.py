@@ -199,6 +199,78 @@ async def test_check_restricted_gate_cleared_after_reset(enforcer):
 
 
 # ---------------------------------------------------------------------------
+# CHECK_RULES registry snapshot (perm-check-bypass slice 01).
+#
+# check()'s bypass chain is an explicit ordered registry: the tuple order IS
+# the evaluation order (single source of truth). These snapshot tests pin the
+# chain shape so a reordered/edited/extended rule table fails CI instead of
+# silently shifting permission boundaries. The exhaustive invariant tests
+# (obj-domain disjointness, applies() boundaries, verdict short-circuit) land
+# in slice 02.
+# ---------------------------------------------------------------------------
+
+
+def test_check_rules_order_snapshot():
+    """Chain order pinned: scope gate first (the only DENY), then 4 bypasses."""
+    from app.services.permission_service import CHECK_RULES
+
+    assert [r.name for r in CHECK_RULES] == [
+        "api_token_scope_gate",
+        "super_admin",
+        "hq_staff_read",
+        "platform_writer",
+        "group_admin_knowledge",
+    ]
+    # 闸门在链首(不变式:restricted token 即使 super_admin 签发也要先被
+    # scope 收敛,这一顺序由下标 0 锁死)。
+    assert CHECK_RULES[0].decision == "deny"
+
+
+def test_check_rules_metadata_snapshot():
+    """Every rule's declared applicability + verdict, pinned field by field."""
+    from app.services.permission_service import CHECK_RULES
+
+    by_name = {r.name: r for r in CHECK_RULES}
+    assert set(by_name) == {
+        "api_token_scope_gate",
+        "super_admin",
+        "hq_staff_read",
+        "platform_writer",
+        "group_admin_knowledge",
+    }
+
+    # ① API token scope gate:全域适用,restricted scope 之外的都不放行。
+    assert by_name["api_token_scope_gate"].objs is None
+    assert by_name["api_token_scope_gate"].acts is None
+    assert by_name["api_token_scope_gate"].needs_db is False
+    assert by_name["api_token_scope_gate"].decision == "deny"
+
+    # ② super_admin:全域豁免。
+    assert by_name["super_admin"].objs is None
+    assert by_name["super_admin"].acts is None
+    assert by_name["super_admin"].needs_db is False
+    assert by_name["super_admin"].decision == "allow"
+
+    # ③ hq_staff:全部 obj 的 read。
+    assert by_name["hq_staff_read"].objs is None
+    assert by_name["hq_staff_read"].acts == frozenset({"read"})
+    assert by_name["hq_staff_read"].needs_db is False
+    assert by_name["hq_staff_read"].decision == "allow"
+
+    # ④ platform writer:仅 devices/bookings(跨租户写契约由 service body 执行)。
+    assert by_name["platform_writer"].objs == frozenset({"devices", "bookings"})
+    assert by_name["platform_writer"].acts is None
+    assert by_name["platform_writer"].needs_db is False
+    assert by_name["platform_writer"].decision == "allow"
+
+    # ⑤ group_admin:仅 knowledge,且只有调用方传 db 才适用。
+    assert by_name["group_admin_knowledge"].objs == frozenset({"knowledge"})
+    assert by_name["group_admin_knowledge"].acts is None
+    assert by_name["group_admin_knowledge"].needs_db is True
+    assert by_name["group_admin_knowledge"].decision == "allow"
+
+
+# ---------------------------------------------------------------------------
 # Unified catalogue integrity (permission-unified-model).
 #
 # The default perm lists are the single source of truth that both the casbin
