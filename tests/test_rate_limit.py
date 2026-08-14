@@ -78,6 +78,26 @@ async def test_disabled_limiter_never_429(app_client, rate_limit_off):
         assert resp.status_code == 401, resp.text
 
 
+async def test_successful_login_under_enabled_limiter(
+    app_client, db_session, tenant_owner, rate_limit_on
+):
+    """Regression for the E2E breakage (CI 2026-08-14): the decorated login
+    returns a pydantic model, and slowapi then injects its X-RateLimit-*
+    headers into the endpoint's ``response: Response`` param — without that
+    param every SUCCESSFUL login raised inside slowapi and 500'd (failure
+    paths short-circuit past the injection, which is why only E2E caught it).
+    Proves a 200 + token + X-RateLimit headers with the limiter enabled."""
+    username = f"oklogin-{uuid.uuid4().hex[:8]}"
+    await _seed_password_user(db_session, tenant_owner["tenant_id"], username)
+
+    resp = await app_client.post(
+        LOGIN, json={"username": username, "password": "Pass1234!"}
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["access_token"]
+    assert resp.headers.get("x-ratelimit-limit"), "strict tier headers missing"
+
+
 # ---------------------------------------------------------------------------
 # Default tier: every non-exempt, undecorated route (3/minute in this session)
 # ---------------------------------------------------------------------------

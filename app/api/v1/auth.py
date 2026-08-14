@@ -11,7 +11,7 @@
 
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from slowapi.util import get_remote_address
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -204,11 +204,15 @@ async def change_password(
 # purpose — login is anonymous, so a bearer-carrying login attempt must not be
 # counted per token subject. The limit string is fixed at import time; adjust
 # it via the RATE_LIMIT_LOGIN env before startup. The ``request: Request``
-# param below is required by slowapi's decorator.
+# param below is required by slowapi's decorator, and ``response: Response``
+# too: this endpoint returns a pydantic model (not a Response), so slowapi
+# injects its X-RateLimit-* headers into FastAPI's response object — without
+# the param every SUCCESSFUL login 500s (headers_enabled raises on None).
 @limiter.limit(settings.rate_limit_login, key_func=get_remote_address)
 async def login(
     payload: LoginRequest,
     request: Request,
+    response: Response,
     db: AsyncSession = Depends(get_db),
 ) -> TokenResponse:
     """Authenticate with username/email + password and return an access token.
