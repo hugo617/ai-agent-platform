@@ -20,6 +20,7 @@ import pytest
 from sqlalchemy import select
 from starlette.requests import Request
 
+from app.core.config import settings
 from app.core.local_auth import create_access_token
 from app.core.password import hash_password
 from app.core.rate_limit import limiter
@@ -109,12 +110,14 @@ async def test_default_tier_small_quota_429(app_client, rate_limit_on):
 # ---------------------------------------------------------------------------
 
 
-async def test_exempt_paths_unlimited(app_client, rate_limit_on):
-    """/health is exempt: 20 rapid hits, all 200 — no 429 despite the tiny
-    default quota active everywhere else."""
+@pytest.mark.parametrize("path", sorted(settings.rate_limit_exempt_paths_set))
+async def test_exempt_paths_unlimited(app_client, rate_limit_on, path):
+    """Every configured exempt path (the 6 probe/docs paths from settings) is
+    short-circuited before slowapi: 20 rapid hits each, all 200 — no 429
+    despite the tiny default quota active everywhere else."""
     for _ in range(20):
-        resp = await app_client.get("/health")
-        assert resp.status_code == 200, resp.text
+        resp = await app_client.get(path)
+        assert resp.status_code == 200, (path, resp.text)
 
 
 # ---------------------------------------------------------------------------

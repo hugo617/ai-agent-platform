@@ -59,8 +59,9 @@ def rate_limit_key(request: Request) -> str:
 
 limiter = Limiter(
     key_func=rate_limit_key,
-    # Callable so the quota string is read from settings at assembly time;
-    # tests override it via env before this module's first import.
+    # Callable → slowapi re-reads settings.rate_limit_default on every check,
+    # so operators adjust the quota from env without code changes (and tests
+    # inject a small quota suite-wide via conftest).
     default_limits=[lambda: settings.rate_limit_default],
     headers_enabled=True,
     enabled=settings.rate_limit_enabled,

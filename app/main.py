@@ -89,6 +89,21 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
 
+    # --------------------------------------------------------------
+    # Rate limiting (rate-limit-login-lockout slice 02). The limiter is a
+    # module-level singleton (see app/core/rate_limit.py) hung on app.state
+    # so SlowAPIMiddleware can find it; the middleware subclass short-circuits
+    # the probe/docs exemption paths. MUST be added BEFORE CORSMiddleware:
+    # the default-tier 429 is generated inside this middleware, so CORS has
+    # to wrap it (added later = outer) or the browser could never read the
+    # response — the slice-03 frontend 429 toast depends on those headers
+    # being present. This ordering also keeps CORS preflight OPTIONS requests
+    # from burning default-tier quota. No-op while RATE_LIMIT_ENABLED=false
+    # (the Limiter checks its own ``enabled`` flag on every request).
+    # --------------------------------------------------------------
+    app.state.limiter = limiter
+    app.add_middleware(RateLimitMiddleware)
+
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origins_list,
@@ -131,18 +146,6 @@ def create_app() -> FastAPI:
             label_path = getattr(route, "path", None) or "unmatched"
             REQUESTS.labels(request.method, label_path, str(status_code)).inc()
             LATENCY.labels(request.method, label_path).observe(elapsed)
-
-    # --------------------------------------------------------------
-    # Rate limiting (rate-limit-login-lockout slice 02). The limiter is a
-    # module-level singleton (see app/core/rate_limit.py) hung on app.state so
-    # SlowAPIMiddleware can find it; the middleware subclass short-circuits the
-    # probe/docs exemption paths. Added after the metrics middleware → runs
-    # outermost, so a 429 is decided before any business/metrics work.
-    # No-op while RATE_LIMIT_ENABLED=false (the Limiter checks its own
-    # ``enabled`` flag on every request).
-    # --------------------------------------------------------------
-    app.state.limiter = limiter
-    app.add_middleware(RateLimitMiddleware)
 
     # Register v1 routers under the API prefix.
     prefix = settings.api_v1_prefix

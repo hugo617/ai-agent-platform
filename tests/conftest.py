@@ -24,11 +24,10 @@ os.environ.setdefault("SALT_ROUNDS", "4")  # keep tests fast
 # Default-off rate limiting so the existing suite (incl. the lockout tests,
 # which hammer POST /auth/login) never trips a 429. tests/test_rate_limit.py
 # re-enables the module-level limiter per-test and resets its counters.
-# The default-tier quota is shrunk for the whole session: the module-level
-# limiter singleton resolves its default_limits ONCE at first import (lazily,
-# inside fixtures), so the env must be set here — before any app import —
-# rather than in the test module. Harmless suite-wide: the limiter stays
-# disabled outside test_rate_limit.py's explicit enable.
+# A small default-tier quota keeps all rate-limit test knobs in one place;
+# inert suite-wide because the limiter stays disabled outside
+# test_rate_limit.py's explicit enable (slowapi re-reads the callable limit
+# per request, but the settings object is shared by the whole session anyway).
 os.environ.setdefault("RATE_LIMIT_ENABLED", "false")
 os.environ.setdefault("RATE_LIMIT_DEFAULT", "3/minute")
 
