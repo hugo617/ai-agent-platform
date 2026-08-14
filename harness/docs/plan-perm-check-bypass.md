@@ -1,7 +1,7 @@
 # 计划:permission check() bypass 判定链结构化
 
 > **id**: perm-check-bypass
-> **状态**: not_started(EP2 已完成:plan draft v2 经对抗式审查 2🔴+5🟡+3🟢 全部回写,见 §0;待 EP3 从切片 01 实施)
+> **状态**: not_started(EP2 已完成:plan draft v2 经对抗式审查 2🔴+5🟡+3🟢 全部回写,见 §0;EP3 切片 01 ✅ PR #162,待切片 02 收尾后 → passing)
 > **优先级**: 86(建议,登记 feature_list.json 时定)
 > **创建日期**: 2026-08-14
 > **最后修订**: 2026-08-14(v2:对抗式审查 2🔴+5🟡+3🟢 全部回写)
@@ -163,7 +163,7 @@ async def check(self, user_id, tenant_id, obj, act, platform_role=None, *, db=No
 01 结构迁移(全 5 条 rule + check() 改循环)──→ 02 判定表穷举直测 + 收尾(末切片)
 ```
 
-### 切片 01 — 判定链结构迁移:CheckRule + CHECK_RULES 全 5 条 + check() 改遍历循环
+### 切片 01 — 判定链结构迁移:CheckRule + CHECK_RULES 全 5 条 + check() 改遍历循环 ✅(2026-08-14 Session 206,commit db06891,PR #162)
 
 **What it delivers**:check() 的 5 层 if 链全部迁移为 `CHECK_RULES` 有序注册表(含 DENY 型 scope gate),check() 变成遍历循环 + casbin 终点;行为逐字节等价,既有测试全绿。附带最小注册表存在性测试(顺序 + name 快照),让结构迁移本身有直测锚点。
 
@@ -175,14 +175,16 @@ async def check(self, user_id, tenant_id, obj, act, platform_role=None, *, db=No
 
 **Acceptance criteria**:
 
-- [ ] `app/services/permission_service.py` 新增判定链 section:`RuleDecision` 字面量 + `CheckContext` frozen dataclass + `CheckRule` frozen dataclass(name/objs/acts/needs_db/decision/predicate + `applies()` 元数据统一计算)—— D1/D2/D3/D5
-- [ ] `CHECK_RULES` 有序元组恰好 5 条,顺序与名称:api_token_scope_gate(deny)→ super_admin → hq_staff_read(acts={"read"})→ platform_writer(objs={"devices","bookings"})→ group_admin_knowledge(objs={"knowledge"}, needs_db=True)—— §4.5 D1/D2
-- [ ] 5 条谓词逐字搬运原 if 分支逻辑(① 的 required 集合 + read 扩集 / ②③ 角色判等 / ④ is_platform_writer / ⑤ GroupRepository 反查 + `_is_group_admin_of`),只搬运不改写
-- [ ] `check()` 改为「构造 CheckContext → 遍历 CHECK_RULES(applies→predicate→按 decision 短路)→ 全不适用落 casbin(threadpool 路径原样)」;签名与 docstring 的对外契约不变
-- [ ] `require()` 及其余全部方法零改动;文件内其余 section(种子数据/标签表/backfill/SCD2/helper)零改动
-- [ ] `tests/test_permission_service.py` 新增注册表存在性测试:顺序快照(`[r.name for r in CHECK_RULES]` 断言)+ 每条 rule 的 objs/acts/needs_db/decision 元数据快照
-- [ ] `pytest tests/test_permission_service.py` 既有测试 + 新增全绿;`./init.sh` 冒烟绿
-- [ ] git diff 只含 `app/services/permission_service.py` + `tests/test_permission_service.py` 两个文件(本切片零文档改动)
+- [x] `app/services/permission_service.py` 新增判定链 section:`RuleDecision` 字面量 + `CheckContext` frozen dataclass + `CheckRule` frozen dataclass(name/objs/acts/needs_db/decision/predicate + `applies()` 元数据统一计算)—— D1/D2/D3/D5
+- [x] `CHECK_RULES` 有序元组恰好 5 条,顺序与名称:api_token_scope_gate(deny)→ super_admin → hq_staff_read(acts={"read"})→ platform_writer(objs={"devices","bookings"})→ group_admin_knowledge(objs={"knowledge"}, needs_db=True)—— §4.5 D1/D2
+- [x] 5 条谓词逐字搬运原 if 分支逻辑(① 的 required 集合 + read 扩集 / ②③ 角色判等 / ④ is_platform_writer / ⑤ GroupRepository 反查 + `_is_group_admin_of`),只搬运不改写
+- [x] `check()` 改为「构造 CheckContext → 遍历 CHECK_RULES(applies→predicate→按 decision 短路)→ 全不适用落 casbin(threadpool 路径原样)」;签名与 docstring 的对外契约不变
+- [x] `require()` 及其余全部方法零改动;文件内其余 section(种子数据/标签表/backfill/SCD2/helper)零改动
+- [x] `tests/test_permission_service.py` 新增注册表存在性测试:顺序快照(`[r.name for r in CHECK_RULES]` 断言)+ 每条 rule 的 objs/acts/needs_db/decision 元数据快照
+- [x] `pytest tests/test_permission_service.py` 既有测试 + 新增全绿;`./init.sh` 冒烟绿
+- [x] git diff 只含 `app/services/permission_service.py` + `tests/test_permission_service.py` 两个文件(本切片零文档改动)
+
+**完成证据(2026-08-14 Session 206)**:commit `db06891`(分支 refactor/perm-check-bypass-slice-01,**PR #162**)。验证:`pytest tests/test_permission_service.py` 20 passed(18 既有 + 2 新增注册表快照)+ `tests/test_knowledge_foundation.py` + `tests/test_hq_platform_role.py` 53 passed;`./init.sh` 冒烟 201 passed(ruff + smoke);commit 前全量 pytest **1006 passed**(1004 基线零回归 + 新增 2);`git diff --stat` 仅两代码文件(全部 require/check 调用点零改动)。/code-review 双轴 0 硬违规:Standards 三点特别核查全过(谓词逐字忠实搬运 / require() byte-identical / section 位于 is_platform_writer 与 _is_group_admin_of 之后);Spec 8 AC 全绿,等价性逐层推演无分叉点。2 留痕:① check() docstring 与 CHECK_RULES 注释双述判定顺序 → 切片 02 AC(docstring 瘦身指向 CHECK_RULES)本就是处理点,本切片 AC 要求 docstring 契约不变;② ⑤ 谓词新增 `assert ctx.db is not None` 类型收窄(applies()[needs_db=True] 保证恒真,`-O` 下剥离,非语义偏移,已注释)。非末切片:feature_list.json status/evidence 未动(切片 02 收尾)。
 
 ### 切片 02 — 判定表穷举直测 + 不变式契约锁定 + feature 收尾(末切片)
 
