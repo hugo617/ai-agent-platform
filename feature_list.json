@@ -164,8 +164,8 @@
         "超出配额返回 429(限流中间件生效)+ 正常配额内请求零影响(现有 API 测试零回归)",
         "TTL 配置生效断言(新签发 token exp 为小时级)"
       ],
-      "notes": "生产加固系列第 1 条(EP1 2026-08-14 登记,8 决策全用户拍板见 plan-risk-hardening-overview.md §EP1 决策记录)。D4 用户明确选择 slowapi 全局限流+登录锁定(比最小方案防护面广,接受新依赖与全局配置面),非默认采纳。新依赖 slowapi 需 EP2 评估引入方式。",
-      "plan": "harness/docs/plan-risk-hardening-overview.md",
+      "notes": "生产加固系列第 1 条(EP1 2026-08-14 登记,8 决策全用户拍板见 plan-risk-hardening-overview.md §EP1 决策记录)。D4 用户明确选择 slowapi 全局限流+登录锁定(比最小方案防护面广,接受新依赖与全局配置面),非默认采纳。新依赖 slowapi 需 EP2 评估引入方式。 EP2 完成(2026-08-14):11 项决策用户逐项拍板(锁定 5 次/15 分钟/账号维度/DB 持久 + TTL 480 分钟/session 8h 对齐/存量自然过期 + 内存限流/两档 120 与 5 每分/豁免 6 探针文档/{detail}+Retry-After+前端 toast),plan v2 经对抗式审查回写;status 按用户指令保持 not_started,EP3 切片 01 开工时翻 in_progress。",
+      "plan": "harness/docs/plan-rate-limit-login-lockout.md",
       "depends_on": []
     },
     {
