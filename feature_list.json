@@ -133,7 +133,7 @@
       "area": "权限-后端",
       "title": "permission check() bypass 判定链结构化(check() 内 5 层顺序敏感 if 链 → CHECK_RULES 有序注册表:每条 rule 声明式携带 objs/acts/needs_db/decision + 谓词,注释契约变代码契约、判定表可穷举直测;interface 不变全部调用点零改动、零行为变更。第 10 次巡检候选 ① Top/Strong)",
       "user_visible_behavior": "无任何用户可见行为变化(纯后端 check() 单函数内部判定形态重构,零行为变更、零 interface 变化、零 schema 变化)。check() 的 5 层 bypass(scope gate[deny] → super_admin → hq_staff read → platform_writer devices/bookings → group_admin knowledge+db)从 if 链迁移为 CHECK_RULES 有序元组:顺序即数组下标成为可断言事实,§4.8 四 bypass 边界表(obj 域互不重叠)从 plan 注释变成声明式元数据 + 穷举断言常驻 CI。新增 bypass = 加一条 rule 而非改 check() 函数体。不拆 permission_service 模块(第 7/8 次巡检已判 deep 关闭,本 feature 是新切口)。",
-      "status": "not_started",
+      "status": "passing",
       "verification": [
         "CHECK_RULES 注册表就位:恰好 5 条 rule、顺序/元数据快照测试锁死、DENY 型 scope gate 在下标 0(切片 01/02 测试)",
         "./init.sh full 全量绿(1004+ 基线零回归 + 新增判定表穷举测试)",
@@ -144,7 +144,13 @@
       "notes": "第 10 次巡检候选 ①(Top/Strong,报告 ~/.cache/ai-agent-platform-architecture-reviews/2026-08-14.html)。EP2 已完成(2026-08-14 单回环:grill-with-docs → to-spec[draft v2,对抗式审查 2🔴+5🟡+3🟢 回写] → to-tickets[2 切片])。grill 提问未获用户回复,7 项关键决策按推荐项采纳并落档 plan §4.5,可在实施前否决。与第 7/8 次已关闭的「拆 permission_service 模块」候选不冲突:本 feature 只重构 check() 单函数内判定形态。切片 01(frontier,Blocked by 无)= 结构迁移;切片 02(末切片)= 判定表穷举直测 + CONTEXT.md 术语 + 收尾仪式。",
       "plan": "harness/docs/plan-perm-check-bypass.md",
       "depends_on": [],
-      "evidence": []
+      "evidence": [
+        "切片 01(commit db06891,PR #162):CHECK_RULES 5 条有序注册表 + CheckRule/CheckContext/谓词 + check() 改遍历循环;pytest tests/test_permission_service.py 20 passed(18 既有 + 2 注册表快照)+ commit 前全量 1006 passed(1004 基线零回归 + 新增 2);/code-review 双轴 0 硬违规(谓词逐字搬运 / require() byte-identical / section 位于 helper 之后三点特别核查全过)",
+        "切片 02 末切片(commit fc46275,PR #163,merge a537f36):+6 判定表穷举/不变式测试(ALLOW 型 objs 域两两互不重叠 / applies() 边界哨兵谓词零调用 / ⑤ needs_db 无 db 安全降级 / DENY·ALLOW 命中短路不触 casbin[monkeypatch get_enforcer 即炸] / DENY 不命中反向三段证据:继续链落 ② ALLOW + 落 casbin False/True);check() docstring 瘦身指向 CHECK_RULES 唯一真相源 + 内联注释去双述;CONTEXT.md 新增术语「判定链(Decision Chain)」",
+        "./init.sh full 本地全量绿(exit 0:ruff + 全量 pytest)+ CI(PR #163)Backend 同码 1012 passed(1006 基线零回归 + 新增 6)零回归,Migrations/Frontend/E2E 4/4 绿;联动 test_knowledge_foundation + test_hq_platform_role 79 passed",
+        "全 feature 累计 git diff origin/main --stat 仅白名单 3 文件:app/services/permission_service.py + tests/test_permission_service.py + CONTEXT.md —— 全部 require/check 调用点零改动(白名单外零改动,审计锚);check()/require()/require_permission() 签名冻结零改动",
+        "/code-review 切片 02 双轴:Spec 轴 7 条代码 AC 全绿无越界(AC8 收尾仪式随后完成);Standards 轴 0 硬违规,1 条采纳(docstring/内联注释双述 → 瘦身),4 条 judgement call 按 plan 明文保留(独立短路测试是 AC3 字面要求;verdict 术语沿用 plan D2;⑤ 降级测试是切片 What-it-delivers 明文项)"
+      ]
     },
     {
       "id": "member-service-direct-tests",

@@ -1,7 +1,7 @@
 # 计划:permission check() bypass 判定链结构化
 
 > **id**: perm-check-bypass
-> **状态**: not_started(EP2 已完成:plan draft v2 经对抗式审查 2🔴+5🟡+3🟢 全部回写,见 §0;EP3 切片 01 ✅ PR #162,待切片 02 收尾后 → passing)
+> **状态**: passing(EP2 完成:plan draft v2 对抗式审查 2🔴+5🟡+3🟢 回写,见 §0;EP3 切片 01 ✅ PR #162 + 切片 02 ✅ PR #163,feature 收尾 2026-08-14)
 > **优先级**: 86(建议,登记 feature_list.json 时定)
 > **创建日期**: 2026-08-14
 > **最后修订**: 2026-08-14(v2:对抗式审查 2🔴+5🟡+3🟢 全部回写)
@@ -186,7 +186,7 @@ async def check(self, user_id, tenant_id, obj, act, platform_role=None, *, db=No
 
 **完成证据(2026-08-14 Session 206)**:commit `db06891`(分支 refactor/perm-check-bypass-slice-01,**PR #162**)。验证:`pytest tests/test_permission_service.py` 20 passed(18 既有 + 2 新增注册表快照)+ `tests/test_knowledge_foundation.py` + `tests/test_hq_platform_role.py` 53 passed;`./init.sh` 冒烟 201 passed(ruff + smoke);commit 前全量 pytest **1006 passed**(1004 基线零回归 + 新增 2);`git diff --stat` 仅两代码文件(全部 require/check 调用点零改动)。/code-review 双轴 0 硬违规:Standards 三点特别核查全过(谓词逐字忠实搬运 / require() byte-identical / section 位于 is_platform_writer 与 _is_group_admin_of 之后);Spec 8 AC 全绿,等价性逐层推演无分叉点。2 留痕:① check() docstring 与 CHECK_RULES 注释双述判定顺序 → 切片 02 AC(docstring 瘦身指向 CHECK_RULES)本就是处理点,本切片 AC 要求 docstring 契约不变;② ⑤ 谓词新增 `assert ctx.db is not None` 类型收窄(applies()[needs_db=True] 保证恒真,`-O` 下剥离,非语义偏移,已注释)。非末切片:feature_list.json status/evidence 未动(切片 02 收尾)。
 
-### 切片 02 — 判定表穷举直测 + 不变式契约锁定 + feature 收尾(末切片)
+### 切片 02 — 判定表穷举直测 + 不变式契约锁定 + feature 收尾(末切片)✅(2026-08-14 Session 207,commit fc46275,PR #163)
 
 **What it delivers**:把 §5 的 7 条不变式契约全部变成常驻测试(顺序快照已在 01,补 obj 域互不重叠、needs_db 降级、verdict 短路含 DENY 不命中反向、casbin 终点);check() docstring 瘦身核对(注释随规则归位);CONTEXT.md 术语条目;全量验证 + 调用点零改动审计 + feature 收尾仪式。
 
@@ -198,14 +198,16 @@ async def check(self, user_id, tenant_id, obj, act, platform_role=None, *, db=No
 
 **Acceptance criteria**:
 
-- [ ] 新增穷举断言:遍历 `CHECK_RULES`,ALLOW 型 rule 中声明 objs 的两两交集为 ∅(§4.8 边界表代码化;主守卫是 01 的快照,本断言是保守补充)
-- [ ] 新增 `applies()` 直测:needs_db rule 在 db=None → False;objs/acts 不匹配 → False;全匹配 → True(不触谓词)
-- [ ] 新增 verdict 短路直测:命中 DENY 型 rule → check 返回 False 且不触 casbin;命中 ALLOW 型 → True 且不触 casbin(mock/monkeypatch enforcer 验证未触);**DENY 型不命中(restricted + scope 满足)→ 继续链落后续 rule/casbin** 的反向用例
-- [ ] check() docstring 更新:指向 CHECK_RULES 作为判定顺序唯一真相源,层间长注释迁移到各 rule 定义处
-- [ ] `CONTEXT.md` 新增「判定链(Decision Chain)」术语条目(glossary 级,不含实现细节)
-- [ ] `./init.sh full` 全量绿(1004+ 基线零回归 + 新增测试)
-- [ ] 全 feature 累计 `git diff --stat` 仅白名单 3 文件:`app/services/permission_service.py` + `tests/test_permission_service.py` + `CONTEXT.md` —— 全部 require/check 调用点零改动的审计证据(白名单外零改动)
-- [ ] feature 收尾仪式(three-tier §4 第 1-8 步):feature_list.json status→passing + evidence + sync-active + progress.md + 文档影响评估 + 依赖解锁扫描 + 分支清理
+- [x] 新增穷举断言:遍历 `CHECK_RULES`,ALLOW 型 rule 中声明 objs 的两两交集为 ∅(§4.8 边界表代码化;主守卫是 01 的快照,本断言是保守补充)
+- [x] 新增 `applies()` 直测:needs_db rule 在 db=None → False;objs/acts 不匹配 → False;全匹配 → True(不触谓词)
+- [x] 新增 verdict 短路直测:命中 DENY 型 rule → check 返回 False 且不触 casbin;命中 ALLOW 型 → True 且不触 casbin(mock/monkeypatch enforcer 验证未触);**DENY 型不命中(restricted + scope 满足)→ 继续链落后续 rule/casbin** 的反向用例
+- [x] check() docstring 更新:指向 CHECK_RULES 作为判定顺序唯一真相源,层间长注释迁移到各 rule 定义处
+- [x] `CONTEXT.md` 新增「判定链(Decision Chain)」术语条目(glossary 级,不含实现细节)
+- [x] `./init.sh full` 全量绿(1004+ 基线零回归 + 新增测试)
+- [x] 全 feature 累计 `git diff --stat` 仅白名单 3 文件:`app/services/permission_service.py` + `tests/test_permission_service.py` + `CONTEXT.md` —— 全部 require/check 调用点零改动的审计证据(白名单外零改动)
+- [x] feature 收尾仪式(three-tier §4 第 1-8 步):feature_list.json status→passing + evidence + sync-active + progress.md + 文档影响评估 + 依赖解锁扫描 + 分支清理
+
+**完成证据(2026-08-14 Session 207)**:commit `fc46275`(分支 refactor/perm-check-bypass-slice-02,**PR #163**,merge commit a537f36)。验证:`pytest tests/test_permission_service.py` 26 passed(20 既有 + 6 新增:objs 域两两互不重叠穷举断言 / applies() 边界哨兵谓词直测 / ⑤ needs_db 无 db 安全降级 / DENY 命中短路不触 casbin / ALLOW 命中短路不触 casbin / DENY 不命中反向三段证据[落 ② ALLOW → 落 casbin False → 落 casbin True])+ 联动 `test_knowledge_foundation.py` + `test_hq_platform_role.py` 79 passed;`./init.sh full` 本地全量绿(exit 0)+ CI Backend 同码 **1012 passed**(1006 基线零回归 + 新增 6)、Migrations/Frontend/E2E 4/4 绿;`git diff origin/main --stat` 仅白名单 3 文件(permission_service.py + test_permission_service.py + CONTEXT.md)。/code-review 双轴:Spec 轴 7 条代码 AC 全绿无越界;Standards 轴 0 硬违规,1 条采纳(docstring/内联注释双述 → 内联注释瘦身),4 条 judgement call 按 plan 明文保留。feature 收尾:feature_list.json status→passing + evidence 登记 + sync-active + progress.md Session 207 + 依赖解锁扫描(depends_on 空、无人依赖本 feature)+ 分支清理(slice-01/slice-02 已合并即删)。
 
 ## 7. 测试策略
 
