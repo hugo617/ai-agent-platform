@@ -1,7 +1,7 @@
 # 计划:全局限流 + 登录防爆破 + token TTL 收口(rate-limit-login-lockout)
 
 > **id**: rate-limit-login-lockout
-> **状态**: not_started(EP2 已完成:plan draft v2 经对抗式审查双轴回写,3🔴 + 10🟡 全部处理,见 §0;EP3 未开始,开工翻 in_progress)
+> **状态**: in_progress(EP2 已完成:plan draft v2 经对抗式审查双轴回写,3🔴 + 10🟡 全部处理,见 §0;EP3 切片 01 开工 2026-08-14)
 > **优先级**: 96(feature_list.json,第 10 次巡检业务风险 R1 🔴)
 > **创建日期**: 2026-08-14
 > **最后修订**: 2026-08-14(v2:对抗式审查回写)
@@ -170,7 +170,7 @@
 
 > 顺序理由:01 先行是**测试互斥**需求——锁定测试本身要连打登录 5-6 次,若 02 的登录严档(5/分/IP)先在,锁定测试会先吃 429;01 先落地锁定测试干净,02 再处理两层共存(测试环境限流开关 + 显式限流测试自行隔离)。03 无技术依赖,但作为收尾片放最后(全量验证 + feature 收尾仪式)。
 
-### 切片 01 — 登录失败锁定:User 加列迁移 + UserRepository 写方法 + AuthService 判定 + 集成测试
+### 切片 01 — 登录失败锁定:User 加列迁移 + UserRepository 写方法 + AuthService 判定 + 集成测试 ✅(commit b1c3268,PR #164)
 
 **What it delivers**:攻击者对某账号连续输错 5 次密码后,该账号被锁 15 分钟——期间即使密码正确也 401 并提示稍后再试;15 分钟后自动恢复;正常用户输错 4 次后登录成功则计数清零;锁定期内继续失败不会续期;OIDC-only 账号与不存在的账号连打无副作用;管理员手动永久锁(status="locked")行为不变;重启服务锁定状态不丢(DB 持久);并发失败计数不丢(原子 UPDATE)。
 
@@ -182,18 +182,20 @@
 
 **Acceptance criteria**:
 
-- [ ] User 模型新增 `failed_attempts`(int,server_default "0",not null)+ `locked_until`(datetime,nullable);alembic 迁移双库兼容(SQLite 测试 create_all / PG 生产迁移均直跑,风格对齐现有 `YYYY_MM_DD_HHMM_<rev>_<slug>`)
-- [ ] `UserRepository` 新增三方法(方法内 flush+commit):`record_failed_attempt(user_id) -> int`(原子 `UPDATE ... SET failed_attempts = failed_attempts + 1`,杜绝 read-modify-write 并发绕过)/ `reset_failed_attempts(user_id)`(计数清零 + locked_until 置空)/ `set_locked_until(user_id, until)`
-- [ ] `AuthService.login`:bcrypt verify 后、密码判定前查 `locked_until > now` → 401 "account temporarily locked, try again later";插入点不破坏既有 401 语义(user None / status locked / inactive / 无租户分支)与 dummy-hash 时序防护
-- [ ] 密码失败且账号存在且 `user.password` 非 None(本地密码账号)→ `record_failed_attempt`;新值达到 `login_lockout_threshold`(5)→ `set_locked_until(now + login_lockout_minutes)` 且 `reset_failed_attempts`(计数归零,解锁后重新累计);**计数/锁定写在 raise AuthError 前已持久化**
-- [ ] 锁定期内(`locked_until > now`)继续失败:一律 401 locked,**不计数不续期**
-- [ ] 成功登录 → `reset_failed_attempts`(清零含锁残留)
-- [ ] OIDC-only 账号(`user.password is None`)失败不计数;不存在账号连败无任何 DB 写;软删账号经 `get_by_login_identifier` 过滤同不存在路径
-- [ ] `status="locked"` 管理员永久锁既有行为与测试零变化(两套锁互不干扰)
-- [ ] 锁定触发写一条 SystemLog(复用 LoggingService.record,`action="login_locked"`,auth 模块)
-- [ ] `settings` 新键 `login_lockout_threshold=5` / `login_lockout_minutes=15` 带注释,`.env.example` 同步
-- [ ] 新增集成测试覆盖:5 连败触发锁(第 6 次正确密码 401 含 locked 提示)/ locked_until 过期后自动恢复 / 4 败+成功清零再 4 败不锁 / **锁定期内继续失败不续期** / 手动锁不受影响 / 不存在账号 10 连败无副作用 / **OIDC-only 账号连打不锁定** / repo 原子性直测(两次 record 后计数 == 2)
-- [ ] `pytest tests/test_auth_local.py tests/test_auth.py` 全绿;`./init.sh` 冒烟绿;全量 pytest 零回归
+- [x] User 模型新增 `failed_attempts`(int,server_default "0",not null)+ `locked_until`(datetime,nullable);alembic 迁移双库兼容(SQLite 测试 create_all / PG 生产迁移均直跑,风格对齐现有 `YYYY_MM_DD_HHMM_<rev>_<slug>`)
+- [x] `UserRepository` 新增三方法(方法内 flush+commit):`record_failed_attempt(user_id) -> int`(原子 `UPDATE ... SET failed_attempts = failed_attempts + 1`,杜绝 read-modify-write 并发绕过)/ `reset_failed_attempts(user_id)`(计数清零 + locked_until 置空)/ `set_locked_until(user_id, until)`
+- [x] `AuthService.login`:bcrypt verify 后、密码判定前查 `locked_until > now` → 401 "account temporarily locked, try again later";插入点不破坏既有 401 语义(user None / status locked / inactive / 无租户分支)与 dummy-hash 时序防护
+- [x] 密码失败且账号存在且 `user.password` 非 None(本地密码账号)→ `record_failed_attempt`;新值达到 `login_lockout_threshold`(5)→ `set_locked_until(now + login_lockout_minutes)` 且 `reset_failed_attempts`(计数归零,解锁后重新累计);**计数/锁定写在 raise AuthError 前已持久化**
+- [x] 锁定期内(`locked_until > now`)继续失败:一律 401 locked,**不计数不续期**
+- [x] 成功登录 → `reset_failed_attempts`(清零含锁残留)
+- [x] OIDC-only 账号(`user.password is None`)失败不计数;不存在账号连败无任何 DB 写;软删账号经 `get_by_login_identifier` 过滤同不存在路径
+- [x] `status="locked"` 管理员永久锁既有行为与测试零变化(两套锁互不干扰)
+- [x] 锁定触发写一条 SystemLog(复用 LoggingService.record,`action="login_locked"`,auth 模块)
+- [x] `settings` 新键 `login_lockout_threshold=5` / `login_lockout_minutes=15` 带注释,`.env.example` 同步
+- [x] 新增集成测试覆盖:5 连败触发锁(第 6 次正确密码 401 含 locked 提示)/ locked_until 过期后自动恢复 / 4 败+成功清零再 4 败不锁 / **锁定期内继续失败不续期** / 手动锁不受影响 / 不存在账号 10 连败无副作用 / **OIDC-only 账号连打不锁定** / repo 原子性直测(两次 record 后计数 == 2)
+- [x] `pytest tests/test_auth_local.py tests/test_auth.py` 全绿;`./init.sh` 冒烟绿;全量 pytest 零回归
+
+**完成证据(2026-08-14)**:commit b1c3268 + PR #164。定向 23 passed(8 新用例)/ 全量 **1020 passed**(基线 1012 零回归)/ init.sh 冒烟 209 passed / alembic PG(docker)实测 upgrade → downgrade → upgrade 回归 + `alembic check` 无 drift,users 两列(`failed_attempts int not null default 0` / `locked_until timestamptz nullable`)落地确认。**实施补充**:SQLite 回读 `DateTime(timezone=True)` 丢 offset 成 naive(实证),`_temporarily_locked` 先归一化再比较(PG aware 路径 no-op);锁定触发顺序为 reset **先** set **后**(reset 会清 locked_until,按 AC 字面顺序执行会丢锁,Spec 轴判定此反序为对 spec 字面隐患的正确修正)。**/code-review 双轴(2026-08-14)**:Standards 0 硬违规,5 判断项全留痕不改码 —— ① repo 方法内 commit 偏离 flush 惯例:§4.6 用户审查后明确「Repository 方法内提交」,按拍板保留(成功路径 reset 的中途 commit 连带提交 last_login 属可接受:失败时无 token 返还,last_login 仅为遥测);② reset+set 两次往返可合一:plan 钦定三方法签名,不改;③ 写方法不带 is_deleted 过滤:与 `update_last_login` 按主键写惯例一致,上游 `get_by_login_identifier` 已过滤;④ tz 归一化与测试 `_as_utc` 同形两处:跨 app/test 边界各 3 行,不提取;⑤ `int(new_value or 0)` None 分支不可达:保留兜底换优雅 401(行被并发删时 `scalar_one()` 会 500)。Spec 12/12 AC 全满足、无越界、未碰切片 02/03 域。
 
 ### 切片 02 — slowapi 全局限流:单例装配 + 两档配额 + 路径短路豁免 + 429 + key_func + 测试
 

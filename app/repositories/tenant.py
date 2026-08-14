@@ -2,7 +2,7 @@
 
 from datetime import UTC, datetime
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -149,6 +149,44 @@ class UserRepository(BaseRepository[User]):
         if user is not None:
             user.last_login_at = datetime.now(UTC)
             await self.db.flush()
+
+    # ------------------------------------------------ login-lockout writes
+    # All three commit inside the call: they run on the login failure path,
+    # which raises AuthError before the service-level commit — without their
+    # own commit the counter/lock would be silently discarded.
+
+    async def record_failed_attempt(self, user_id: str) -> int:
+        """Atomically increment the login-failure counter; return the new value.
+
+        One ``UPDATE ... SET failed_attempts = failed_attempts + 1`` statement
+        (never read-modify-write) so concurrent failed logins cannot each read
+        the same stale counter and undercount past the lockout threshold.
+        """
+        stmt = (
+            update(User)
+            .where(User.id == user_id)
+            .values(failed_attempts=User.failed_attempts + 1)
+            .returning(User.failed_attempts)
+        )
+        new_value = (await self.db.execute(stmt)).scalar_one_or_none()
+        await self.db.commit()
+        return int(new_value or 0)
+
+    async def reset_failed_attempts(self, user_id: str) -> None:
+        """Zero the counter and clear any residual lock (successful login)."""
+        stmt = (
+            update(User)
+            .where(User.id == user_id)
+            .values(failed_attempts=0, locked_until=None)
+        )
+        await self.db.execute(stmt)
+        await self.db.commit()
+
+    async def set_locked_until(self, user_id: str, until: datetime) -> None:
+        """Set the temporary auto-unlock deadline (login lockout trigger)."""
+        stmt = update(User).where(User.id == user_id).values(locked_until=until)
+        await self.db.execute(stmt)
+        await self.db.commit()
 
 
 class UserTenantRepository(BaseRepository[UserTenant]):

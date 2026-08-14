@@ -47,6 +47,13 @@ class Settings(BaseSettings):
     salt_rounds: int = 12
     access_token_ttl_minutes: int = 10080  # 7 days
     session_ttl_hours: int = 168  # 7 days
+    # Login lockout (rate-limit-login-lockout): after N consecutive failed
+    # local logins the account is locked for M minutes (auto-unlock,
+    # DB-persisted on users.failed_attempts / locked_until). Independent of
+    # the administrator's status="locked" permanent lock; OIDC-only accounts
+    # are never counted (a lock cannot reach their Logto login path).
+    login_lockout_threshold: int = 5
+    login_lockout_minutes: int = 15
 
     # Frontend URL — used for welcome/reset emails and CORS default.
     app_url: str = "http://localhost:3000"
