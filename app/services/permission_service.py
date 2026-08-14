@@ -28,13 +28,15 @@ keeping casbin usage in exactly one place (easy to test, easy to swap).
 ``项目指南/02-后端架构/06-权限模型RBAC.md`` 的「权限变更的历史回溯(SCD2)」节。
 """
 
-from typing import TYPE_CHECKING
+from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Literal
 
 from fastapi.concurrency import run_in_threadpool
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.token_context import current_token_ctx
+from app.api.token_context import TokenCtx, current_token_ctx
 from app.core import casbin_enforcer as _casbin_mod
 from app.models.rbac import Permission, Role
 from app.repositories.group import GroupRepository
@@ -95,62 +97,23 @@ class PermissionService:
         runs); callers that DO pass it opt into the bypass. Signature is thus
         backward-compatible: the new param is keyword-only and optional.
         """
-        # API token scope gate. Runs FIRST (before any bypass) so restricted
-        # tokens — including super_admin-issued ones — stay bounded.
-        ctx = current_token_ctx.get()
-        if ctx is not None and ctx.scope_mode == "restricted":
-            # The required scope set for this (obj, act). A token passes if it
-            # holds ANY of these. The semantics (hard constraint #5):
-            #   * Direct match: ``<obj>:<act>`` or the legacy ``<obj>:manage``.
-            #   * Write implies read: a token scoped to ``<obj>:update`` can
-            #     also do ``<obj>:read`` (someone who can edit can obviously
-            #     view). Symmetrically, when the CALLER asks for a write act,
-            #     the gate also accepts the explicit ``<obj>:read`` scope on
-            #     the token (though that direction is unusual — it would let
-            #     a read-only token perform writes, which we DON'T want, so
-            #     it's NOT included; only the write→read direction holds).
-            required = {f"{obj}:{act}", f"{obj}:manage"}
-            # Read actions are also satisfied by any write/conversational/
-            # export scope on the same object (write implies read).
-            if act == "read":
-                required |= {
-                    f"{obj}:{w}" for w in ("create", "update", "delete", "chat", "export")
-                }
-            if not (set(ctx.scopes) & required):
-                return False
-
-        if platform_role == "super_admin":
-            return True
-        if platform_role == "hq_staff" and act == "read":
-            return True
-        # Platform writers (super_admin handled above; hq_staff reaches here for
-        # writes) bypass the casbin check on devices/bookings so the request
-        # can reach the service body, where ``resolve_target_tenant`` +
-        # ``is_platform_writer`` enforce the cross-tenant write contract
-        # (target tenant_id required, store-role anti-forgery). Scoped to
-        # devices/bookings only — customers/groups/etc stay read-only for
-        # hq_staff (plan-platform-cross-tenant-write §4.5.4 implicit: "hq_staff
-        # 由 service body 放行"; the literal "require_permission 不动" holds
-        # because the bypass lives in ``check``, not in the router dependency).
-        # NB: the bypass is scoped by ``obj``, not by ``act`` — bookings'
-        # start/end/no_show actions share the ``update``/``delete`` acts with
-        # CRUD's update/cancel, so an act whitelist cannot split them. Slice 02
-        # therefore lands all 6 booking write actions together (see plan §4.5.4a
-        # patch 5 — slice 02+03 merge rationale).
-        if is_platform_writer(platform_role) and obj in ("devices", "bookings"):
-            return True
-        # group_admin derived bypass (knowledge-tiered slice 02 §4.7/§4.8). Only
-        # fires when the caller passes a db AND the object is knowledge — so the
-        # 60+ legacy callers (no db) are untouched. Derives the group from
-        # tenant_id (D8 1:1 → at most one), then asks ``is_group_admin``. If the
-        # tenant has no group (reverse lookup empty) the bypass degrades safely
-        # to casbin — never raises. See plan §4.8 for the four-bypass boundary
-        # table (super_admin / hq_staff read / is_platform_writer /
-        # is_group_admin each own a disjoint obj scope).
-        if db is not None and obj == "knowledge":
-            groups = await GroupRepository(db).list_for_tenant(tenant_id)
-            if groups and await _is_group_admin_of(db, user_id, groups[0]):
-                return True
+        # 判定链:构造上下文(token_ctx 在入口一次性捕获,D3)→ 依序遍历
+        # CHECK_RULES(适用域过了才调谓词,命中即按 verdict 短路)→ 全链
+        # 不命中落 casbin 兜底(显式终点,D4)。规则本体、层间顺序契约与
+        # 各 bypass 的边界注释都在模块底部 CHECK_RULES section —— 那里是
+        # 判定顺序的唯一真相源。
+        ctx = CheckContext(
+            user_id=user_id,
+            tenant_id=tenant_id,
+            obj=obj,
+            act=act,
+            platform_role=platform_role,
+            db=db,
+            token_ctx=current_token_ctx.get(),
+        )
+        for rule in CHECK_RULES:
+            if rule.applies(ctx) and await rule.predicate(ctx):
+                return rule.decision == "allow"
 
         def _do() -> bool:
             e = _casbin_mod.get_enforcer()
@@ -805,6 +768,194 @@ async def _is_group_admin_of(
         user_id, group.headquarters_tenant_id
     )
     return membership is not None and membership.role in GROUP_ADMIN_HQ_ROLES
+
+
+# ---------------------------------------------------------------------------
+# check() 判定链(Decision Chain)— perm-check-bypass
+#
+# check() 的 bypass 判定从函数体内的 if 链迁移为下面的显式有序注册表:
+# CHECK_RULES 的元组下标即判定顺序,是判定顺序的唯一真相源。新增一条
+# bypass = 在注册表加一条 rule(声明适用域 + 谓词 + verdict),不再改
+# check() 函数体;casbin enforce 是授权引擎本体而非豁免规则,留在 check()
+# 里作为全链不命中后的显式终点,不进注册表。
+#
+# 本 section 必须位于 is_platform_writer / _is_group_admin_of 定义之后:
+# CHECK_RULES 是 import 期求值的模块级元组,前向引用会 NameError。
+# ---------------------------------------------------------------------------
+
+#: rule 命中时的短路判定。没有 NEXT 枚举值 —— 不命中(applies 不过,或
+#: 谓词返回 False)的缺省走向是继续下一条;全链不命中 → casbin 兜底。
+RuleDecision = Literal["allow", "deny"]
+
+
+@dataclass(frozen=True)
+class CheckContext:
+    """判定链的统一输入(D3):check() 入口一次性构造。
+
+    ``token_ctx`` 是 check() 入口 ``current_token_ctx.get()`` 的捕获值 ——
+    rule① 读 ctx 字段而非再触 ContextVar,「token 上下文在构造时快照」从
+    偶然事实(构造与求值之间恰好无 await)升级为结构性保证。
+    """
+
+    user_id: str
+    tenant_id: str
+    obj: str
+    act: str
+    platform_role: str | None
+    db: AsyncSession | None
+    token_ctx: TokenCtx | None
+
+
+@dataclass(frozen=True)
+class CheckRule:
+    """判定链上的一条规则(D1/D5):声明式元数据 + 一个独立 async 谓词。
+
+    全字段必填(安全关键注册表,显式优于隐式)。``applies()`` 按元数据
+    统一计算适用域 —— objs/acts/needs_db 全过,谓词才会被调用;谓词只写
+    无法静态声明的身份逻辑(角色判等、group 反查、scope 集合运算)。
+
+    纪律:needs_db=False 的 rule 谓词不得读 ctx.db(声明式信任,无机制
+    拦截,靠注册表评审守住)。
+    """
+
+    name: str
+    objs: frozenset[str] | None  # None = 全部 obj
+    acts: frozenset[str] | None  # None = 全部 act
+    needs_db: bool
+    decision: RuleDecision
+    # True = 命中 → 按 decision 短路;False = 继续下一条。
+    predicate: Callable[[CheckContext], Awaitable[bool]]
+
+    def applies(self, ctx: CheckContext) -> bool:
+        if self.objs is not None and ctx.obj not in self.objs:
+            return False
+        if self.acts is not None and ctx.act not in self.acts:
+            return False
+        if self.needs_db and ctx.db is None:
+            return False
+        return True
+
+
+async def _rule_api_token_scope_gate(ctx: CheckContext) -> bool:
+    """① API token scope gate —— 唯一的 DENY 型 rule,必须保持链上第 0 条。
+
+    Runs FIRST (before any bypass) so restricted tokens — including
+    super_admin-issued ones — stay bounded. 命中(返回 True)= 拒绝;
+    restricted 但 scope 满足 → 不命中,继续链(等价于原来的 fall-through)。
+    ``scope_mode="full"`` 与 JWT 路径(token_ctx is None)不命中,跳过闸门。
+    """
+    token = ctx.token_ctx
+    if token is None or token.scope_mode != "restricted":
+        return False
+    # The required scope set for this (obj, act). A token passes if it
+    # holds ANY of these. The semantics (hard constraint #5):
+    #   * Direct match: ``<obj>:<act>`` or the legacy ``<obj>:manage``.
+    #   * Write implies read: a token scoped to ``<obj>:update`` can
+    #     also do ``<obj>:read`` (someone who can edit can obviously
+    #     view). Symmetrically, when the CALLER asks for a write act,
+    #     the gate also accepts the explicit ``<obj>:read`` scope on
+    #     the token (though that direction is unusual — it would let
+    #     a read-only token perform writes, which we DON'T want, so
+    #     it's NOT included; only the write→read direction holds).
+    required = {f"{ctx.obj}:{ctx.act}", f"{ctx.obj}:manage"}
+    # Read actions are also satisfied by any write/conversational/
+    # export scope on the same object (write implies read).
+    if ctx.act == "read":
+        required |= {
+            f"{ctx.obj}:{w}" for w in ("create", "update", "delete", "chat", "export")
+        }
+    return not (set(token.scopes) & required)
+
+
+async def _rule_super_admin(ctx: CheckContext) -> bool:
+    """② Platform super admins bypass all permission checks."""
+    return ctx.platform_role == "super_admin"
+
+
+async def _rule_hq_staff_read(ctx: CheckContext) -> bool:
+    """③ ``hq_staff``(总部业务员)is a cross-tenant viewer: any read allowed."""
+    return ctx.platform_role == "hq_staff"
+
+
+async def _rule_platform_writer(ctx: CheckContext) -> bool:
+    """④ Platform writers (super_admin handled at ②; hq_staff reaches here
+    for writes) bypass the casbin check on devices/bookings so the request
+    can reach the service body, where ``resolve_target_tenant`` +
+    ``is_platform_writer`` enforce the cross-tenant write contract
+    (target tenant_id required, store-role anti-forgery). Scoped to
+    devices/bookings only — customers/groups/etc stay read-only for
+    hq_staff (plan-platform-cross-tenant-write §4.5.4 implicit: "hq_staff
+    由 service body 放行"; the literal "require_permission 不动" holds
+    because the bypass lives in ``check``, not in the router dependency).
+    NB: the bypass is scoped by ``obj``, not by ``act`` — bookings'
+    start/end/no_show actions share the ``update``/``delete`` acts with
+    CRUD's update/cancel, so an act whitelist cannot split them. Slice 02
+    therefore lands all 6 booking write actions together (see plan §4.5.4a
+    patch 5 — slice 02+03 merge rationale).
+    """
+    return is_platform_writer(ctx.platform_role)
+
+
+async def _rule_group_admin_knowledge(ctx: CheckContext) -> bool:
+    """⑤ group_admin derived bypass (knowledge-tiered slice 02 §4.7/§4.8).
+
+    Only fires when the caller passes a db AND the object is knowledge — so
+    the 60+ legacy callers (no db) are untouched(这两个前提由本 rule 的
+    needs_db=True + objs 元数据在 ``applies()`` 里守卫)。Derives the group
+    from tenant_id (D8 1:1 → at most one), then asks ``is_group_admin``. If
+    the tenant has no group (reverse lookup empty) the bypass degrades
+    safely to casbin — never raises. See plan §4.8 for the four-bypass
+    boundary table (super_admin / hq_staff read / is_platform_writer /
+    is_group_admin each own a disjoint obj scope).
+    """
+    assert ctx.db is not None  # applies() 已保证(needs_db=True)
+    groups = await GroupRepository(ctx.db).list_for_tenant(ctx.tenant_id)
+    return bool(groups) and await _is_group_admin_of(ctx.db, ctx.user_id, groups[0])
+
+
+#: 判定链(顺序即元组下标 = 判定顺序唯一真相源;scope gate 必须保持下标 0)。
+CHECK_RULES: tuple[CheckRule, ...] = (
+    CheckRule(
+        name="api_token_scope_gate",
+        objs=None,
+        acts=None,
+        needs_db=False,
+        decision="deny",
+        predicate=_rule_api_token_scope_gate,
+    ),
+    CheckRule(
+        name="super_admin",
+        objs=None,
+        acts=None,
+        needs_db=False,
+        decision="allow",
+        predicate=_rule_super_admin,
+    ),
+    CheckRule(
+        name="hq_staff_read",
+        objs=None,
+        acts=frozenset({"read"}),
+        needs_db=False,
+        decision="allow",
+        predicate=_rule_hq_staff_read,
+    ),
+    CheckRule(
+        name="platform_writer",
+        objs=frozenset({"devices", "bookings"}),
+        acts=None,
+        needs_db=False,
+        decision="allow",
+        predicate=_rule_platform_writer,
+    ),
+    CheckRule(
+        name="group_admin_knowledge",
+        objs=frozenset({"knowledge"}),
+        acts=None,
+        needs_db=True,
+        decision="allow",
+        predicate=_rule_group_admin_knowledge,
+    ),
+)
 
 
 # ---------------------------------------------------------------------------
