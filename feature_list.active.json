@@ -15,6 +15,102 @@
   },
   "features": [
     {
+      "id": "rate-limit-login-lockout",
+      "priority": 96,
+      "area": "认证-安全",
+      "title": "全局 API 限流 + 登录防爆破(slowapi 限流框架接入[按用户/IP 可配,全端点]+ 登录失败计数锁定 + access_token_ttl 从 7 天降小时级。第 10 次巡检业务风险 R1 🔴:POST /auth/login 可无限尝试、全库零限流、TTL 10080 分钟)",
+      "user_visible_behavior": "登录连续失败触发锁定(锁定期内拒绝再试),超出限流配额的请求返回 429,token 有效期从 7 天降为小时级(需更频繁登录)。阈值(失败几次/锁多久/TTL 几小时/配额分级/存储后端)EP2 grill 用户拍板,不得默认采纳。",
+      "status": "not_started",
+      "verification": [
+        "登录连续失败 N 次后触发锁定的回归测试(锁定窗口内正确密码也拒绝,窗口过后恢复)",
+        "超出配额返回 429(限流中间件生效)+ 正常配额内请求零影响(现有 API 测试零回归)",
+        "TTL 配置生效断言(新签发 token exp 为小时级)"
+      ],
+      "notes": "生产加固系列第 1 条(EP1 2026-08-14 登记,8 决策全用户拍板见 plan-risk-hardening-overview.md §EP1 决策记录)。D4 用户明确选择 slowapi 全局限流+登录锁定(比最小方案防护面广,接受新依赖与全局配置面),非默认采纳。新依赖 slowapi 需 EP2 评估引入方式。",
+      "plan": "harness/docs/plan-risk-hardening-overview.md",
+      "depends_on": []
+    },
+    {
+      "id": "booking-toctou-guard",
+      "priority": 95,
+      "area": "预约-后端",
+      "title": "预约时段 TOCTOU 竞态 DB 兜底(并发双订同一设备同时段从「应用层 check-then-insert 可双双落库」变为数据库层结构性拒绝——部分唯一索引[排除非占坑态]或事务内 advisory lock,形态 EP2 烤定。第 10 次巡检业务风险 R2 🔴:find_overlap 纯应用层,模型层刻意无唯一约束)",
+      "user_visible_behavior": "正常预约路径零变化;并发双订同一时段时,第二个请求收到明确冲突错误(而非双双成功落库)。兜底形态(索引 vs 锁)与「什么状态算占坑」的排除态语义 EP2 用户拍板。",
+      "status": "not_started",
+      "verification": [
+        "并发竞态回归测试:两请求同时创建同设备同时段,恰一成功一被 DB 兜底拒绝(非应用层 if 拦截)",
+        "排除态语义测试:cancelled(及 EP2 定的其余非占坑态)时段可被重新预约",
+        "存量数据迁移:alembic 加约束时存量脏数据(历史双订)预检与处置路径明确"
+      ],
+      "notes": "生产加固系列第 2 条(EP1 2026-08-14 登记)。模型注释自认 deliberately no partial unique index——EP2 需先考古当时为何刻意不加,再决策形态。",
+      "plan": "harness/docs/plan-risk-hardening-overview.md",
+      "depends_on": []
+    },
+    {
+      "id": "chat-stream-wallet-gate",
+      "priority": 94,
+      "area": "计费-后端",
+      "title": "SSE 钱包门口径统一(/chat/stream 补与 composite 路径同口径的钱包预检 402,消除同一钱包契约两套口径[SSE 放行 vs composite 严格 402]的资损口。第 10 次巡检业务风险 R3 前半 🔴。不动 TurnAccountant——架构候选 ② 独立立项时消化)",
+      "user_visible_behavior": "无钱包租户调 /chat/stream 收到 402(此前可免费流式使用,本条是系列内唯一收紧用户行为的点);有余额租户零变化。预检时点与余额口径边界(零钱包 vs 负余额)EP2 用户拍板。",
+      "status": "not_started",
+      "verification": [
+        "无钱包租户 /chat/stream 收 402(与 composite 路径口径一致)的回归测试",
+        "有余额租户流式路径零回归(现有 chat SSE 测试全绿)",
+        "两路径 402 错误体格式一致性断言"
+      ],
+      "notes": "生产加固系列第 3 条(EP1 2026-08-14 登记)。D5 拍板:先钱包门(止血)后对账(兜底);两 feature 都不动 TurnAccountant。",
+      "plan": "harness/docs/plan-risk-hardening-overview.md",
+      "depends_on": []
+    },
+    {
+      "id": "billing-reconciliation-job",
+      "priority": 93,
+      "area": "计费-后端",
+      "title": "计费对账闭环(usage_events 聚合 vs wallet_transactions 差额核对 job,挂现有 APScheduler 框架,产出日报+告警——「charge 失败仅 logger.exception+rollback 的少扣费」从静默变可见。第 10 次巡检业务风险 R3 后半 🔴:代码注释宣称的 reconciled from usage_events 对账 job 并不存在)",
+      "user_visible_behavior": "终端用户无直接可见变化;运营/管理侧新增对账日报与差额告警。对账周期/差额容忍度/告警通道/是否自动补扣(建议只报不补)EP2 用户拍板。",
+      "status": "not_started",
+      "verification": [
+        "对账 job 差额检出测试:构造 charge 失败/缺失的 usage_event,job 产出正确差额记录并触发告警",
+        "无差额时零告警(不误报)",
+        "job 幂等:同窗口重跑不产生重复差额记录"
+      ],
+      "notes": "生产加固系列第 4 条(EP1 2026-08-14 登记)。复用 app/core/scheduler.py(notification-scheduler pri 84 归档件建的 APScheduler 框架)。对账结果落表按「按需加表,不预建空架子」铁律 EP2 评估。",
+      "plan": "harness/docs/plan-risk-hardening-overview.md",
+      "depends_on": []
+    },
+    {
+      "id": "super-admin-write-audit",
+      "priority": 92,
+      "area": "审计-后端",
+      "title": "super_admin 三处最高危跨租户写操作补审计(充值 / 定价覆盖 / 知识下发与撤回补 LoggingService.record 写 SystemLog,复用现有审计基础设施与 audit-log-ui 前端页。第 10 次巡检业务风险 R4 🟡:最高权操作只留业务列不写 SystemLog,事后追责链断裂)",
+      "user_visible_behavior": "操作行为零变化;审计日志页可见新增的 super_admin 充值/定价/知识下发撤回记录。审计事件命名/分级与 detail 粒度(金额/定价快照/目标租户)EP2 用户拍板。",
+      "status": "not_started",
+      "verification": [
+        "三处操作各写一条 SystemLog 的回归测试(充值/定价覆盖/知识下发+撤回)",
+        "审计记录字段完整:操作者/目标租户/关键业务值(金额或定价快照)可追责",
+        "audit-log-ui 既有查询端点能查出新增记录(零前端改动或最小改动)"
+      ],
+      "notes": "生产加固系列第 5 条(EP1 2026-08-14 登记)。D6 拍板:只补三处最高危,不做 super_admin 全量埋点;若第 11 次巡检复验认为不够再扩。",
+      "plan": "harness/docs/plan-risk-hardening-overview.md",
+      "depends_on": []
+    },
+    {
+      "id": "config-startup-guard",
+      "priority": 91,
+      "area": "配置-治理",
+      "title": "dev 后门与配置静默降级三件套(① /dev/token 改显式独立开关默认关、与 APP_ENV 解耦——不再押注部署环境变量设对;② LLM/embedding key 启动期 fail-fast 校验——不再运行时调 LLM 才失败;③ 低额预警 scheduler_enabled 显式化:部署清单+启动日志可见。第 10 次巡检业务风险 R5 🟡:dev 后门可铸 super_admin token / key 默认 sk-replace-me / scheduler 默认 False 静默不跑)",
+      "user_visible_behavior": "dev 环境默认不再暴露 /dev/token(需显式开独立开关);生产配置缺失 key 时启动期报错退出(而非运行时才失败);低额预警未启用时启动日志有明确提示。开关命名/fail-fast 环境范围/scheduler 显式化形态 EP2 用户拍板。",
+      "status": "not_started",
+      "verification": [
+        "开关默认关时 /dev/token 不注册(404);显式开启且 dev 环境下行为不变(现有 dev 流测试零回归)",
+        "key 缺失/占位值时启动 fail-fast 测试;key 就位时启动正常",
+        "scheduler_enabled=False 时启动日志输出明确 WARN 提示"
+      ],
+      "notes": "生产加固系列第 6 条(EP1 2026-08-14 登记)。D7 拍板三件套全修。注意 ② key fail-fast 与「非 dev 环境拒绝默认 secret 启动」的既有校验(巡检正面清单)边界关系,EP2 对齐不重复。",
+      "plan": "harness/docs/plan-risk-hardening-overview.md",
+      "depends_on": []
+    },
+    {
       "id": "knowledge-tiered-foundation",
       "priority": 90,
       "area": "知识库-后端",
