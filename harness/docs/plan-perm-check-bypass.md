@@ -1,7 +1,7 @@
 # 计划:permission check() bypass 判定链结构化
 
 > **id**: perm-check-bypass
-> **状态**: draft v2(经对抗式审查,见 §0)
+> **状态**: not_started(EP2 已完成:plan draft v2 经对抗式审查 2🔴+5🟡+3🟢 全部回写,见 §0;待 EP3 从切片 01 实施)
 > **优先级**: 86(建议,登记 feature_list.json 时定)
 > **创建日期**: 2026-08-14
 > **最后修订**: 2026-08-14(v2:对抗式审查 2🔴+5🟡+3🟢 全部回写)
