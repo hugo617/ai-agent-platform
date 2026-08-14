@@ -3,9 +3,11 @@
 Login flow:
   1. Resolve the user by username/email (must exist, be active, have a password).
   2. Verify the bcrypt hash.
-  3. Resolve the tenant from the user's first membership (or reject).
-  4. Update ``last_login_at``, write a ``UserSession`` row, mint an HS256 JWT.
-  5. Record an audit-log entry.
+  3. Reject inside the temporary failed-attempt lockout window (if open), or
+     count a wrong password toward it (5 consecutive failures lock 15 minutes).
+  4. Resolve the tenant from the user's first membership (or reject).
+  5. Update ``last_login_at``, write a ``UserSession`` row, mint an HS256 JWT.
+  6. Record an audit-log entry.
 
 All distinct failure reasons map to the same 401 message ("invalid credentials")
 to avoid leaking which accounts exist — except account status, which we surface
@@ -22,6 +24,7 @@ from app.core.config import settings
 from app.core.local_auth import create_access_token
 from app.core.password import hash_password, verify_password
 from app.models.security import UserSession
+from app.models.tenant import User
 from app.repositories.security import SessionRepository
 from app.repositories.tenant import UserRepository, UserTenantRepository
 from app.services.logging_service import LoggingService
@@ -76,7 +79,13 @@ class AuthService:
             raise AuthError("account is locked; contact an administrator")
         if user.status != "active":
             raise AuthError("account is not active")
+        # Temporary lockout (failed-attempt lock) rejects BEFORE the password
+        # verdict: a correct password during the window is refused too, and
+        # failures inside the window are neither counted nor renew the lock.
+        if _temporarily_locked(user.locked_until):
+            raise AuthError("account temporarily locked, try again later")
         if not user.password or not password_ok:
+            await self._record_lockout_failure(user, ip=ip)
             raise AuthError("invalid credentials")
 
         # Resolve tenant from the user's memberships (first wins). A user with
@@ -91,6 +100,10 @@ class AuthService:
         # token so a future "is this token still active?" check is possible
         # without keeping the raw token around.
         await self.users.update_last_login(user.id)
+        # A successful login clears the lockout counter and any residual
+        # (already-expired) lock — reaching this line proves the password was
+        # correct, so prior failures no longer count.
+        await self.users.reset_failed_attempts(user.id)
         token, jti = create_access_token(
             user.id, tenant_id, email=user.email, platform_role=getattr(user, "platform_role", None)
         )
@@ -111,6 +124,41 @@ class AuthService:
         )
         await self.db.commit()
         return token, user.id, tenant_id, jti
+
+    async def _record_lockout_failure(self, user: User, *, ip: str | None) -> None:
+        """Count one failed local login; lock the account at the threshold.
+
+        Runs on the raise path, so every write below commits inside the
+        repository call — otherwise the counter/lock would be discarded with
+        the rolled-back request. OIDC-only accounts (password is None) are
+        skipped: a lock cannot reach their Logto login path, so counting them
+        is a pure denial-of-service surface (knowing the username would be
+        enough to trigger it).
+        """
+        if user.password is None:
+            return
+        attempts = await self.users.record_failed_attempt(user.id)
+        if attempts < settings.login_lockout_threshold:
+            return
+        # Reset BEFORE locking: reset_failed_attempts also clears locked_until,
+        # so locking first would immediately undo the lock. The counter restarts
+        # from zero so failures after the unlock re-accumulate from scratch.
+        await self.users.reset_failed_attempts(user.id)
+        until = datetime.now(UTC) + timedelta(minutes=settings.login_lockout_minutes)
+        await self.users.set_locked_until(user.id, until)
+        await self.logs.record(
+            action="login_locked",
+            module="auth",
+            message=(
+                f"user {user.username or user.id} temporarily locked for "
+                f"{settings.login_lockout_minutes} minutes after "
+                f"{settings.login_lockout_threshold} failed login attempts"
+            ),
+            user_id=user.id,
+            level="warning",
+            ip=ip,
+        )
+        await self.db.commit()
 
     async def _create_session(
         self,
@@ -166,6 +214,21 @@ class AuthService:
         if s is not None and s.user_id == user_id:
             await self.sessions.deactivate(s)
             await self.db.commit()
+
+
+def _temporarily_locked(locked_until: datetime | None) -> bool:
+    """True while the failed-attempt lockout window is still open.
+
+    SQLite reads ``DateTime(timezone=True)`` columns back tz-naive (the
+    dialect drops the offset), so a naive value is interpreted as UTC before
+    comparing; on PostgreSQL values come back tz-aware and the normalization
+    is a no-op.
+    """
+    if locked_until is None:
+        return False
+    if locked_until.tzinfo is None:
+        locked_until = locked_until.replace(tzinfo=UTC)
+    return locked_until > datetime.now(UTC)
 
 
 def _guess_device_type(user_agent: str | None) -> str | None:

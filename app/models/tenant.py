@@ -8,6 +8,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Index,
+    Integer,
     String,
     func,
     text,
@@ -94,6 +95,16 @@ class User(Base):
         DateTime(timezone=True), server_default=func.now()
     )
     last_login_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    # Login lockout (rate-limit-login-lockout): consecutive failed local
+    # logins and the temporary auto-unlock deadline. Independent of the
+    # administrator's status="locked" permanent lock — this one expires on
+    # its own and only affects the local /auth/login flow (never Logto).
+    failed_attempts: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default=text("0")
+    )
+    locked_until: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
     status: Mapped[str] = mapped_column(String(20), default="active")

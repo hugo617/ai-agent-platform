@@ -9,6 +9,7 @@ Two fixture modes:
 """
 
 import uuid
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
@@ -211,3 +212,238 @@ def _decode_jti(token: str) -> str:
     import jwt
 
     return str(jwt.decode(token, options={"verify_signature": False})["jti"])
+
+
+# ---------------------------------------------------------------------------
+# Login lockout (rate-limit-login-lockout slice 01): 5 consecutive failed
+# logins lock the account for 15 minutes (DB-persisted, auto-unlock). The
+# temporary lock is independent of the administrator's status="locked"
+# permanent lock; OIDC-only accounts are never counted; failures inside an
+# open lock window neither count nor renew it.
+# ---------------------------------------------------------------------------
+
+LOCKOUT_DETAIL = "account temporarily locked, try again later"
+
+
+async def _login(app_client, username, password):
+    return await app_client.post(
+        "/api/v1/auth/login", json={"username": username, "password": password}
+    )
+
+
+async def _get_user(db_session, user_id) -> User:
+    # expire_all: app requests committed via their own sessions on the shared
+    # connection, so cached instances here would be stale.
+    db_session.expire_all()
+    return await db_session.get(User, user_id)
+
+
+def _as_utc(value: datetime) -> datetime:
+    # SQLite reads DateTime(timezone=True) back tz-naive (offset dropped);
+    # normalize before comparing against now(UTC).
+    if value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value
+
+
+async def _write_lock_state(
+    db_session, user_id, *, failed_attempts: int, locked_until: datetime | None
+):
+    """Direct row write — set lock timestamps via the DB, not clock mocks."""
+    user = await db_session.get(User, user_id)
+    user.failed_attempts = failed_attempts
+    user.locked_until = locked_until
+    await db_session.commit()
+
+
+async def _seed_oidc_only_user(db_session, tenant_id, username="oidcuser") -> str:
+    """An OIDC-only account: no local password, Logto is its login path."""
+    uid = uuid.uuid4().hex
+    db_session.add(
+        User(
+            id=uid,
+            username=username,
+            email=f"{username}@example.com",
+            password=None,
+            status="active",
+        )
+    )
+    db_session.add(UserTenant(user_id=uid, tenant_id=tenant_id, role="member"))
+    await db_session.commit()
+    return uid
+
+
+@pytest.mark.asyncio
+async def test_lockout_after_five_failures(app_client, db_session):
+    uid = await _seed_loginable_user(app_client)
+    for _ in range(5):
+        resp = await _login(app_client, "loginuser", "wrong-password")
+        assert resp.status_code == 401
+        assert resp.json()["detail"] == "invalid credentials"
+
+    # 6th attempt with the CORRECT password is still rejected inside the window.
+    resp = await _login(app_client, "loginuser", "Pass1234!")
+    assert resp.status_code == 401
+    assert resp.json()["detail"] == LOCKOUT_DETAIL
+
+    user = await _get_user(db_session, uid)
+    assert user.failed_attempts == 0  # counter reset when the lock triggered
+    assert user.locked_until is not None
+    assert (
+        datetime.now(UTC) + timedelta(minutes=14)
+        < _as_utc(user.locked_until)
+        <= datetime.now(UTC) + timedelta(minutes=15)
+    )
+
+    # The lock trigger writes exactly one audit row.
+    from sqlalchemy import select
+
+    from app.models.log import SystemLog
+
+    logs = (
+        (
+            await db_session.execute(
+                select(SystemLog).where(
+                    SystemLog.action == "login_locked",
+                    SystemLog.module == "auth",
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert len(logs) == 1
+    assert logs[0].user_id == uid
+
+
+@pytest.mark.asyncio
+async def test_lockout_expires_then_login_succeeds(app_client, db_session):
+    uid = await _seed_loginable_user(app_client)
+    # Simulate an elapsed lock: the deadline is already in the past.
+    await _write_lock_state(
+        db_session,
+        uid,
+        failed_attempts=0,
+        locked_until=datetime.now(UTC) - timedelta(minutes=1),
+    )
+    resp = await _login(app_client, "loginuser", "Pass1234!")
+    assert resp.status_code == 200, resp.text
+    user = await _get_user(db_session, uid)
+    assert user.failed_attempts == 0
+    assert user.locked_until is None  # success cleared the residual lock
+
+
+@pytest.mark.asyncio
+async def test_failures_inside_lock_neither_count_nor_renew(app_client, db_session):
+    uid = await _seed_loginable_user(app_client)
+    until = datetime.now(UTC) + timedelta(minutes=10)
+    await _write_lock_state(db_session, uid, failed_attempts=0, locked_until=until)
+
+    resp = await _login(app_client, "loginuser", "wrong-password")
+    assert resp.status_code == 401
+    assert resp.json()["detail"] == LOCKOUT_DETAIL
+
+    user = await _get_user(db_session, uid)
+    assert user.failed_attempts == 0  # not counted
+    assert _as_utc(user.locked_until) == until  # not renewed
+
+
+@pytest.mark.asyncio
+async def test_success_resets_counter(app_client, db_session):
+    uid = await _seed_loginable_user(app_client)
+    for _ in range(4):
+        resp = await _login(app_client, "loginuser", "wrong-password")
+        assert resp.status_code == 401
+        assert resp.json()["detail"] == "invalid credentials"
+    resp = await _login(app_client, "loginuser", "Pass1234!")
+    assert resp.status_code == 200, resp.text
+    user = await _get_user(db_session, uid)
+    assert user.failed_attempts == 0
+    assert user.locked_until is None
+
+    # 4 more failures stay below the threshold; the correct password still works.
+    for _ in range(4):
+        resp = await _login(app_client, "loginuser", "wrong-password")
+        assert resp.status_code == 401
+        assert resp.json()["detail"] == "invalid credentials"
+    resp = await _login(app_client, "loginuser", "Pass1234!")
+    assert resp.status_code == 200, resp.text
+
+
+@pytest.mark.asyncio
+async def test_admin_status_lock_never_counted(app_client, db_session):
+    """status="locked" (administrator permanent lock) rejects BEFORE the
+    password verdict, so it never touches the lockout counter — the two lock
+    systems are independent."""
+    uid = await _seed_loginable_user(app_client)
+    await app_client.patch(
+        f"/api/v1/users/{uid}/status", json={"status": "locked"}, headers=AUTH
+    )
+    resp = await _login(app_client, "loginuser", "wrong-password")
+    assert resp.status_code == 401
+    assert resp.json()["detail"] == "account is locked; contact an administrator"
+    user = await _get_user(db_session, uid)
+    assert user.failed_attempts == 0
+    assert user.locked_until is None
+
+
+@pytest.mark.asyncio
+async def test_unknown_user_ten_failures_no_side_effect(app_client):
+    """Non-existent accounts have no row to count — 10 attempts must keep
+    returning plain invalid-credentials (that path is IP rate limiting's job,
+    slice 02)."""
+    for _ in range(10):
+        resp = await _login(app_client, "ghost", "whatever")
+        assert resp.status_code == 401
+        assert resp.json()["detail"] == "invalid credentials"
+
+
+@pytest.mark.asyncio
+async def test_oidc_only_account_never_locked(app_client, db_session, tenant_owner):
+    """password=None accounts are excluded from counting: a local lock cannot
+    reach their real (Logto) login path, so counting them would be a pure
+    denial-of-service surface."""
+    uid = await _seed_oidc_only_user(db_session, tenant_owner["tenant_id"])
+    for _ in range(6):
+        resp = await _login(app_client, "oidcuser", "wrong-password")
+        assert resp.status_code == 401
+        assert resp.json()["detail"] == "invalid credentials"
+    user = await _get_user(db_session, uid)
+    assert user.failed_attempts == 0
+    assert user.locked_until is None
+
+
+@pytest.mark.asyncio
+async def test_lockout_repo_atomic_increment(db_session, tenant_owner):
+    """Direct repository test: record_failed_attempt is a single-statement
+    UPDATE — two calls land on exactly 1 then 2, never a lost increment."""
+    from app.repositories.tenant import UserRepository
+
+    uid = uuid.uuid4().hex
+    db_session.add(
+        User(
+            id=uid,
+            username="counteruser",
+            email="counter@example.com",
+            password=hash_password("Pass1234!"),
+            status="active",
+        )
+    )
+    await db_session.commit()
+
+    repo = UserRepository(db_session)
+    assert await repo.record_failed_attempt(uid) == 1
+    assert await repo.record_failed_attempt(uid) == 2
+    user = await _get_user(db_session, uid)
+    assert user.failed_attempts == 2
+
+    until = datetime.now(UTC) + timedelta(minutes=15)
+    await repo.set_locked_until(uid, until)
+    user = await _get_user(db_session, uid)
+    assert _as_utc(user.locked_until) == until
+    assert user.failed_attempts == 2  # set_locked_until leaves the counter alone
+
+    await repo.reset_failed_attempts(uid)
+    user = await _get_user(db_session, uid)
+    assert user.failed_attempts == 0
+    assert user.locked_until is None
