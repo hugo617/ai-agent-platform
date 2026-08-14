@@ -447,3 +447,42 @@ async def test_lockout_repo_atomic_increment(db_session, tenant_owner):
     user = await _get_user(db_session, uid)
     assert user.failed_attempts == 0
     assert user.locked_until is None
+
+
+# ---------------------------------------------------------------------------
+# Token TTL (rate-limit-login-lockout slice 03): newly minted tokens expire
+# after 8 hours (access_token_ttl_minutes 10080 → 480) and the UserSession
+# row aligns (session_ttl_hours 168 → 8). Existing tokens are NOT revoked —
+# they expire naturally.
+# ---------------------------------------------------------------------------
+@pytest.mark.asyncio
+async def test_login_token_ttl_is_eight_hours(app_client):
+    """Login reports expires_in == 480*60 (8h, down from the 7-day default)."""
+    await _seed_loginable_user(app_client)
+    resp = await app_client.post(
+        "/api/v1/auth/login",
+        json={"username": "loginuser", "password": "Pass1234!"},
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["expires_in"] == 480 * 60
+
+
+@pytest.mark.asyncio
+async def test_login_session_row_expires_eight_hours(
+    app_client_real_auth, db_session, tenant_owner
+):
+    """The UserSession row persisted at login expires ≈ now + 8h."""
+    from app.repositories.security import SessionRepository
+
+    uid = await _seed_user_via_db(db_session, tenant_owner["tenant_id"])
+    tok = (
+        await app_client_real_auth.post(
+            "/api/v1/auth/login",
+            json={"username": "realmember", "password": "Pass1234!"},
+        )
+    ).json()["access_token"]
+    row = await SessionRepository(db_session).get_by_session_id(_decode_jti(tok))
+    assert row is not None
+    assert row.user_id == uid
+    delta = _as_utc(row.expires_at) - datetime.now(UTC)
+    assert timedelta(hours=7, minutes=59) < delta <= timedelta(hours=8)

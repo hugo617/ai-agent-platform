@@ -47,6 +47,17 @@ api.interceptors.request.use((config) => {
  */
 export const AUTH_EXPIRED_EVENT = "aap:auth-expired";
 
+/**
+ * Global 429 handler (rate-limit-login-lockout slice 03). Hitting a rate
+ * limit is NOT an auth failure: the token is kept, the user stays on the
+ * page, and the request is NOT retried automatically — we only surface a
+ * friendly toast. The interceptor runs outside the React tree (useToast is
+ * Context-scoped), so we bridge via an event, mirroring AUTH_EXPIRED_EVENT:
+ * the RateLimitedToast listener mounted inside ToastProvider (App.tsx) turns
+ * this event into an error toast.
+ */
+export const RATE_LIMITED_EVENT = "aap:rate-limited";
+
 api.interceptors.response.use(
   (response) => response,
   (error: AxiosError) => {
@@ -55,6 +66,11 @@ api.interceptors.response.use(
       // Only meaningful inside a browser; harmless under Vitest/jsdom otherwise.
       if (typeof window !== "undefined") {
         window.dispatchEvent(new CustomEvent(AUTH_EXPIRED_EVENT));
+      }
+    }
+    if (error.response?.status === 429) {
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent(RATE_LIMITED_EVENT));
       }
     }
     return Promise.reject(error);

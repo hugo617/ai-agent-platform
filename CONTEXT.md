@@ -30,6 +30,10 @@ _Avoid_: global role, system role
 当前请求的身份抽象(后端 `app/services/principal.py`)。把 Platform Role + 门店角色 + 目标租户 + Data Scope 统一解析成读/写访问边界 —— `for_write()` 返回 `WriteAccess`(effective tenant + require-or-skip),`for_read()` 返回 `ReadAccess`(effective tenant + scope + require-or-skip + is_panorama)。booking/device/customer 三 service 的**读写鉴权路径**(写路径 + 读路径的 panorama 与 store scope 两分支)走 Principal;**少量方法因不属于角色-租户三元组**(三叉 customer / 全局读 / panorama 无 require / 纯 store require)**仍直接用 helper** —— 边界清单见 `harness/docs/plan-principal-module.md` §4.2(由 [ADR-0001](docs/adr/0001-principal-scope-boundary.md) 钉死,扩展需先 supersede ADR)。**不是** User 实体,也不是 token claim。
 _Avoid_: user(那是 User 实体), identity(那是 token claim), session(那是登录会话)
 
+**临时锁定(Temporary Lockout)**:
+登录防爆破的**自动**锁:`failed_attempts` 连续失败达阈值触发,`locked_until` 到点自动解锁,无需人工介入。作用域仅限本地 `/auth/login`——Logto 路径 / 已签发 token / PAT 不受影响;OIDC-only 账号不计数;锁内继续失败不计数不续期。区别于「管理员锁定」:`status="locked"` 是管理员手动设置的**永久**锁,两套锁并存互不干扰。
+_Avoid_: 把两套锁混为一谈的泛称(如不指明哪套的 "account locked")
+
 ## AI 智能体与对话
 
 **Agent**:
