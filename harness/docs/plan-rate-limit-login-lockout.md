@@ -1,7 +1,7 @@
 # 计划:全局限流 + 登录防爆破 + token TTL 收口(rate-limit-login-lockout)
 
 > **id**: rate-limit-login-lockout
-> **状态**: not_started(EP2 已完成:plan draft v2 经对抗式审查双轴回写,3🔴 + 10🟡 全部处理,见 §0;EP3 未开始,开工翻 in_progress)
+> **状态**: in_progress(EP2 已完成:plan draft v2 经对抗式审查双轴回写,3🔴 + 10🟡 全部处理,见 §0;EP3 切片 01 开工 2026-08-14)
 > **优先级**: 96(feature_list.json,第 10 次巡检业务风险 R1 🔴)
 > **创建日期**: 2026-08-14
 > **最后修订**: 2026-08-14(v2:对抗式审查回写)
