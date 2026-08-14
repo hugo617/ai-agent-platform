@@ -84,6 +84,11 @@ api.interceptors.response.use(
 > ⚠️ **401 和 403 的区别**(代码注释特别强调):
 > - **401**(未认证):token 失效 → 当会话过期处理 → 自动登出。
 > - **403**(无权限):登录着,但没权限 → **不**登出,只显示错误提示。
+> - **429**(限流,rate-limit-login-lockout 切片 03):**不是**认证失败 →
+>   不清 token、不登出、不自动重试,只发 `RATE_LIMITED_EVENT`
+>   (`"aap:rate-limited"`)事件,由挂在 `ToastProvider` 子树内的
+>   `RateLimitedToast` listener 弹「请求过于频繁」toast —— 同款事件桥范式
+>   (拦截器在 React 树外,调不到 `useToast`)。
 
 ### 错误信息翻译
 

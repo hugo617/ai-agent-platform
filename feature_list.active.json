@@ -15,22 +15,6 @@
   },
   "features": [
     {
-      "id": "rate-limit-login-lockout",
-      "priority": 96,
-      "area": "认证-安全",
-      "title": "全局 API 限流 + 登录防爆破(slowapi 限流框架接入[按用户/IP 可配,全端点]+ 登录失败计数锁定 + access_token_ttl 从 7 天降小时级。第 10 次巡检业务风险 R1 🔴:POST /auth/login 可无限尝试、全库零限流、TTL 10080 分钟)",
-      "user_visible_behavior": "登录连续失败触发锁定(锁定期内拒绝再试),超出限流配额的请求返回 429,token 有效期从 7 天降为小时级(需更频繁登录)。阈值(失败几次/锁多久/TTL 几小时/配额分级/存储后端)EP2 grill 用户拍板,不得默认采纳。",
-      "status": "in_progress",
-      "verification": [
-        "登录连续失败 N 次后触发锁定的回归测试(锁定窗口内正确密码也拒绝,窗口过后恢复)",
-        "超出配额返回 429(限流中间件生效)+ 正常配额内请求零影响(现有 API 测试零回归)",
-        "TTL 配置生效断言(新签发 token exp 为小时级)"
-      ],
-      "notes": "生产加固系列第 1 条(EP1 2026-08-14 登记,8 决策全用户拍板见 plan-risk-hardening-overview.md §EP1 决策记录)。D4 用户明确选择 slowapi 全局限流+登录锁定(比最小方案防护面广,接受新依赖与全局配置面),非默认采纳。新依赖 slowapi 需 EP2 评估引入方式。 EP2 完成(2026-08-14):11 项决策用户逐项拍板(锁定 5 次/15 分钟/账号维度/DB 持久 + TTL 480 分钟/session 8h 对齐/存量自然过期 + 内存限流/两档 120 与 5 每分/豁免 6 探针文档/{detail}+Retry-After+前端 toast),plan v2 经对抗式审查回写;status 按用户指令保持 not_started,EP3 切片 01 开工时翻 in_progress。",
-      "plan": "harness/docs/plan-rate-limit-login-lockout.md",
-      "depends_on": []
-    },
-    {
       "id": "booking-toctou-guard",
       "priority": 95,
       "area": "预约-后端",
@@ -111,6 +95,13 @@
       "depends_on": []
     },
     {
+      "id": "rate-limit-login-lockout",
+      "priority": 96,
+      "area": "认证-安全",
+      "title": "全局 API 限流 + 登录防爆破(slowapi 限流框架接入[按用户/IP 可配,全端点]+ 登录失败计数锁定 + access_token_ttl 从 7 天降小时级。第 10 次巡检业务风险 R1 🔴:POST /auth/login 可无限尝试、全库零限流、TTL 10080 分钟)",
+      "status": "passing"
+    },
+    {
       "id": "knowledge-tiered-foundation",
       "priority": 90,
       "area": "知识库-后端",
@@ -139,17 +130,10 @@
       "status": "passing"
     },
     {
-      "id": "perm-check-bypass",
-      "priority": 86,
-      "area": "权限-后端",
-      "title": "permission check() bypass 判定链结构化(check() 内 5 层顺序敏感 if 链 → CHECK_RULES 有序注册表:每条 rule 声明式携带 objs/acts/needs_db/decision + 谓词,注释契约变代码契约、判定表可穷举直测;interface 不变全部调用点零改动、零行为变更。第 10 次巡检候选 ① Top/Strong)",
-      "status": "passing"
-    },
-    {
       "id": "_milestone_archived",
       "priority": 0,
       "area": "里程碑",
-      "title": "[已归档 85 条 passing,见 archive/features-passing-archive.json]",
+      "title": "[已归档 86 条 passing,见 archive/features-passing-archive.json]",
       "status": "passing"
     }
   ],
