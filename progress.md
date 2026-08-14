@@ -28,7 +28,7 @@
 
 ### 前置推送(未成 → 记债)
 
-`git -c http.version=HTTP/1.1 -c http.postBuffer=524288 push origin main` 连试 2 次失败(Empty reply from server / 443 连接超时 75s)——github.com:443 本会话不可达(与 Session 205-208 一致,`gh` api.github.com 应仍可达)。**待推送债:本地 main ahead origin/main ≥2 commits(bd9e783 + 本次 EP2 产出 commit)**,网络恢复后同款命令推送。
+`git -c http.version=HTTP/1.1 -c http.postBuffer=524288 push origin main` 开工连试 2 次失败(Empty reply from server / 443 连接超时 75s)——github.com:443 间歇不可达(与 Session 205-208 一致);**✅ 收尾时第 3 次重试成功(69e6b7f..1bf3dfe,bd9e783[EP1] + 1bf3dfe[EP2] 均已上远端,无待推送债)**。
 
 ### grill(AskUserQuestion 3 轮,11 项决策全用户逐项拍板,无默认采纳)
 
