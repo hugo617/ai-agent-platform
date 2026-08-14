@@ -116,6 +116,10 @@ _Avoid_: MVC, three-tier
 `TenantScopedRepository` 基类,自动给查询加 `WHERE tenant_id=?`。多租户隔离的**唯一**强制点。
 _Avoid_: multi-tenant filter, tenant guard
 
+**判定链(Decision Chain)**:
+`PermissionService.check` 内的有序规则表:每条 rule 声明适用域与判定(ALLOW/DENY),命中即短路,全部不适用落 casbin 兜底。规则顺序是判定顺序的唯一真相源。
+_Avoid_: permission chain, bypass list
+
 **Two-Scope Config**:
 平台默认 + 租户覆盖的两级配置范式(NULL `tenant_id` = 平台行,非空 = 租户覆盖)。`TwoScopeRepository` 基类统一读路径(`get_platform`/`get_for_tenant`);与 `TenantScopedRepository` 互补 —— 后者 `tenant_id` 必填(业务数据隔离),前者 `tenant_id` 可空(配置两级覆盖)。**纳入的 3 个 repo**:booking_config / llm_config / embedding_config(对抗式审查后从「4 repo」修正:tenant_config 是单租户异类、ModelPricing 是 `(tenant_id, model)` 二维 key 异类,均排除)。`is_active` 过滤差异(llm/embedding 有、booking 无)用基类钩子 `_active_filter` 吸收(booking 设 None 不过滤),**不靠给 booking 加死列**。`get_effective` 三级 fallback 和 `_upsert` 写路径(crypto/audit delta)由各 service 自留,不进基类。边界详见 [ADR-0002](docs/adr/0002-twoscope-config-repository.md)。
 _Avoid_: two-level config(改用 Two-Scope), config table(泛指,无法区分单/双 scope)
