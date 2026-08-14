@@ -58,6 +58,18 @@ async def decode_token(token: str) -> dict[str, Any]:
       2. **Logto** — RS256, verified against the issuer's JWKS endpoint.
       3. **Dev** — RS256, verified with the in-memory dev RSA key (dev env only).
     """
+    return decode_token_sync(token)
+
+
+def decode_token_sync(token: str) -> dict[str, Any]:
+    """Synchronous core of ``decode_token`` — same verification, same failures.
+
+    Exists because the rate-limit key_func (app/core/rate_limit.py) runs
+    synchronously inside slowapi and must reuse the exact same verified decode
+    (a bare unverified ``jwt.decode`` would let attackers rotate forged ``sub``
+    claims and bypass per-user quotas). No awaits anywhere — the async wrapper
+    above only exists for API consistency with the FastAPI dependency pipeline.
+    """
     if not token:
         raise TokenError("missing token")
 

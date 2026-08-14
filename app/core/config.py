@@ -55,6 +55,21 @@ class Settings(BaseSettings):
     login_lockout_threshold: int = 5
     login_lockout_minutes: int = 15
 
+    # Global API rate limiting (rate-limit-login-lockout slice 02) — slowapi,
+    # in-process memory storage (single-replica assumption, same as
+    # scheduler_enabled; swapping to Redis later only changes storage_uri).
+    # Two tiers: login 5/min per IP (strict, enforced by the decorator on
+    # POST /auth/login) and everything else 120/min keyed by verified token
+    # subject, falling back to client IP for anonymous/invalid/PAT requests.
+    # Probe/docs paths are exempted via a path short-circuit in create_app so a
+    # K8s liveness probe can never get a 429 and restart the pod.
+    rate_limit_enabled: bool = True
+    rate_limit_default: str = "120/minute"
+    rate_limit_login: str = "5/minute"
+    rate_limit_exempt_paths: str = (
+        "/metrics,/health,/ready,/openapi.json,/docs,/redoc"
+    )
+
     # Frontend URL — used for welcome/reset emails and CORS default.
     app_url: str = "http://localhost:3000"
 
@@ -183,6 +198,17 @@ class Settings(BaseSettings):
             except json.JSONDecodeError:
                 pass
         return [o.strip() for o in v.split(",") if o.strip()]
+
+    @property
+    def rate_limit_exempt_paths_set(self) -> frozenset[str]:
+        """Parse ``rate_limit_exempt_paths`` (comma-separated) into a lookup set.
+
+        Read per-request by the rate-limit middleware short-circuit, so operators
+        can adjust the exemption list from env without code changes.
+        """
+        return frozenset(
+            p.strip() for p in self.rate_limit_exempt_paths.split(",") if p.strip()
+        )
 
     @property
     def is_testing(self) -> bool:

@@ -197,7 +197,7 @@
 
 **完成证据(2026-08-14)**:commit b1c3268 + PR #164。定向 23 passed(8 新用例)/ 全量 **1020 passed**(基线 1012 零回归)/ init.sh 冒烟 209 passed / alembic PG(docker)实测 upgrade → downgrade → upgrade 回归 + `alembic check` 无 drift,users 两列(`failed_attempts int not null default 0` / `locked_until timestamptz nullable`)落地确认。**实施补充**:SQLite 回读 `DateTime(timezone=True)` 丢 offset 成 naive(实证),`_temporarily_locked` 先归一化再比较(PG aware 路径 no-op);锁定触发顺序为 reset **先** set **后**(reset 会清 locked_until,按 AC 字面顺序执行会丢锁,Spec 轴判定此反序为对 spec 字面隐患的正确修正)。**/code-review 双轴(2026-08-14)**:Standards 0 硬违规,5 判断项全留痕不改码 —— ① repo 方法内 commit 偏离 flush 惯例:§4.6 用户审查后明确「Repository 方法内提交」,按拍板保留(成功路径 reset 的中途 commit 连带提交 last_login 属可接受:失败时无 token 返还,last_login 仅为遥测);② reset+set 两次往返可合一:plan 钦定三方法签名,不改;③ 写方法不带 is_deleted 过滤:与 `update_last_login` 按主键写惯例一致,上游 `get_by_login_identifier` 已过滤;④ tz 归一化与测试 `_as_utc` 同形两处:跨 app/test 边界各 3 行,不提取;⑤ `int(new_value or 0)` None 分支不可达:保留兜底换优雅 401(行被并发删时 `scalar_one()` 会 500)。Spec 12/12 AC 全满足、无越界、未碰切片 02/03 域。
 
-### 切片 02 — slowapi 全局限流:单例装配 + 两档配额 + 路径短路豁免 + 429 + key_func + 测试
+### 切片 02 — slowapi 全局限流:单例装配 + 两档配额 + 路径短路豁免 + 429 + key_func + 测试 ✅(commits 5198b4f+84b30db+0599c5f,PR #165)
 
 **What it delivers**:任意业务端点被同一用户(已登录,验签取 sub)或同一 IP(匿名/垃圾 token/PAT)以超过 120 次/分钟持续调用时,返回 429 + `Retry-After` 头 + `{"detail"}` 体;登录端点更严(同 IP 5 次/分钟,独立 IP key);探针与文档路径完全不受限(自写路径短路,清单 env 可调);配额与豁免全部 env 可调;`rate_limit_enabled=False` 一键关闭整套;重启后计数清零(已接受);伪造 sub 的裸 token 无法绕过(必须验签)。
 
@@ -209,15 +209,17 @@
 
 **Acceptance criteria**:
 
-- [ ] `requirements.txt` 加 slowapi(精确 pin,与既有依赖风格一致);`app/core/rate_limit.py` 提供**模块级单例 limiter**(default_limits 用 callable 读 settings、headers_enabled=True)+ key_func;不是每 create_app 新建的工厂(装饰器 import 期绑定实例,工厂会分裂计数)
-- [ ] key_func:验签 bearer(导入源 `app.core.security`,本地 HS256 无 DB / Logto RS256 缓存 JWKS,三种 token 统一管线)取 sub → 用户键;无 token / 验不过 / PAT(`ahp_` 前缀)→ client IP 键;**直测证明伪造 sub 的裸 token 落 IP 档**(验签失败不得产出用户键)
-- [ ] `create_app` 装配:`app.state.limiter` 挂单例 + 路径短路(`request.url.path` 命中 `rate_limit_exempt_paths` 直接放行,不进 slowapi,不碰私有 API)+ `SlowAPIMiddleware`(默认档覆盖所有未短路未装饰路由)+ `RateLimitExceeded` handler 返回 `{"detail": "..."}` 且**带 `Retry-After` 头**(复用 slowapi `_inject_headers` 或手动注入)
-- [ ] login 路由显式挂严档 `@limiter.limit(settings.rate_limit_login)`(5/minute,key 为 IP,不走验签链);覆盖默认档
-- [ ] 豁免 6 路径(/metrics /health /ready /openapi.json /docs /redoc)不受限(测试连打证明);豁免清单读 settings(env 可调)
-- [ ] settings 新键 `rate_limit_enabled=True` / `rate_limit_default="120/minute"` / `rate_limit_login="5/minute"` / `rate_limit_exempt_paths`;`.env.example` 同步(含「不写 RATELIMIT_* 键」注释);`rate_limit_enabled=False` 时整套不生效(测试证明)
-- [ ] 新增测试:严档 6 连打登录第 6 次 429(体含 detail + Retry-After)/ 默认档小配额打业务端点 429 / 豁免路径连打不限 / key_func 四分支直测(sub / 垃圾 token / 无 token / PAT)/ enabled=False 不生效 / 限流与切片 01 锁定共存(锁定测试场景在限流关闭下照常绿 + 显式开启的小配额下各自独立触发)
-- [ ] conftest:`os.environ.setdefault("RATE_LIMIT_ENABLED", "false")`(settings import 前),既有全部测试(含切片 01 锁定测试)零回归
-- [ ] `./init.sh` 冒烟绿;全量 pytest 零回归
+- [x] `requirements.txt` 加 slowapi(精确 pin,与既有依赖风格一致);`app/core/rate_limit.py` 提供**模块级单例 limiter**(default_limits 用 callable 读 settings、headers_enabled=True)+ key_func;不是每 create_app 新建的工厂(装饰器 import 期绑定实例,工厂会分裂计数)
+- [x] key_func:验签 bearer(导入源 `app.core.security`,本地 HS256 无 DB / Logto RS256 缓存 JWKS,三种 token 统一管线)取 sub → 用户键;无 token / 验不过 / PAT(`ahp_` 前缀)→ client IP 键;**直测证明伪造 sub 的裸 token 落 IP 档**(验签失败不得产出用户键)
+- [x] `create_app` 装配:`app.state.limiter` 挂单例 + 路径短路(`request.url.path` 命中 `rate_limit_exempt_paths` 直接放行,不进 slowapi,不碰私有 API)+ `SlowAPIMiddleware`(默认档覆盖所有未短路未装饰路由)+ `RateLimitExceeded` handler 返回 `{"detail": "..."}` 且**带 `Retry-After` 头**(复用 slowapi `_inject_headers` 或手动注入)
+- [x] login 路由显式挂严档 `@limiter.limit(settings.rate_limit_login)`(5/minute,key 为 IP,不走验签链);覆盖默认档
+- [x] 豁免 6 路径(/metrics /health /ready /openapi.json /docs /redoc)不受限(测试连打证明);豁免清单读 settings(env 可调)
+- [x] settings 新键 `rate_limit_enabled=True` / `rate_limit_default="120/minute"` / `rate_limit_login="5/minute"` / `rate_limit_exempt_paths`;`.env.example` 同步(含「不写 RATELIMIT_* 键」注释);`rate_limit_enabled=False` 时整套不生效(测试证明)
+- [x] 新增测试:严档 6 连打登录第 6 次 429(体含 detail + Retry-After)/ 默认档小配额打业务端点 429 / 豁免路径连打不限 / key_func 四分支直测(sub / 垃圾 token / 无 token / PAT)/ enabled=False 不生效 / 限流与切片 01 锁定共存(锁定测试场景在限流关闭下照常绿 + 显式开启的小配额下各自独立触发)
+- [x] conftest:`os.environ.setdefault("RATE_LIMIT_ENABLED", "false")`(settings import 前),既有全部测试(含切片 01 锁定测试)零回归
+- [x] `./init.sh` 冒烟绿;全量 pytest 零回归
+
+**完成证据(2026-08-14)**:commits 5198b4f(实施)+ 84b30db(review 修复)+ 0599c5f(E2E 修复),PR #165。定向 **39 passed**(`test_rate_limit` 16 + `test_auth_local`/`test_auth` 23 零回归)/ 全量 **1036 passed**(基线 1020 + 新增 16,零回归;tests 1005 + cli 31)/ init.sh 冒烟 209 绿 / ruff 全绿 / **CI 4/4 全绿**(Frontend 27s / Migrations 44s / Backend 10m33s / **E2E 2m5s**)/ **默认装配 E2E 实证**(未关限流、真实默认配额):6 连打登录第 6 次 429 + `Retry-After: 59` + `{"detail"}`、/health 豁免、默认档 121 次打业务端点第 121 次 429。**实施补充**:① slowapi==0.1.10,`default_limits` callable 实证为 LimitGroup 每请求求值(init 期 0 次调用),会话级 `RATE_LIMIT_DEFAULT=3/minute` env 为集中管控选择(惰性、enabled=false 时无害);② 豁免短路实现为 `RateLimitMiddleware(SlowAPIMiddleware)` 子类(与「装配处 ~10 行短路」功能等价,不碰 `_exempt_routes` 私有 API);③ key 用户档带 `user:` 前缀(sub 与 IP 键空间隔离,防理论撞键);④ 429 handler 必须为 **sync 函数**——slowapi middleware 路径(`sync_check_limits`)对 async handler 会静默回退其内置 `{"error"}` 体,装饰器路径(ExceptionMiddleware)两者皆可;⑤ **装饰器端点返回 pydantic model 时必须带 `response: Response` 参数**——slowapi wrapper 成功路径往该参数注入 X-RateLimit-* 头,缺参则每次成功登录 500(CI E2E 抓获,补成功登录回归测试三断言锁死;失败/429 路径异常短路不触达该行,故单测首轮未拦)。**/code-review 双轴(2026-08-14)**:Standards **0 硬违规**,4 判断项全留痕不改码 —— ① RATELIMIT_* 警示注释在 requirements.txt/.env.example 两处重复(受众不同:依赖读者 vs 运维,各自文件的规范位置,保留);② `rate_limit_exempt_paths_set` 与 `cors_origins_list` 的 split/strip 形状重复(仓库惯例为 Settings 内 per-field property,第 3 处出现时再抽 `_split_csv`);③ `decode_token` 成一行转发的 Middle Man(async API 兼容 + mock 面不变,有意为之,注释已言明);④ 配额裸字符串 Primitive Obsession(slowapi 原生接口即字符串,改类型反增复杂度)。Spec **6✅+3⚠️→全闭合**:AC5 豁免测试 parametrize 全 6 路径(+5 用例)/ AC8-9 证据本节补记 / **关键抓获(实证)**:RateLimitMiddleware 原装配在 CORS 外层,默认档 429(middleware 内生成)不回流 CORSMiddleware → 浏览器读不到(严档 429 走 ExceptionMiddleware 反而带 CORS 头,两档不对称),切片 03 前端 toast 会失灵一半 → 修复为加在 CORS 之前(内层),E2E 复验两档 429 均带 ACAO + Retry-After,且 CORS preflight OPTIONS 不再烧默认档配额。**E2E 排查插曲(2026-08-14)**:CI E2E 两连红(登录 POST 500 → 根因即上述 ⑤,commit 0599c5f 修复);本地完整 E2E 栈复现时聊天步另挂 —— worktree 起main 后端对照**同挂**,系本地 DB 残留 LlmConfig 行致 LLM 回源非 mock 的环境因素(CI 全新 DB 无此问题,修复后 CI E2E 实测绿)。
 
 ### 切片 03 — TTL 收口 + 前端 429 事件桥 + feature 收尾(末切片)
 

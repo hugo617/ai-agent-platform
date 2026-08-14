@@ -21,6 +21,15 @@ os.environ.setdefault("CORS_ORIGINS", "http://localhost:3000")
 # Settings used by the new local-auth code paths.
 os.environ.setdefault("JWT_SECRET", "test-secret")
 os.environ.setdefault("SALT_ROUNDS", "4")  # keep tests fast
+# Default-off rate limiting so the existing suite (incl. the lockout tests,
+# which hammer POST /auth/login) never trips a 429. tests/test_rate_limit.py
+# re-enables the module-level limiter per-test and resets its counters.
+# A small default-tier quota keeps all rate-limit test knobs in one place;
+# inert suite-wide because the limiter stays disabled outside
+# test_rate_limit.py's explicit enable (slowapi re-reads the callable limit
+# per request, but the settings object is shared by the whole session anyway).
+os.environ.setdefault("RATE_LIMIT_ENABLED", "false")
+os.environ.setdefault("RATE_LIMIT_DEFAULT", "3/minute")
 
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient

@@ -24,6 +24,11 @@ PyJWT==2.10.1
 cryptography==44.0.0
 httpx==0.28.1
 bcrypt>=4.2,<5
+# Global API rate limiting (rate-limit-login-lockout): module-level limiter in
+# app/core/rate_limit.py + SlowAPIMiddleware in create_app. WARNING: slowapi
+# also reads its own RATELIMIT_* env keys — do NOT set those anywhere; the only
+# configuration entry point is the project's RATE_LIMIT_* settings keys.
+slowapi==0.1.10
 
 # Authorization (pycasbin + SQLAlchemy adapter)
 pycasbin==2.8.0
