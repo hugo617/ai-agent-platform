@@ -8,6 +8,7 @@ from fastapi import Depends, FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
+from slowapi.errors import RateLimitExceeded
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -45,6 +46,7 @@ from app.api.v1 import (
 from app.core.config import settings
 from app.core.database import get_db
 from app.core.metrics import IN_PROGRESS, LATENCY, REQUESTS, render_metrics
+from app.core.rate_limit import RateLimitMiddleware, limiter
 from app.core.validation_errors import localize_message
 from app.services.errors import BizError, NotFoundError, ScopeError
 
@@ -129,6 +131,18 @@ def create_app() -> FastAPI:
             label_path = getattr(route, "path", None) or "unmatched"
             REQUESTS.labels(request.method, label_path, str(status_code)).inc()
             LATENCY.labels(request.method, label_path).observe(elapsed)
+
+    # --------------------------------------------------------------
+    # Rate limiting (rate-limit-login-lockout slice 02). The limiter is a
+    # module-level singleton (see app/core/rate_limit.py) hung on app.state so
+    # SlowAPIMiddleware can find it; the middleware subclass short-circuits the
+    # probe/docs exemption paths. Added after the metrics middleware → runs
+    # outermost, so a 429 is decided before any business/metrics work.
+    # No-op while RATE_LIMIT_ENABLED=false (the Limiter checks its own
+    # ``enabled`` flag on every request).
+    # --------------------------------------------------------------
+    app.state.limiter = limiter
+    app.add_middleware(RateLimitMiddleware)
 
     # Register v1 routers under the API prefix.
     prefix = settings.api_v1_prefix
@@ -291,6 +305,25 @@ def create_app() -> FastAPI:
                 owner_email=(payload or {}).get("email"),
             )
             return {"tenant_id": tenant.id, "user_id": user_id, "exists": False}
+
+    # Rate-limit 429 → project error-body shape {"detail": ...} + Retry-After
+    # (slowapi's built-in handler returns {"error": ...} instead). Deliberately
+    # SYNC: on the middleware path slowapi invokes the registered handler
+    # directly from sync code and silently falls back to its built-in one for
+    # async handlers. Header injection (Retry-After + X-RateLimit-*) reuses
+    # slowapi's own mechanism against the limit that fired.
+    def _rate_limit_handler(request: Request, exc: RateLimitExceeded) -> JSONResponse:
+        response = JSONResponse(
+            status_code=429,
+            content={"detail": f"rate limit exceeded: {exc.detail}"},
+        )
+        # Reuses slowapi's own header-injection mechanism (plan-blessed) for
+        # Retry-After + X-RateLimit-* against the limit that fired.
+        return limiter._inject_headers(
+            response, getattr(request.state, "view_rate_limit", None)
+        )
+
+    app.add_exception_handler(RateLimitExceeded, _rate_limit_handler)
 
     @app.exception_handler(PermissionError)
     async def _permission_handler(request: Request, exc: PermissionError) -> JSONResponse:
