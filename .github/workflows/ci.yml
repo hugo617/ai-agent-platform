@@ -60,6 +60,20 @@ jobs:
         # `alembic check` fails if models and DB schema have diverged. Requires
         # the full chain applied (previous step).
         run: alembic check
+      - name: Postgres-gated booking-overlap tests
+        # booking-toctou-guard slice 01: the bookings EXCLUDE constraint is a
+        # PG-dialect construct, so its concurrency/semantics regression tests
+        # run here — against the schema the chain above just produced (the
+        # real migration product, not ORM create_all) — instead of in the
+        # SQLite backend job (where the file skips itself). Env vars mirror
+        # the backend job: tests/conftest.py imports the app, whose settings
+        # validation needs them (double insurance over its own defaults).
+        env:
+          OPENAI_API_KEY: "test-key"
+          CORS_ORIGINS: "http://localhost:3000"
+          JWT_SECRET: "test-secret"
+          SALT_ROUNDS: "4" # keep bcrypt cheap in CI
+        run: pytest tests/test_booking_overlap_pg.py -q
 
   backend:
     name: Backend (pytest + ruff)

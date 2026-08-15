@@ -39,9 +39,26 @@ Index strategy is query-pattern driven (see plan-device-booking.md §4.4):
 - ``idx_bookings_customer`` — ``GET /me/bookings`` (customer own view, slice 04)
 - ``idx_bookings_status`` — filter chips (待确认 / 爽约) + slot-box three-state
 
-There is deliberately **no** partial unique index: overlapping bookings are a
-runtime business rule (only active states conflict, and the rule is enforced
-in ``BookingService._assert_no_overlap``), not a static column invariant.
+Overlap enforcement is two-layer (booking-toctou-guard, D7). The friendly
+first line is the application-level check (``BookingService._assert_no_overlap``
+→ ``BookingRepository.find_overlap``, error message names the conflicting
+booking). The structural backstop is the Postgres EXCLUDE constraint
+``excl_bookings_active_no_overlap`` (migration ``9a8b7c6d5e4f``):
+``(device_id WITH =, tstzrange(scheduled_start_at, scheduled_end_at, '[)')
+WITH &&) WHERE status IN (active states)`` — it closes the check-then-insert
+race (two concurrent creates both passing ``find_overlap``) at the DB, for
+INSERT and UPDATE alike. There is deliberately **no** (partial unique) index
+on this table in the ORM: a unique index can only reject identical keys
+(same start instant), not partial interval overlap — and bookings has no
+``is_deleted`` column (D8) for the repo's usual partial-unique pattern to
+exclude. The constraint is deliberately NOT declared in ``__table_args__``:
+ExcludeConstraint is a PG-dialect construct that SQLite ``create_all`` (how
+the test suite builds its schema) cannot compile, and keeping it out of the
+model means ``alembic check`` never sees model-side drift. Its slot-holding
+state list must stay in sync with ``app.repositories.booking._ACTIVE_STATES``
+(pending / confirmed / in_service) — the migration spells its copy in
+``_ACTIVE_STATES_SQL`` and ``tests/test_booking_overlap_migration_source.py``
+fails CI if the lists drift apart.
 """
 
 import uuid
