@@ -54,7 +54,10 @@ from types import SimpleNamespace
 import pytest
 from sqlalchemy.exc import IntegrityError
 
-from app.services.booking_service import _map_exclusion_violation
+from app.services.booking_service import (
+    _EXCLUSION_CONFLICT_MESSAGE,
+    _map_exclusion_violation,
+)
 from app.services.errors import BizError
 
 AUTH = {"Authorization": "Bearer fake"}
@@ -3054,7 +3057,7 @@ def test_x1_exclusion_violation_maps_to_conflict_bizerror():
         _integrity_error(SimpleNamespace(sqlstate="23P01"))
     )
     assert isinstance(mapped, BizError)
-    assert str(mapped) == "设备时段冲突:该时段已被并发预约占用"
+    assert str(mapped) == _EXCLUSION_CONFLICT_MESSAGE
 
 
 def test_x2_unique_violation_is_not_mapped():

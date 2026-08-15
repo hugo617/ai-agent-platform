@@ -254,7 +254,7 @@ ALTER TABLE bookings ADD CONSTRAINT excl_bookings_active_no_overlap
 | psycopg 异常 sqlstate 属性形态差异(psycopg3) | 低 | 判别 helper 用 getattr 宽取,缺失 → re-raise(安全侧);单测锁定 23P01 正例 |
 | ADD CONSTRAINT EXCLUDE 建索引锁表(大存量表) | 低 | 平台未上生产、bookings 量级小,一次 ALTER 接受;Out of Scope 记录将来大表路径 |
 | 并发 INSERT 阻塞等待对方事务(commit 前)造成延迟尖峰 | 低 | 正常并发窗口毫秒级;排他等待与唯一索引同机制,PG 标准行为 |
-| PG 门控测试在 Migrations job 引入 app settings 导入失败 | 低 | CI step env 对齐 backend job(JWT_SECRET 等);测试文件自身只 import models/SQLAlchemy,不 import app 装配 |
+| PG 门控测试在 Migrations job 引入 app settings 导入失败 | 低 | CI step env 对齐 backend job(JWT_SECRET 等,双保险)。切片 02 修订:用例 ⑥ 实例化真 `BookingService`,测试文件 import 面从「只 models/SQLAlchemy」扩至 service 层(`booking_service` → `permission_service` 等纯模块,无 app 装配、无 casbin 实例化;super_admin 路径绕开 require),settings 导入链由 env 对齐覆盖,实测 CI 绿 |
 | 既有 bookings 测试受影响 | 低 | 模型/应用层检查零改动(SQLite 链对约束零感知);`./init.sh full` 零回归硬门槛 |
 
 ## 10. 验收标准(同步 feature_list.json verification)

@@ -186,6 +186,30 @@ async def _active_booking_count(engine: AsyncEngine, device_id: str) -> int:
         ).scalar_one()
 
 
+async def _await_blocked_insert(engine: AsyncEngine, timeout: float = 10.0) -> None:
+    """Block until some backend is waiting on a lock mid-``INSERT INTO
+    bookings`` — i.e. the service-path INSERT of case ⑥ has really parked on
+    the exclusion constraint (not merely not-scheduled-yet). Deterministic
+    handshake replacing a ``sleep`` guess; fails loudly if it never blocks."""
+    waited = 0.0
+    while waited < timeout:
+        async with engine.connect() as probe:
+            n = (
+                await probe.execute(
+                    text(
+                        "SELECT COUNT(*) FROM pg_stat_activity "
+                        "WHERE wait_event_type = 'Lock' "
+                        "AND query LIKE 'INSERT INTO bookings%'"
+                    )
+                )
+            ).scalar_one()
+        if n:
+            return
+        await asyncio.sleep(0.05)
+        waited += 0.05
+    pytest.fail("service-path INSERT never blocked on the exclusion constraint")
+
+
 @pytest.mark.asyncio
 async def test_concurrent_overlapping_inserts_exactly_one_succeeds(
     engine: AsyncEngine, seeded: SimpleNamespace
@@ -307,30 +331,6 @@ async def test_null_device_never_conflicts(
             )
         ).scalar_one()
         assert n == 2
-
-
-async def _await_blocked_insert(engine: AsyncEngine, timeout: float = 10.0) -> None:
-    """Block until some backend is waiting on a lock mid-``INSERT INTO
-    bookings`` — i.e. the service-path INSERT of case ⑥ has really parked on
-    the exclusion constraint (not merely not-scheduled-yet). Deterministic
-    handshake replacing a ``sleep`` guess; fails loudly if it never blocks."""
-    waited = 0.0
-    while waited < timeout:
-        async with engine.connect() as probe:
-            n = (
-                await probe.execute(
-                    text(
-                        "SELECT COUNT(*) FROM pg_stat_activity "
-                        "WHERE wait_event_type = 'Lock' "
-                        "AND query LIKE 'INSERT INTO bookings%'"
-                    )
-                )
-            ).scalar_one()
-        if n:
-            return
-        await asyncio.sleep(0.05)
-        waited += 0.05
-    pytest.fail("service-path INSERT never blocked on the exclusion constraint")
 
 
 @pytest.mark.asyncio
