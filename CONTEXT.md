@@ -74,6 +74,10 @@ _Avoid_: team, department
 Role 的数据可见范围(all / tenant / group / self 四档)。CustomerProfile 查询时按 DataScopeService 收敛。
 _Avoid_: permission(Permission 是操作权限,DataScope 是数据范围), filter
 
+**占坑态(Slot-Holding States)**:
+预约仍占着设备时段的状态集合:pending / confirmed / in_service。应用层 `_ACTIVE_STATES`(重叠检查的过滤清单)与 DB EXCLUDE 约束 `excl_bookings_active_no_overlap` 的 WHERE 谓词**同源**——两处清单必须同步改(常驻测试守护)。cancelled / done / no_show 即时释放时段,可立即重订。
+_Avoid_: active states(泛称,分不清指应用层清单还是约束谓词), occupied states
+
 ## Token 计费
 
 **Wallet**:

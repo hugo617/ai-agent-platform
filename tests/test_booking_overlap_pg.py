@@ -33,9 +33,30 @@ from types import SimpleNamespace
 import pytest
 from sqlalchemy import bindparam, text
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine, create_async_engine
+from sqlalchemy.ext.asyncio import (
+    AsyncConnection,
+    AsyncEngine,
+    async_sessionmaker,
+    create_async_engine,
+)
 
+# Mapper completeness: case ⑥ instantiates the real BookingService, whose
+# Device/Customer relationships resolve string targets (e.g. Device →
+# DeviceModel) at first session use. This file deliberately does NOT import
+# the app assembly (conftest does that for the SQLite suite); importing the
+# model modules here registers every mapper the service touches so
+# ``configure_mappers`` can't fail mid-race.
+from app.models import (  # noqa: F401  (imported for mapper registration)
+    booking,
+    customer,
+    device,
+    device_model,
+    tenant,
+)
 from app.repositories.booking import _ACTIVE_STATES
+from app.schemas.booking import BookingCreate
+from app.services.booking_service import _EXCLUSION_CONFLICT_MESSAGE, BookingService
+from app.services.errors import BizError
 
 # The active-count helper below imports the application's slot-holding state
 # list so its口径 follows the single source (a test file, unlike a migration,
@@ -286,3 +307,95 @@ async def test_null_device_never_conflicts(
             )
         ).scalar_one()
         assert n == 2
+
+
+async def _await_blocked_insert(engine: AsyncEngine, timeout: float = 10.0) -> None:
+    """Block until some backend is waiting on a lock mid-``INSERT INTO
+    bookings`` — i.e. the service-path INSERT of case ⑥ has really parked on
+    the exclusion constraint (not merely not-scheduled-yet). Deterministic
+    handshake replacing a ``sleep`` guess; fails loudly if it never blocks."""
+    waited = 0.0
+    while waited < timeout:
+        async with engine.connect() as probe:
+            n = (
+                await probe.execute(
+                    text(
+                        "SELECT COUNT(*) FROM pg_stat_activity "
+                        "WHERE wait_event_type = 'Lock' "
+                        "AND query LIKE 'INSERT INTO bookings%'"
+                    )
+                )
+            ).scalar_one()
+        if n:
+            return
+        await asyncio.sleep(0.05)
+        waited += 0.05
+    pytest.fail("service-path INSERT never blocked on the exclusion constraint")
+
+
+@pytest.mark.asyncio
+async def test_service_path_race_maps_to_bizerror(
+    engine: AsyncEngine, seeded: SimpleNamespace
+) -> None:
+    """Case ⑥ (slice 02): the full service-path race chain on real PG —
+    conn1 holds an UNCOMMITTED active [10,12) row while a separate session's
+    ``BookingService.create`` books overlapping [11,13). Under read committed
+    the application-layer ``find_overlap`` cannot see the uncommitted row, so
+    the friendly check passes; the INSERT then blocks on the exclusion
+    constraint until conn1 commits and fails with 23P01 — which the service
+    must translate to a BizError (→ 400), never leak the IntegrityError (→
+    500). The exact-message assertion pins WHICH line fired: the application
+    layer's message names the conflicting booking id, the DB backstop's (D8)
+    deliberately doesn't — so this test cannot pass via the friendly check.
+
+    Uses the super_admin write path (payload tenant_id + require bypass) so
+    the race reaches the INSERT without casbin setup; ``created_by`` has a
+    real FK to users.id, so the actor row is seeded too (keeps the only
+    failure mode of the INSERT the exclusion constraint itself).
+    """
+    actor_id = f"toctou-u-{uuid.uuid4().hex[:12]}"
+    async with engine.connect() as conn:
+        await conn.execute(
+            text(
+                "INSERT INTO users (id, email, avatar, status) "
+                "VALUES (:id, :e, '', 'active')"
+            ),
+            {"id": actor_id, "e": f"{actor_id}@example.invalid"},
+        )
+        await conn.commit()
+    try:
+        session_factory = async_sessionmaker(engine, expire_on_commit=False)
+        async with engine.connect() as c1, session_factory() as svc_session:
+            await _insert_booking(
+                c1, seeded.tenant_id, seeded.device_id, "pending", _at(10), _at(12)
+            )
+            service = BookingService(svc_session)
+            create_task = asyncio.create_task(
+                service.create(
+                    actor_id=actor_id,
+                    tenant_id=None,
+                    payload=BookingCreate(
+                        tenant_id=seeded.tenant_id,
+                        device_id=seeded.device_id,
+                        customer_id=None,
+                        scheduled_start_at=_at(11),
+                        scheduled_end_at=_at(13),
+                    ),
+                    platform_role="super_admin",
+                )
+            )
+            # Deterministic: only commit conn1 once the service INSERT is
+            # actually parked on the constraint (find_overlap has already
+            # passed on the invisible row by then).
+            await _await_blocked_insert(engine)
+            await c1.commit()
+            with pytest.raises(BizError) as excinfo:
+                await create_task
+            assert str(excinfo.value) == _EXCLUSION_CONFLICT_MESSAGE
+        assert await _active_booking_count(engine, seeded.device_id) == 1
+    finally:
+        async with engine.connect() as conn:
+            await conn.execute(
+                text("DELETE FROM users WHERE id = :id"), {"id": actor_id}
+            )
+            await conn.commit()
