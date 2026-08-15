@@ -1,7 +1,7 @@
 # 计划:预约时段 TOCTOU 竞态 DB 兜底(booking-toctou-guard)
 
 > **id**: booking-toctou-guard
-> **状态**: not_started(EP2 完成 2026-08-15;EP3 开工时与 feature_list.json 同 commit 翻 in_progress——用户既定指令)
+> **状态**: in_progress(EP2 完成 2026-08-15;切片 01 开工 2026-08-15,与 feature_list.json 同 commit 翻页)
 > **优先级**: 95(feature_list.json,第 10 次巡检业务风险 R2 🔴)
 > **创建日期**: 2026-08-15
 > **最后修订**: 2026-08-15(v2:对抗式审查回写)

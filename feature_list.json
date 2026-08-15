@@ -180,7 +180,7 @@
       "area": "预约-后端",
       "title": "预约时段 TOCTOU 竞态 DB 兜底(并发双订同一设备同时段从「应用层 check-then-insert 可双双落库」变为数据库层结构性拒绝——部分唯一索引[排除非占坑态]或事务内 advisory lock,形态 EP2 烤定。第 10 次巡检业务风险 R2 🔴:find_overlap 纯应用层,模型层刻意无唯一约束)",
       "user_visible_behavior": "正常预约路径零变化;并发双订同一时段时,第二个请求收到明确冲突错误(而非双双成功落库)。兜底形态(索引 vs 锁)与「什么状态算占坑」的排除态语义 EP2 用户拍板。",
-      "status": "not_started",
+      "status": "in_progress",
       "verification": [
         "并发竞态回归测试:两请求同时创建同设备同时段,恰一成功一被 DB 兜底拒绝(非应用层 if 拦截)",
         "排除态语义测试:cancelled(及 EP2 定的其余非占坑态)时段可被重新预约",
