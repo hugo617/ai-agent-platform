@@ -1,7 +1,7 @@
 # 计划:全局限流 + 登录防爆破 + token TTL 收口(rate-limit-login-lockout)
 
 > **id**: rate-limit-login-lockout
-> **状态**: in_progress(EP2 已完成:plan draft v2 经对抗式审查双轴回写,3🔴 + 10🟡 全部处理,见 §0;EP3 切片 01 开工 2026-08-14)
+> **状态**: passing(EP2 完成 + EP3 全 3 切片完成:切片 01 PR #164 / 切片 02 PR #165 / 切片 03 末切片 2026-08-15 完成,见各切片完成证据)
 > **优先级**: 96(feature_list.json,第 10 次巡检业务风险 R1 🔴)
 > **创建日期**: 2026-08-14
 > **最后修订**: 2026-08-14(v2:对抗式审查回写)
@@ -221,7 +221,7 @@
 
 **完成证据(2026-08-14)**:commits 5198b4f(实施)+ 84b30db(review 修复)+ 0599c5f(E2E 修复),PR #165。定向 **39 passed**(`test_rate_limit` 16 + `test_auth_local`/`test_auth` 23 零回归)/ 全量 **1036 passed**(基线 1020 + 新增 16,零回归;tests 1005 + cli 31)/ init.sh 冒烟 209 绿 / ruff 全绿 / **CI 4/4 全绿**(Frontend 27s / Migrations 44s / Backend 10m33s / **E2E 2m5s**)/ **默认装配 E2E 实证**(未关限流、真实默认配额):6 连打登录第 6 次 429 + `Retry-After: 59` + `{"detail"}`、/health 豁免、默认档 121 次打业务端点第 121 次 429。**实施补充**:① slowapi==0.1.10,`default_limits` callable 实证为 LimitGroup 每请求求值(init 期 0 次调用),会话级 `RATE_LIMIT_DEFAULT=3/minute` env 为集中管控选择(惰性、enabled=false 时无害);② 豁免短路实现为 `RateLimitMiddleware(SlowAPIMiddleware)` 子类(与「装配处 ~10 行短路」功能等价,不碰 `_exempt_routes` 私有 API);③ key 用户档带 `user:` 前缀(sub 与 IP 键空间隔离,防理论撞键);④ 429 handler 必须为 **sync 函数**——slowapi middleware 路径(`sync_check_limits`)对 async handler 会静默回退其内置 `{"error"}` 体,装饰器路径(ExceptionMiddleware)两者皆可;⑤ **装饰器端点返回 pydantic model 时必须带 `response: Response` 参数**——slowapi wrapper 成功路径往该参数注入 X-RateLimit-* 头,缺参则每次成功登录 500(CI E2E 抓获,补成功登录回归测试三断言锁死;失败/429 路径异常短路不触达该行,故单测首轮未拦)。**/code-review 双轴(2026-08-14)**:Standards **0 硬违规**,4 判断项全留痕不改码 —— ① RATELIMIT_* 警示注释在 requirements.txt/.env.example 两处重复(受众不同:依赖读者 vs 运维,各自文件的规范位置,保留);② `rate_limit_exempt_paths_set` 与 `cors_origins_list` 的 split/strip 形状重复(仓库惯例为 Settings 内 per-field property,第 3 处出现时再抽 `_split_csv`);③ `decode_token` 成一行转发的 Middle Man(async API 兼容 + mock 面不变,有意为之,注释已言明);④ 配额裸字符串 Primitive Obsession(slowapi 原生接口即字符串,改类型反增复杂度)。Spec **6✅+3⚠️→全闭合**:AC5 豁免测试 parametrize 全 6 路径(+5 用例)/ AC8-9 证据本节补记 / **关键抓获(实证)**:RateLimitMiddleware 原装配在 CORS 外层,默认档 429(middleware 内生成)不回流 CORSMiddleware → 浏览器读不到(严档 429 走 ExceptionMiddleware 反而带 CORS 头,两档不对称),切片 03 前端 toast 会失灵一半 → 修复为加在 CORS 之前(内层),E2E 复验两档 429 均带 ACAO + Retry-After,且 CORS preflight OPTIONS 不再烧默认档配额。**E2E 排查插曲(2026-08-14)**:CI E2E 两连红(登录 POST 500 → 根因即上述 ⑤,commit 0599c5f 修复);本地完整 E2E 栈复现时聊天步另挂 —— worktree 起main 后端对照**同挂**,系本地 DB 残留 LlmConfig 行致 LLM 回源非 mock 的环境因素(CI 全新 DB 无此问题,修复后 CI E2E 实测绿)。
 
-### 切片 03 — TTL 收口 + 前端 429 事件桥 + feature 收尾(末切片)
+### 切片 03 — TTL 收口 + 前端 429 事件桥 + feature 收尾(末切片)✅(commit aa8be67,2026-08-15)
 
 **What it delivers**:新签发的本地 token 8 小时过期(登录响应 `expires_in=28800`),session 行与 token 时效对齐;用户触到限流时前端弹「请求过于频繁,请稍后再试」toast 而非裸报错、不被踢出登录、token 不被清;存量旧 token 不受影响自然过期;全量验证收官。
 
@@ -233,13 +233,15 @@
 
 **Acceptance criteria**:
 
-- [ ] `access_token_ttl_minutes` 默认值 10080 → 480;`session_ttl_hours` 默认值 168 → 8;`.env.example` 两行显式改 `ACCESS_TOKEN_TTL_MINUTES=480` / `SESSION_TTL_HOURS=8` + 过渡注释(存量 token 自然过期;**消除现状示例 60 分钟与代码默认的分歧**)
-- [ ] 登录集成测试断言 `expires_in == 28800`;UserSession `expires_at ≈ now+8h`;grep `10080`/`"168"` 旧字面量在 app/ 下归零(auth_service 的 `settings.session_ttl_hours` 符号引用不算;/dev/token 的 3600 不属于本片)
-- [ ] `frontend/src/api/client.ts` 拦截 429 → `window.dispatchEvent(new CustomEvent("aap:rate-limited"))`(仿 `AUTH_EXPIRED_EVENT` 先例);ToastProvider 层 listener 收到事件 → `t.error("请求过于频繁,请稍后再试")`;不清 token、不跳登录、不自动重试
-- [ ] vitest 用例锁定:429 → 事件发出 → toast 渲染;401 既有行为不回归;token 不被清除
-- [ ] `CONTEXT.md` 新增术语:「临时锁定(Temporary Lockout)」与「管理员锁定」的区分条目(按 §4.6 措辞,glossary 格式对齐「判定链(Decision Chain)」先例)
-- [ ] 全量验证:`./init.sh full` 全绿零回归 + alembic 迁移链干净 + 前端 build/test/oxlint 全绿
-- [ ] feature 收尾仪式(three-tier §4 第 1-8 步):feature_list.json `not_started → passing` + evidence + sync-active + progress.md + 文档影响评估 + 分支清理
+- [x] `access_token_ttl_minutes` 默认值 10080 → 480;`session_ttl_hours` 默认值 168 → 8;`.env.example` 两行显式改 `ACCESS_TOKEN_TTL_MINUTES=480` / `SESSION_TTL_HOURS=8` + 过渡注释(存量 token 自然过期;**消除现状示例 60 分钟与代码默认的分歧**)
+- [x] 登录集成测试断言 `expires_in == 28800`;UserSession `expires_at ≈ now+8h`;grep `10080`/`"168"` 旧字面量在 app/ 下归零(auth_service 的 `settings.session_ttl_hours` 符号引用不算;/dev/token 的 3600 不属于本片)
+- [x] `frontend/src/api/client.ts` 拦截 429 → `window.dispatchEvent(new CustomEvent("aap:rate-limited"))`(仿 `AUTH_EXPIRED_EVENT` 先例);ToastProvider 层 listener 收到事件 → `t.error("请求过于频繁,请稍后再试")`;不清 token、不跳登录、不自动重试
+- [x] vitest 用例锁定:429 → 事件发出 → toast 渲染;401 既有行为不回归;token 不被清除
+- [x] `CONTEXT.md` 新增术语:「临时锁定(Temporary Lockout)」与「管理员锁定」的区分条目(按 §4.6 措辞,glossary 格式对齐「判定链(Decision Chain)」先例)
+- [x] 全量验证:`./init.sh full` 全绿零回归 + alembic 迁移链干净 + 前端 build/test/oxlint 全绿
+- [x] feature 收尾仪式(three-tier §4 第 1-8 步):feature_list.json `in_progress → passing` + evidence + sync-active + progress.md + 文档影响评估 + 分支清理(注:AC 原文写 `not_started → passing` 系 EP2 笔误,该 feature 切片 01 开工时已按用户指令翻 in_progress,本切片从 in_progress 翻 passing)
+
+**完成证据(2026-08-15)**:commit aa8be67(实施,含 review 文档同步修复)。定向后端 **41 passed**(`test_auth_local` 18 含新增 2 + `test_auth` + `test_rate_limit` 16 零回归)/ 全量后端 **1038 passed**(tests 1007 = 基线 1005 + 新增 2,零回归;另 cli 31)/ `./init.sh full` exit 0 / ruff 全绿 / **alembic** `upgrade head` + `check` 干净(docker PG 实测,无新迁移,符合本片零 schema 改动)/ 前端 **npm test 251/251**(基线 248 + 新增 3)+ `tsc -b` 0 错 + `npm run build` 绿 + `oxlint` 0 warning 0 error / grep 旧字面量 `10080` 与 `\b168\b` 在 app/ 下 **0 命中**。**实施要点**:① TTL 两键独立配置(480 分钟 + 8 小时)靠新增两测试锁对齐(`expires_in == 480*60` + session 行 `expires_at ∈ (7h59m, 8h]`,SQLite naive datetime 走既有 `_as_utc` 归一化);② 事件桥落地为 `RATE_LIMITED_EVENT = "aap:rate-limited"` 常量 + `RateLimitedToast` listener(~20 行,返回 null)挂 App.tsx ToastProvider 子树内;③ 前端测试用 stub adapter 塞真实 `api` 实例defaults 驱动**真拦截器链**(非 mock 拦截器),一条用例覆盖 整链 adapter 429 → dispatch → listener → toast 渲染,另两用例锁 401 不回归 + token 不清,adapter 每用例还原防污染;④ listener 不做 dedup/节流(有意,连发 429 叠 toast 可接受,每个 4s 自动消失)。**/code-review 双轴(2026-08-15)**:Standards **0 硬违规**,6 判断项 —— ① 配置指南表 `session_ttl_hours` 168 失真 + 前端 API 层文档缺 429(**已修**,同步 `项目指南/02-后端架构/02-配置与环境.md` 两行 + `03-前端架构/02-API层与请求拦截.md` 补 429 区别条目);② client.ts window 守卫与 401 分支同形(镜像先例,保留);③ toast 文案组件/测试各一份(测试断言文案属常规);④ `RateLimitedToast` 名字含 Toast 但渲染 null(JSDoc 自解释,保留);⑤ 放置 `components/ui/` vs `components/auth/`(紧邻 toast.tsx,可辩保留);⑥ 同一 8h 用 480min + 8h 两键(EP2 grill 拍板的两独立键,测试锁对齐)。Spec **5/5 代码 AC 全满足 + 0 scope creep**,AC6 全量验证证据本节补记,AC7 收尾仪式按本节 + feature_list evidence 闭合。
 
 ## 7. 对抗式审查段(复杂任务:鉴权 + token 安全敏感 → 已执行)
 

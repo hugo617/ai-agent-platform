@@ -8,6 +8,7 @@ import {
   RequireUserManagement,
 } from "@/components/auth/require-permission";
 import { RequireSuperAdmin } from "@/components/auth/require-super-admin";
+import { RateLimitedToast } from "@/components/ui/rate-limited-toast";
 import { ToastProvider } from "@/components/ui/toast";
 import { ThemeProvider } from "@/components/theme/theme-provider";
 import { DashboardLayout } from "@/components/layout/dashboard-layout";
@@ -108,6 +109,10 @@ export default function App() {
     <QueryClientProvider client={queryClient}>
       <ThemeProvider>
       <ToastProvider>
+        {/* 429 → toast 事件桥的 listener(rate-limit-login-lockout 切片 03)。
+            必须在 ToastProvider 子树内(useToast 是 Context-scoped);返回
+            null,不渲染任何 DOM。 */}
+        <RateLimitedToast />
         <BrowserRouter>
           <AuthProvider>
             <Suspense fallback={<RouteFallback />}>

@@ -45,8 +45,12 @@ class Settings(BaseSettings):
     jwt_secret: str = "change-me-in-production"
     jwt_algorithm: str = "HS256"
     salt_rounds: int = 12
-    access_token_ttl_minutes: int = 10080  # 7 days
-    session_ttl_hours: int = 168  # 7 days
+    # Token/session TTL (rate-limit-login-lockout slice 03): 8 hours, down
+    # from the original 7-day default, to shrink the window a leaked token
+    # stays usable. Tokens minted before this change are not revoked — they
+    # expire on their original schedule (no forced re-login).
+    access_token_ttl_minutes: int = 480  # 8 hours
+    session_ttl_hours: int = 8
     # Login lockout (rate-limit-login-lockout): after N consecutive failed
     # local logins the account is locked for M minutes (auto-unlock,
     # DB-persisted on users.failed_attempts / locked_until). Independent of

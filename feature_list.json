@@ -158,15 +158,21 @@
       "area": "认证-安全",
       "title": "全局 API 限流 + 登录防爆破(slowapi 限流框架接入[按用户/IP 可配,全端点]+ 登录失败计数锁定 + access_token_ttl 从 7 天降小时级。第 10 次巡检业务风险 R1 🔴:POST /auth/login 可无限尝试、全库零限流、TTL 10080 分钟)",
       "user_visible_behavior": "登录连续失败触发锁定(锁定期内拒绝再试),超出限流配额的请求返回 429,token 有效期从 7 天降为小时级(需更频繁登录)。阈值(失败几次/锁多久/TTL 几小时/配额分级/存储后端)EP2 grill 用户拍板,不得默认采纳。",
-      "status": "in_progress",
+      "status": "passing",
       "verification": [
         "登录连续失败 N 次后触发锁定的回归测试(锁定窗口内正确密码也拒绝,窗口过后恢复)",
         "超出配额返回 429(限流中间件生效)+ 正常配额内请求零影响(现有 API 测试零回归)",
         "TTL 配置生效断言(新签发 token exp 为小时级)"
       ],
-      "notes": "生产加固系列第 1 条(EP1 2026-08-14 登记,8 决策全用户拍板见 plan-risk-hardening-overview.md §EP1 决策记录)。D4 用户明确选择 slowapi 全局限流+登录锁定(比最小方案防护面广,接受新依赖与全局配置面),非默认采纳。新依赖 slowapi 需 EP2 评估引入方式。 EP2 完成(2026-08-14):11 项决策用户逐项拍板(锁定 5 次/15 分钟/账号维度/DB 持久 + TTL 480 分钟/session 8h 对齐/存量自然过期 + 内存限流/两档 120 与 5 每分/豁免 6 探针文档/{detail}+Retry-After+前端 toast),plan v2 经对抗式审查回写;status 按用户指令保持 not_started,EP3 切片 01 开工时翻 in_progress。",
+      "notes": "生产加固系列第 1 条(EP1 2026-08-14 登记,8 决策全用户拍板见 plan-risk-hardening-overview.md §EP1 决策记录)。D4 用户明确选择 slowapi 全局限流+登录锁定(比最小方案防护面广,接受新依赖与全局配置面),非默认采纳。新依赖 slowapi 需 EP2 评估引入方式。 EP2 完成(2026-08-14):11 项决策用户逐项拍板(锁定 5 次/15 分钟/账号维度/DB 持久 + TTL 480 分钟/session 8h 对齐/存量自然过期 + 内存限流/两档 120 与 5 每分/豁免 6 探针文档/{detail}+Retry-After+前端 toast),plan v2 经对抗式审查回写;status 按用户指令保持 not_started,EP3 切片 01 开工时翻 in_progress。 EP3 全 3 切片完成(2026-08-15 feature 收官):切片 01 登录失败锁定(PR #164)+ 切片 02 slowapi 全局限流(PR #165)+ 切片 03 末切片 TTL 收口 + 前端 429 事件桥(commit aa8be67)。",
       "plan": "harness/docs/plan-rate-limit-login-lockout.md",
-      "depends_on": []
+      "depends_on": [],
+      "evidence": [
+        "切片 01(commit b1c3268,PR #164,merge 888a70b):User 加 failed_attempts/locked_until(迁移 b3f7a2c91d4e)+ UserRepository 三写方法(原子 UPDATE 自增)+ AuthService 锁定判定(锁内正确密码也拒/失败不计数不续期/OIDC-only 不计数/成功登录清零)+ SystemLog action=login_locked;pytest test_auth_local+test_auth 23 passed(15 既有 + 8 新);全量 1020 passed(基线 1012 零回归);/code-review 双轴 0 硬违规 + Spec 12/12 AC;CI 4/4 绿",
+        "切片 02(commits 5198b4f+84b30db+0599c5f,PR #165):slowapi 0.1.10 单例装配 + 默认档 120/分(验签 sub 键,伪造 sub 落 IP 档)+ 登录严档 5/分/IP + 豁免 6 探针路径短路 + sync 429 handler({detail}+Retry-After+X-RateLimit-*)+ middleware 装配 CORS 内层(两档 429 均带 ACAO);test_rate_limit 16 用例;全量 1036 passed(基线 1020 + 新增 16 零回归);CI 4/4 绿(E2E 2m5s);关键抓获:slowapi 装饰器端点返回 pydantic model 必须带 response: Response 参数否则成功登录 500(CI E2E 抓获,commit 0599c5f)",
+        "切片 03 末切片(commit aa8be67,2026-08-15):access_token_ttl_minutes 10080→480 + session_ttl_hours 168→8 + .env.example 统一 480/8(消除示例 60 分歧,存量 token 自然过期)+ client.ts 429→dispatchEvent(aap:rate-limited) 事件桥 + RateLimitedToast listener 挂 ToastProvider 子树(不清 token 不跳登录不重试)+ CONTEXT.md 术语「临时锁定(Temporary Lockout)」vs 管理员锁定;测试新增 5(后端 2:expires_in==28800 + session 行 expires_at≈now+8h;前端 3:429→事件→toast 全链[stub adapter 驱动真拦截器链]/429 不触发 AUTH_EXPIRED/401 不回归且 token 不清);grep 10080 与 \\b168\\b 在 app/ 归零;/code-review 双轴 Standards 0 硬违规(文档同步 2 处已修:配置指南表 + 前端 API 层文档)+ Spec 5/5 代码 AC 无越界",
+        "全量验证(2026-08-15 收官):./init.sh full exit 0 + 后端 tests 1007 passed(基线 1005 + 新增 2 零回归,另 cli 31=1038)+ alembic upgrade head && alembic check 干净(docker PG 实测,无新迁移)+ 前端 npm test 251/251(基线 248 + 新增 3)+ tsc -b 0 错 + npm run build 绿 + oxlint 0/0"
+      ]
     },
     {
       "id": "booking-toctou-guard",
