@@ -161,7 +161,7 @@ ALTER TABLE bookings ADD CONSTRAINT excl_bookings_active_no_overlap
 - **确定性并发模式**(PG 唯一/排他约束并发语义的标准测法,不靠时序赌博):conn1 开事务 INSERT A 不提交 → conn2 INSERT 重叠 B(**阻塞**在约束等待)→ commit conn1 → conn2 抛 IntegrityError。断言「恰一成功、一被 DB 拒」。
 - 用例清单:①并发重叠双插恰一成功 ②back-to-back `[10,12)+[12,14)` 双双成功(边界语义)③cancelled/done/no_show 排除(重叠可插,时段可复用)④UPDATE 改时段撞重叠被拒(update 路径覆盖)⑤NULL device_id 不冲突 ⑥**服务路径竞态全链证明**(切片 02 落地):conn1 插未提交 active 行 → 另一 session 实例化 `BookingService.create`(read committed 下应用层 `find_overlap` 看不见未提交行 → 检查通过)→ INSERT 阻塞 → commit conn1 → 断言 service 抛 **BizError「设备时段冲突」而非 IntegrityError**——覆盖捕获点 + rollback + sqlstate 判别 + 映射全链,字面满足 verification 1 的「两请求」措辞。
 - **CI wiring**:migrations job 加 step `pytest tests/test_booking_overlap_pg.py -q`(该 job 已装 requirements-dev);step env 补齐与 backend job 相同的测试变量(JWT_SECRET/SALT_ROUNDS/OPENAI_API_KEY/CORS_ORIGINS——`app.core.database` import 期拉 settings,防导入校验失败的双保险)。
-- **本地复跑**:`docker-compose up -d` + `alembic upgrade head` + `DATABASE_URL=postgresql+psycopg://aap:aap_secret@localhost:5432/aap pytest tests/test_booking_overlap_pg.py`。
+- **本地复跑**:`docker-compose up -d` + `alembic upgrade head` + `DATABASE_URL=postgresql+psycopg://aap:aap_secret@localhost:5433/aap pytest tests/test_booking_overlap_pg.py`(5433 = docker-compose 宿主端口映射;5432 是 CI 容器网内端口)。
 
 **模型 docstring 更新(`app/models/booking.py`)**
 

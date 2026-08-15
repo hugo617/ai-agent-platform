@@ -31,13 +31,16 @@ from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
 import pytest
-from sqlalchemy import text
+from sqlalchemy import bindparam, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine, create_async_engine
 
-# Slot-holding states, spelled as literals: this file mirrors the DB-level
-# guard, not the application-level one (app.repositories.booking). Keep in
-# sync per plan D2 — guarded by test_booking_overlap_migration_source.py.
+from app.repositories.booking import _ACTIVE_STATES
+
+# The active-count helper below imports the application's slot-holding state
+# list so its口径 follows the single source (a test file, unlike a migration,
+# may import live code) — the DB semantics themselves are what this file
+# asserts, per plan D2.
 pytestmark = pytest.mark.skipif(
     "postgresql" not in os.environ.get("DATABASE_URL", ""),
     reason=(
@@ -155,9 +158,8 @@ async def _active_booking_count(engine: AsyncEngine, device_id: str) -> int:
             await conn.execute(
                 text(
                     "SELECT COUNT(*) FROM bookings "
-                    "WHERE device_id = :d AND status IN "
-                    "('pending', 'confirmed', 'in_service')"
-                ),
+                    "WHERE device_id = :d AND status IN :states"
+                ).bindparams(bindparam("states", _ACTIVE_STATES, expanding=True)),
                 {"d": device_id},
             )
         ).scalar_one()
@@ -273,3 +275,14 @@ async def test_null_device_never_conflicts(
         await _insert_booking(conn, seeded.tenant_id, None, "pending", _at(10), _at(12))
         await _insert_booking(conn, seeded.tenant_id, None, "pending", _at(10), _at(12))
         await conn.commit()
+    async with engine.connect() as conn:
+        n = (
+            await conn.execute(
+                text(
+                    "SELECT COUNT(*) FROM bookings "
+                    "WHERE tenant_id = :t AND device_id IS NULL"
+                ),
+                {"t": seeded.tenant_id},
+            )
+        ).scalar_one()
+        assert n == 2
