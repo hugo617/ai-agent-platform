@@ -187,7 +187,7 @@ ALTER TABLE bookings ADD CONSTRAINT excl_bookings_active_no_overlap
 
 > 顺序理由:结构先行——没有约束,映射是捕获不到任何东西的死代码;切片 01 落地后竞态已被 DB 拦下(裸 IntegrityError → 500,严格优于静默双订落库),切片 02 把罕见兜底路径的错误体验收口到 400 并收官。切片 01 自含迁移正确性验证(预检/upgrade/check + PG 测试),可独立交付。
 
-### 切片 01 — DB 层结构性兜底:EXCLUDE 约束迁移 + 脏数据预检 + PG 门控测试 + CI
+### 切片 01 — DB 层结构性兜底:EXCLUDE 约束迁移 + 脏数据预检 + PG 门控测试 + CI ✅(PR #167,merge 596dccd,CI 4/4 绿,2026-08-15)
 
 **What it delivers**:并发(或直插)两条 active 预约重叠落在同一设备上时,数据库结构性拒绝第二条——`[10,12)` 已提交则 `[11,13)` INSERT/UPDATE 抛 exclusion violation;back-to-back 不误伤;cancelled/done/no_show 让出的时段立即可复用;生产库若有历史双订,迁移拒迁并列出重叠对数量;该防护有 PG 门控测试常驻 CI Migrations job。
 
@@ -199,13 +199,15 @@ ALTER TABLE bookings ADD CONSTRAINT excl_bookings_active_no_overlap
 
 **Acceptance criteria**:
 
-- [ ] 新迁移(文件头 docstring 对齐 `b3f7a2c91d4e` 先例,Revises: b3f7a2c91d4e + 指向本 plan):①预检拒迁**两条并列**(active 重叠对 + 退化区间 `scheduled_end_at <= scheduled_start_at`,任一 > 0 → RuntimeError 带数量与处置指引;按上述序列实测验证)②`bind.dialect.name != 'sqlite'` guard 内 `CREATE EXTENSION IF NOT EXISTS btree_gist` + ADD CONSTRAINT `excl_bookings_active_no_overlap`(DDL 按 §4.6,`'[)'` 边界 + 排除态谓词与 `_ACTIVE_STATES` 逐字一致)③downgrade `DROP CONSTRAINT IF EXISTS excl_bookings_active_no_overlap`,downgrade 后经 pg_catalog 确认约束确已消失(防 `IF EXISTS` 错名静默 no-op);btree_gist 扩展保留,注释声明
-- [ ] `tests/test_booking_overlap_pg.py`:skipif 非 PG;§4.6 用例 ①-⑤ 全落地(并发恰一成功 / back-to-back 双成功 / cancelled+done+no_show 排除 / update 改期被拒 / NULL device 不冲突);种子带唯一标记 + finally 清理
-- [ ] `.github/workflows/ci.yml` migrations job 加 step 跑 PG 门控测试(在 `alembic upgrade` + `alembic check` 之后;env 对齐 backend job 的测试变量);CI 实测绿
-- [ ] `alembic upgrade head && alembic check` 干净(预期天然干净,见 §4.6 核实结论;**不预期需要 env.py 改动**,仅当未来升级后实测报 drift 才落地 include_object 兜底)
-- [ ] 同源防漂移测试(SQLite 常驻):读迁移源码断言约束谓词与预检 SQL 的状态清单与 `_ACTIVE_STATES` 一致
-- [ ] `app/models/booking.py` docstring 更新(考古结论 + 约束由迁移持有的原因 + 状态清单同源互指注释);`__table_args__`/列零改动
-- [ ] `./init.sh` 冒烟绿;全量 pytest 零回归(SQLite 链对约束零感知)
+- [x] 新迁移(文件头 docstring 对齐 `b3f7a2c91d4e` 先例,Revises: b3f7a2c91d4e + 指向本 plan):①预检拒迁**两条并列**(active 重叠对 + 退化区间 `scheduled_end_at <= scheduled_start_at`,任一 > 0 → RuntimeError 带数量与处置指引;按上述序列实测验证)②`bind.dialect.name != 'sqlite'` guard 内 `CREATE EXTENSION IF NOT EXISTS btree_gist` + ADD CONSTRAINT `excl_bookings_active_no_overlap`(DDL 按 §4.6,`'[)'` 边界 + 排除态谓词与 `_ACTIVE_STATES` 逐字一致)③downgrade `DROP CONSTRAINT IF EXISTS excl_bookings_active_no_overlap`,downgrade 后经 pg_catalog 确认约束确已消失(防 `IF EXISTS` 错名静默 no-op);btree_gist 扩展保留,注释声明
+- [x] `tests/test_booking_overlap_pg.py`:skipif 非 PG;§4.6 用例 ①-⑤ 全落地(并发恰一成功 / back-to-back 双成功 / cancelled+done+no_show 排除 / update 改期被拒 / NULL device 不冲突);种子带唯一标记 + finally 清理
+- [x] `.github/workflows/ci.yml` migrations job 加 step 跑 PG 门控测试(在 `alembic upgrade` + `alembic check` 之后;env 对齐 backend job 的测试变量);CI 实测绿
+- [x] `alembic upgrade head && alembic check` 干净(预期天然干净,见 §4.6 核实结论;**不预期需要 env.py 改动**,仅当未来升级后实测报 drift 才落地 include_object 兜底)
+- [x] 同源防漂移测试(SQLite 常驻):读迁移源码断言约束谓词与预检 SQL 的状态清单与 `_ACTIVE_STATES` 一致
+- [x] `app/models/booking.py` docstring 更新(考古结论 + 约束由迁移持有的原因 + 状态清单同源互指注释);`__table_args__`/列零改动
+- [x] `./init.sh` 冒烟绿;全量 pytest 零回归(SQLite 链对约束零感知)
+
+**切片 01 完成证据(2026-08-15,Session 214)**:commits `4ced028`(实施)+ `50eaa67`(双轴审查回写),PR #167(merge `596dccd`,CI 4/4 绿:Migrations 46s 含新 step「Postgres-gated booking-overlap tests: success」/ Backend 7m23s / E2E 1m45s / Frontend 34s)。实测:迁移 `9a8b7c6d5e4f`(预检两条经 `_ACTIVE_STATES_SQL` 常量单源插值 4 处 SQL 站点)/ TDD 红证(约束缺失时用例①④ DID NOT RAISE)/ `alembic upgrade head && alembic check` 干净(反射预判实证,env.py 零改动)/ PG 门控 7/7(①并发恰一成功含 sqlstate 23P01 断言 + 事后计数 / ②back-to-back / ③cancelled+done+no_show 三态 parametrize / ④UPDATE 改期被拒 / ⑤NULL device 含计数断言)/ 拒迁实测(手插 1 重叠对 + 1 退化区间 → exit 1 报文含两数量+处置指引,版本未动;清理后 upgrade 成功)/ downgrade 后 pg_catalog 确认约束消失(count=0)/ `./init.sh full` **1040 passed**(基线 1038 + 新增 2 防漂移)+ 7 skipped 零回归。审查:Standards 0🔴/3🟡(1 修:PG 测试第四处手写状态清单 → import `_ACTIVE_STATES` expanding bindparam;2 留痕:防漂移正则防呆不防恶、`_EXPECTED_CONSTANT_SITES=4` 有意 tripwire)/ Spec 7/7 无越界(plan §4.6 本地复跑端口笔误 5432→5433 已回写)。
 
 ### 切片 02 — 服务层 400 映射 + 判别单测 + 术语/文档同步 + feature 收尾(末切片)
 
