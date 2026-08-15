@@ -49,8 +49,16 @@ slice 02.
 import uuid
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+from types import SimpleNamespace
 
 import pytest
+from sqlalchemy.exc import IntegrityError
+
+from app.services.booking_service import (
+    _EXCLUSION_CONFLICT_MESSAGE,
+    _map_exclusion_violation,
+)
+from app.services.errors import BizError
 
 AUTH = {"Authorization": "Bearer fake"}
 
@@ -3024,3 +3032,44 @@ async def test_r8_other_day_excluded(
     )
     assert resp.status_code == 200, resp.text
     assert resp.json() == []
+
+
+# ------------------------ X. DB-backstop error mapping (booking-toctou-guard
+# slice 02). The EXCLUDE constraint turns a check-then-insert race into
+# IntegrityError(23P01) at the flush point; the service maps ONLY that back to
+# the conflict-vocabulary 400 (D3/D8). These are unit tests of the pure
+# discriminator over constructed driver errors — the full service-path race
+# (find_overlap passes on an uncommitted row → INSERT blocks → BizError, not
+# IntegrityError) is proven end-to-end on real Postgres by case ⑥ in
+# tests/test_booking_overlap_pg.py.
+
+
+def _integrity_error(orig: BaseException) -> IntegrityError:
+    """An IntegrityError whose ``orig`` mimics the driver exception SQLAlchemy
+    wraps (psycopg3 errors carry a ``sqlstate`` attribute)."""
+    return IntegrityError("INSERT INTO bookings ...", {}, orig)
+
+
+def test_x1_exclusion_violation_maps_to_conflict_bizerror():
+    """X-1: sqlstate 23P01 (exclusion_violation) → the D8 short message with
+    NO booking id — the backstop can't name the row that won the race."""
+    mapped = _map_exclusion_violation(
+        _integrity_error(SimpleNamespace(sqlstate="23P01"))
+    )
+    assert isinstance(mapped, BizError)
+    assert str(mapped) == _EXCLUSION_CONFLICT_MESSAGE
+
+
+def test_x2_unique_violation_is_not_mapped():
+    """X-2: 23505 (unique_violation) → None → the caller re-raises. Other
+    integrity problems must not be swallowed into a slot-conflict 400 (e.g. a
+    future unique index still surfaces as its own error)."""
+    exc = _integrity_error(SimpleNamespace(sqlstate="23505"))
+    assert _map_exclusion_violation(exc) is None
+
+
+def test_x3_missing_sqlstate_is_not_mapped():
+    """X-3: no ``sqlstate`` attribute at all (driver without it, or a
+    test-constructed exception) → None → re-raise, the safe side."""
+    exc = _integrity_error(Exception("boom"))
+    assert _map_exclusion_violation(exc) is None

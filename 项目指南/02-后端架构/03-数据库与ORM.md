@@ -118,6 +118,48 @@ Index(
 
 > 💡 这是项目里「软删除 + 可复用标识符」的标配组合,迁移文件 `ce505ae8a1bd` 专门加了它。
 
+### PG-only 约束:EXCLUDE 排他约束(bookings 范式)
+
+部分唯一索引挡得住**同一键值重复**,挡不住**区间部分重叠**(`[10,12)` vs `[11,13)`)。
+要对区间重叠做 DB 层结构性拒绝(并发 check-then-insert 竞态兜底),Postgres 的形态是
+**EXCLUDE 排他约束**(需 `btree_gist` 扩展)。范例:`bookings` 的
+`excl_bookings_active_no_overlap`(迁移 `9a8b7c6d5e4f`,booking-toctou-guard):
+
+```sql
+ALTER TABLE bookings ADD CONSTRAINT excl_bookings_active_no_overlap
+  EXCLUDE USING gist (
+    device_id WITH =,
+    tstzrange(scheduled_start_at, scheduled_end_at, '[)') WITH &&
+  )
+  WHERE (status IN ('pending', 'confirmed', 'in_service'));
+```
+
+**为什么迁移持有、模型不声明?** 三个原因:
+
+1. **SQLite 编译不了**:`ExcludeConstraint` 是 PG 方言构造,而测试套件用 SQLite
+   `create_all` 建 schema——写进 `__table_args__` 会炸掉整个测试链。
+2. **alembic check 天然干净**:约束只在迁移里,模型侧永远无 drift。PG 会把约束物化成
+   同名 gist 索引,但方言反射给这类「约束背书索引」打 `duplicates_constraint` 标,
+   autogen 比较时剔除——**不需要** env.py 特判(升级 SQLAlchemy/alembic 后若实测报
+   drift,再考虑 `include_object` 钩子)。
+3. **迁移内 dialect guard**:`if bind.dialect.name != 'sqlite'` 包住 DDL(镜像
+   pgvector 先例),SQLite 测试链零感知。
+
+**与测试链的关系**:约束的并发/边界/排除态语义回归测试放 **PG 门控测试文件**
+(`tests/test_booking_overlap_pg.py`,skipif 非 PG),CI 在 Migrations job(起真 PG、
+跑完迁移链,测的就是真迁移产物)里跑;SQLite 常规套件只测服务层的 sqlstate 判别
+(23P01 → 400 映射,构造异常对象直测,不需要真 PG)。
+
+**配套约定**(照抄这个范式时一起带走):
+
+- **服务层映射**:约束命中 → `IntegrityError`(sqlstate 23P01)→ Service 层判别
+  helper 映射回与现役冲突同款的 400;**非 23P01 一律 re-raise**,不吞其他完整性错误。
+- **状态清单同源**:约束 WHERE 谓词与应用层清单(如 `_ACTIVE_STATES`)字面量一致,
+  由常驻测试读迁移源码断言守护——迁移是冻结历史,不 import 活代码做单源。
+- **存量脏数据预检拒迁**:`ADD CONSTRAINT` 前先扫存量(重叠对 + 退化区间,任一 > 0 →
+  RuntimeError 带数量),人工处置后重跑,不静默改业务数据(镜像 knowledge-foundation
+  先例)。
+
 ---
 
 ## 数据库迁移(Alembic)

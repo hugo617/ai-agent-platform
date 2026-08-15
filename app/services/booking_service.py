@@ -59,6 +59,7 @@ from __future__ import annotations
 from datetime import UTC, date, datetime, time, timedelta
 from itertools import groupby
 
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.booking import Booking
@@ -88,6 +89,29 @@ from app.services.principal import Principal
 # action endpoint and PUT must refuse. ``confirmed`` is a CHECK placeholder
 # this feature never writes, so it's not listed as mutable either.
 _MUTABLE_STATUSES: frozenset[str] = frozenset({"pending"})
+
+# The DB-backstop conflict message deliberately carries NO booking id (D8):
+# an exclusion violation can't name the row that won the race without a
+# re-query, and this path only fires in the rare race window — the friendly
+# application-layer message (``_assert_no_overlap``) remains the first line.
+_EXCLUSION_CONFLICT_MESSAGE = "设备时段冲突:该时段已被并发预约占用"
+
+
+def _map_exclusion_violation(exc: BaseException) -> BizError | None:
+    """Map a bookings exclusion violation to the conflict BizError — or None.
+
+    Pure discriminator (booking-toctou-guard D3/D6/D8): given the
+    ``IntegrityError`` caught at a flush point, return the BizError the
+    service should raise instead exactly when the driver reports sqlstate
+    23P01 (exclusion_violation — the EXCLUDE backstop rejected a
+    check-then-insert race the application check can't see). Anything else —
+    unique violation 23505, FK errors, drivers/objects without a ``sqlstate``
+    attribute — returns None so the caller re-raises: other integrity
+    problems must NOT be swallowed into a misleading slot-conflict 400.
+    """
+    if getattr(getattr(exc, "orig", None), "sqlstate", None) == "23P01":
+        return BizError(_EXCLUSION_CONFLICT_MESSAGE)
+    return None
 
 
 class BookingService:
@@ -533,7 +557,17 @@ class BookingService:
             scheduled_end_at=payload.scheduled_end_at,
             notes=payload.notes,
         )
-        await self.repo.add(booking)
+        try:
+            await self.repo.add(booking)
+        except IntegrityError as exc:
+            # DB backstop (booking-toctou-guard D6/D7): a concurrent writer
+            # landed an overlapping active booking between find_overlap and
+            # this INSERT. Only 23P01 becomes the 400 conflict (D3/D8).
+            mapped = _map_exclusion_violation(exc)
+            if mapped is None:
+                raise
+            await self.db.rollback()
+            raise mapped from exc
         await self.db.commit()
         # Re-fetch so server defaults (created_at/updated_at/status) are loaded
         # — commit expires the ORM object and reading attributes directly
@@ -604,7 +638,16 @@ class BookingService:
 
         for key, value in data.items():
             setattr(booking, key, value)
-        await self.db.flush()
+        try:
+            await self.db.flush()
+        except IntegrityError as exc:
+            # Same DB backstop as create, on the UPDATE (reschedule) path —
+            # the EXCLUDE constraint guards UPDATE as well (D6).
+            mapped = _map_exclusion_violation(exc)
+            if mapped is None:
+                raise
+            await self.db.rollback()
+            raise mapped from exc
         await self.db.commit()
         fresh = await self.repo.get_for_tenant(booking_id, effective_tenant)
         assert fresh is not None
