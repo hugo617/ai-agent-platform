@@ -40,7 +40,9 @@
 
 ### feature 收尾仪式(three-tier §4 第 1-8 步)
 
-① ./init.sh full exit 0(1043 passed)+ PG 门控 8/8 + alembic 干净 + 前端 build 绿 ✅ / ② feature_list.json `in_progress → passing`(EP2 笔误 not_started→passing 已在 plan AC 注记)+ evidence 3 条(切片 01 / 切片 02 / 全量收官)✅ / ③ sync-active 刷新 ✅ / ④ plan 顶部状态行**同 commit** 翻 passing + 切片 02 标题 ✅ + 7 AC 全勾 + 完成证据节;`check_plan_status_sync` exit 0 ✅ / ⑤ progress.md 本条 + 顶部 frontier → chat-stream-wallet-gate(94)EP2 ✅ / ⑥ 文档影响评估:改动 2 文档(CONTEXT.md 术语 + 数据库 ORM 文档范式段)已随实施同步 ✅,不动 README / ⑦ 依赖解锁扫描:无任何 feature depends_on → booking-toctou-guard,系列下一条 frontier = **chat-stream-wallet-gate(94,R3 前半)需 EP2 回环** ✅ / ⑧ 分支清理:PR 合并后删(见证据终版)。
+① ./init.sh full exit 0(1043 passed)+ PG 门控 8/8 + alembic 干净 + 前端 build 绿 ✅ / ② feature_list.json `in_progress → passing`(EP2 笔误 not_started→passing 已在 plan AC 注记)+ evidence 3 条(切片 01 / 切片 02 / 全量收官)✅ / ③ sync-active 刷新 ✅ / ④ plan 顶部状态行**同 commit** 翻 passing + 切片 02 标题 ✅ + 7 AC 全勾 + 完成证据节;`check_plan_status_sync` exit 0 ✅ / ⑤ progress.md 本条 + 顶部 frontier → chat-stream-wallet-gate(94)EP2 ✅ / ⑥ 文档影响评估:改动 2 文档(CONTEXT.md 术语 + 数据库 ORM 文档范式段)已随实施同步 ✅,不动 README / ⑦ 依赖解锁扫描:无任何 feature depends_on → booking-toctou-guard,系列下一条 frontier = **chat-stream-wallet-gate(94,R3 前半)需 EP2 回环** ✅ / ⑧ 分支清理:见下。
+
+**PR #168 已合并(merge `3dba895`,2026-08-16)**:CI 4/4 全绿(Migrations 57s——PG 门控 8 用例含新 ⑥ / Backend 9m10s / E2E 2m0s / Frontend 28s);本地 main 同步 + 分支 `feat/booking-toctou-guard-slice-02` 本地/远端已删,只剩 main ✅(8/8 步闭环)。
 
 ## Session 214(2026-08-15):booking-toctou-guard 切片 01(EXCLUDE 约束 DB 兜底,EP3 实施会话)
 
