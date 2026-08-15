@@ -180,15 +180,20 @@
       "area": "预约-后端",
       "title": "预约时段 TOCTOU 竞态 DB 兜底(并发双订同一设备同时段从「应用层 check-then-insert 可双双落库」变为数据库层结构性拒绝——部分唯一索引[排除非占坑态]或事务内 advisory lock,形态 EP2 烤定。第 10 次巡检业务风险 R2 🔴:find_overlap 纯应用层,模型层刻意无唯一约束)",
       "user_visible_behavior": "正常预约路径零变化;并发双订同一时段时,第二个请求收到明确冲突错误(而非双双成功落库)。兜底形态(索引 vs 锁)与「什么状态算占坑」的排除态语义 EP2 用户拍板。",
-      "status": "in_progress",
+      "status": "passing",
       "verification": [
         "并发竞态回归测试:两请求同时创建同设备同时段,恰一成功一被 DB 兜底拒绝(非应用层 if 拦截)",
         "排除态语义测试:cancelled(及 EP2 定的其余非占坑态)时段可被重新预约",
         "存量数据迁移:alembic 加约束时存量脏数据(历史双订)预检与处置路径明确"
       ],
-      "notes": "生产加固系列第 2 条(EP1 2026-08-14 登记)。**EP2 已完成 2026-08-15**:8 项决策用户逐项拍板(D1 PG EXCLUDE 约束/D2 对齐 _ACTIVE_STATES/D3 同款 400/D4 PG 门控测试进 CI Migrations job/D5 预检拒迁/D6 create+update 全覆盖/D7 双防线/D8 简文不带 id);考古结论:D8 无软删列使「排除软删行」部分唯一索引范式无锚点 + 区间重叠非唯一索引可表达,TOCTOU 不在当时范围,非「考虑过 DB 兜底后拒绝」。plan v2 双切片就绪,EP3 从切片 01 接。",
+      "notes": "生产加固系列第 2 条(EP1 2026-08-14 登记)。**EP2 已完成 2026-08-15**:8 项决策用户逐项拍板(D1 PG EXCLUDE 约束/D2 对齐 _ACTIVE_STATES/D3 同款 400/D4 PG 门控测试进 CI Migrations job/D5 预检拒迁/D6 create+update 全覆盖/D7 双防线/D8 简文不带 id);考古结论:D8 无软删列使「排除软删行」部分唯一索引范式无锚点 + 区间重叠非唯一索引可表达,TOCTOU 不在当时范围,非「考虑过 DB 兜底后拒绝」。**EP3 全 2 切片完成(2026-08-16 feature 收官)**:切片 01 DB 层结构性兜底(EXCLUDE 约束迁移,PR #167)+ 切片 02 末切片 服务层 400 映射 + 用例 ⑥ 竞态端到端 + 术语/文档收官。",
       "plan": "harness/docs/plan-booking-toctou-guard.md",
-      "depends_on": []
+      "depends_on": [],
+      "evidence": [
+        "切片 01(commits 4ced028+50eaa67,PR #167,merge 596dccd,CI 4/4 绿含新 Migrations step「Postgres-gated booking-overlap tests」):迁移 9a8b7c6d5e4f(预检拒迁两条[active 重叠对 + 退化区间]经 _ACTIVE_STATES_SQL 常量单源插值 4 SQL 站点 + btree_gist + EXCLUDE excl_bookings_active_no_overlap + downgrade 后 pg_catalog 确认消失)+ PG 门控用例①-⑤ 7/7 + 同源防漂移测试 2 用例 + booking.py docstring + TDD 红证 + 拒迁实测(exit 1 带两数量与处置指引,清理后 upgrade 成功)+ alembic check 干净 + ./init.sh full 1040 passed(基线 1038 零回归)",
+        "切片 02 末切片(commits ba98551+1d874fc,2026-08-16):_map_exclusion_violation 纯判别 helper(sqlstate 23P01 → D8 简文 BizError[常量单源],非 23P01/无 sqlstate 属性 → re-raise 不吞)+ create(repo.add 捕获)与 update(db.flush 捕获)双路径 rollback + 400 映射;判别单测 3 用例(SQLite 常驻 X 章节,构造异常对象直测);PG 门控用例 ⑥ 服务路径竞态全链(conn1 未提交 + 另一 session BookingService.create[super_admin 路径]→ pg_stat_activity 确定性握手等 INSERT 阻塞 → commit → 断言 BizError 而非 IntegrityError,「竞态→400」真 PG 端到端);CONTEXT.md 术语「占坑态(Slot-Holding States)」+ 项目指南数据库 ORM 文档 PG-only EXCLUDE 约束范式段;/code-review 双轴 Standards 0🔴/4🟡(2 修:X1 消息断言 import 常量单源、_await_blocked_insert 移顶部 helper 区;2 留痕)+ Spec 6/6 无越界无实现错误",
+        "全量验证(2026-08-16 收官):./init.sh full exit 0 + 后端全量 1043 passed, 8 skipped(基线 1040 + 新增 3 零回归;8 skipped = PG 门控文件 SQLite 自动跳过)+ PG 门控 8/8(docker PG 5433 复跑)+ alembic upgrade head && alembic check 干净 + 前端 npm run build 绿(零前端改动确认)"
+      ]
     },
     {
       "id": "chat-stream-wallet-gate",

@@ -1,7 +1,7 @@
 # 计划:预约时段 TOCTOU 竞态 DB 兜底(booking-toctou-guard)
 
 > **id**: booking-toctou-guard
-> **状态**: in_progress(EP2 完成 2026-08-15;切片 01 开工 2026-08-15,与 feature_list.json 同 commit 翻页)
+> **状态**: passing(EP3 全 2 切片完成 2026-08-16,feature 收官,与 feature_list.json 同 commit 翻页;切片 01 PR #167 merge 596dccd,切片 02 见下方完成证据)
 > **优先级**: 95(feature_list.json,第 10 次巡检业务风险 R2 🔴)
 > **创建日期**: 2026-08-15
 > **最后修订**: 2026-08-15(v2:对抗式审查回写)
@@ -209,7 +209,7 @@ ALTER TABLE bookings ADD CONSTRAINT excl_bookings_active_no_overlap
 
 **切片 01 完成证据(2026-08-15,Session 214)**:commits `4ced028`(实施)+ `50eaa67`(双轴审查回写),PR #167(merge `596dccd`,CI 4/4 绿:Migrations 46s 含新 step「Postgres-gated booking-overlap tests: success」/ Backend 7m23s / E2E 1m45s / Frontend 34s)。实测:迁移 `9a8b7c6d5e4f`(预检两条经 `_ACTIVE_STATES_SQL` 常量单源插值 4 处 SQL 站点)/ TDD 红证(约束缺失时用例①④ DID NOT RAISE)/ `alembic upgrade head && alembic check` 干净(反射预判实证,env.py 零改动)/ PG 门控 7/7(①并发恰一成功含 sqlstate 23P01 断言 + 事后计数 / ②back-to-back / ③cancelled+done+no_show 三态 parametrize / ④UPDATE 改期被拒 / ⑤NULL device 含计数断言)/ 拒迁实测(手插 1 重叠对 + 1 退化区间 → exit 1 报文含两数量+处置指引,版本未动;清理后 upgrade 成功)/ downgrade 后 pg_catalog 确认约束消失(count=0)/ `./init.sh full` **1040 passed**(基线 1038 + 新增 2 防漂移)+ 7 skipped 零回归。审查:Standards 0🔴/3🟡(1 修:PG 测试第四处手写状态清单 → import `_ACTIVE_STATES` expanding bindparam;2 留痕:防漂移正则防呆不防恶、`_EXPECTED_CONSTANT_SITES=4` 有意 tripwire)/ Spec 7/7 无越界(plan §4.6 本地复跑端口笔误 5432→5433 已回写)。
 
-### 切片 02 — 服务层 400 映射 + 判别单测 + 术语/文档同步 + feature 收尾(末切片)
+### 切片 02 — 服务层 400 映射 + 判别单测 + 术语/文档同步 + feature 收尾(末切片)✅(2026-08-16)
 
 **What it delivers**:竞态漏网被 DB 兜底拦下时,客户端收到与现役冲突同款的 400 `{"detail": "设备时段冲突:该时段已被并发预约占用"}`(而非裸 500);其他 IntegrityError 不被吞;术语与数据库文档同步;全量验证收官。
 
@@ -221,13 +221,15 @@ ALTER TABLE bookings ADD CONSTRAINT excl_bookings_active_no_overlap
 
 **Acceptance criteria**:
 
-- [ ] `booking_service` create 路径(`repo.add` 包捕获)与 update 路径(`db.flush` 包捕获)双双映射:sqlstate 23P01 → rollback + `BizError("设备时段冲突:该时段已被并发预约占用")`(400,不带 id,D8);判别 helper 为可直测函数
-- [ ] 判别单测(SQLite 常驻,挂靠 `tests/test_bookings_api.py`):23P01 → BizError;23505(唯一违规)→ re-raise;无 sqlstate 属性 → re-raise
-- [ ] PG 门控用例 ⑥(服务路径竞态全链证明):conn1 未提交 + 另一 session `BookingService.create` → 断言 BizError 而非 IntegrityError——「竞态 → 400」在真 PG 端到端证明
-- [ ] `CONTEXT.md` 术语:「占坑态(Slot-Holding States)」= pending/confirmed/in_service 三态,应用层 `_ACTIVE_STATES` 与 DB EXCLUDE 谓词同源;cancelled/done/no_show 即时释放
-- [ ] `项目指南/02-后端架构/03-数据库与ORM.md` 补 PG-only 约束范式段:EXCLUDE 形态、迁移持有/模型不声明的取舍、SQLite 测试链的关系(EP3 落地时执行)
-- [ ] `./init.sh full` 全绿零回归(基线 1038)+ alembic 干净 + PG 门控测试绿 + 前端 build 零改动确认
-- [ ] feature 收尾仪式(three-tier §4 第 1-8 步):feature_list.json `not_started → passing` + evidence + sync-active + progress.md + 文档影响评估 + 依赖解锁扫描 + 分支清理
+- [x] `booking_service` create 路径(`repo.add` 包捕获)与 update 路径(`db.flush` 包捕获)双双映射:sqlstate 23P01 → rollback + `BizError("设备时段冲突:该时段已被并发预约占用")`(400,不带 id,D8);判别 helper 为可直测函数
+- [x] 判别单测(SQLite 常驻,挂靠 `tests/test_bookings_api.py`):23P01 → BizError;23505(唯一违规)→ re-raise;无 sqlstate 属性 → re-raise
+- [x] PG 门控用例 ⑥(服务路径竞态全链证明):conn1 未提交 + 另一 session `BookingService.create` → 断言 BizError 而非 IntegrityError——「竞态 → 400」在真 PG 端到端证明
+- [x] `CONTEXT.md` 术语:「占坑态(Slot-Holding States)」= pending/confirmed/in_service 三态,应用层 `_ACTIVE_STATES` 与 DB EXCLUDE 谓词同源;cancelled/done/no_show 即时释放
+- [x] `项目指南/02-后端架构/03-数据库与ORM.md` 补 PG-only 约束范式段:EXCLUDE 形态、迁移持有/模型不声明的取舍、SQLite 测试链的关系(EP3 落地时执行)
+- [x] `./init.sh full` 全绿零回归(基线 1038)+ alembic 干净 + PG 门控测试绿 + 前端 build 零改动确认
+- [x] feature 收尾仪式(three-tier §4 第 1-8 步):feature_list.json `not_started → passing` + evidence + sync-active + progress.md + 文档影响评估 + 依赖解锁扫描 + 分支清理(注:AC 字面 `not_started → passing` 是 EP2 撰写时笔误,实际 EP3 开工已翻 in_progress,本 commit `in_progress → passing`)
+
+**切片 02 完成证据(2026-08-16,Session 215)**:commits `ba98551`(实施)+ `1d874fc`(双轴审查回写)。实施:`_map_exclusion_violation` 纯判别 helper(getattr 宽取 sqlstate,23P01 → `_EXCLUSION_CONFLICT_MESSAGE` 常量单源,非 23P01/无属性 → None re-raise)+ create(`repo.add` 捕获)与 update(`db.flush` 捕获)双路径 rollback + `raise mapped from exc`;判别单测 3 用例(X 章节,SQLite 常驻,异常对象构造直测);PG 门控用例 ⑥(super_admin 写路径绕 casbin 直达 INSERT + `_await_blocked_insert` pg_stat_activity 确定性握手[轮询 Lock 等待的 INSERT 再 commit conn1,杜绝时序赌博]+ 精确消息断言钉死走 DB 映射而非应用层检查 + 事后恰一计数;种子含 users 行避 FK 歧义;显式 import 5 个 model 模块注册 mapper——本文件不 import app 装配);CONTEXT.md「占坑态(Slot-Holding States)」+ 数据库 ORM 文档「PG-only 约束:EXCLUDE 排他约束(bookings 范式)」段(形态/迁移持有三理由/PG 门控 vs SQLite 判别测试分工/三条配套约定)。验证:定向 `pytest tests/test_bookings_api.py` **98 passed**(95 基线 + 新增 3)/ PG 门控 **8/8**(docker PG 5433,含用例 ⑥ 1.57s)/ `alembic upgrade head && alembic check` 干净 / `./init.sh full` exit 0 + 全量 **1043 passed, 8 skipped**(基线 1040 + 新增 3 零回归;8 skipped = PG 门控文件 8 用例 SQLite 自动跳)/ 前端 `npm run build` 绿(零前端改动,2.42s)。审查:Standards 0🔴/4🟡(2 修:X1 消息断言改 import 常量单源、`_await_blocked_insert` 移顶部 helper 区;2 留痕:双捕获站点 8 行同形系 plan 钦定两处包捕获 + 仓库 per-site inline 惯例、X 章节跳号 mnemonic)/ Spec **6/6 代码 AC 全满足 + 0 scope creep + 0 实现错误**(对抗性确认用例 ⑥ 不可能经应用层检查假通过:握手 + 精确消息双保险);§9 PG 测试 import 面措辞回写(扩至 service 层)。踩坑记录:PG 文件实例化 BookingService 首跑 mapper 解析失败(Device→DeviceModel 字符串目标无注册)——显式 import model 模块修复,已注释声明。
 
 ## 7. 对抗式审查段(复杂任务:涉及数据迁移 → 已执行)
 

@@ -15,22 +15,6 @@
   },
   "features": [
     {
-      "id": "booking-toctou-guard",
-      "priority": 95,
-      "area": "预约-后端",
-      "title": "预约时段 TOCTOU 竞态 DB 兜底(并发双订同一设备同时段从「应用层 check-then-insert 可双双落库」变为数据库层结构性拒绝——部分唯一索引[排除非占坑态]或事务内 advisory lock,形态 EP2 烤定。第 10 次巡检业务风险 R2 🔴:find_overlap 纯应用层,模型层刻意无唯一约束)",
-      "user_visible_behavior": "正常预约路径零变化;并发双订同一时段时,第二个请求收到明确冲突错误(而非双双成功落库)。兜底形态(索引 vs 锁)与「什么状态算占坑」的排除态语义 EP2 用户拍板。",
-      "status": "in_progress",
-      "verification": [
-        "并发竞态回归测试:两请求同时创建同设备同时段,恰一成功一被 DB 兜底拒绝(非应用层 if 拦截)",
-        "排除态语义测试:cancelled(及 EP2 定的其余非占坑态)时段可被重新预约",
-        "存量数据迁移:alembic 加约束时存量脏数据(历史双订)预检与处置路径明确"
-      ],
-      "notes": "生产加固系列第 2 条(EP1 2026-08-14 登记)。**EP2 已完成 2026-08-15**:8 项决策用户逐项拍板(D1 PG EXCLUDE 约束/D2 对齐 _ACTIVE_STATES/D3 同款 400/D4 PG 门控测试进 CI Migrations job/D5 预检拒迁/D6 create+update 全覆盖/D7 双防线/D8 简文不带 id);考古结论:D8 无软删列使「排除软删行」部分唯一索引范式无锚点 + 区间重叠非唯一索引可表达,TOCTOU 不在当时范围,非「考虑过 DB 兜底后拒绝」。plan v2 双切片就绪,EP3 从切片 01 接。",
-      "plan": "harness/docs/plan-booking-toctou-guard.md",
-      "depends_on": []
-    },
-    {
       "id": "chat-stream-wallet-gate",
       "priority": 94,
       "area": "计费-后端",
@@ -102,6 +86,13 @@
       "status": "passing"
     },
     {
+      "id": "booking-toctou-guard",
+      "priority": 95,
+      "area": "预约-后端",
+      "title": "预约时段 TOCTOU 竞态 DB 兜底(并发双订同一设备同时段从「应用层 check-then-insert 可双双落库」变为数据库层结构性拒绝——部分唯一索引[排除非占坑态]或事务内 advisory lock,形态 EP2 烤定。第 10 次巡检业务风险 R2 🔴:find_overlap 纯应用层,模型层刻意无唯一约束)",
+      "status": "passing"
+    },
+    {
       "id": "knowledge-tiered-foundation",
       "priority": 90,
       "area": "知识库-后端",
@@ -123,17 +114,10 @@
       "status": "passing"
     },
     {
-      "id": "knowledge-tiered-admin-ui",
-      "priority": 87,
-      "area": "知识库-前端",
-      "title": "知识库分级 Feature D:前端分类管理 + 下发操作 UI(Category 管理 + 下发/撤回操作流程 + 权限按钮控制 + scope 切换的文档创建表单)",
-      "status": "passing"
-    },
-    {
       "id": "_milestone_archived",
       "priority": 0,
       "area": "里程碑",
-      "title": "[已归档 86 条 passing,见 archive/features-passing-archive.json]",
+      "title": "[已归档 87 条 passing,见 archive/features-passing-archive.json]",
       "status": "passing"
     }
   ],
