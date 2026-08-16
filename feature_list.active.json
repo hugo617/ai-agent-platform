@@ -27,7 +27,7 @@
         "两路径 402 错误体格式一致性断言"
       ],
       "notes": "生产加固系列第 3 条(EP1 2026-08-14 登记)。D5 拍板:先钱包门(止血)后对账(兜底);两 feature 都不动 TurnAccountant。",
-      "plan": "harness/docs/plan-risk-hardening-overview.md",
+      "plan": "harness/docs/plan-chat-stream-wallet-gate.md",
       "depends_on": []
     },
     {
