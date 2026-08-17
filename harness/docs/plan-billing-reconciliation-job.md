@@ -1,7 +1,7 @@
 # 计划:计费对账闭环(billing-reconciliation-job)
 
 > **id**: billing-reconciliation-job
-> **状态**: not_started(EP2 规划完成 2026-08-17;EP3 开工时与本文状态行**同 commit** 翻 in_progress——chat-stream-wallet-gate 同款先例)
+> **状态**: in_progress(EP3 切片 01 开工 2026-08-17,与本状态行同 commit 翻页;EP2 规划完成 2026-08-17)
 > **优先级**: 93(feature_list.json,第 10 次巡检业务风险 R3 后半 🔴)
 > **创建日期**: 2026-08-17
 > **最后修订**: 2026-08-17(v2:双轴自审回写)
