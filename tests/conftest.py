@@ -227,6 +227,33 @@ async def tenant_owner(test_env: _TestEnv) -> dict:
     return {"user_id": test_env.owner_user, "tenant_id": test_env.tenant_id}
 
 
+@pytest_asyncio.fixture
+async def funded_wallet(db_session, test_env: _TestEnv):
+    """Insert a funded (balance > 0) wallet for the test tenant — opt-in.
+
+    Mirrors "production tenants are born with a wallet" semantics (plus a
+    recharge): streaming/composite tests that need to pass the unified
+    ``_require_wallet_balance`` gate request this fixture. Deliberately NOT
+    part of ``test_env`` — defaulting to funded would break the no-wallet
+    semantic tests (SSE gate matrix ① / composite 402 suite), which rely on
+    the test tenant having no wallet unless one is seeded explicitly.
+
+    Balance is generously over-funded (1M tokens) so tests never couple to a
+    specific consumption amount.
+    """
+    from app.models.wallet import Wallet
+
+    w = Wallet(
+        tenant_id=test_env.tenant_id,
+        balance=1_000_000,
+        total_recharged=1_000_000,
+    )
+    db_session.add(w)
+    await db_session.commit()
+    await db_session.refresh(w)
+    return w
+
+
 async def _build_client(
     test_env: _TestEnv,
     *,

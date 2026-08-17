@@ -11,8 +11,10 @@ Covers the prepaid-wallet accounting chain:
   formula.
 - ``BillingService.create_wallet_for_tenant`` / ``TenantService.create_tenant``
   — a new tenant gets a zero-balance wallet atomically.
-- ``event_source`` — a zero-balance wallet blocks new chats (SSE error);
-  a missing wallet lets the chat through (graceful degradation).
+- ``event_source`` — the unified wallet gate (``_require_wallet_balance``,
+  shared with composite): no wallet / zero / negative / inactive balance →
+  HTTP 402 BEFORE the stream starts (no conversation, no user message);
+  super_admin bypasses; a funded wallet streams normally.
 - API layer — wallet read, recharge (super admin), pricing CRUD, tenant
   isolation, permission boundaries.
 
@@ -354,37 +356,185 @@ def _async_effective(available_models, default_model="deepseek-chat"):
     return _resolve
 
 
-async def _mock_chat(client, monkeypatch, agent_id, message="Hi"):
+async def _mock_chat(client, monkeypatch, agent_id, message="Hi", conversation_id=None):
     from app.api.v1 import chat as chat_route
+    body = {"agent_id": agent_id, "message": message}
+    if conversation_id is not None:
+        body["conversation_id"] = conversation_id
     monkeypatch.setattr(chat_route, "stream_agent",
                         _stream_with_usage(["Hi", "!"], {"input_tokens": 10,
                          "output_tokens": 20, "total_tokens": 30}))
     monkeypatch.setattr(chat_route.llm_config_service, "get_effective",
                         _async_effective(["deepseek-chat"]))
-    resp = await client.post("/api/v1/chat/stream",
-                             json={"agent_id": agent_id, "message": message},
-                             headers=AUTH)
+    resp = await client.post("/api/v1/chat/stream", json=body, headers=AUTH)
     return resp
 
 
+async def _make_agent_via_api(client) -> str:
+    create = await client.post("/api/v1/agents/",
+                               json={"name": "Bot", "system_prompt": "hi"},
+                               headers=AUTH)
+    assert create.status_code == 201, create.text
+    return create.json()["id"]
+
+
+async def _count_rows(db_session, model, *where_clauses) -> int:
+    from sqlalchemy import func, select
+
+    stmt = select(func.count()).select_from(model)
+    for clause in where_clauses:
+        stmt = stmt.where(clause)
+    return (await db_session.execute(stmt)).scalar_one()
+
+
+# --------------------------------------------------- unified wallet gate matrix
+#
+# Plan chat-stream-wallet-gate §4.6: /chat/stream shares the
+# ``_require_wallet_balance`` gate with composite — same 402 + same detail,
+# fired BEFORE create_or_get (blocked requests leave no conversation/message).
+# ①-④⑦ hit the gate over plain HTTP (402 fires before any LLM work); ⑤⑧ use
+# the ``_mock_chat`` stubs for the streaming path.
+
+
 @pytest.mark.asyncio
-async def test_chat_blocked_when_wallet_balance_is_zero(app_client, db_session, monkeypatch, test_env):
-    """A wallet with balance 0 blocks new chats via an SSE error event."""
-    create = await app_client.post("/api/v1/agents/",
-                                   json={"name": "Bot", "system_prompt": "hi"},
-                                   headers=AUTH)
-    agent_id = create.json()["id"]
-    # Zero-balance wallet → chat blocked.
+async def test_chat_402_when_no_wallet_exists(app_client, db_session, monkeypatch, test_env):
+    """① No wallet at all → real 402 before the stream starts (was: allowed).
+
+    A missing wallet is an anomaly (production tenants are born with one), not
+    a free tier — the gate matches composite's has_balance semantics exactly.
+    """
+    agent_id = await _make_agent_via_api(app_client)
+    resp = await _mock_chat(app_client, monkeypatch, agent_id)
+    assert resp.status_code == 402
+    assert "余额不足" in resp.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_chat_402_when_wallet_balance_is_zero_and_no_side_effects(
+    app_client, db_session, monkeypatch, test_env
+):
+    """② Zero balance → 402, and the blocked request leaves NO trace: no
+    conversation, no user message (the old in-stream gate persisted both
+    before emitting the SSE error frame)."""
+    from app.models.agent import Conversation
+    from app.models.message import Message
+
+    agent_id = await _make_agent_via_api(app_client)
     await _seed_wallet(db_session, test_env.tenant_id, balance=0)
     resp = await _mock_chat(app_client, monkeypatch, agent_id)
+    assert resp.status_code == 402
+    assert "余额不足" in resp.json()["detail"]
+    assert await _count_rows(
+        db_session, Conversation, Conversation.tenant_id == test_env.tenant_id
+    ) == 0
+    assert await _count_rows(
+        db_session, Message, Message.tenant_id == test_env.tenant_id
+    ) == 0
+
+
+@pytest.mark.asyncio
+async def test_chat_402_when_wallet_balance_is_negative(app_client, db_session, monkeypatch, test_env):
+    """③ Negative balance → 402 (has_balance requires balance > 0, so a wallet
+    debited past zero by reconciliation keeps blocking)."""
+    agent_id = await _make_agent_via_api(app_client)
+    await _seed_wallet(db_session, test_env.tenant_id, balance=-5)
+    resp = await _mock_chat(app_client, monkeypatch, agent_id)
+    assert resp.status_code == 402
+    assert "余额不足" in resp.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_chat_402_when_wallet_is_inactive(app_client, db_session, monkeypatch, test_env):
+    """④ An inactive wallet → 402 (get_for_tenant filters is_active, so the
+    administratively-disabled wallet is equivalent to no wallet)."""
+    agent_id = await _make_agent_via_api(app_client)
+    wallet = await _seed_wallet(db_session, test_env.tenant_id, balance=1000)
+    wallet.is_active = False
+    await db_session.commit()
+    resp = await _mock_chat(app_client, monkeypatch, agent_id)
+    assert resp.status_code == 402
+    assert "余额不足" in resp.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_chat_super_admin_without_wallet_streams(super_admin_client, monkeypatch):
+    """⑤ super_admin bypasses the gate entirely — no wallet, still streams
+    (platform-level identity, never billed; pre-existing behavior kept)."""
+    agent_id = await _make_agent_via_api(super_admin_client)
+    resp = await _mock_chat(super_admin_client, monkeypatch, agent_id)
     assert resp.status_code == 200
-    assert "余额不足" in resp.text
-    assert "[DONE]" not in resp.text
+    assert "[DONE]" in resp.text
+    assert "余额不足" not in resp.text
+
+
+@pytest.mark.asyncio
+async def test_chat_402_on_resume_leaves_conversation_untouched(
+    app_client, db_session, monkeypatch, test_env
+):
+    """⑥ Follow-up on an existing conversation while broke → 402 and that
+    conversation's message count is unchanged (no orphan user message)."""
+    from app.models.agent import Agent, Conversation
+    from app.models.message import Message
+
+    agent = Agent(name="TestBot", tenant_id=test_env.tenant_id,
+                  system_prompt="hi", model="deepseek-chat")
+    db_session.add(agent)
+    await db_session.flush()
+    conv = Conversation(tenant_id=test_env.tenant_id, agent_id=agent.id,
+                        user_id=test_env.owner_user, title="t")
+    db_session.add(conv)
+    await db_session.flush()
+    db_session.add(Message(conversation_id=conv.id, tenant_id=test_env.tenant_id,
+                           role="user", content="earlier turn"))
+    await db_session.commit()
+
+    resp = await _mock_chat(app_client, monkeypatch, agent.id,
+                            message="broke follow-up", conversation_id=conv.id)
+    assert resp.status_code == 402
+    assert await _count_rows(
+        db_session, Message, Message.conversation_id == conv.id
+    ) == 1
+
+
+@pytest.mark.asyncio
+async def test_chat_stream_and_composite_share_402_detail(
+    app_client, db_session, monkeypatch, test_env
+):
+    """⑦ Consistency: the same broke tenant gets 402 from BOTH paths with a
+    byte-identical detail — they call the same gate function, and this test
+    keeps that structural fact from drifting apart again."""
+    from app.api.v1 import chat as chat_route
+
+    agent_id = await _make_agent_via_api(app_client)
+    await _seed_wallet(db_session, test_env.tenant_id, balance=0)
+
+    # Defensive stubs: the gate must fire before any LLM work, so these must
+    # never run (a gate regression fails loudly instead of dialing a provider).
+    async def _no_stream(**_kw):  # pragma: no cover - unreachable on pass
+        raise AssertionError("stream_agent reached despite the 402 gate")
+        yield ""  # noqa: unreachable - makes this an async generator
+
+    async def _no_composite(**_kw):  # pragma: no cover - unreachable on pass
+        raise AssertionError("composite_query reached despite the 402 gate")
+
+    monkeypatch.setattr(chat_route, "stream_agent", _no_stream)
+    monkeypatch.setattr(chat_route, "composite_query", _no_composite)
+
+    sse = await app_client.post("/api/v1/chat/stream",
+                                json={"agent_id": agent_id, "message": "Hi"},
+                                headers=AUTH)
+    comp = await app_client.post("/api/v1/chat/composite",
+                                 json={"agent_ids": [agent_id], "message": "Hi"},
+                                 headers=AUTH)
+    assert sse.status_code == 402
+    assert comp.status_code == 402
+    assert sse.json()["detail"] == comp.json()["detail"] == "token 余额不足,请联系总部充值"
 
 
 @pytest.mark.asyncio
 async def test_chat_allowed_when_wallet_has_balance(app_client, db_session, monkeypatch, test_env):
-    """A wallet with balance > 0 lets the chat through and debits the tokens."""
+    """⑧ A wallet with balance > 0 lets the chat through and debits the tokens
+    (happy path, unchanged by the gate unification)."""
     create = await app_client.post("/api/v1/agents/",
                                    json={"name": "Bot", "system_prompt": "hi"},
                                    headers=AUTH)
@@ -399,20 +549,6 @@ async def test_chat_allowed_when_wallet_has_balance(app_client, db_session, monk
     await db_session.refresh(wallet)
     assert wallet.balance == 1000 - 30
     assert wallet.total_consumed == 30
-
-
-@pytest.mark.asyncio
-async def test_chat_allowed_when_no_wallet_exists(app_client, db_session, monkeypatch, test_env):
-    """No wallet at all → chat proceeds (graceful degradation for tenants set
-    up before billing, and for the test environment)."""
-    create = await app_client.post("/api/v1/agents/",
-                                   json={"name": "Bot", "system_prompt": "hi"},
-                                   headers=AUTH)
-    agent_id = create.json()["id"]
-    resp = await _mock_chat(app_client, monkeypatch, agent_id)
-    assert resp.status_code == 200
-    assert "[DONE]" in resp.text
-    assert "余额不足" not in resp.text
 
 
 # ----------------------------------------------------------- API: wallet read

@@ -9,6 +9,7 @@ the interrupted-stream partial-usage path.
 """
 
 import json
+from decimal import Decimal
 
 import pytest
 
@@ -158,7 +159,7 @@ async def test_stream_agent_accumulates_usage_across_multiple_llm_calls(
 
 
 @pytest.mark.asyncio
-async def test_chat_records_usage_on_message_and_ledger(app_client, db_session, monkeypatch):
+async def test_chat_records_usage_on_message_and_ledger(app_client, db_session, funded_wallet, monkeypatch):
     """A successful chat writes token cols on Message + a UsageEvent row."""
     agent_id = (
         await app_client.post(
@@ -193,13 +194,17 @@ async def test_chat_records_usage_on_message_and_ledger(app_client, db_session, 
     assert ev.prompt_tokens == 12
     assert ev.completion_tokens == 7
     assert ev.model == "deepseek-chat"
-    # customer_id / cost left NULL for later tasks
+    # customer_id stays NULL (no customer on this chat). cost is stamped 0 —
+    # unconfigured pricing is free by design (calc_cost: unconfigured → 0).
+    # Before the unified wallet gate this test ran wallet-less, so charge()
+    # short-circuited and cost stayed NULL; the funded_wallet precondition
+    # runs the real charge chain, and the assertion now pins its actual value.
     assert ev.customer_id is None
-    assert ev.cost is None
+    assert ev.cost == Decimal("0")
 
 
 @pytest.mark.asyncio
-async def test_chat_without_usage_keeps_nulls_and_no_ledger(app_client, db_session, monkeypatch):
+async def test_chat_without_usage_keeps_nulls_and_no_ledger(app_client, db_session, funded_wallet, monkeypatch):
     """A stubbed stream (text only, no usage dict) leaves token cols NULL.
 
     This is the backward-compat path: existing tests and any provider that
@@ -239,7 +244,7 @@ async def test_chat_without_usage_keeps_nulls_and_no_ledger(app_client, db_sessi
 
 
 @pytest.mark.asyncio
-async def test_interrupted_stream_records_partial_usage(app_client, db_session, monkeypatch):
+async def test_interrupted_stream_records_partial_usage(app_client, db_session, funded_wallet, monkeypatch):
     """A stream that fails mid-way still records whatever usage it captured."""
 
     async def _failing_stream(**_kwargs):

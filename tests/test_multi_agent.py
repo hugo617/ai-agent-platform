@@ -313,7 +313,7 @@ async def test_cross_tenant_specialist_not_visible(app_client, db_session):
 
 
 @pytest.mark.asyncio
-async def test_orchestrator_chat_routes_through_stream_orchestrator(app_client):
+async def test_orchestrator_chat_routes_through_stream_orchestrator(app_client, funded_wallet):
     """An orchestrator Agent must dispatch via stream_orchestrator (not stream_agent)."""
     orch = await _create_agent(
         app_client, name="编排器", is_orchestrator=True, specialty="路由"
@@ -356,7 +356,7 @@ async def test_orchestrator_chat_routes_through_stream_orchestrator(app_client):
 
 
 @pytest.mark.asyncio
-async def test_plain_agent_chat_still_uses_stream_agent(app_client):
+async def test_plain_agent_chat_still_uses_stream_agent(app_client, funded_wallet):
     """Backward compat: a regular Agent must NOT touch stream_orchestrator."""
     # Make a plain agent (is_orchestrator defaults to False) and stub the
     # chat module's stream_agent reference to prove it's the one called.
@@ -383,7 +383,7 @@ async def test_plain_agent_chat_still_uses_stream_agent(app_client):
 
 
 @pytest.mark.asyncio
-async def test_orchestrator_without_specialists_degrades_to_plain(app_client):
+async def test_orchestrator_without_specialists_degrades_to_plain(app_client, funded_wallet):
     """An orchestrator with no specialists attached must still answer (degrade)."""
     from app.api.v1 import chat as chat_route
 

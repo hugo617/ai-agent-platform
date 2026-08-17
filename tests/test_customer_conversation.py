@@ -160,7 +160,7 @@ async def _do_chat(client, monkeypatch, agent_id: str, fake_stream,
 
 
 async def test_chat_attributes_new_conversation_to_customer(
-    app_client, db_session, monkeypatch
+    app_client, db_session, funded_wallet, monkeypatch
 ):
     """POST /chat/stream with customer_id writes it on the new Conversation.
 
@@ -196,7 +196,7 @@ async def test_chat_attributes_new_conversation_to_customer(
 
 
 async def test_chat_without_customer_id_backward_compat(
-    app_client, db_session, monkeypatch
+    app_client, db_session, funded_wallet, monkeypatch
 ):
     """POST /chat/stream without customer_id → conversation + event keep NULL."""
     from sqlalchemy import select
