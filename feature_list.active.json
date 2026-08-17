@@ -20,7 +20,7 @@
       "area": "计费-后端",
       "title": "SSE 钱包门口径统一(/chat/stream 补与 composite 路径同口径的钱包预检 402,消除同一钱包契约两套口径[SSE 放行 vs composite 严格 402]的资损口。第 10 次巡检业务风险 R3 前半 🔴。不动 TurnAccountant——架构候选 ② 独立立项时消化)",
       "user_visible_behavior": "无钱包租户调 /chat/stream 收到 402(此前可免费流式使用,本条是系列内唯一收紧用户行为的点);有余额租户零变化。预检时点与余额口径边界(零钱包 vs 负余额)EP2 用户拍板。",
-      "status": "not_started",
+      "status": "in_progress",
       "verification": [
         "无钱包租户 /chat/stream 收 402(与 composite 路径口径一致)的回归测试",
         "有余额租户流式路径零回归(现有 chat SSE 测试全绿)",
