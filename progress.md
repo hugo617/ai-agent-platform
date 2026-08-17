@@ -41,7 +41,7 @@
 ### 末切片收尾(feature 收尾八步,收尾 commit 闭环)
 
 plan 切片 02 标题 ✅ + 6 AC 全勾 + §4.7 切片 02 实施注记(4 点);feature_list in_progress→passing + evidence + plan 状态行同 commit 翻 passing(check_plan_status_sync exit 0)+ sync-active + progress.md 顶部 frontier 更新 + 文档影响评估 + 依赖解锁扫描 + 分支清理(PR 合并后)。
-**PR 证据(合并后补记)**:待补。
+**PR 证据(合并后补记)**:PR #172 已合并(merge `b14b9f6`,2026-08-17 08:22Z),CI 4/4 全绿(Migrations 59s / Backend 10m55s / E2E 1m46s / Frontend 28s);本地 main 快进同步,分支 `feat/billing-reconciliation-job-slice-02` 本地/远端已删,`git branch -a` 验证只剩 main。feature 收官:全 2 切片端到端,status=passing,frontier → super-admin-write-audit(92)。
 
 ## Session 220(2026-08-17):billing-reconciliation-job 切片 01(对账 job 核心,EP3 实施会话)
 

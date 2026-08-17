@@ -163,7 +163,7 @@
   - [x] 验证:`pytest tests/test_billing_reconciliation.py -q` 全绿 + `./init.sh full` 全量零回归(基线 1048)+ ruff 全绿
   - [x] 不越界:不动 charge/recharge/计费编排、不动 scheduler_enabled 默认值、不发通知(切片 02)、零前端零迁移
 
-### 切片 02 — 超管 targeted 通知接入 + 文档同步 + feature 收尾(末切片)✅(2026-08-17)
+### 切片 02 — 超管 targeted 通知接入 + 文档同步 + feature 收尾(末切片)✅(2026-08-17,PR #172,merge b14b9f6,CI 4/4 绿:Migrations 59s / Backend 10m55s / E2E 1m46s / Frontend 28s;commits 0964f92 实施 + bd42518 审查回写 + 6bc5015 feature 收尾)
 
 - **Blocked by**: 切片 01
 - **What it delivers**: 有新差额(新告漏扣/残余差/漂移任一 > 0)时,全部 super_admin 收到 targeted in-app 通知(铃铛可见,type="system",content 摘要,link 指向审计日志页);干净 run 零通知。CONTEXT.md 补「对账(Reconciliation)」术语;feature 收尾八步仪式。
