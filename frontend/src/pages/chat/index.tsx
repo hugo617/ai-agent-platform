@@ -215,6 +215,11 @@ export function ChatPage() {
     // lives in `buildWorkingList` so it can be unit-tested in isolation
     // (chat-page-split Ticket 1). The streaming loop below mutates the trailing
     // assistant placeholder in place, so we keep a reference to it.
+    // Snapshot for the 402 rollback below: a prior streamed turn lives only
+    // in localMessages (the messages query isn't invalidated per turn), so a
+    // later blocked turn must restore this reference, not just drop to null.
+    const localBefore = localMessages;
+
     const working = buildWorkingList(localMessages ?? history ?? [], text);
     const assistantMsg = working[working.length - 1];
     setLocalMessages(working);
@@ -253,9 +258,11 @@ export function ChatPage() {
       if (err instanceof ChatInsufficientBalanceError) {
         // The 402 pre-check rejects BEFORE the stream starts — the backend
         // creates no conversation and persists no message (slice 01) — so roll
-        // the working list back too: keeping it would show a fake user turn
-        // plus an assistant placeholder whose typing dots never resolve.
-        setLocalMessages(null);
+        // the working list back to the pre-send view: keeping it would show a
+        // fake user turn plus an assistant placeholder whose typing dots never
+        // resolve, while dropping to null would also wipe a prior streamed
+        // turn that only lives in localMessages.
+        setLocalMessages(localBefore);
         setBalanceError(err.message);
       } else {
         toast.error("对话失败", apiErrorMessage(err));

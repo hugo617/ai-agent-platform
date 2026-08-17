@@ -148,4 +148,24 @@ describe("ChatPage — 402 充值引导面板(chat-stream-wallet-gate slice 02)"
       expect(screen.queryByText(PANEL_TITLE)).toBeNull();
     });
   });
+
+  it("同会话先成功一轮、下一轮被 402 → 回滚到发送前视图(上一轮内容保留,本轮不留痕)", async () => {
+    // 第一轮成功:流式回复只存 localMessages(messages 缓存不按轮失效)。
+    mocks.sendChatStream.mockImplementationOnce(async function* () {
+      yield { delta: "第一轮回复" };
+    });
+    renderChat();
+    await send("第一问");
+    expect(await screen.findByText("第一轮回复")).toBeTruthy();
+
+    // 第二轮被 402 拦:本轮乐观 UI 消失(后端零持久化),但上一轮流式
+    // 内容必须保留(快照回滚,不是清空到 null)。
+    rejectWith402();
+    await send("第二问");
+
+    expect(await screen.findByText(PANEL_TITLE)).toBeTruthy();
+    expect(screen.queryByText("第二问")).toBeNull();
+    expect(screen.getByText("第一问")).toBeTruthy();
+    expect(screen.getByText("第一轮回复")).toBeTruthy();
+  });
 });
