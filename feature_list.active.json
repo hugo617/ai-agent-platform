@@ -26,8 +26,8 @@
         "无差额时零告警(不误报)",
         "job 幂等:同窗口重跑不产生重复差额记录"
       ],
-      "notes": "生产加固系列第 4 条(EP1 2026-08-14 登记)。复用 app/core/scheduler.py(notification-scheduler pri 84 归档件建的 APScheduler 框架)。对账结果落表按「按需加表,不预建空架子」铁律 EP2 评估。",
-      "plan": "harness/docs/plan-risk-hardening-overview.md",
+      "notes": "生产加固系列第 4 条(EP1 2026-08-14 登记)。复用 app/core/scheduler.py(notification-scheduler pri 84 归档件建的 APScheduler 框架)。对账结果落表按「按需加表,不预建空架子」铁律 EP2 评估:已拍板复用 SystemLog。",
+      "plan": "harness/docs/plan-billing-reconciliation-job.md",
       "depends_on": []
     },
     {
