@@ -1,7 +1,7 @@
 # 计划:SSE 钱包门口径统一(chat-stream-wallet-gate)
 
 > **id**: chat-stream-wallet-gate
-> **状态**: in_progress(EP3 切片 01 开工 2026-08-17,与 feature_list.json 同 commit 翻页)
+> **状态**: passing(EP3 全 2 切片完成 2026-08-17:切片 01 PR #169 后端统一钱包门 + 切片 02 末切片前端 402 充值引导 + feature 收官;与 feature_list.json 同 commit 翻页)
 > **优先级**: 94(feature_list.json,第 10 次巡检业务风险 R3 前半 🔴)
 > **创建日期**: 2026-08-16
 > **最后修订**: 2026-08-16(v2:对抗式审查回写)
@@ -189,7 +189,7 @@ SSE 路径补与 composite **同一函数、同一口径、同一错误体**的�
 
 **完成证据(2026-08-17)**:commit 21c1a7b(实施)+ 翻页 commit bf501fd(feature_list not_started→in_progress + plan 状态行同 commit,check_plan_status_sync exit 0)。定向 `pytest tests/test_billing.py tests/test_composite_chat.py -q` 48 passed;6 受影响文件 99 passed;全量 1048 passed 零回归。/code-review 双轴(general-purpose ×2 并行):**Standards 0 硬违规**/3 判断项(① 修:矩阵 ① 未用参数瘦身;② 留痕:funded_wallet 是第 3 份钱包 seeder——fixture 无法 import 测试模块私有 helper,conftest 是正确归属,聚合重构独立立项;③ 留痕:⑦ 的 `_no_stream` raise+yield 伪造 async generator 手法,注释声明且目的明确);**Spec 8/8 AC 全满足 + 0 scope creep**,2 判断项(cost 断言重定基已回写 AC6 注记 / test_composite_chat.py 注释同步已补记文件清单),E2E/CLI 零影响锚点复核(diff 无 cli/ frontend/ 改动)。
 
-### 切片 02 — 前端 402 充值引导 + feature 收尾(末切片)
+### 切片 02 — 前端 402 充值引导 + feature 收尾(末切片)✅(2026-08-17,commits 798e0c9 实施 + b78c7bb 审查修复;PR 证据合并后补记)
 
 **What it delivers**:零余额/无钱包租户在 chat 页收到「余额不足」引导面板(后端 detail 文案 + 一键「前往充值」),体验对齐 composite 路径;重试与切换会话自动清除;其余错误与 401 行为不回归;feature 收官。
 
@@ -201,13 +201,15 @@ SSE 路径补与 composite **同一函数、同一口径、同一错误体**的�
 
 **Acceptance criteria**:
 
-- [ ] `search.ts`:`ChatInsufficientBalanceError` 错误类;`sendChatStream` 非 200 分支——401 特判不动,402 → 容错解析 body detail → 抛 `ChatInsufficientBalanceError`,其余维持泛化错误
-- [ ] chat 页:`catch instanceof ChatInsufficientBalanceError` → balanceError state + 充值引导面板(Wallet icon + 标题「余额不足,无法发起对话」+ 后端 detail + 说明行 +「前往充值」→ /billing);其余错误维持 toast 现状;发起发送前与切换会话双清除
-- [ ] vitest 至少两条:402 → `ChatInsufficientBalanceError`(detail 透传)+ 面板渲染(detail 文案与 CTA);401 既有行为不回归
-- [ ] `composite-chat.ts` 头部过时注释修正(「strict, unlike /chat/stream's … SSE error frame」段)
-- [ ] `cd frontend && npm run test && npm run build && npx oxlint` 全绿;`./init.sh full` 全绿
-- [ ] 文档影响评估(4 行格式;预判仅代码注释级,无 项目指南 改动)
-- [ ] feature 收尾仪式(three-tier §4 第 1-8 步):feature_list `in_progress → passing` + evidence + sync-active + progress.md + 依赖解锁扫描(billing-reconciliation-job 93 无硬依赖,为新 frontier:EP2 未做过,not_started + plan 指总纲,下一条走各自 EP2)+ 分支清理
+- [x] `search.ts`:`ChatInsufficientBalanceError` 错误类;`sendChatStream` 非 200 分支——401 特判不动,402 → 容错解析 body detail → 抛 `ChatInsufficientBalanceError`,其余维持泛化错误(fetch 路径手动 `resp.json()` 容错解析——`apiErrorMessage` 只认 AxiosError;非 JSON body 兜底文案与后端 `chat.py` L68 detail 逐字一致[半角逗号,矩阵 ⑦ 口径])
+- [x] chat 页:`catch instanceof ChatInsufficientBalanceError` → balanceError state + 充值引导面板(Wallet icon + 标题「余额不足,无法发起对话」+ 后端 detail + 说明行 +「前往充值」→ /billing,镜像 composite AC4.8 面板含 text-foreground WCAG 处理);其余错误维持 toast 现状;发起发送前与切换会话双清除(useEffect on selectedConversationId)。*实施补记(code-review 双轴,Spec 轴判「D4 合理推导」并建议入档)*:402 catch 分支同时把 localMessages 回滚到发送前快照(`localBefore`)——后端被拦不建会话不落消息(切片 01 语义),乐观 UI 不回滚会显示假用户消息 + 永久 typing 占位;**快照而非清空**,因同会话上一轮流式内容仅存 localMessages(messages 查询不按轮失效),清空会把上一轮也误清(Standards 轴判断项②,已修 + 用例锁定)
+- [x] vitest 至少两条:402 → `ChatInsufficientBalanceError`(detail 透传)+ 面板渲染(detail 文案与 CTA);401 既有行为不回归(实际 8 条:sendChatStream 单元 4[402 detail 透传 / 402 非 JSON body 兜底 / 401 不回归=清 token + AUTH_EXPIRED_EVENT + 泛化错误 / 500 维持泛化]+ ChatPage 组件 4[面板渲染含 CTA 且不弹 toast 不留假消息 / 发送前清除 / 切换会话清除 / 上一轮流式内容保留])
+- [x] `composite-chat.ts` 头部过时注释修正(「strict, unlike /chat/stream's … SSE error frame」段 → 统一口径:两路径共享「402 = 余额不足」契约、各持错误类;段级注释改写,零代码)
+- [x] `cd frontend && npm run test && npm run build && npx oxlint` 全绿;`./init.sh full` 全绿(实测:前端 **259 passed**/259[基线 251 + 新增 8]+ build 绿 + oxlint 0 warning 0 error;后端 **1048 passed, 8 skipped** 零回归,后端零改动)
+- [x] 文档影响评估(4 行格式;预判仅代码注释级,无 项目指南 改动——实际零文档改动,见 progress.md Session 218)
+- [x] feature 收尾仪式(three-tier §4 第 1-8 步):feature_list `in_progress → passing` + evidence + sync-active + progress.md + 依赖解锁扫描(billing-reconciliation-job 93 无硬依赖,为新 frontier:EP2 未做过,not_started + plan 指总纲,下一条走各自 EP2)+ 分支清理
+
+**完成证据(2026-08-17)**:commit 798e0c9(实施,TDD 先红后绿——红证:单元 4 条因 `ChatInsufficientBalanceError` 未定义全红、组件 3 条因 402 走泛化 toast 全红;绿:实现后全绿)+ b78c7bb(Standards 判断项② 修复:402 回滚 null → 快照恢复 `localBefore` + 补第 4 条组件用例锁「上一轮流式内容保留」)。前端 `npm test` 259/259 + `npm run build` 绿(1.33s)+ `npx oxlint` 0 warning 0 error;`./init.sh full` **1048 passed, 8 skipped**(基线 1048 零回归,后端零改动)。/code-review 双轴(general-purpose ×2 并行):**Standards 0🔴/3🟡** —— ② 修(快照回滚);① 留痕:充值面板 JSX + 错误类与 composite 各持一份,rule of three(第三处消费前抽共享 `InsufficientBalancePanel`;plan §9「AC 只钉行为不钉形态」+ composite-chat.ts 注释「each keeps its own error class」双背书,当前有意决策);③ 留痕:面板标题/说明行半角逗号忠于 plan AC 原文与后端 detail 逐字口径,composite 历史文案全角不追改。**Spec 0 缺失/0 越界**:AC1-4 实测全满足 + 401 分支与 main 逐字一致 + 兜底文案与 `chat.py` L68 字节级比对 identical + `git diff --stat` 与 §11 文件清单精确匹配;`setLocalMessages` 回滚判「合理推导非越界」(已入档 AC2 注记);composite-chat.ts 段级注释改写合规(§11「一行注释」为概括措辞)。feature 收尾仪式随本 commit 同步完成(feature_list passing + evidence 3 条 + sync-active + progress.md Session 218 + 依赖解锁扫描:无任何 feature depends_on → chat-stream-wallet-gate,系列新 frontier = billing-reconciliation-job 93 需 EP2 回环)。
 
 ## 7. 对抗式审查段(复杂任务:计费/支付敏感 → 已执行)
 

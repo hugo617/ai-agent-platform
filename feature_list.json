@@ -201,15 +201,20 @@
       "area": "计费-后端",
       "title": "SSE 钱包门口径统一(/chat/stream 补与 composite 路径同口径的钱包预检 402,消除同一钱包契约两套口径[SSE 放行 vs composite 严格 402]的资损口。第 10 次巡检业务风险 R3 前半 🔴。不动 TurnAccountant——架构候选 ② 独立立项时消化)",
       "user_visible_behavior": "无钱包租户调 /chat/stream 收到 402(此前可免费流式使用,本条是系列内唯一收紧用户行为的点);有余额租户零变化。预检时点与余额口径边界(零钱包 vs 负余额)EP2 用户拍板。",
-      "status": "in_progress",
+      "status": "passing",
       "verification": [
         "无钱包租户 /chat/stream 收 402(与 composite 路径口径一致)的回归测试",
         "有余额租户流式路径零回归(现有 chat SSE 测试全绿)",
         "两路径 402 错误体格式一致性断言"
       ],
-      "notes": "生产加固系列第 3 条(EP1 2026-08-14 登记)。D5 拍板:先钱包门(止血)后对账(兜底);两 feature 都不动 TurnAccountant。",
+      "notes": "生产加固系列第 3 条(EP1 2026-08-14 登记)。D5 拍板:先钱包门(止血)后对账(兜底);两 feature 都不动 TurnAccountant。**EP2 已完成 2026-08-16**:8 项决策用户逐项拍板(D1 连接前真 402/D2 逐字对齐 has_balance/D3 复用 composite 402 体/D4 前端完整对齐 composite 充值 UI/D5 移除流内旧门抽共享 helper/D6 conftest opt-in funded_wallet/D7 后端 HTTP 层 + 前端组件级 seam/D8 2 片线性)。**EP3 全 2 切片完成(2026-08-17 feature 收官)**:切片 01 后端统一钱包门(PR #169)+ 切片 02 末切片前端 402 充值引导 + feature 收尾。",
       "plan": "harness/docs/plan-chat-stream-wallet-gate.md",
-      "depends_on": []
+      "depends_on": [],
+      "evidence": [
+        "切片 01(commits bf501fd 翻页 + 21c1a7b 实施 + a655bbe 审查回写,PR #169,merge 99d1fd2,CI 4/4 绿:Migrations 50s/Backend 11m12s/E2E 2m24s/Frontend 33s):chat.py 新增 `_require_wallet_balance` 共享 helper(super_admin 直返;has_balance 为假 → HTTPException 402 detail『token 余额不足,请联系总部充值』;无 try/except 查询异常 500 与 composite 对齐)+ SSE endpoint `_load_agent` 后 `create_or_get` 前预检(被拦不建会话不落用户消息)+ event_source 旧钱包门整段移除(含 fail-open)+ composite 内联预检替换为 helper(行为零变化)+ conftest opt-in funded_wallet fixture(balance=total_recharged=1_000_000)+ test_billing SSE 门矩阵 ①-⑧(含两路径 402 detail 逐字一致断言 ⑦)+ 19 个改严变红流式测试挂 fixture 不放宽断言;TDD 红证(改前 ①②③④⑥⑦ 红);全量 1048 passed 零回归(基线 1043 + 净增 5);/code-review Standards 0 硬违规 / Spec 8/8",
+        "切片 02 末切片(commits 798e0c9 实施 + b78c7bb 审查修复,2026-08-17):search.ts 新增 `ChatInsufficientBalanceError`(镜像 CompositeInsufficientBalanceError)+ sendChatStream 402 分支(fetch 手动容错解析 body detail,非 JSON 兜底后端同文案;401 特判不动,其余维持泛化)+ chat/index.tsx balanceError state + catch instanceof 分流(402 → 充值引导面板[Wallet icon + 标题 + 后端 detail + 说明行 + 前往充值 → /billing,镜像 composite AC4.8 含 text-foreground WCAG]而非 toast + localMessages 快照回滚 `localBefore`:被拦不留假用户消息/永久 typing 占位,且不清掉同会话上一轮流式内容[Standards 轴判断项② 修复])+ 发送前与切换会话双清除 + composite-chat.ts 头部过时注释统一口径;测试 8 条(单元 4[402 透传/402 非 JSON 兜底/401 不回归/500 泛化]+ 组件 4[面板渲染不留假消息/发送前清除/切换会话清除/上一轮内容保留]),TDD 先红后绿;/code-review Standards 0🔴/3🟡(1 修 2 留痕:面板 JSX 双份 rule-of-three、文案半角逗号忠于 AC 原文)/ Spec 0 缺失 0 越界(setLocalMessages 回滚判 D4 合理推导已入档 plan AC2 注记)",
+        "全量验证(2026-08-17 收官):前端 npm test 259/259(基线 251 + 新增 8 零回归)+ npm run build 绿 + npx oxlint 0 warning 0 error;./init.sh full **1048 passed, 8 skipped**(基线 1048 零回归,后端零改动)+ ruff 全绿;依赖解锁扫描:无任何 feature depends_on → chat-stream-wallet-gate,系列新 frontier = billing-reconciliation-job(93,R3 后半,not_started + plan 指总纲,需先走各自 EP2 回环)"
+      ]
     },
     {
       "id": "billing-reconciliation-job",

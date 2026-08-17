@@ -15,22 +15,6 @@
   },
   "features": [
     {
-      "id": "chat-stream-wallet-gate",
-      "priority": 94,
-      "area": "计费-后端",
-      "title": "SSE 钱包门口径统一(/chat/stream 补与 composite 路径同口径的钱包预检 402,消除同一钱包契约两套口径[SSE 放行 vs composite 严格 402]的资损口。第 10 次巡检业务风险 R3 前半 🔴。不动 TurnAccountant——架构候选 ② 独立立项时消化)",
-      "user_visible_behavior": "无钱包租户调 /chat/stream 收到 402(此前可免费流式使用,本条是系列内唯一收紧用户行为的点);有余额租户零变化。预检时点与余额口径边界(零钱包 vs 负余额)EP2 用户拍板。",
-      "status": "in_progress",
-      "verification": [
-        "无钱包租户 /chat/stream 收 402(与 composite 路径口径一致)的回归测试",
-        "有余额租户流式路径零回归(现有 chat SSE 测试全绿)",
-        "两路径 402 错误体格式一致性断言"
-      ],
-      "notes": "生产加固系列第 3 条(EP1 2026-08-14 登记)。D5 拍板:先钱包门(止血)后对账(兜底);两 feature 都不动 TurnAccountant。",
-      "plan": "harness/docs/plan-chat-stream-wallet-gate.md",
-      "depends_on": []
-    },
-    {
       "id": "billing-reconciliation-job",
       "priority": 93,
       "area": "计费-后端",
@@ -93,6 +77,13 @@
       "status": "passing"
     },
     {
+      "id": "chat-stream-wallet-gate",
+      "priority": 94,
+      "area": "计费-后端",
+      "title": "SSE 钱包门口径统一(/chat/stream 补与 composite 路径同口径的钱包预检 402,消除同一钱包契约两套口径[SSE 放行 vs composite 严格 402]的资损口。第 10 次巡检业务风险 R3 前半 🔴。不动 TurnAccountant——架构候选 ② 独立立项时消化)",
+      "status": "passing"
+    },
+    {
       "id": "knowledge-tiered-foundation",
       "priority": 90,
       "area": "知识库-后端",
@@ -107,17 +98,10 @@
       "status": "passing"
     },
     {
-      "id": "knowledge-tiered-reader-ui",
-      "priority": 88,
-      "area": "知识库-前端",
-      "title": "知识库分级 Feature C:前端三栏可视化阅读页(分类目录树 + 文档列表卡片 + Markdown 在线阅读器 + scope 来源标识 + 全文搜索,门店视角直观)",
-      "status": "passing"
-    },
-    {
       "id": "_milestone_archived",
       "priority": 0,
       "area": "里程碑",
-      "title": "[已归档 87 条 passing,见 archive/features-passing-archive.json]",
+      "title": "[已归档 88 条 passing,见 archive/features-passing-archive.json]",
       "status": "passing"
     }
   ],
