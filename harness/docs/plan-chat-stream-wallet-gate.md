@@ -1,7 +1,7 @@
 # 计划:SSE 钱包门口径统一(chat-stream-wallet-gate)
 
 > **id**: chat-stream-wallet-gate
-> **状态**: not_started(EP2 完成 2026-08-16,双切片就绪待实施;EP3 切片 01 开工时与 feature_list.json 同 commit 翻 in_progress)
+> **状态**: in_progress(EP3 切片 01 开工 2026-08-17,与 feature_list.json 同 commit 翻页)
 > **优先级**: 94(feature_list.json,第 10 次巡检业务风险 R3 前半 🔴)
 > **创建日期**: 2026-08-16
 > **最后修订**: 2026-08-16(v2:对抗式审查回写)
