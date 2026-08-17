@@ -222,15 +222,20 @@
       "area": "计费-后端",
       "title": "计费对账闭环(usage_events 聚合 vs wallet_transactions 差额核对 job,挂现有 APScheduler 框架,产出日报+告警——「charge 失败仅 logger.exception+rollback 的少扣费」从静默变可见。第 10 次巡检业务风险 R3 后半 🔴:代码注释宣称的 reconciled from usage_events 对账 job 并不存在)",
       "user_visible_behavior": "终端用户无直接可见变化;运营/管理侧新增对账日报与差额告警。对账周期/差额容忍度/告警通道/是否自动补扣(建议只报不补)EP2 用户拍板。",
-      "status": "in_progress",
+      "status": "passing",
       "verification": [
         "对账 job 差额检出测试:构造 charge 失败/缺失的 usage_event,job 产出正确差额记录并触发告警",
         "无差额时零告警(不误报)",
         "job 幂等:同窗口重跑不产生重复差额记录"
       ],
-      "notes": "生产加固系列第 4 条(EP1 2026-08-14 登记)。复用 app/core/scheduler.py(notification-scheduler pri 84 归档件建的 APScheduler 框架)。对账结果落表按「按需加表,不预建空架子」铁律 EP2 评估:已拍板复用 SystemLog。",
+      "notes": "生产加固系列第 4 条(EP1 2026-08-14 登记)。复用 app/core/scheduler.py(notification-scheduler pri 84 归档件建的 APScheduler 框架)。对账结果落表按「按需加表,不预建空架子」铁律 EP2 评估:已拍板复用 SystemLog。 EP2 2026-08-17 Session 219(10 决策:D1-D7 用户拍板/D8-D10 工程判断标注);EP3 全 2 切片完成 2026-08-17 Session 220/221。",
       "plan": "harness/docs/plan-billing-reconciliation-job.md",
-      "depends_on": []
+      "depends_on": [],
+      "evidence": [
+        "切片 01(commits 130f20b 翻页 + 0a0d8f9 实施 + bc8d955 审查回写,PR #171,merge 28a2034,CI 4/4 绿:Migrations 43s/Backend 11m14s/E2E 1m56s/Frontend 28s):`BillingReconciliationService.run(as_of, force)` 双层检出(事件级 NOT EXISTS 漏扣明细[LOOKBACK_BUFFER=30min 常量单源]+ per-tenant 聚合残余差[与事件级共用 cutoff 窗口防在途误报]+ 钱包终身不变式[refund/adjust 带符号求和])+ 每 run 一条 SystemLog(action=billing_reconciliation,差额 warning/干净 info,details_json 全量报告,直写不走 LoggingService)+ as_of 日粒度幂等锁(同日 skip,force 绕过)+ 事件首告去重(历史 run new_alerted_event_ids 并集,details_json 只存本 run 新告)+ scheduler reconcile_billing 薄壳(吞错不崩)+ CronTrigger 09:30 注册;SQLite 常驻直调测试 11 用例(factory 绑 StaticPool,fixed AS_OF + 显式 created_at 钉死缓冲边界,对照组走真实 BillingService.charge 链路);/code-review Standards 0🔴/4🟡(1 修 refund_adjust_by_wallet 重命名)/ Spec 8/8 + §4.7 实施注记回写;全量 1059 passed 零回归(基线 1048+11)",
+        "切片 02 末切片(commits 0964f92 实施 + bd42518 审查回写,2026-08-17):service 通知编排 ——`_super_admin_targets`(全体 platform_role='super_admin' AND is_deleted=False,首个 active membership[valid_to IS NULL,earliest valid_from+id tiebreak]租户,无 membership None 哨兵)+ `_notify_super_admins`(type=system/title=计费对账发现差额/content=摘要/link=/logs[App.tsx 实测审计页路由],无 membership logger.warning 跳过,NotificationService.create SAVEPOINT flush→编排末尾一次 commit 镜像 scan_balance_warnings);调用点 has_discrepancy 分支 SystemLog commit 之后,整个 notify stage try/except best-effort;CONTEXT.md「Token 计费」节术语「对账(Reconciliation)」(双层口径/只报不补/首告去重,glossary 零实现细节);用例 8 四条(8a targeting 字段逐项+双 membership 落点+无 membership warning/8b 无超管不崩 run 记录仍落/8c 干净 run 超管在场也零通知/8d 通知 stage 抛错 run 不抛)TDD 红→绿;/code-review Standards 0🔴/4🟡(2 修:best-effort 扩全 stage + 删死返回值/2 留痕:run() 拆分留巡检 + 豁免延伸 User/UserTenant 入档 §4.7)/ Spec 0 缺失 0 越界(tiebreak 消歧入档)",
+        "全量验证(2026-08-17 收官):后端 `pytest -ra --strict-markers` 1063 passed, 8 skipped(基线 1048 → 切片 01 +11 → 切片 02 +4,零回归;8 skipped = PG 门控)+ ruff 全绿 + 前端 `npm run build` 绿(1.93s,零前端改动确认);feature 收尾八步闭环(status passing + plan 状态行同 commit 翻 + check_plan_status_sync exit 0 + sync-active + 依赖解锁扫描[无 depends_on 指向,新 frontier = 92 super-admin-write-audit]+ 分支清理 PR 合并后)"
+      ]
     },
     {
       "id": "super-admin-write-audit",

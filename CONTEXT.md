@@ -96,6 +96,10 @@ _Avoid_: usage record, token log
 每个 model 的单价(prompt / completion per 1k tokens)。BillingService 算费用时用,租户可覆盖平台默认。
 _Avoid_: rate, price
 
+**对账(Reconciliation)**:
+每日核对用量事件与钱包流水的双层口径:事件级逐条查漏扣明细,聚合层兜残余差与钱包不变式漂移。只报不补(人工调账走 adjust 交易);漏扣事件首告一次,此后计入存量统计不再重复告警。
+_Avoid_: 对帐(错字), billing audit, 补扣 job(明确不做补扣)
+
 ## API Token(AtoA 服务)
 
 **API Token**:
