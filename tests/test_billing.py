@@ -397,7 +397,7 @@ async def _count_rows(db_session, model, *where_clauses) -> int:
 
 
 @pytest.mark.asyncio
-async def test_chat_402_when_no_wallet_exists(app_client, db_session, monkeypatch, test_env):
+async def test_chat_402_when_no_wallet_exists(app_client, monkeypatch):
     """① No wallet at all → real 402 before the stream starts (was: allowed).
 
     A missing wallet is an anomaly (production tenants are born with one), not
