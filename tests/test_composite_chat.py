@@ -175,8 +175,8 @@ async def _composite(client, agent_ids: list[str], message: str = "Hi", **extra)
 @pytest.mark.asyncio
 async def test_composite_happy_path_3_agents(app_client, db_session, test_env, monkeypatch):
     """3 agents → synthesis + 3 fragments + conversation persisted."""
-    # Composite blocks on no/empty wallet (stricter than /chat/stream), so the
-    # happy path needs a funded wallet to clear the pre-check.
+    # Both chat paths block on no/empty wallet (shared _require_wallet_balance
+    # gate), so the happy path needs a funded wallet to clear the pre-check.
     await _seed_wallet(db_session, test_env.tenant_id, balance=1000)
     ids = [await _make_agent(app_client, f"Bot{i}") for i in range(3)]
 
@@ -299,7 +299,7 @@ async def test_composite_402_when_wallet_balance_zero(app_client, db_session, te
 
 @pytest.mark.asyncio
 async def test_composite_402_when_no_wallet(app_client, test_env, monkeypatch):
-    """No wallet at all → 402 (composite is strict, unlike /chat/stream's allow)."""
+    """No wallet at all → 402 (same gate as /chat/stream: has_balance blocks)."""
     ids = [await _make_agent(app_client, "Bot")]
     _patch_composite(monkeypatch, lambda kw: _result([_fragment(ids[0])]))
 

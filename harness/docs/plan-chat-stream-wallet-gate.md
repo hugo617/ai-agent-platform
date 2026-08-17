@@ -1,7 +1,7 @@
 # 计划:SSE 钱包门口径统一(chat-stream-wallet-gate)
 
 > **id**: chat-stream-wallet-gate
-> **状态**: not_started(EP2 完成 2026-08-16,双切片就绪待实施;EP3 切片 01 开工时与 feature_list.json 同 commit 翻 in_progress)
+> **状态**: in_progress(EP3 切片 01 开工 2026-08-17,与 feature_list.json 同 commit 翻页)
 > **优先级**: 94(feature_list.json,第 10 次巡检业务风险 R3 前半 🔴)
 > **创建日期**: 2026-08-16
 > **最后修订**: 2026-08-16(v2:对抗式审查回写)
@@ -166,26 +166,28 @@ SSE 路径补与 composite **同一函数、同一口径、同一错误体**的�
 
 > 顺序理由:门先行——没有真 402,前端 402 处理是死代码;切片 01 落地后资损口即关死(402 生效 + 全量零回归),可独立交付;切片 02 把用户体验收口到 composite 同级并收官。前端中间态窗口(切片 01 合入后、02 合入前,零余额租户看到泛化 402 toast)见 §9,两切片 EP3 连续交付。
 
-### 切片 01 — 后端统一钱包门:SSE 预检 402 + 共享 helper + 移除流内旧门 + 测试地基
+### 切片 01 — 后端统一钱包门:SSE 预检 402 + 共享 helper + 移除流内旧门 + 测试地基 ✅(2026-08-17,commit 21c1a7b,PR 待开)
 
 **What it delivers**:无钱包/零余额/负余额/inactive 钱包的租户调 `/chat/stream` 在建立连接前收到 402(与 composite 同函数、同口径、同错误体);被拦请求不再创建会话、不落用户消息;有余额租户流式零变化;super_admin 照旧绕过;两路径口径一致性有常驻 CI 断言——资损口(无钱包免费流式)关死。
 
 **Blocked by**: 无(frontier,可立即开工)
 
-**文件清单**:`app/api/v1/chat.py` / `tests/conftest.py`(funded_wallet)/ `tests/test_billing.py`(矩阵 ①-⑧)/ `tests/test_chat.py`、`tests/test_multi_agent.py`、`tests/test_usage_tracking.py`、`tests/test_customer_conversation.py`(挂 funded_wallet,以红灯为准)
+**文件清单**:`app/api/v1/chat.py` / `tests/conftest.py`(funded_wallet)/ `tests/test_billing.py`(矩阵 ①-⑧)/ `tests/test_chat.py`、`tests/test_multi_agent.py`、`tests/test_usage_tracking.py`、`tests/test_customer_conversation.py`(挂 funded_wallet,以红灯为准)。*实施补记(Spec 轴审查发现,文件清单漏列)*:`tests/test_composite_chat.py` 两处「composite is strict, unlike /chat/stream's allow」过时注释同 commit 同步为统一口径措辞 —— 与 §0 第 5/6 行同类注释债,同域注释不算越界(切片 02 对 composite-chat.ts 的先例同款)。
 
 **验证命令**:`pytest tests/test_billing.py tests/test_composite_chat.py -q` + `./init.sh full`
 
 **Acceptance criteria**:
 
-- [ ] `chat.py` 新增 `_require_wallet_balance(db, user)` helper:super_admin 直返;延迟 import 惯例;`has_balance` 为假 → `HTTPException(402, detail="token 余额不足,请联系总部充值")`;无 try/except(查询异常 500,与 composite 对齐)
-- [ ] SSE endpoint 在 `_load_agent` 之后、`create_or_get` 之前调用 helper
-- [ ] `event_source` 内旧钱包检查整段移除(判断 + SSE error 帧 + fail-open except + 相关注释块);delta 帧的 json.dumps 序列化不受影响
-- [ ] composite 现有内联「Wallet pre-check」替换为 helper 调用,行为零变化(既有 composite 402/bypass 测试全绿)
-- [ ] `chat.py` 相关注释/docstring 口径同步(composite docstring「Stricter than /chat/stream's "no wallet = allow" degradation」段改写为统一口径表述)
-- [ ] conftest 新增 opt-in `funded_wallet` fixture(余额给足);因改严而红的既有流式测试统一挂它修复,**不放宽任何既有断言**
-- [ ] `tests/test_billing.py` SSE 门矩阵 ①-⑧ 全落地(无钱包 402 / 零余额 402 + 会话消息计数均 0 / 负余额 402 / inactive 402 / super_admin 无钱包放行 / 续问被 402 后 messages 不变 / 两路径 402 detail 逐字一致 / 有余额 happy path 零改动)
-- [ ] `./init.sh full` 全量零回归(基线 1043 passed)
+- [x] `chat.py` 新增 `_require_wallet_balance(db, user)` helper:super_admin 直返;延迟 import 惯例;`has_balance` 为假 → `HTTPException(402, detail="token 余额不足,请联系总部充值")`;无 try/except(查询异常 500,与 composite 对齐)
+- [x] SSE endpoint 在 `_load_agent` 之后、`create_or_get` 之前调用 helper
+- [x] `event_source` 内旧钱包检查整段移除(判断 + SSE error 帧 + fail-open except + 相关注释块);delta 帧的 json.dumps 序列化不受影响(`import json` 保留,delta/error 帧仍用)
+- [x] composite 现有内联「Wallet pre-check」替换为 helper 调用,行为零变化(既有 composite 402/bypass 测试全绿)
+- [x] `chat.py` 相关注释/docstring 口径同步(composite docstring「Stricter than /chat/stream's "no wallet = allow" degradation」段改写为统一口径表述;节注释「strict (HTTP 402)…N+1 cost higher」段同改)
+- [x] conftest 新增 opt-in `funded_wallet` fixture(余额 1_000_000 给足,另盖 total_recharged 同额——「充值过」语义自洽);因改严而红的既有流式测试统一挂它修复(19 个:test_chat 11 / test_multi_agent 3 / test_usage_tracking 3 / test_customer_conversation 2,与 §4.6 预期清单完全一致),**不放宽任何既有断言** —— 唯一改动的断言是收紧:`test_chat_records_usage_on_message_and_ledger` 的 `ev.cost is None` → `== Decimal("0")`(旧断言锁的是「无钱包 → charge no-op → cost 从未盖章」伪迹;挂 funded_wallet 后真链路跑通,未配定价 → cost 0 是 calc_cost 设计语义,双轴审查一致判「可接受的重定基,非放宽」)
+- [x] `tests/test_billing.py` SSE 门矩阵 ①-⑧ 全落地(无钱包 402 / 零余额 402 + 会话消息计数均 0 / 负余额 402 / inactive 402 / super_admin 无钱包放行 / 续问被 402 后 messages 不变 / 两路径 402 detail 逐字一致 / 有余额 happy path 零改动);TDD 红证:改代码前 ①②③④⑥⑦ 红(assert 200 == 402,旧宽纵行为)、⑤⑧ 绿,改后全绿
+- [x] `./init.sh full` 全量零回归:**1048 passed, 8 skipped**(基线 1043 + 净增 5 = 矩阵 8 条接管旧 SSE 门 3 条;8 skipped = PG 门控 SQLite 自动跳),ruff 全绿
+
+**完成证据(2026-08-17)**:commit 21c1a7b(实施)+ 翻页 commit bf501fd(feature_list not_started→in_progress + plan 状态行同 commit,check_plan_status_sync exit 0)。定向 `pytest tests/test_billing.py tests/test_composite_chat.py -q` 48 passed;6 受影响文件 99 passed;全量 1048 passed 零回归。/code-review 双轴(general-purpose ×2 并行):**Standards 0 硬违规**/3 判断项(① 修:矩阵 ① 未用参数瘦身;② 留痕:funded_wallet 是第 3 份钱包 seeder——fixture 无法 import 测试模块私有 helper,conftest 是正确归属,聚合重构独立立项;③ 留痕:⑦ 的 `_no_stream` raise+yield 伪造 async generator 手法,注释声明且目的明确);**Spec 8/8 AC 全满足 + 0 scope creep**,2 判断项(cost 断言重定基已回写 AC6 注记 / test_composite_chat.py 注释同步已补记文件清单),E2E/CLI 零影响锚点复核(diff 无 cli/ frontend/ 改动)。
 
 ### 切片 02 — 前端 402 充值引导 + feature 收尾(末切片)
 

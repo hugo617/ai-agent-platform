@@ -81,7 +81,7 @@ def _async_effective(available_models: list[str], default_model: str = "deepseek
 
 
 @pytest.mark.asyncio
-async def test_chat_persists_user_and_assistant_messages(app_client, db_session, monkeypatch):
+async def test_chat_persists_user_and_assistant_messages(app_client, db_session, funded_wallet, monkeypatch):
     # Create an agent to chat with.
     create = await app_client.post(
         "/api/v1/agents/",
@@ -129,7 +129,7 @@ async def test_chat_rejects_agent_from_other_tenant(app_client, db_session):
 
 
 @pytest.mark.asyncio
-async def test_conversation_list_after_chat(app_client, monkeypatch):
+async def test_conversation_list_after_chat(app_client, funded_wallet, monkeypatch):
     """A conversation created by chat shows up in GET /conversations/."""
     agent_id = (
         await app_client.post(
@@ -148,7 +148,7 @@ async def test_conversation_list_after_chat(app_client, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_message_history_after_chat(app_client, monkeypatch):
+async def test_message_history_after_chat(app_client, funded_wallet, monkeypatch):
     """GET /conversations/{id}/messages returns user + assistant messages."""
     agent_id = (
         await app_client.post(
@@ -173,7 +173,7 @@ async def test_message_history_after_chat(app_client, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_conversation_title_derived_from_first_message(app_client, monkeypatch):
+async def test_conversation_title_derived_from_first_message(app_client, funded_wallet, monkeypatch):
     """A new conversation's title is the first user message, truncated to 20 chars."""
     agent_id = (
         await app_client.post(
@@ -193,7 +193,7 @@ async def test_conversation_title_derived_from_first_message(app_client, monkeyp
 
 
 @pytest.mark.asyncio
-async def test_conversation_title_short_message_no_ellipsis(app_client, monkeypatch):
+async def test_conversation_title_short_message_no_ellipsis(app_client, funded_wallet, monkeypatch):
     """A short first message (<20 chars) becomes the title verbatim, no ellipsis."""
     agent_id = (
         await app_client.post(
@@ -209,7 +209,7 @@ async def test_conversation_title_short_message_no_ellipsis(app_client, monkeypa
 
 
 @pytest.mark.asyncio
-async def test_delete_conversation(app_client, monkeypatch):
+async def test_delete_conversation(app_client, funded_wallet, monkeypatch):
     """DELETE removes the conversation; it no longer appears in the list."""
     agent_id = (
         await app_client.post(
@@ -301,7 +301,7 @@ async def test_member_cannot_delete_conversation(member_client):
 
 
 @pytest.mark.asyncio
-async def test_agent_model_is_passed_to_stream_agent(app_client, monkeypatch):
+async def test_agent_model_is_passed_to_stream_agent(app_client, funded_wallet, monkeypatch):
     """Bug 1 regression: stream_agent must receive agent.model, not the global default.
 
     Before the fix, chat.py never forwarded the agent's model and stream_agent
@@ -343,7 +343,7 @@ async def test_agent_model_is_passed_to_stream_agent(app_client, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_agent_inference_params_passed_to_stream_agent(app_client, monkeypatch):
+async def test_agent_inference_params_passed_to_stream_agent(app_client, funded_wallet, monkeypatch):
     """Agent inference config (temperature/max_tokens/top_p) reaches stream_agent.
 
     Verifies the full chain: Agent.temperature/max_tokens/top_p → chat.py →
@@ -393,7 +393,7 @@ async def test_agent_inference_params_passed_to_stream_agent(app_client, monkeyp
 
 @pytest.mark.asyncio
 async def test_truncate_history_called_on_long_conversation(
-    app_client, db_session, tenant_owner, monkeypatch
+    app_client, db_session, tenant_owner, funded_wallet, monkeypatch
 ):
     """Long conversations are truncated before reaching ``stream_agent``.
 
@@ -463,7 +463,7 @@ async def test_truncate_history_called_on_long_conversation(
 
 
 @pytest.mark.asyncio
-async def test_assistant_partial_reply_persisted_on_error(app_client, db_session, monkeypatch):
+async def test_assistant_partial_reply_persisted_on_error(app_client, db_session, funded_wallet, monkeypatch):
     """A partial reply is persisted when the stream fails mid-way.
 
     Without this, a mid-stream failure leaves the user's message in history
@@ -517,7 +517,7 @@ async def test_assistant_partial_reply_persisted_on_error(app_client, db_session
 
 
 @pytest.mark.asyncio
-async def test_llm_timeout_yields_error_frame(app_client, monkeypatch):
+async def test_llm_timeout_yields_error_frame(app_client, funded_wallet, monkeypatch):
     """A stalled LLM stream is cancelled by the timeout and surfaces as an error.
 
     We stub ``ChatOpenAI`` + ``create_react_agent`` so the *real* ``stream_agent``

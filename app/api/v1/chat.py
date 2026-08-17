@@ -49,6 +49,26 @@ async def _load_agent(db: AsyncSession, tenant_id: str, agent_id: str) -> Agent:
     return agent
 
 
+async def _require_wallet_balance(db: AsyncSession, user: CurrentUser) -> None:
+    """Unified wallet gate shared by BOTH chat paths (chat-stream-wallet-gate).
+
+    super_admin bypasses (platform-level, never billed). Everyone else must
+    pass ``BillingService.has_balance`` — wallet exists, active, balance > 0 —
+    or get HTTP 402 with the shared detail. Deliberately no try/except: a
+    billing lookup failure is a 500 on both paths (fail-open here would reopen
+    the free-streaming hole this gate closed).
+    """
+    if user.platform_role == "super_admin":
+        return
+    from app.services.billing_service import BillingService
+
+    if not await BillingService(db).has_balance(user.tenant_id):
+        raise HTTPException(
+            status_code=status.HTTP_402_PAYMENT_REQUIRED,
+            detail="token 余额不足,请联系总部充值",
+        )
+
+
 def _u(usage_data: dict | None, key: str) -> int | None:
     """Read a token count from the usage payload, None-safe.
 
@@ -214,6 +234,10 @@ async def chat_stream(
 ) -> StreamingResponse:
     """Stream the agent's response as Server-Sent Events."""
     agent = await _load_agent(db, user.tenant_id, payload.agent_id)
+    # Wallet gate BEFORE any persistence: a blocked request gets a real 402
+    # (not an SSE error frame — those require a 200 already sent) and leaves
+    # no conversation/user-message behind. Same function composite calls.
+    await _require_wallet_balance(db, user)
 
     conv_service = ConversationService(db)
     conv = await conv_service.create_or_get(
@@ -248,25 +272,6 @@ async def chat_stream(
     async def event_source():
         full_reply: list[str] = []
         usage_data: dict | None = None
-        # Balance pre-check: when a wallet EXISTS and its balance has hit zero,
-        # block new chats with an SSE ``error`` event (HTTP 200 is already
-        # sent, so switching to an error code mid-stream is not SSE-friendly).
-        # A missing wallet is intentionally NOT blocked — it covers tenants
-        # created before billing was enabled (and the test environment), so the
-        # platform degrades gracefully instead of locking everyone out.
-        # super_admin bypasses the gate entirely (platform-level, never billed).
-        if user.platform_role != "super_admin":
-            try:
-                from app.services.billing_service import BillingService
-
-                wallet = await BillingService(db).get_wallet(user.tenant_id)
-                if wallet is not None and wallet.balance <= 0:
-                    yield f"data: {json.dumps({'error': 'token 余额不足,请联系总部充值'}, ensure_ascii=False)}\n\n"
-                    return
-            except Exception:  # noqa: BLE001 - billing must never block chat
-                # If the billing lookup itself fails, do not punish the user —
-                # let the chat proceed. The discrepancy is reconciled later.
-                pass
         try:
             # Resolve the LLM config (tenant > platform > env) and pick the
             # model: the agent's chosen model wins if it's in the available
@@ -397,8 +402,8 @@ async def chat_stream(
 # answer. Plain JSON (NOT SSE): composite returns a single payload, so there's
 # no stream to frame. Contrast with /chat/stream (single agent, typewriter SSE).
 # Billed as N+1 UsageEvents (one per agent fragment + one for the synthesize
-# call); wallet pre-check is strict (HTTP 402, project-first) because the N+1
-# cost is much higher than a single-agent turn.
+# call); wallet pre-check via the shared ``_require_wallet_balance`` gate
+# (HTTP 402, project-first) — the same function /chat/stream calls.
 
 
 @router.post(
@@ -419,10 +424,12 @@ async def composite_chat(
         soft-deleted both 404, no existence leak), and re-check
         ``conversations:chat`` per agent. ``agent_ids`` length is already
         bounded 1..8 by the Pydantic schema (422 on violation).
-      Wallet pre-check — non-super_admin with no balance → HTTP 402. Stricter
-        than /chat/stream's "no wallet = allow" degradation: composite is N+1
-        times the token cost, so the gate blocks early. (Project-first 402; the
-        frontend must catch it separately and show a recharge prompt.)
+      Wallet pre-check — ``_require_wallet_balance`` (the gate shared with
+        /chat/stream): non-super_admin without balance (missing wallet / 0 /
+        negative / inactive) → HTTP 402 with the shared detail. Both paths
+        calling the same function makes "one wallet contract" structural.
+        (Project-first 402; the frontend must catch it separately and show a
+        recharge prompt.)
       Create/resume — ``create_or_get(kind="composite")``. New conversation
         stamps ``agent_id=agents[0]`` (the "primary"/attribution anchor); all N
         agents live in fragments. Resuming applies the H2 kind-consistency
@@ -462,18 +469,10 @@ async def composite_chat(
         agents.append(agent)
 
     # ---- Wallet pre-check --------------------------------------------------
-    # Strict (block) semantics, unlike /chat/stream's lenient (allow) path.
-    # super_admin bypasses — platform-level, never billed.
-    if user.platform_role != "super_admin":
-        from app.services.billing_service import BillingService
-
-        if not await BillingService(db).has_balance(user.tenant_id):
-            # HTTP 402 Payment Required — project-first. Not SSE, so a real
-            # status code is usable (unlike /chat/stream's error frame).
-            raise HTTPException(
-                status_code=status.HTTP_402_PAYMENT_REQUIRED,
-                detail="token 余额不足,请联系总部充值",
-            )
+    # Shared gate (was: inline three-liner). super_admin bypasses; everyone
+    # else needs a live wallet with balance > 0 — same semantics as
+    # /chat/stream, by construction (both call _require_wallet_balance).
+    await _require_wallet_balance(db, user)
 
     # ---- Create / resume composite conversation ---------------------------
     conv_service = ConversationService(db)
