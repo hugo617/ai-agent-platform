@@ -35,6 +35,12 @@ instead of via ``LoggingService.record`` because it IS the run's primary
 artifact: a swallowed write failure would silently break the idempotency
 locks, so it must fail loudly to the scheduler shell.
 
+Discrepant runs additionally ring a third channel: a targeted ``system``
+in-app notification to every reachable super_admin (their first active
+membership's tenant — a platform-wide tenant_id=NULL row would be invisible
+through the notification repo's equality match). Clean runs stay silent;
+the info record in the audit log is the daily proof of life.
+
 All datetimes are normalized to aware-UTC; a naive ``as_of`` is interpreted
 as UTC. On SQLite (tests) the offset is dropped at bind time, which is
 lossless for UTC wall-clock values.
@@ -50,8 +56,10 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.log import SystemLog
+from app.models.tenant import User, UserTenant
 from app.models.usage_event import UsageEvent
 from app.models.wallet import Wallet, WalletTransaction
+from app.services.notification_service import NotificationService
 
 logger = logging.getLogger(__name__)
 
@@ -276,6 +284,10 @@ class BillingReconciliationService:
 
         if has_discrepancy:
             logger.error("billing reconciliation: %s", message)
+            # Third channel (plan D5): targeted in-app notifications, after
+            # the run record is safely committed — the record is the primary
+            # artifact, notifications are best-effort follow-up.
+            await self._notify_super_admins(message)
         else:
             logger.info("billing reconciliation: %s", message)
         return report
@@ -374,3 +386,75 @@ class BillingReconciliationService:
                     "drift": drift,
                 }
         return drifts
+
+    # ------------------------------------------------------- notifications
+
+    async def _super_admin_targets(self) -> dict[str, str | None]:
+        """Live super_admins → tenant of their first active membership.
+
+        Returns ``{user_id: tenant_id_or_None}``; None marks a super_admin
+        with no active membership (skipped with a warning by the caller).
+        "First" = earliest ``valid_from`` (id tiebreaker) so the pick is
+        deterministic when a super_admin holds active memberships in
+        several tenants.
+        """
+        admin_rows = await self.db.execute(
+            select(User.id)
+            .where(
+                User.platform_role == "super_admin",
+                User.is_deleted.is_(False),
+            )
+            .order_by(User.id)
+        )
+        admin_ids = [row[0] for row in admin_rows.all()]
+        if not admin_ids:
+            return {}
+
+        membership_rows = await self.db.execute(
+            select(UserTenant.user_id, UserTenant.tenant_id)
+            .where(
+                UserTenant.user_id.in_(admin_ids),
+                UserTenant.valid_to.is_(None),
+            )
+            .order_by(UserTenant.user_id, UserTenant.valid_from, UserTenant.id)
+        )
+        first_membership: dict[str, str] = {}
+        for user_id, tenant_id in membership_rows.all():
+            first_membership.setdefault(user_id, tenant_id)  # ordered: first wins
+        return {user_id: first_membership.get(user_id) for user_id in admin_ids}
+
+    async def _notify_super_admins(self, summary: str) -> int:
+        """Targeted ``system`` notification to every reachable super_admin.
+
+        Best-effort by construction: ``NotificationService.create`` never
+        raises (nested SAVEPOINT + swallow), so a broken notification can
+        neither crash this run nor poison the already-committed run record.
+        The notification must carry ``tenant_id`` of a membership — a
+        platform-wide (tenant_id=NULL) row is invisible through the
+        notification repo's equality match (plan D5 rationale).
+        """
+        targets = await self._super_admin_targets()
+        notifier = NotificationService(self.db)
+        created = 0
+        for user_id, tenant_id in targets.items():
+            if tenant_id is None:
+                logger.warning(
+                    "super_admin %s has no active membership; skipping "
+                    "reconciliation notification",
+                    user_id,
+                )
+                continue
+            notification = await notifier.create(
+                type="system",
+                title="计费对账发现差额",
+                content=summary,
+                tenant_id=tenant_id,
+                user_id=user_id,
+                link="/logs",
+            )
+            if notification is not None:
+                created += 1
+        # create() only flushes inside its SAVEPOINT — the caller of a
+        # best-effort insert must commit it (mirrors scan_balance_warnings).
+        await self.db.commit()
+        return created

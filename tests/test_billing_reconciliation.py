@@ -482,6 +482,139 @@ async def test_wallet_invariant_detects_manual_balance_edit(db_session, factory,
     assert rows[0].level == "warning"
 
 
+# ----------------------------------------------------- case 8: super-admin notifications
+
+
+async def _seed_super_admin(db_session, user_id: str, memberships: list[tuple]):
+    """Insert a live super_admin with explicit active memberships
+    ``(tenant_id, valid_from)`` pairs.
+
+    ``valid_from`` is passed explicitly (not left to the server default):
+    SQLite's second-precision CURRENT_TIMESTAMP would tie same-second rows
+    and the "first active membership" pick must stay deterministic.
+    """
+    from app.models.tenant import User, UserTenant
+
+    db_session.add(User(id=user_id, platform_role="super_admin"))
+    for tenant_id, valid_from in memberships:
+        db_session.add(
+            UserTenant(
+                user_id=user_id,
+                tenant_id=tenant_id,
+                valid_from=valid_from,
+                valid_to=None,
+            )
+        )
+    await db_session.commit()
+
+
+async def _fetch_notifications(db_session) -> list:
+    """Every notification row (the run's third alerting channel)."""
+    from app.models.notification import Notification
+
+    res = await db_session.execute(select(Notification))
+    return list(res.scalars().all())
+
+
+@pytest.mark.asyncio
+async def test_super_admins_receive_targeted_notifications(
+    db_session, factory, test_env, caplog
+):
+    """Case 8a — a discrepant run notifies every live super_admin via their
+    FIRST active membership's tenant (earliest valid_to-IS-NULL row): a
+    targeted ``system`` notification with the summary content and a link to
+    the audit page. A super_admin with no active membership is skipped with
+    a warning, not a crash."""
+    import logging
+
+    conv, _, m2 = await _seed_conv_and_msg(db_session, test_env.tenant_id)
+    await _seed_usage_event(  # missed charge → discrepancy
+        db_session,
+        test_env.tenant_id,
+        conv.id,
+        m2.id,
+        total=100,
+        created_at=OLD_AT,
+    )
+    tnt_b = "tnt-recon-notif"
+    await _seed_tenant(db_session, tnt_b)
+    # Two active memberships on different tenants: the earlier one wins.
+    early = AS_OF - timedelta(hours=2)
+    late = AS_OF - timedelta(hours=1)
+    await _seed_super_admin(
+        db_session, "sa-notified", [(tnt_b, early), (test_env.tenant_id, late)]
+    )
+    await _seed_super_admin(db_session, "sa-memberless", [])
+
+    with caplog.at_level(
+        logging.WARNING, logger="app.services.billing_reconciliation_service"
+    ):
+        report = await _run(factory, AS_OF)
+
+    assert report["has_discrepancy"] is True
+    rows = await _fetch_notifications(db_session)
+    assert len(rows) == 1  # only the membership-holding super_admin
+    notif = rows[0]
+    assert notif.user_id == "sa-notified"
+    assert notif.tenant_id == tnt_b  # first (earliest) active membership
+    assert notif.type == "system"
+    assert notif.title == "计费对账发现差额"
+    assert "新告漏扣 1 条" in notif.content
+    assert "存量未处理 0 条" in notif.content
+    assert notif.link == "/logs"
+
+    skipped = [r for r in caplog.records if "sa-memberless" in r.getMessage()]
+    assert skipped, "a memberless super_admin must be logged and skipped"
+
+
+@pytest.mark.asyncio
+async def test_discrepancy_without_super_admins_survives(db_session, factory, test_env):
+    """Case 8b — a discrepancy with zero live super_admins sends nothing and
+    does not crash: the run record still lands (the report is the primary
+    artifact; notifications are best-effort)."""
+    conv, _, m2 = await _seed_conv_and_msg(db_session, test_env.tenant_id)
+    await _seed_usage_event(
+        db_session,
+        test_env.tenant_id,
+        conv.id,
+        m2.id,
+        total=100,
+        created_at=OLD_AT,
+    )
+
+    report = await _run(factory, AS_OF)
+
+    assert report["has_discrepancy"] is True
+    assert await _fetch_notifications(db_session) == []
+    assert len(await _fetch_run_records(db_session)) == 1  # run record still lands
+
+
+@pytest.mark.asyncio
+async def test_clean_run_sends_zero_notifications(db_session, factory, test_env):
+    """Case 8c — a clean run sends nothing even when a reachable super_admin
+    exists (routine runs must not ring the bell; the info record in the audit
+    log is the daily proof of life)."""
+    conv, _, m2 = await _seed_conv_and_msg(db_session, test_env.tenant_id)
+    await _seed_wallet(db_session, test_env.tenant_id, balance=1_000)
+    ev = await _seed_usage_event(
+        db_session,
+        test_env.tenant_id,
+        conv.id,
+        m2.id,
+        total=100,
+        created_at=OLD_AT,
+    )
+    await _charge_and_pin(db_session, test_env.tenant_id, ev)
+    await _seed_super_admin(
+        db_session, "sa-clean", [(test_env.tenant_id, AS_OF - timedelta(hours=1))]
+    )
+
+    report = await _run(factory, AS_OF)
+
+    assert report["has_discrepancy"] is False
+    assert await _fetch_notifications(db_session) == []
+
+
 # ----------------------------------------------------- scheduler shell + registration
 
 
