@@ -615,6 +615,34 @@ async def test_clean_run_sends_zero_notifications(db_session, factory, test_env)
     assert await _fetch_notifications(db_session) == []
 
 
+@pytest.mark.asyncio
+async def test_notification_stage_failure_never_breaks_the_run(
+    db_session, factory, test_env, monkeypatch
+):
+    """Best-effort covers the WHOLE notify stage: even a raising target query
+    is swallowed — the run still returns its report and the already-committed
+    run record stays the primary artifact (no exception reaches the shell)."""
+
+    async def _boom(self, summary):  # noqa: ANN001
+        raise RuntimeError("notify stage exploded")
+
+    monkeypatch.setattr(BillingReconciliationService, "_notify_super_admins", _boom)
+    conv, _, m2 = await _seed_conv_and_msg(db_session, test_env.tenant_id)
+    await _seed_usage_event(
+        db_session,
+        test_env.tenant_id,
+        conv.id,
+        m2.id,
+        total=100,
+        created_at=OLD_AT,
+    )
+
+    report = await _run(factory, AS_OF)  # must not raise
+
+    assert report["has_discrepancy"] is True
+    assert len(await _fetch_run_records(db_session)) == 1  # record still landed
+
+
 # ----------------------------------------------------- scheduler shell + registration
 
 

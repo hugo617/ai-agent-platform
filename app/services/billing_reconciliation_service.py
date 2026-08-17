@@ -286,8 +286,16 @@ class BillingReconciliationService:
             logger.error("billing reconciliation: %s", message)
             # Third channel (plan D5): targeted in-app notifications, after
             # the run record is safely committed — the record is the primary
-            # artifact, notifications are best-effort follow-up.
-            await self._notify_super_admins(message)
+            # artifact. The whole notify stage is best-effort: a failure
+            # anywhere in it (target query, insert, commit) is logged and
+            # swallowed here, never raised into the shell.
+            try:
+                await self._notify_super_admins(message)
+            except Exception:  # noqa: BLE001 — must not break the finished run
+                logger.exception(
+                    "reconciliation notifications failed "
+                    "(run record already committed)"
+                )
         else:
             logger.info("billing reconciliation: %s", message)
         return report
@@ -423,10 +431,11 @@ class BillingReconciliationService:
             first_membership.setdefault(user_id, tenant_id)  # ordered: first wins
         return {user_id: first_membership.get(user_id) for user_id in admin_ids}
 
-    async def _notify_super_admins(self, summary: str) -> int:
+    async def _notify_super_admins(self, summary: str) -> None:
         """Targeted ``system`` notification to every reachable super_admin.
 
-        Best-effort by construction: ``NotificationService.create`` never
+        Best-effort by construction: the caller wraps the whole stage in an
+        exception guard and ``NotificationService.create`` itself never
         raises (nested SAVEPOINT + swallow), so a broken notification can
         neither crash this run nor poison the already-committed run record.
         The notification must carry ``tenant_id`` of a membership — a
@@ -435,7 +444,6 @@ class BillingReconciliationService:
         """
         targets = await self._super_admin_targets()
         notifier = NotificationService(self.db)
-        created = 0
         for user_id, tenant_id in targets.items():
             if tenant_id is None:
                 logger.warning(
@@ -444,7 +452,7 @@ class BillingReconciliationService:
                     user_id,
                 )
                 continue
-            notification = await notifier.create(
+            await notifier.create(
                 type="system",
                 title="计费对账发现差额",
                 content=summary,
@@ -452,9 +460,6 @@ class BillingReconciliationService:
                 user_id=user_id,
                 link="/logs",
             )
-            if notification is not None:
-                created += 1
         # create() only flushes inside its SAVEPOINT — the caller of a
         # best-effort insert must commit it (mirrors scan_balance_warnings).
         await self.db.commit()
-        return created

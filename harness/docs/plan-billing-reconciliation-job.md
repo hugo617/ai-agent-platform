@@ -117,6 +117,7 @@
 - **首告去重实现**:已告事件 id 集合 = 历史 run 记录 details_json 的 `new_alerted_event_ids` 并集(拉全部 action=billing_reconciliation 记录,Python 合并;量级见 §4.4)。本 run 新告 = 当前漏扣集合 − 已告集合;details_json 只存**本 run 新告** id 列表(不存全量,防记录膨胀)
 - **明细口径**:漏扣明细只报 token 事实数(租户/事件 id/会话/模型/prompt/completion/total_tokens),**不重算成本**(D7 延伸:当时定价快照未存,现价重算会误导补扣决策)
 - **通知 targeting**:接收者 = `User.platform_role == 'super_admin' AND is_deleted=False` 全体;每超管取其**首个 active membership**(user_tenants where valid_to IS NULL)租户发 targeted 通知(`tenant_id=该租户, user_id=超管id, type="system"`——复用现成枚举,零前端改动;title「计费对账发现差额」,content 摘要含新告数/存量数/残余差,link 指向审计日志页[EP3 以 audit-log-ui 实际路由为准]);无 membership 超管跳过 + logger.warning。发送用 `NotificationService.create`(best-effort 永不抛,job 不因通知失败崩)。**零新告且无残余差/漂移 → 不发通知**(例行 run 不打扰铃铛)
+  - *EP3 切片 02 实施注记(2026-08-17,code-review 双轴回写)*:① 「首个 active membership」的 tiebreak 定死为 earliest `valid_from`(+ id 兜底)——spec 空白的确定性消歧,超管多租户 active 时落点可复现(用例 8a 锁双 membership 落点);② best-effort 范围覆盖**整个 notify stage**(target 查询 + 插入 + commit 包一层 try/except),run 记录 commit 后任何通知侧异常 logger.exception 吞掉不外抛(用例 8d 锁);③ 切片 01 留痕的「平台级跨租户只读 job 裸 select 豁免」随 targeting 查询延伸至 User/UserTenant(同属该豁免范围,无租户过滤可下沉);④ `_notify_super_admins` 不返回计数(与 scan_balance_warnings 不同,通知计数非本 job 返回契约,死返回值已删)。
 - **告警分级**:新告漏扣 > 0 或 残余差 ≠ 0 或 钱包漂移 > 0 → logger.error + SystemLog level=warning + 超管通知;全部干净 → logger.info + SystemLog level=info + 零通知
 - **scheduler 注册**:`_register_jobs` 加 `CronTrigger(hour=9, minute=30), id="reconcile_billing", replace_if_exists=True`;受既有 `_SCHEDULER_ENABLED` 总开关管(默认 False,生产单副本显式 True)——**开关显式化归 config-startup-guard(R5),本 feature 不越界改默认值**
 - **job 异常兜底**:service 层抛错由薄壳 job 捕获 logger.exception(对账失败本身要可见,但不崩 scheduler 进程)
@@ -162,18 +163,18 @@
   - [x] 验证:`pytest tests/test_billing_reconciliation.py -q` 全绿 + `./init.sh full` 全量零回归(基线 1048)+ ruff 全绿
   - [x] 不越界:不动 charge/recharge/计费编排、不动 scheduler_enabled 默认值、不发通知(切片 02)、零前端零迁移
 
-### 切片 02 — 超管 targeted 通知接入 + 文档同步 + feature 收尾(末切片)
+### 切片 02 — 超管 targeted 通知接入 + 文档同步 + feature 收尾(末切片)✅(2026-08-17)
 
 - **Blocked by**: 切片 01
 - **What it delivers**: 有新差额(新告漏扣/残余差/漂移任一 > 0)时,全部 super_admin 收到 targeted in-app 通知(铃铛可见,type="system",content 摘要,link 指向审计日志页);干净 run 零通知。CONTEXT.md 补「对账(Reconciliation)」术语;feature 收尾八步仪式。
 - **文件清单**(估):`app/services/billing_reconciliation_service.py` 改(通知编排 ~40 行)/ `tests/test_billing_reconciliation.py` 改(用例 8,~3 条)/ `CONTEXT.md` 改(术语 1 条)/ 收尾:feature_list.json + progress.md + sync-active
 - **Acceptance criteria**:
-  - [ ] 通知 targeting:全体 `platform_role='super_admin' AND is_deleted=False`;每超管取首个 active membership(valid_to IS NULL)租户发 targeted 通知(type="system");无 membership 超管跳过 + logger.warning
-  - [ ] 通知触发条件:新告漏扣 > 0 或 残余差 ≠ 0 或 漂移 > 0;全部干净 → 零通知(D5;`NotificationService.create` best-effort,job 不因通知失败崩)
-  - [ ] 用例 8 落地:超管收到通知(targeting 字段正确)/ 无超管不崩 / 干净 run 零通知
-  - [ ] `CONTEXT.md` 术语「对账(Reconciliation)」(双层口径/只报不补/首告去重三要点,glossary 格式,零实现细节)
-  - [ ] 验证:`./init.sh full` 全量零回归 + 前端 `npm run build` 绿(零前端改动确认)+ ruff
-  - [ ] feature 收尾八步:status in_progress→passing + evidence 3 条 + plan 状态行同 commit 翻 + sync-active + progress.md + 文档影响评估 + 依赖解锁扫描(92 super-admin-write-audit 无 depends_on 指向本条,确认新 frontier)+ 分支清理(PR 合并后)
+  - [x] 通知 targeting:全体 `platform_role='super_admin' AND is_deleted=False`;每超管取首个 active membership(valid_to IS NULL)租户发 targeted 通知(type="system");无 membership 超管跳过 + logger.warning
+  - [x] 通知触发条件:新告漏扣 > 0 或 残余差 ≠ 0 或 漂移 > 0;全部干净 → 零通知(D5;`NotificationService.create` best-effort,job 不因通知失败崩)
+  - [x] 用例 8 落地:超管收到通知(targeting 字段正确)/ 无超管不崩 / 干净 run 零通知
+  - [x] `CONTEXT.md` 术语「对账(Reconciliation)」(双层口径/只报不补/首告去重三要点,glossary 格式,零实现细节)
+  - [x] 验证:`./init.sh full` 全量零回归 + 前端 `npm run build` 绿(零前端改动确认)+ ruff
+  - [x] feature 收尾八步:status in_progress→passing + evidence 3 条 + plan 状态行同 commit 翻 + sync-active + progress.md + 文档影响评估 + 依赖解锁扫描(92 super-admin-write-audit 无 depends_on 指向本条,确认新 frontier)+ 分支清理(PR 合并后)
 
 ## 8. Out of Scope(不越界声明)
 
