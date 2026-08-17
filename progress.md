@@ -42,7 +42,7 @@
 
 ① ./init.sh full 1048 passed + 前端 259/259 + build + oxlint 全绿 ✅ / ② feature_list.json `in_progress → passing` + evidence 3 条(切片 01 / 切片 02 / 收官全量)✅ / ③ sync-active 刷新 ✅ / ④ plan 顶部状态行**同 commit** 翻 passing + 切片 02 标题 ✅ + 7 AC 全勾 + 完成证据节;`check_plan_status_sync` exit 0 ✅ / ⑤ progress.md 本条 + 顶部 frontier → billing-reconciliation-job(93)EP2 ✅ / ⑥ 文档影响评估:**无新增/改动文档**(纯前端 + 注释级;AGENTS.md/项目指南/铁律均不受影响,与 plan 预判一致)✅ / ⑦ 依赖解锁扫描:无任何 feature depends_on → chat-stream-wallet-gate,系列新 frontier = **billing-reconciliation-job(93,R3 后半)需 EP2 回环**(/grill-with-docs → /to-spec → /to-tickets,阈值类取舍须用户拍板)✅ / ⑧ 分支清理:见 PR 合并后补记。
 
-**PR 证据(合并后补记)**:待补。
+**PR 证据(合并后补记)**:PR #170 已合并(merge `6f06721`,2026-08-17 03:37Z),CI 4/4 全绿(Migrations 48s / Backend 10m42s / E2E 1m49s / Frontend 35s);本地 main 快进同步 + 分支 `feat/chat-stream-wallet-gate-slice-02` 本地/远端已删,`gh api` 验证远端只剩 main(8/8 步闭环)。**feature chat-stream-wallet-gate 收官:risk-hardening 系列第 3 条 ✅ passing(96 rate-limit / 95 toctou / 94 wallet-gate 已完成,剩 93 billing-reconciliation-job / 92 super-admin-write-audit / 91 config-startup-guard)。**
 
 ## Session 217(2026-08-17):chat-stream-wallet-gate 切片 01(后端统一钱包门,EP3 实施会话)
 

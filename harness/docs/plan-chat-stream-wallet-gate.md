@@ -189,7 +189,7 @@ SSE 路径补与 composite **同一函数、同一口径、同一错误体**的�
 
 **完成证据(2026-08-17)**:commit 21c1a7b(实施)+ 翻页 commit bf501fd(feature_list not_started→in_progress + plan 状态行同 commit,check_plan_status_sync exit 0)。定向 `pytest tests/test_billing.py tests/test_composite_chat.py -q` 48 passed;6 受影响文件 99 passed;全量 1048 passed 零回归。/code-review 双轴(general-purpose ×2 并行):**Standards 0 硬违规**/3 判断项(① 修:矩阵 ① 未用参数瘦身;② 留痕:funded_wallet 是第 3 份钱包 seeder——fixture 无法 import 测试模块私有 helper,conftest 是正确归属,聚合重构独立立项;③ 留痕:⑦ 的 `_no_stream` raise+yield 伪造 async generator 手法,注释声明且目的明确);**Spec 8/8 AC 全满足 + 0 scope creep**,2 判断项(cost 断言重定基已回写 AC6 注记 / test_composite_chat.py 注释同步已补记文件清单),E2E/CLI 零影响锚点复核(diff 无 cli/ frontend/ 改动)。
 
-### 切片 02 — 前端 402 充值引导 + feature 收尾(末切片)✅(2026-08-17,commits 798e0c9 实施 + b78c7bb 审查修复;PR 证据合并后补记)
+### 切片 02 — 前端 402 充值引导 + feature 收尾(末切片)✅(2026-08-17,PR #170,merge 6f06721,CI 4/4 绿:Migrations 48s / Backend 10m42s / E2E 1m49s / Frontend 35s;commits 798e0c9 实施 + b78c7bb 审查修复 + a51c211 feature 收尾[status passing + plan 状态行同 commit 翻])
 
 **What it delivers**:零余额/无钱包租户在 chat 页收到「余额不足」引导面板(后端 detail 文案 + 一键「前往充值」),体验对齐 composite 路径;重试与切换会话自动清除;其余错误与 401 行为不回归;feature 收官。
 
