@@ -359,11 +359,13 @@ class BillingReconciliationService:
             .group_by(WalletTransaction.wallet_id)
         )
         ra_rows = (await self.db.execute(ra_stmt)).all()
-        ra_by_wallet = {wid: int(total) for wid, total in ra_rows}
+        refund_adjust_by_wallet = {wid: int(total) for wid, total in ra_rows}
 
         drifts: dict[str, dict[str, int]] = {}
         for w in wallets:
-            expected = w.total_recharged + ra_by_wallet.get(w.id, 0) - (w.total_consumed)
+            expected = w.total_recharged + (
+                refund_adjust_by_wallet.get(w.id, 0)
+            ) - (w.total_consumed)
             drift = w.balance - expected
             if drift != 0:
                 drifts[w.tenant_id] = {

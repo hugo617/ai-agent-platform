@@ -113,6 +113,7 @@
 - **幂等锁(as_of 日粒度)**:run 记录 details_json 带 `as_of`(本次判定基准时刻);job 启动时查最近一条 `action=billing_reconciliation` 的 SystemLog,若其 as_of 与本次**同日**且未传 `force=True` → skip 并 logger.info 返回上次摘要。测试传显式 `as_of` 控制窗口,`force` 供人工重跑。这与 D4 事件首告去重构成双幂等:run 记录不重插(日粒度)、事件不重告(事件粒度)
 - **事件级检出血义**:`usage_events ue WHERE ue.created_at < as_of − 30min AND NOT EXISTS (SELECT 1 FROM wallet_transactions wt WHERE wt.usage_event_id = ue.id AND wt.type = 'consume')`。`cost IS NULL` 不作判据(charge 失败回滚后 cost 必为 NULL,与无交易同义;但「有交易而 cost NULL」属数据损坏,由聚合层兜住)
 - **聚合层两条独立检查**:(a) per-tenant 残余差 = `SUM(usage_events.total_tokens) − (−SUM(consume.amount)) − 已知漏扣 token 量` ≠ 0 → 交易侧异常方向(SET NULL 孤儿交易/手工改动/多扣);(b) 钱包不变式 `wallet.balance ≠ wallet.total_recharged + Σ(refund,adjust 正向额) − wallet.total_consumed` → 钱包漂移(现网只有 recharge/consume,refund/adjust 无写入路径,检查式按通用形式写防未来误报)。残余差**不需要** 30min 缓冲——它不做在途判定,只报事件级解释不了的部分
+  - *EP3 切片 01 实施注记(2026-08-17,code-review Spec 轴回写)*:(a) 的两个 SUM 与事件级**共用同一 cutoff 窗口**(事件侧与交易侧都按 `created_at < as_of−30min`)——否则缓冲内在途未扣事件会进入「事件总量−已扣量」却不在漏扣名单,残余差误报、用例 5(−5min 不告)在聚合层翻车;漏扣事件在两侧对消,残余差仍只报交易侧异常(「不需要缓冲」应读作「不需要第二个缓冲概念」,窗口复用单源常量 `LOOKBACK_BUFFER`)。(b) 的 refund/adjust 按**带符号**求和(非仅正向额):正确执行的负向 adjust 若只加正向额会误报漂移,带符号使不变式严格成立。
 - **首告去重实现**:已告事件 id 集合 = 历史 run 记录 details_json 的 `new_alerted_event_ids` 并集(拉全部 action=billing_reconciliation 记录,Python 合并;量级见 §4.4)。本 run 新告 = 当前漏扣集合 − 已告集合;details_json 只存**本 run 新告** id 列表(不存全量,防记录膨胀)
 - **明细口径**:漏扣明细只报 token 事实数(租户/事件 id/会话/模型/prompt/completion/total_tokens),**不重算成本**(D7 延伸:当时定价快照未存,现价重算会误导补扣决策)
 - **通知 targeting**:接收者 = `User.platform_role == 'super_admin' AND is_deleted=False` 全体;每超管取其**首个 active membership**(user_tenants where valid_to IS NULL)租户发 targeted 通知(`tenant_id=该租户, user_id=超管id, type="system"`——复用现成枚举,零前端改动;title「计费对账发现差额」,content 摘要含新告数/存量数/残余差,link 指向审计日志页[EP3 以 audit-log-ui 实际路由为准]);无 membership 超管跳过 + logger.warning。发送用 `NotificationService.create`(best-effort 永不抛,job 不因通知失败崩)。**零新告且无残余差/漂移 → 不发通知**(例行 run 不打扰铃铛)
@@ -146,20 +147,20 @@
 01 对账 job 核心(检出+幂等+落表+logger)──→ 02 超管通知接入+文档+feature 收尾(末切片)
 ```
 
-### 切片 01 — 对账 job 核心:双层检出 + 幂等 + SystemLog 落表 + logger 通道
+### 切片 01 — 对账 job 核心:双层检出 + 幂等 + SystemLog 落表 + logger 通道 ✅(2026-08-17,commits 130f20b 翻页 + 0a0d8f9 实施 + 1dc9b0c 审查回写;PR 证据合并后补记)
 
 - **Blocked by**: 无(frontier,可立即开工)
 - **What it delivers**: 每日 09:30(scheduler_enabled=True 时)对账 job 运行:事件级检出全部漏扣明细(30min 缓冲)+ 聚合残余差 + 钱包不变式检查;每 run 一条 SystemLog(差额 warning / 干净 info,details_json 全量明细);同日重跑 skip、事件首告去重;差额时 logger.error。测试直调 service 验证四组行为(检出/零误报/幂等/首告+缓冲边界)。
 - **文件清单**(估):`app/services/billing_reconciliation_service.py` 新建(~250 行)/ `app/core/scheduler.py` 改(薄壳 job + 注册行)/ `tests/test_billing_reconciliation.py` 新建(用例 1-7 + 幂等,~9 条)
 - **Acceptance criteria**:
-  - [ ] `BillingReconciliationService.run(as_of, force)` 落地双层检出:事件级 NOT EXISTS 漏扣明细(created_at < as_of−30min)+ per-tenant 聚合残余差 + 钱包不变式;返回报告 dict(租户数/扫描事件数/新告/存量/残余差/漂移)
-  - [ ] 每 run 一条 SystemLog:`action=billing_reconciliation`,`details_json` 含 as_of / 统计 / per-tenant 差额 / new_alerted_event_ids / 存量未处理数;有差额 level=warning、干净 level=info(D8)
-  - [ ] 幂等双保险:同 as_of 日重跑 skip(不插第二条 run 记录);force 重跑不重复新告已告事件(已告集合 = 历史 run 的 new_alerted_event_ids 并集)
-  - [ ] 缓冲语义:as_of−5min 内事件不判漏扣,as_of−31min 判(D9=30min,常量单源)
-  - [ ] `scheduler.py`:`reconcile_billing` 薄壳 job(签名带 session_factory,镜像 scan_balance_warnings)+ `_register_jobs` 注册 CronTrigger(hour=9, minute=30);job 捕获 service 异常 logger.exception 不崩
-  - [ ] `tests/test_billing_reconciliation.py` 用例 1-7 落地(SQLite 常驻直调范式),TDD 先红后绿
-  - [ ] 验证:`pytest tests/test_billing_reconciliation.py -q` 全绿 + `./init.sh full` 全量零回归(基线 1048)+ ruff 全绿
-  - [ ] 不越界:不动 charge/recharge/计费编排、不动 scheduler_enabled 默认值、不发通知(切片 02)、零前端零迁移
+  - [x] `BillingReconciliationService.run(as_of, force)` 落地双层检出:事件级 NOT EXISTS 漏扣明细(created_at < as_of−30min)+ per-tenant 聚合残余差 + 钱包不变式;返回报告 dict(租户数/扫描事件数/新告/存量/残余差/漂移)
+  - [x] 每 run 一条 SystemLog:`action=billing_reconciliation`,`details_json` 含 as_of / 统计 / per-tenant 差额 / new_alerted_event_ids / 存量未处理数;有差额 level=warning、干净 level=info(D8)
+  - [x] 幂等双保险:同 as_of 日重跑 skip(不插第二条 run 记录);force 重跑不重复新告已告事件(已告集合 = 历史 run 的 new_alerted_event_ids 并集)
+  - [x] 缓冲语义:as_of−5min 内事件不判漏扣,as_of−31min 判(D9=30min,常量单源)
+  - [x] `scheduler.py`:`reconcile_billing` 薄壳 job(签名带 session_factory,镜像 scan_balance_warnings)+ `_register_jobs` 注册 CronTrigger(hour=9, minute=30);job 捕获 service 异常 logger.exception 不崩
+  - [x] `tests/test_billing_reconciliation.py` 用例 1-7 落地(SQLite 常驻直调范式),TDD 先红后绿
+  - [x] 验证:`pytest tests/test_billing_reconciliation.py -q` 全绿 + `./init.sh full` 全量零回归(基线 1048)+ ruff 全绿
+  - [x] 不越界:不动 charge/recharge/计费编排、不动 scheduler_enabled 默认值、不发通知(切片 02)、零前端零迁移
 
 ### 切片 02 — 超管 targeted 通知接入 + 文档同步 + feature 收尾(末切片)
 
