@@ -147,7 +147,7 @@
 01 对账 job 核心(检出+幂等+落表+logger)──→ 02 超管通知接入+文档+feature 收尾(末切片)
 ```
 
-### 切片 01 — 对账 job 核心:双层检出 + 幂等 + SystemLog 落表 + logger 通道 ✅(2026-08-17,commits 130f20b 翻页 + 0a0d8f9 实施 + 1dc9b0c 审查回写;PR 证据合并后补记)
+### 切片 01 — 对账 job 核心:双层检出 + 幂等 + SystemLog 落表 + logger 通道 ✅(2026-08-17,PR #171,merge 28a2034,CI 4/4 绿:Migrations 43s / Backend 11m14s / E2E 1m56s / Frontend 28s;commits 130f20b 翻页 + 0a0d8f9 实施 + bc8d955 审查回写)
 
 - **Blocked by**: 无(frontier,可立即开工)
 - **What it delivers**: 每日 09:30(scheduler_enabled=True 时)对账 job 运行:事件级检出全部漏扣明细(30min 缓冲)+ 聚合残余差 + 钱包不变式检查;每 run 一条 SystemLog(差额 warning / 干净 info,details_json 全量明细);同日重跑 skip、事件首告去重;差额时 logger.error。测试直调 service 验证四组行为(检出/零误报/幂等/首告+缓冲边界)。

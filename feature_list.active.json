@@ -20,7 +20,7 @@
       "area": "计费-后端",
       "title": "计费对账闭环(usage_events 聚合 vs wallet_transactions 差额核对 job,挂现有 APScheduler 框架,产出日报+告警——「charge 失败仅 logger.exception+rollback 的少扣费」从静默变可见。第 10 次巡检业务风险 R3 后半 🔴:代码注释宣称的 reconciled from usage_events 对账 job 并不存在)",
       "user_visible_behavior": "终端用户无直接可见变化;运营/管理侧新增对账日报与差额告警。对账周期/差额容忍度/告警通道/是否自动补扣(建议只报不补)EP2 用户拍板。",
-      "status": "not_started",
+      "status": "in_progress",
       "verification": [
         "对账 job 差额检出测试:构造 charge 失败/缺失的 usage_event,job 产出正确差额记录并触发告警",
         "无差额时零告警(不误报)",
