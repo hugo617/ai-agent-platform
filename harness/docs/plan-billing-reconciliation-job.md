@@ -1,7 +1,7 @@
 # 计划:计费对账闭环(billing-reconciliation-job)
 
 > **id**: billing-reconciliation-job
-> **状态**: in_progress(EP3 切片 01 开工 2026-08-17,与本状态行同 commit 翻页;EP2 规划完成 2026-08-17)
+> **状态**: passing(EP3 全 2 切片完成 2026-08-17:切片 01 PR #171 对账 job 核心 + 切片 02 末切片超管 targeted 通知 + feature 收官;与 feature_list.json 同 commit 翻页)
 > **优先级**: 93(feature_list.json,第 10 次巡检业务风险 R3 后半 🔴)
 > **创建日期**: 2026-08-17
 > **最后修订**: 2026-08-17(v2:双轴自审回写)

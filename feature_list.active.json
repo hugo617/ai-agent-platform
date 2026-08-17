@@ -15,22 +15,6 @@
   },
   "features": [
     {
-      "id": "billing-reconciliation-job",
-      "priority": 93,
-      "area": "计费-后端",
-      "title": "计费对账闭环(usage_events 聚合 vs wallet_transactions 差额核对 job,挂现有 APScheduler 框架,产出日报+告警——「charge 失败仅 logger.exception+rollback 的少扣费」从静默变可见。第 10 次巡检业务风险 R3 后半 🔴:代码注释宣称的 reconciled from usage_events 对账 job 并不存在)",
-      "user_visible_behavior": "终端用户无直接可见变化;运营/管理侧新增对账日报与差额告警。对账周期/差额容忍度/告警通道/是否自动补扣(建议只报不补)EP2 用户拍板。",
-      "status": "in_progress",
-      "verification": [
-        "对账 job 差额检出测试:构造 charge 失败/缺失的 usage_event,job 产出正确差额记录并触发告警",
-        "无差额时零告警(不误报)",
-        "job 幂等:同窗口重跑不产生重复差额记录"
-      ],
-      "notes": "生产加固系列第 4 条(EP1 2026-08-14 登记)。复用 app/core/scheduler.py(notification-scheduler pri 84 归档件建的 APScheduler 框架)。对账结果落表按「按需加表,不预建空架子」铁律 EP2 评估:已拍板复用 SystemLog。",
-      "plan": "harness/docs/plan-billing-reconciliation-job.md",
-      "depends_on": []
-    },
-    {
       "id": "super-admin-write-audit",
       "priority": 92,
       "area": "审计-后端",
@@ -84,6 +68,13 @@
       "status": "passing"
     },
     {
+      "id": "billing-reconciliation-job",
+      "priority": 93,
+      "area": "计费-后端",
+      "title": "计费对账闭环(usage_events 聚合 vs wallet_transactions 差额核对 job,挂现有 APScheduler 框架,产出日报+告警——「charge 失败仅 logger.exception+rollback 的少扣费」从静默变可见。第 10 次巡检业务风险 R3 后半 🔴:代码注释宣称的 reconciled from usage_events 对账 job 并不存在)",
+      "status": "passing"
+    },
+    {
       "id": "knowledge-tiered-foundation",
       "priority": 90,
       "area": "知识库-后端",
@@ -91,17 +82,10 @@
       "status": "passing"
     },
     {
-      "id": "knowledge-tiered-backend",
-      "priority": 89,
-      "area": "知识库-后端",
-      "title": "知识库分级 Feature B:后端 CRUD + 下发 API + 检索改造(KnowledgeService 扩展 scope/category/分发 + 下发撤回 API + 按角色过滤 list + search_by_embedding join distribution + Category CRUD)",
-      "status": "passing"
-    },
-    {
       "id": "_milestone_archived",
       "priority": 0,
       "area": "里程碑",
-      "title": "[已归档 88 条 passing,见 archive/features-passing-archive.json]",
+      "title": "[已归档 89 条 passing,见 archive/features-passing-archive.json]",
       "status": "passing"
     }
   ],
