@@ -12,7 +12,7 @@
 // touching the router. This mirrors the bookings/ double-entry pattern.
 import { useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { useSearchParams } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { motion } from "motion/react";
 import {
   Check,
@@ -22,6 +22,7 @@ import {
   Send,
   Square,
   User,
+  Wallet,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -44,7 +45,10 @@ import { isSuperAdmin } from "@/lib/permission";
 import { MarkdownView } from "@/components/chat/markdown-view";
 import { Switch } from "@/components/ui/switch";
 import { apiErrorMessage } from "@/api/client";
-import { sendChatStream } from "@/api/endpoints";
+import {
+  ChatInsufficientBalanceError,
+  sendChatStream,
+} from "@/api/endpoints";
 import { CompositeMode } from "@/pages/composite-mode";
 import type { ConversationKind, Message } from "@/api/types";
 import { buildWorkingList } from "@/pages/chat/build-working-list";
@@ -61,6 +65,7 @@ import { formatDateTime as fmt } from "@/lib/format";
 export function ChatPage() {
   const toast = useToast();
   const qc = useQueryClient();
+  const navigate = useNavigate();
   const { me } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
 
@@ -112,6 +117,12 @@ export function ChatPage() {
   // independent feedback without per-row state.
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
+  // chat-stream-wallet-gate slice 02: the wallet gate's 402 surfaces as a
+  // dedicated recharge-guidance panel (mirror of composite-mode's balanceError,
+  // D4 "align with composite UI") — a toast can't carry the 前往充值 CTA.
+  // Cleared on the next send AND on conversation switch (dual clear, §4.6).
+  const [balanceError, setBalanceError] = useState<string | null>(null);
+
   // Auto-select the first agent once the list loads.
   useEffect(() => {
     if (!selectedAgentId && agents && agents.length > 0) {
@@ -145,9 +156,11 @@ export function ChatPage() {
     if (el) el.scrollTop = el.scrollHeight;
   }, [messages.length, lastContent]);
 
-  // Reset local overlay when switching conversations.
+  // Reset local overlay when switching conversations (also clears a stale 402
+  // recharge prompt — the other conversation may have balance, §4.6 dual clear).
   useEffect(() => {
     setLocalMessages(null);
+    setBalanceError(null);
   }, [selectedConversationId]);
 
   // composite mode follows the selected conversation's kind (AC4.6): opening a
@@ -188,6 +201,7 @@ export function ChatPage() {
 
     setInput("");
     setStreaming(true);
+    setBalanceError(null); // clear any prior 402 prompt before retrying
 
     // Build the working message list: the currently-shown messages + the user
     // turn + an empty assistant placeholder that we'll fill as deltas arrive.
@@ -236,7 +250,16 @@ export function ChatPage() {
       // stays on screen and the finally block cleans up. Distinguish by name
       // since fetch abort throws a DOMException named "AbortError".
       if (err instanceof Error && err.name === "AbortError") return;
-      toast.error("对话失败", apiErrorMessage(err));
+      if (err instanceof ChatInsufficientBalanceError) {
+        // The 402 pre-check rejects BEFORE the stream starts — the backend
+        // creates no conversation and persists no message (slice 01) — so roll
+        // the working list back too: keeping it would show a fake user turn
+        // plus an assistant placeholder whose typing dots never resolve.
+        setLocalMessages(null);
+        setBalanceError(err.message);
+      } else {
+        toast.error("对话失败", apiErrorMessage(err));
+      }
     } finally {
       setStreaming(false);
       abortRef.current = null;
@@ -456,6 +479,29 @@ export function ChatPage() {
         <>
         {/* message stream */}
         <div ref={scrollRef} className="flex-1 space-y-4 overflow-y-auto p-6">
+          {/* chat-stream-wallet-gate slice 02: 402 recharge prompt, mirroring
+              composite-mode's AC4.8 panel (icon/title use text-foreground to
+              keep the WCAG AA fix from knowledge slice 05; bg-warning/10 keeps
+              the semantic warning tint). A toast can't carry the CTA. */}
+          {!streaming && balanceError && (
+            <div className="flex items-start gap-3 rounded-md border border-warning/30 bg-warning/10 p-3 text-sm">
+              <Wallet className="mt-0.5 h-4 w-4 shrink-0 text-foreground" />
+              <div className="flex-1 space-y-1">
+                <p className="font-medium text-foreground">余额不足,无法发起对话</p>
+                <p className="text-xs text-muted-foreground">{balanceError}</p>
+                <p className="text-xs text-muted-foreground">
+                  发起对话会按所选智能体的模型计费,需要钱包有足额 token 余额。
+                </p>
+              </div>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => navigate("/billing")}
+              >
+                前往充值
+              </Button>
+            </div>
+          )}
           {historyLoading && !localMessages ? (
             <div className="py-12 text-center text-sm text-muted-foreground">
               加载中…
