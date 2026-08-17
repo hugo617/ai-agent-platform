@@ -2,10 +2,10 @@
 
 Two things live here:
 
-1. **Job functions** (``scan_balance_warnings``) — pure, importable, individually
-   testable. They take a session factory, do their work, and return a count the
-   caller (test) can assert on. The cron wrappers below call them with the
-   app's session factory.
+1. **Job functions** (``scan_balance_warnings``, ``reconcile_billing``) —
+   pure, importable, individually testable. They take a session factory, do
+   their work, and return something the caller (test) can assert on. The
+   cron wrappers below call them with the app's session factory.
 
 2. **Scheduler lifecycle** (``init_scheduler`` / ``shutdown_scheduler``) — builds
    one module-level ``AsyncIOScheduler``, registers the cron jobs, and starts
@@ -24,6 +24,7 @@ notifications appear. For now that means a single-replica deployment; the
 from __future__ import annotations
 
 import logging
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -33,6 +34,9 @@ from sqlalchemy import select
 from app.core.config import settings
 from app.core.database import AsyncSessionLocal
 from app.models.wallet import Wallet
+from app.services.billing_reconciliation_service import (
+    BillingReconciliationService,
+)
 from app.services.notification_service import NotificationService
 
 if TYPE_CHECKING:
@@ -108,6 +112,33 @@ async def scan_balance_warnings(
     return created
 
 
+async def reconcile_billing(
+    session_factory: async_sessionmaker | None = None,
+) -> dict | None:
+    """Daily billing reconciliation shell (cron 09:30, staggered off the
+    09:00 balance scan on purpose).
+
+    Thin shell mirroring ``scan_balance_warnings``' signature: the detection
+    logic lives in ``BillingReconciliationService`` (a 200-line dual-layer
+    job does not get the single-query inline exemption); this wrapper only
+    supplies the default session factory, picks ``as_of = now`` and makes a
+    failed run loud-but-non-fatal — logger.exception, never a raise, so a
+    broken reconciliation cannot take down the scheduler process.
+
+    Returns the run report dict, or None when the run raised (already
+    logged).
+    """
+    factory = session_factory or AsyncSessionLocal
+    try:
+        async with factory() as db:
+            return await BillingReconciliationService(db).run(
+                datetime.now(UTC)
+            )
+    except Exception:  # noqa: BLE001 — job must not kill the scheduler
+        logger.exception("reconcile_billing run failed")
+        return None
+
+
 # ---------------------------------------------------------------- lifecycle
 def _register_jobs(sched: AsyncIOScheduler) -> None:
     """Register every periodic job on the scheduler (idempotent per job id).
@@ -119,6 +150,12 @@ def _register_jobs(sched: AsyncIOScheduler) -> None:
         scan_balance_warnings,
         CronTrigger(hour=9, minute=0),
         id="scan_balance_warnings",
+        replace_if_exists=True,
+    )
+    sched.add_job(
+        reconcile_billing,
+        CronTrigger(hour=9, minute=30),
+        id="reconcile_billing",
         replace_if_exists=True,
     )
 
