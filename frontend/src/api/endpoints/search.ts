@@ -34,6 +34,22 @@ export interface ChatStreamChunk {
   error?: string;
 }
 
+/**
+ * Raised when POST /chat/stream returns 402 before the stream starts.
+ *
+ * chat-stream-wallet-gate: the backend pre-checks the wallet balance before
+ * establishing the SSE connection (same gate + same detail body as composite),
+ * so a low wallet rejects the turn with a real HTTP 402 instead of a mid-stream
+ * error frame. Mirror of `CompositeInsufficientBalanceError` — callers catch
+ * it to render the recharge guidance panel instead of a generic toast.
+ */
+export class ChatInsufficientBalanceError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ChatInsufficientBalanceError";
+  }
+}
+
 export interface ChatStreamPayload {
   agent_id: string;
   conversation_id?: string;
@@ -73,6 +89,20 @@ export async function* sendChatStream(
     if (resp.status === 401) {
       setStoredToken(null);
       window.dispatchEvent(new CustomEvent(AUTH_EXPIRED_EVENT));
+    }
+    // Wallet-gate 402 arrives before the stream starts (fetch path, so we
+    // parse the JSON body ourselves rather than going through apiErrorMessage,
+    // which only knows AxiosError). Tolerate a non-JSON body (e.g. a bare
+    // gateway 402 page) by falling back to the backend's canonical wording.
+    if (resp.status === 402) {
+      let detail = "token 余额不足,请联系总部充值";
+      try {
+        const body = (await resp.json()) as { detail?: unknown };
+        if (typeof body.detail === "string" && body.detail) detail = body.detail;
+      } catch {
+        // non-JSON body — keep the fallback detail
+      }
+      throw new ChatInsufficientBalanceError(detail);
     }
     throw new Error(`对话请求失败: ${resp.status}`);
   }
