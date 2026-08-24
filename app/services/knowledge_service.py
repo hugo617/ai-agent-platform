@@ -42,6 +42,7 @@ from app.schemas.document import (
 from app.services.embedding_config_service import embedding_config_service
 from app.services.embedding_service import EmbeddingService
 from app.services.errors import BizError, NotFoundError
+from app.services.logging_service import LoggingService
 from app.services.permission_service import (
     is_cross_tenant_viewer,
     is_group_admin,
@@ -468,6 +469,31 @@ class KnowledgeService:
                 distributed_by=user_id,
             )
             result.append(row)
+        # Audit BEFORE commit (atomic with the distribution rows). Recorded
+        # for every caller role — group_admin cross-store pushes carry the
+        # same risk and leave no audit hole (plan D4). tenant_id is NULL by
+        # design: a batch push has many targets, and the full list lives in
+        # details (D6). The empty-group early-return above stays unaudited —
+        # no business write, no audit noise (§4.7.5).
+        details: dict = {"document_id": doc.id, "distributed_count": len(result)}
+        if has_group:
+            details["target_group_id"] = payload.target_group_id
+        else:
+            details["target_tenant_ids"] = targets
+        await LoggingService(self.db).record(
+            action="knowledge.distribute",
+            module="knowledge",
+            message=(
+                f"distributed document {document_id} to "
+                f"{len(result)} target(s)"
+            ),
+            user_id=user_id,
+            tenant_id=None,
+            level="info",
+            resource_type="knowledge_document",
+            resource_id=doc.id,
+            details=details,
+        )
         await self.db.commit()
         return [KnowledgeDistributionRead.model_validate(r) for r in result]
 
@@ -505,6 +531,23 @@ class KnowledgeService:
         await self._assert_can_revoke(user_id, tenant_id, row, platform_role)
 
         await self.distributions.deactivate(distribution_id)
+        # Audit BEFORE commit, warn-level (a recall is destructive — mirrors
+        # role.revoke). tenant_id is the store losing the doc so its logs:read
+        # users see the recall in their own audit page (D6).
+        await LoggingService(self.db).record(
+            action="knowledge.revoke",
+            module="knowledge",
+            message=f"revoked distribution {distribution_id}",
+            user_id=user_id,
+            tenant_id=row.target_tenant_id,
+            level="warn",
+            resource_type="knowledge_distribution",
+            resource_id=row.id,
+            details={
+                "document_id": row.source_doc_id,
+                "target_tenant_id": row.target_tenant_id,
+            },
+        )
         await self.db.commit()
 
     async def list_distributions_for_source(

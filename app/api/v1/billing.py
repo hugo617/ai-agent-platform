@@ -21,6 +21,8 @@ itself is an integer token count; money only ever appears as a charge-time
 """
 
 
+from decimal import Decimal
+
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -44,6 +46,7 @@ from app.schemas.billing import (
     WalletUpdate,
 )
 from app.services.billing_service import BillingService
+from app.services.logging_service import LoggingService
 
 router = APIRouter(prefix="/billing", tags=["billing"])
 
@@ -214,8 +217,31 @@ async def list_pricing(
     return await ModelPricingRepository(db).list_active(scope)
 
 
+def _pricing_snapshot(row: ModelPricing) -> dict:
+    """JSON-safe before/after snapshot of a pricing row for the audit log.
+
+    Decimals are stringified — the SystemLog JSON column cannot serialise
+    Decimal objects (an unserialisable payload would silently drop the audit
+    row inside LoggingService's best-effort catch). Quantised to the column's
+    Numeric(10,6) scale so DB-loaded old values and in-memory payload values
+    render identically, mirroring how the API itself serialises prices.
+    """
+    q = Decimal("0.000001")
+    return {
+        "tenant_id": row.tenant_id,
+        "model": row.model,
+        "input_price_per_1k": str(row.input_price_per_1k.quantize(q)),
+        "output_price_per_1k": str(row.output_price_per_1k.quantize(q)),
+        "is_active": row.is_active,
+    }
+
+
+def _pricing_scope(tenant_id: str | None) -> str:
+    return "platform" if tenant_id is None else "tenant"
+
+
 async def _upsert_pricing(
-    db: AsyncSession, payload: ModelPricingUpsert
+    db: AsyncSession, payload: ModelPricingUpsert, operator_id: str
 ) -> ModelPricing:
     """Create or update a pricing row (one active row per scope+model)."""
     repo = ModelPricingRepository(db)
@@ -228,10 +254,25 @@ async def _upsert_pricing(
     )
     result = await db.execute(stmt)
     existing = result.scalar_one_or_none()
+    scope = _pricing_scope(payload.tenant_id)
     if existing is not None:
+        old_values = _pricing_snapshot(existing)
         existing.input_price_per_1k = payload.input_price_per_1k
         existing.output_price_per_1k = payload.output_price_per_1k
         existing.is_active = payload.is_active
+        await LoggingService(db).record(
+            action="pricing.upsert",
+            module="billing",
+            message=f"updated pricing for model {payload.model} (scope={scope})",
+            user_id=operator_id,
+            tenant_id=payload.tenant_id,
+            level="info",
+            resource_type="model_pricing",
+            resource_id=existing.id,
+            details={"scope": scope},
+            old_values=old_values,
+            new_values=_pricing_snapshot(existing),
+        )
         await db.commit()
         await db.refresh(existing)
         return existing
@@ -243,6 +284,18 @@ async def _upsert_pricing(
         is_active=payload.is_active,
     )
     await repo.add(row)
+    await LoggingService(db).record(
+        action="pricing.upsert",
+        module="billing",
+        message=f"created pricing for model {payload.model} (scope={scope})",
+        user_id=operator_id,
+        tenant_id=payload.tenant_id,
+        level="info",
+        resource_type="model_pricing",
+        resource_id=row.id,
+        details={"scope": scope},
+        new_values=_pricing_snapshot(row),
+    )
     await db.commit()
     await db.refresh(row)
     return row
@@ -256,6 +309,7 @@ async def _upsert_pricing(
 )
 async def create_pricing(
     payload: ModelPricingUpsert,
+    user: CurrentUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> ModelPricing:
     """Create or update a model pricing row (super admin only).
@@ -263,7 +317,7 @@ async def create_pricing(
     ``tenant_id`` null = platform default; set = store override. Idempotent on
     (tenant_id, model): re-POSTing the same scope+model updates in place.
     """
-    return await _upsert_pricing(db, payload)
+    return await _upsert_pricing(db, payload, operator_id=user.user_id)
 
 
 @router.put(
@@ -274,6 +328,7 @@ async def create_pricing(
 async def update_pricing(
     pricing_id: str,
     payload: ModelPricingUpsert,
+    user: CurrentUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> ModelPricing:
     """Replace a pricing row's fields (super admin only)."""
@@ -281,11 +336,26 @@ async def update_pricing(
     row = await repo.get(pricing_id)
     if row is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="定价不存在")
+    old_values = _pricing_snapshot(row)
     row.tenant_id = payload.tenant_id
     row.model = payload.model
     row.input_price_per_1k = payload.input_price_per_1k
     row.output_price_per_1k = payload.output_price_per_1k
     row.is_active = payload.is_active
+    scope = _pricing_scope(payload.tenant_id)
+    await LoggingService(db).record(
+        action="pricing.update",
+        module="billing",
+        message=f"updated pricing {pricing_id}",
+        user_id=user.user_id,
+        tenant_id=payload.tenant_id,
+        level="info",
+        resource_type="model_pricing",
+        resource_id=row.id,
+        details={"scope": scope},
+        old_values=old_values,
+        new_values=_pricing_snapshot(row),
+    )
     await db.commit()
     await db.refresh(row)
     return row
@@ -298,6 +368,7 @@ async def update_pricing(
 )
 async def delete_pricing(
     pricing_id: str,
+    user: CurrentUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> None:
     """Soft-delete a pricing row by deactivating it (super admin only).
@@ -309,5 +380,19 @@ async def delete_pricing(
     row = await repo.get(pricing_id)
     if row is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="定价不存在")
+    old_values = _pricing_snapshot(row)
     row.is_active = False
+    await LoggingService(db).record(
+        action="pricing.deactivate",
+        module="billing",
+        message=f"deactivated pricing {pricing_id}",
+        user_id=user.user_id,
+        tenant_id=row.tenant_id,
+        level="warn",  # destructive — mirrors user.delete / role.revoke
+        resource_type="model_pricing",
+        resource_id=row.id,
+        details={"scope": _pricing_scope(row.tenant_id)},
+        old_values=old_values,
+        new_values={"is_active": False},
+    )
     await db.commit()
