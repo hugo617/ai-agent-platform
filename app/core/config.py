@@ -3,6 +3,7 @@
 import json
 from functools import lru_cache
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -12,6 +13,21 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 # path is necessary because pydantic-settings resolves relative env_file paths
 # against the process cwd, which differs between `uvicorn`, `alembic`, `pytest`.
 _ENV_FILE = Path(__file__).resolve().parents[2] / ".env"
+
+
+def _is_local_base_url(url: str) -> bool:
+    """True when ``url`` targets a loopback host (localhost/127.0.0.1/::1).
+
+    Used by the embedding-key startup guard: a local provider (the default
+    Ollama form) does not authenticate, so a placeholder key is the documented
+    shape there. Intranet IPs do NOT count as local (strict). Parse failures
+    return False so a malformed URL fails closed (rejected at startup).
+    """
+    try:
+        host = urlsplit(url).hostname
+    except ValueError:
+        return False
+    return host in ("localhost", "127.0.0.1", "::1")
 
 
 class Settings(BaseSettings):
@@ -58,6 +74,13 @@ class Settings(BaseSettings):
     # are never counted (a lock cannot reach their Logto login path).
     login_lockout_threshold: int = 5
     login_lockout_minutes: int = 15
+
+    # Dev-auth backdoor gate (config-startup-guard). The three dev endpoints
+    # (/oidc/jwks, /dev/token, /dev/bootstrap) are registered ONLY when this
+    # is true AND app_env == "development" (AND semantics). Default False so
+    # a production deploy that mis-sets APP_ENV alone never re-opens the
+    # token-minting backdoor; developers opt in per-.env.
+    dev_auth_enabled: bool = False
 
     # Global API rate limiting (rate-limit-login-lockout slice 02) — slowapi,
     # in-process memory storage (single-replica assumption, same as
@@ -168,9 +191,14 @@ class Settings(BaseSettings):
 
         A production deploy that forgets to set JWT_SECRET or
         FIELD_ENCRYPTION_KEY would otherwise sign local tokens with a
-        publicly-known key or encrypt DB secrets with a shared one. Runs as a
-        model_validator (after all fields are populated) so it sees ``app_env``
-        loaded from the .env file, not just the raw shell env.
+        publicly-known key or encrypt DB secrets with a shared one. The same
+        guard extends to external-service credentials (config-startup-guard):
+        a placeholder LLM key would make the platform LLM silently inert
+        (env keys are the last-resort fallback when no DB row exists), and a
+        placeholder embedding key is only tolerated when the provider is
+        local (Ollama's no-auth default). Runs as a model_validator (after
+        all fields are populated) so it sees ``app_env`` loaded from the .env
+        file, not just the raw shell env.
         """
         if self.app_env in ("development", "testing"):
             return self
@@ -181,6 +209,19 @@ class Settings(BaseSettings):
         if self.field_encryption_key.startswith("UxCQS2ohSvdIRjZfiNyC"):
             raise ValueError(
                 "FIELD_ENCRYPTION_KEY must be generated for this deployment"
+            )
+        if self.openai_api_key == "sk-replace-me":
+            raise ValueError(
+                "OPENAI_API_KEY must be set in non-dev environments "
+                "(LLM env fallback is a safety net, placeholder = silent "
+                "degradation)"
+            )
+        if not _is_local_base_url(self.embedding_base_url) and (
+            self.embedding_api_key == "sk-replace-me"
+        ):
+            raise ValueError(
+                "EMBEDDING_API_KEY must be set when EMBEDDING_BASE_URL "
+                "targets a non-local provider"
             )
         return self
 

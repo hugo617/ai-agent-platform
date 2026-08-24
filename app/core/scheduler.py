@@ -163,15 +163,25 @@ def _register_jobs(sched: AsyncIOScheduler) -> None:
 def init_scheduler() -> AsyncIOScheduler:
     """Register jobs + start the scheduler. Idempotent + test-safe.
 
-    - If ``SCHEDULER_ENABLED`` is False (tests), this is a complete no-op — the
-      module-level scheduler is returned untouched but never started, so
-      ``create_app()`` per-test never spawns real cron jobs.
+    - If ``SCHEDULER_ENABLED`` is False, nothing starts. Outside testing this
+      is LOUD (config-startup-guard): a WARNING naming the two periodic jobs
+      that silently won't run, so ops can catch a forgotten toggle in the
+      startup log. In testing (create_app per-test) it stays debug-quiet.
     - If the scheduler is already running (a second ``create_app()`` call in
       the same process), the running instance is returned as-is. Without this
       guard, the second ``start()`` raises ``scheduler already running``.
     """
     if not _SCHEDULER_ENABLED:
-        logger.debug("scheduler disabled (SCHEDULER_ENABLED=false); not starting")
+        if settings.app_env != "testing":
+            logger.warning(
+                "scheduler disabled (SCHEDULER_ENABLED=false) — periodic jobs "
+                "scan_balance_warnings (09:00) and reconcile_billing (09:30) "
+                "will NOT run"
+            )
+        else:
+            logger.debug(
+                "scheduler disabled (SCHEDULER_ENABLED=false); not starting"
+            )
         return scheduler
     if scheduler.running:
         return scheduler

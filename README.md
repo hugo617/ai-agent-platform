@@ -85,11 +85,13 @@ npm run dev                   # 访问 http://localhost:3000
 打开 http://localhost:3000，三种方式任选：
 
 - **账号密码**（推荐）—— 用上一步创建的 `admin / Admin@123456` 登录。
-- **🚀 一键开发登录** —— 无需任何账号，直接用内置 dev-user 进入。
+- **🚀 一键开发登录** —— 无需任何账号，直接用内置 dev-user 进入。前提：`.env` 设 `DEV_AUTH_ENABLED=true`（`.env.example` 已默认给出）。
 - **粘贴 Token** —— 直接粘贴已有 access token。
 
 > **认证机制**：账号密码登录走 `POST /api/v1/auth/login`（bcrypt 校验 → 签发 HS256 JWT，`iss=local`）；
-> 开发登录走 `/dev/token`（内存 RSA 密钥，RS256）。两种 JWT 都通过同一条
+> 开发登录走 `/dev/token`（内存 RSA 密钥，RS256），三个 dev 端点仅在
+> `DEV_AUTH_ENABLED=true` **且** `APP_ENV=development` 时注册（AND 语义，代码默认 false，
+> 生产误设 APP_ENV 不会开后门）。两种 JWT 都通过同一条
 > `get_current_user` 验证管线，下游代码无感知差异。需要真实 Logto/OIDC 登录时见
 > [docs/LOGTO_SETUP.md](docs/LOGTO_SETUP.md)。
 
@@ -131,9 +133,9 @@ pytest --cov=app              # 带覆盖率
 | 方法 | 路径 | 说明 | 权限 |
 |------|------|------|------|
 | GET | `/health` | 健康检查 | 公开 |
-| POST | `/dev/bootstrap` | 创建开发租户+用户（仅 dev） | 公开 |
-| POST | `/dev/token` | 签发开发 JWT（仅 dev） | 公开 |
-| GET | `/oidc/jwks` | 开发模式 JWKS（仅 dev） | 公开 |
+| POST | `/dev/bootstrap` | 创建开发租户+用户（`DEV_AUTH_ENABLED=true` + APP_ENV=development 才注册） | 公开 |
+| POST | `/dev/token` | 签发开发 JWT（同上条件注册） | 公开 |
+| GET | `/oidc/jwks` | 开发模式 JWKS（同上条件注册） | 公开 |
 | **POST** | **`/api/v1/auth/login`** | **账号密码登录 → access_token** | **公开** |
 | GET | `/api/v1/auth/me` | 当前用户 + 租户 + 角色 | 已认证 |
 | GET | `/api/v1/auth/sessions` | 当前用户活跃会话列表 | 已认证 |
