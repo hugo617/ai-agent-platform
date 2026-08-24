@@ -43,9 +43,12 @@ python scripts/init_admin.py
 
 ## 二、一键开发登录（仅 dev）
 
-`APP_ENV=development` 下提供两个端点：
+三个端点仅在 **`DEV_AUTH_ENABLED=true` 且 `APP_ENV=development`** 时注册（AND 语义，
+代码默认 false；`.env.example` 已默认给出 `DEV_AUTH_ENABLED=true`，复制模板的新开发者
+开箱即用）。任一条件不满足时端点连路由都不存在（404）：
 - `POST /dev/bootstrap` —— 创建开发租户 + 用户 + seed casbin 权限
 - `POST /dev/token` —— 用内存中的 RSA 密钥签发 RS256 JWT
+- `GET /oidc/jwks` —— 上述 token 的 JWKS 验签公钥
 
 前端登录页的「🚀 一键开发登录」按钮会依次调用这两个端点，拿到 token 后存入 localStorage。
 后端验证 token 时，`app/core/security.py` 走的是**和 Logto 完全相同的 JWKS + RS256 验签逻辑**——

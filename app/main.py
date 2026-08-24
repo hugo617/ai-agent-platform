@@ -81,6 +81,83 @@ async def lifespan(app: FastAPI):
         shutdown_scheduler()
 
 
+def _register_dev_endpoints(app: FastAPI) -> None:
+    """Register the three dev-auth endpoints (config-startup-guard gate).
+
+    Called by ``create_app`` only when ``settings.dev_auth_enabled`` is true
+    AND ``app_env == "development"`` — both must hold. The registration
+    condition is the single source of truth: when the gate is closed the
+    routes (and their OpenAPI entries) do not exist at all, so clients and
+    scanners get a plain 404 instead of an env-dependent handler check.
+
+    When LOGTO_ISSUER points at this backend (e.g.
+    ``http://localhost:8000/oidc``), the JWT verifier in security.py
+    fetches signing keys from ``/oidc/jwks`` below — so dev tokens minted
+    by ``/dev/token`` validate through the *exact same* code path as real
+    Logto tokens. This lets you log in to the frontend without configuring
+    Logto yet.
+    """
+
+    @app.get("/oidc/jwks", tags=["dev"])
+    async def jwks() -> Response:
+        """Serve the dev public key as a JWKS document."""
+        from app.core.dev_keys import jwks_json
+
+        return Response(content=jwks_json(), media_type="application/json")
+
+    @app.post("/dev/token", tags=["dev"])
+    async def dev_token(payload: dict) -> dict:
+        """Mint a short-lived dev JWT for local login.
+
+        Body (all optional, defaults provided):
+            {"sub": "dev-user", "tenant_id": "dev-tenant", "email": null, "platform_role": null}
+        """
+        from app.core.dev_keys import get_dev_keys
+
+        keys = get_dev_keys()
+        now = int(time.time())
+        claims = {
+            "sub": payload.get("sub", "dev-user"),
+            "tenant_id": payload.get("tenant_id", "dev-tenant"),
+            "email": payload.get("email"),
+            "platform_role": payload.get("platform_role"),
+            "iss": settings.logto_issuer,
+            "aud": settings.logto_audience,
+            "iat": now,
+            "exp": now + 3600,
+        }
+        token = jwt.encode(claims, keys.private_pem, algorithm="RS256", headers={"kid": keys.kid})
+        return {"access_token": token, "expires_in": 3600}
+
+    @app.post("/dev/bootstrap", tags=["dev"])
+    async def dev_bootstrap(payload: dict = None) -> dict:
+        """Create a dev tenant + user + seed casbin policies for local login.
+
+        Idempotent — safe to call repeatedly. After this, mint a token via
+        ``/dev/token`` with the same ``sub`` / ``tenant_id`` and sign in.
+        """
+
+        from app.core.database import AsyncSessionLocal
+        from app.schemas.tenant import TenantCreate
+        from app.services.tenant_service import TenantService
+
+        user_id = (payload or {}).get("sub", "dev-user")
+        tenant_name = (payload or {}).get("tenant_name", "Development Tenant")
+
+        async with AsyncSessionLocal() as db:
+            svc = TenantService(db)
+            tenants = await svc.list_user_tenants(user_id)
+            if tenants:
+                return {"tenant_id": tenants[0].id, "user_id": user_id, "exists": True}
+
+            tenant = await svc.create_tenant(
+                owner_user_id=user_id,
+                payload=TenantCreate(name=tenant_name),
+                owner_email=(payload or {}).get("email"),
+            )
+            return {"tenant_id": tenant.id, "user_id": user_id, "exists": False}
+
+
 def create_app() -> FastAPI:
     app = FastAPI(
         title=settings.app_name,
@@ -232,82 +309,13 @@ def create_app() -> FastAPI:
         return Response(content=body, media_type=content_type)
 
     # ------------------------------------------------------------------
-    # Dev-only helpers: JWKS endpoint + test-token minting.
-    #
-    # When LOGTO_ISSUER points at this backend (e.g.
-    # ``http://localhost:8000/oidc``), the JWT verifier in security.py
-    # fetches signing keys from ``/oidc/jwks`` below — so dev tokens minted
-    # by ``/dev/token`` validate through the *exact same* code path as real
-    # Logto tokens. This lets you log in to the frontend without configuring
-    # Logto yet.
-    #
-    # Gated behind development mode; raises 404 in other envs.
+    # Dev-only helpers (JWKS + test-token minting + dev tenant bootstrap).
+    # Conditionally registered: both DEV_AUTH_ENABLED=true AND
+    # app_env=development must hold (AND semantics, config-startup-guard) —
+    # see _register_dev_endpoints above for the rationale.
     # ------------------------------------------------------------------
-
-    @app.get("/oidc/jwks", tags=["dev"])
-    async def jwks() -> Response:
-        """Serve the dev public key as a JWKS document."""
-        if settings.app_env != "development":
-            return JSONResponse(status_code=404, content={"detail": "not found"})
-        from app.core.dev_keys import jwks_json
-
-        return Response(content=jwks_json(), media_type="application/json")
-
-    @app.post("/dev/token", tags=["dev"])
-    async def dev_token(payload: dict) -> dict:
-        """Mint a short-lived dev JWT for local login.
-
-        Body (all optional, defaults provided):
-            {"sub": "dev-user", "tenant_id": "dev-tenant", "email": null, "platform_role": null}
-        """
-        if settings.app_env != "development":
-            return JSONResponse(status_code=404, content={"detail": "not found"})
-        from app.core.dev_keys import get_dev_keys
-
-        keys = get_dev_keys()
-        now = int(time.time())
-        claims = {
-            "sub": payload.get("sub", "dev-user"),
-            "tenant_id": payload.get("tenant_id", "dev-tenant"),
-            "email": payload.get("email"),
-            "platform_role": payload.get("platform_role"),
-            "iss": settings.logto_issuer,
-            "aud": settings.logto_audience,
-            "iat": now,
-            "exp": now + 3600,
-        }
-        token = jwt.encode(claims, keys.private_pem, algorithm="RS256", headers={"kid": keys.kid})
-        return {"access_token": token, "expires_in": 3600}
-
-    @app.post("/dev/bootstrap", tags=["dev"])
-    async def dev_bootstrap(payload: dict = None) -> dict:
-        """Create a dev tenant + user + seed casbin policies for local login.
-
-        Idempotent — safe to call repeatedly. After this, mint a token via
-        ``/dev/token`` with the same ``sub`` / ``tenant_id`` and sign in.
-        """
-        if settings.app_env != "development":
-            return JSONResponse(status_code=404, content={"detail": "not found"})
-
-        from app.core.database import AsyncSessionLocal
-        from app.schemas.tenant import TenantCreate
-        from app.services.tenant_service import TenantService
-
-        user_id = (payload or {}).get("sub", "dev-user")
-        tenant_name = (payload or {}).get("tenant_name", "Development Tenant")
-
-        async with AsyncSessionLocal() as db:
-            svc = TenantService(db)
-            tenants = await svc.list_user_tenants(user_id)
-            if tenants:
-                return {"tenant_id": tenants[0].id, "user_id": user_id, "exists": True}
-
-            tenant = await svc.create_tenant(
-                owner_user_id=user_id,
-                payload=TenantCreate(name=tenant_name),
-                owner_email=(payload or {}).get("email"),
-            )
-            return {"tenant_id": tenant.id, "user_id": user_id, "exists": False}
+    if settings.dev_auth_enabled and settings.app_env == "development":
+        _register_dev_endpoints(app)
 
     # Rate-limit 429 → project error-body shape {"detail": ...} + Retry-After
     # (slowapi's built-in handler returns {"error": ...} instead). Deliberately
