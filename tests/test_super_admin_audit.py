@@ -227,6 +227,13 @@ async def test_pricing_upsert_new_platform_row_audit(super_admin_client, db_sess
         "input_price_per_1k": "1.000000", "output_price_per_1k": "2.000000",
         "is_active": True,
     }
+    # §10.3: the existing GET /logs endpoint finds the new action exactly.
+    resp = await super_admin_client.get(
+        "/api/v1/logs/", params={"action": "pricing.upsert"}, headers=AUTH
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["total"] == 1
+    assert resp.json()["items"][0]["resource_id"] == pid
 
 
 @pytest.mark.asyncio
@@ -292,6 +299,13 @@ async def test_pricing_update_audit_double_snapshot(super_admin_client, db_sessi
     assert log.new_values["input_price_per_1k"] == "9.000000"
     assert log.new_values["output_price_per_1k"] == "9.500000"
     assert log.new_values["is_active"] is True  # schema default
+    # §10.3: exact-match action filter on the existing read endpoint.
+    resp = await super_admin_client.get(
+        "/api/v1/logs/", params={"action": "pricing.update"}, headers=AUTH
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["total"] == 1
+    assert resp.json()["items"][0]["old_values"]["input_price_per_1k"] == "1.000000"
 
 
 @pytest.mark.asyncio
@@ -311,6 +325,13 @@ async def test_pricing_deactivate_audit_warn(super_admin_client, db_session):
     assert log.old_values["is_active"] is True
     assert log.old_values["input_price_per_1k"] == "7.000000"
     assert log.new_values == {"is_active": False}
+    # §10.3: exact-match action filter on the existing read endpoint.
+    resp = await super_admin_client.get(
+        "/api/v1/logs/", params={"action": "pricing.deactivate"}, headers=AUTH
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["total"] == 1
+    assert resp.json()["items"][0]["level"] == "warn"
 
 
 # ------------------------------------------- knowledge distribute / revoke
