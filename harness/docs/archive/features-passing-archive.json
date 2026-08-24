@@ -1,7 +1,7 @@
 {
   "project": "ai-agent-platform",
   "description": "已 passing feature 的历史归档(完整字段保留,审计用)",
-  "count": 90,
+  "count": 91,
   "features": [
     {
       "id": "data-export",
@@ -2262,6 +2262,27 @@
         "权限派生契约(切片 02 commit 5e8c303):permission_service.is_group_admin(db,user_id,group_id) async helper(查 group.headquarters_tenant_id → UserTenant SCD2 current_role → role in {owner,admin});check() 加 obj=='knowledge' bypass 分支(group_admin 放行,仅知识库域 D9 不扩 devices;keyword-only db=None 可选参 60+ caller 零改动);7 边界 tests + 4 bypass tests 全覆盖;tenant_service.create_tenant step7 自动建集团(同事务,失败回滚 AC8)",
         "集成验证契约(切片 03 commit ad633c5):4 端到端集成测试 —— 完整流程(真 HTTP create_tenant 自动建集团 → HQ owner is_group_admin → check 放行 knowledge/拒 devices)+ 跨集团隔离(A group_admin 对 B is_group_admin=False)+ 手工连锁(HQ+分店 attach 一集团 → 分店 owner 非 group_admin)+ distribution 引用语义(源文档软删后关系行留存 is_active 仍 True,审计完整);/code-review 双轴(Standards+Spec)共识采纳:复用 _seed_user_role helper 消重 + 删 AC4 越界 effective 断言(避免钉死 Feature B list 逻辑)+ AC1/AC3 docstring 补充约束说明",
         "迁移链无 drift:单 head 05fa069297cc(aa7a88a8e643 → 05fa069297cc 无分叉);切片 01 /code-review 双轴发现的 orphan index drift(idx_group_tenants_tenant_id 旧非唯一索引)已修(迁移 step5 drop+create 唯一索引,镜像 ce505ae8a1bd 范式);env.py+conftest.py 双注册新模型(create_all 建表 + autogenerate 识别)。PG 运行时 alembic upgrade head && alembic check 待 CI/docker(本会话无 PG,符合「迁移链 PG-only + SQLite 走 create_all」项目惯例)"
+      ]
+    },
+    {
+      "id": "config-startup-guard",
+      "priority": 91,
+      "area": "配置-治理",
+      "title": "dev 后门与配置静默降级三件套(① /dev/token 改显式独立开关默认关、与 APP_ENV 解耦——不再押注部署环境变量设对;② LLM/embedding key 启动期 fail-fast 校验——不再运行时调 LLM 才失败;③ 低额预警 scheduler_enabled 显式化:部署清单+启动日志可见。第 10 次巡检业务风险 R5 🟡:dev 后门可铸 super_admin token / key 默认 sk-replace-me / scheduler 默认 False 静默不跑)",
+      "user_visible_behavior": "dev 环境默认不再暴露 /dev/token(需显式开独立开关);生产配置缺失 key 时启动期报错退出(而非运行时才失败);低额预警未启用时启动日志有明确提示。开关命名/fail-fast 环境范围/scheduler 显式化形态 EP2 用户拍板。",
+      "status": "passing",
+      "verification": [
+        "开关默认关时 /dev/token 不注册(404);显式开启且 dev 环境下行为不变(现有 dev 流测试零回归)",
+        "key 缺失/占位值时启动 fail-fast 测试;key 就位时启动正常",
+        "scheduler_enabled=False 时启动日志输出明确 WARN 提示"
+      ],
+      "notes": "生产加固系列第 6 条(EP1 2026-08-14 登记)。D7 拍板三件套全修。注意 ② key fail-fast 与「非 dev 环境拒绝默认 secret 启动」的既有校验(巡检正面清单)边界关系,EP2 对齐不重复。EP2 已完成 2026-08-24 Session 224:D1-D8 两轮 AskUserQuestion 用户逐项拍板(无默认采纳):D1 DEV_AUTH_ENABLED / D2 AND 语义默认关条件注册 / D3 openai key 占位一律拒启 / D4 embedding 本地 base_url 豁免 / D5 镜像既有 dev/testing 白名单 / D6 scheduler WARN+.env.example 两者 / D7 /dev/token TTL 不做留痕 / D8 单切片。② 落点 = 既有 _secrets_not_default validator 扩分支(对齐不重复)。plan v2(对抗式自审 3🟡 回写)+ §12 单切片 7 AC 就绪,EP3 从切片 01 接。 EP3 已完成 2026-08-24 Session 225:切片 01(唯一=末切片)PR #174 merge cb9204f,TDD 红→绿 14 用例;②-1「全默认」因 conftest env 泄漏改为 kwargs 全显式(§4.8 优先级);系列收官(96/95/94/93/92/91 全 passing)。",
+      "plan": "harness/docs/plan-config-startup-guard.md",
+      "depends_on": [],
+      "evidence": [
+        "切片 01(唯一=末切片)PR #174 merge cb9204f(2026-08-24 Session 225,CI 4/4 绿:Migrations 1m0s/Backend 10m30s/E2E 2m33s/Frontend 29s):commits 529e1bc+10712aa — ① 三 dev 端点(/oidc/jwks /dev/token /dev/bootstrap)收进 _register_dev_endpoints 条件注册(DEV_AUTH_ENABLED=true AND APP_ENV=development,默认关路由+OpenAPI 均不存在 fail-closed,handler 内旧 404 检查删除)/ ② _secrets_not_default validator 扩两分支:非 dev/testing openai_api_key 占位一律拒启 + embedding_api_key 占位仅非回环 base_url 拒启(_is_local_base_url 认 localhost/127.0.0.1/::1,解析失败从严)/ ③ init_scheduler 关闭分支非 testing 升 WARNING 点名 SCHEDULER_ENABLED+scan_balance_warnings(09:00)+reconcile_billing(09:30) + .env.example 两段 + README/LOGTO_SETUP/认证体系文档三处 dev 门控说明",
+        "定向 pytest tests/test_startup_config_guard.py 14/14(plan §5 清单 13 拆 14 良性超集,开态用例测试体内自建 create_app)+ 相邻回归(billing_reconciliation/notifications/health)49 passed + 全量 pytest 1089 passed 8 skipped(基线 1075 + 14 零回归)+ ruff 绿",
+        "前端 npm run build 绿(零前端改动确认:login-page 404 走 toast 优雅降级);code-review 双轴 0 硬违规/0 缺失/0 越界(1 微瑕 docstring 已修 commit 10712aa);feature 收尾八步闭环(plan v3 全勾 + 同 commit 翻 passing + sync-active + 依赖解锁扫描无下游 + 分支清理只剩 main);risk-hardening 系列 6 条全 passing,下一步 = 第 11 次巡检复验 Top5 清零"
       ]
     }
   ]

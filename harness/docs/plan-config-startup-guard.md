@@ -1,10 +1,10 @@
 # 计划:dev 后门与配置静默降级三件套(① /dev/token 显式独立开关 ② LLM/embedding key 启动期 fail-fast ③ scheduler_enabled 显式化)
 
 > **id**: config-startup-guard
-> **状态**: in_progress(EP2 完成 2026-08-24,plan v2 经对抗式自审;EP3 切片 01 待实施)
+> **状态**: passing(EP3 切片 01 完成 2026-08-24,PR #174 merge cb9204f;feature 收官)
 > **优先级**: 91(feature_list.json)
 > **创建日期**: 2026-08-24
-> **最后修订**: 2026-08-24(v2:自审 3🟡 回写)
+> **最后修订**: 2026-08-24(v3:EP3 收尾,§12 七 AC 全勾 + §4.7-9 实施注记)
 > **系列总纲**: [plan-risk-hardening-overview.md](./plan-risk-hardening-overview.md)(R5 🟡,D7 已拍板三件套全修;本 plan 为该 feature 的 EP2 产物)
 
 ---
@@ -129,6 +129,7 @@ if not _SCHEDULER_ENABLED:
 6. **`sk-replace-me` 是唯一 env 占位哨兵**:demo 场景的 `sk-demo-placeholder` 只进 DB 行(seed 脚本),不落 env key,不在校验值域。
 7. **`/dev/token` 硬编码 1h TTL**(main.py `exp: now + 3600` / `expires_in: 3600`):rate-limit plan §255 明文划归 R5 域,但总纲 D7 三件套未含 → **不做,留痕**(D7 决策)。
 8. **CI 全景核验(② 不会误炸任何 step)**:`.github/workflows/ci.yml` 三处 env——Backend(L83 `APP_ENV: testing` + OPENAI_API_KEY=test-key)/ Migrations(L42 `APP_ENV: testing`)/ E2E(L192 `APP_ENV: development` + L195 OPENAI_API_KEY=mock-key)——全部落在 ② 豁免白名单(development/testing);E2E 代码 `frontend/e2e/main-flow.spec.ts` grep dev/token|dev/bootstrap|devLogin 零命中(登录走密码表单),① 默认关不影响 E2E;`alembic/env.py` 虽 import settings(L13)但 Migrations step 在 testing 豁免域,本地 `alembic upgrade head` 默认 .env 亦为 development 豁免域。
+9. **EP3 实施注记(2026-08-24 切片 01 收尾回写)**:① 用例 13→14——§5 ①「默认 openapi 无 + /dev/token 404」拆两条(openapi 断言与真调 404 各自成测,对应 §4.7-1 双形态),Spec 轴判良性超集;② §5 ②-1「production 全默认」在 pytest 进程内不可直接实现——conftest `os.environ.setdefault("JWT_SECRET","test-secret")` / `OPENAI_API_KEY=test-key` 会盖掉代码默认,故测试 kwargs 全显式只留 jwt 占位(§4.8 优先级 init kwargs > env > .env),Spec 轴判必要适配;③ /dev/token 解码断言需带 `audience=settings.logto_audience`(PyJWT 对带 aud claim 的 token 默认验 aud);④ 默认关态用例显式钉死 `dev_auth_enabled=False` 而非真读默认——防开发者本地 `.env` DEV_AUTH_ENABLED=true 泄漏进断言(code-review 双轴共识,docstring 如实描述并更名 `test_dev_endpoints_absent_when_gate_closed`);⑤ Standards 判断项留痕:`sk-replace-me` 字面量 ×4 与 validator 四同形分支不抽象(镜像既有 change-me-in-production 惯例 + §11「只扩分支不改机制」),dev_bootstrap 绕 get_db/裸 dict 随迁(§4.7-3 留痕的原样搬移);⑥ CI 三处 step 实测全绿(§4.7-8 预判兑现),全量 1089 passed(基线 1075 + 14)。
 
 ### 4.8 其他实施决策
 
@@ -205,17 +206,19 @@ if not _SCHEDULER_ENABLED:
 切片 01(唯一 = 末切片)
 ```
 
-### 切片 01 — 启动期配置守卫三件套(DEV_AUTH_ENABLED 条件注册 + key fail-fast + scheduler WARN)
+### 切片 01 — 启动期配置守卫三件套(DEV_AUTH_ENABLED 条件注册 + key fail-fast + scheduler WARN)✅
+
+> **完成**:PR #174(merge `cb9204f`,2026-08-24,CI 4/4 绿:Migrations 1m0s/Backend 10m30s/E2E 2m33s/Frontend 29s;commits 529e1bc + 10712aa)。全量 1089 passed 零回归 + ruff 绿 + 前端 build 绿(零前端改动确认)。
 
 - **Blocked by**: 无(frontier,可立即开工)
 - **What it delivers**: 默认部署(不设任何新 env)下三个 dev 端点从路由层不存在;生产忘配 LLM/embedding key 启动即报错退出(本地 Ollama 豁免);scheduler 忘开时启动日志 WARNING 点名两个 job。开发者 `.env` 显式 `DEV_AUTH_ENABLED=true` 后一键 dev 登录与现状行为一致。
 - **文件清单**: `app/core/config.py`(改)/ `app/main.py`(改)/ `app/core/scheduler.py`(改)/ `.env.example`(改)/ `tests/test_startup_config_guard.py`(新)/ `README.md` + `docs/LOGTO_SETUP.md` + `项目指南/02-后端架构/05-认证体系.md`(dev 端点说明段)
 - **Acceptance criteria**:
 
-- [ ] `app/core/config.py`:`dev_auth_enabled: bool = False` 字段 + `_is_local_base_url` helper + validator 两条新分支(§4.6 规格,消息含大写 env 名)
-- [ ] `app/main.py`:三 dev 端点收进条件注册(`dev_auth_enabled and app_env == "development"`),handler 内旧 app_env 检查删除,模块头注释同步
-- [ ] `app/core/scheduler.py`:关闭分支非 testing 环境 WARNING(文案点名 SCHEDULER_ENABLED + scan_balance_warnings + reconcile_billing),testing 保持 debug
-- [ ] `.env.example`:DEV_AUTH_ENABLED=true(注释:仅本地开发)+ SCHEDULER_ENABLED=false(注释:生产单副本 true)两段
-- [ ] `tests/test_startup_config_guard.py`:§5 用例清单全落地(① 6 + ② 5 + ③ 2 = 13),红→绿(开态用例按 §4.8 测试体内自建 create_app)
-- [ ] README.md / docs/LOGTO_SETUP.md / 认证体系文档 dev 端点说明补开关前提
-- [ ] `pytest tests/test_startup_config_guard.py` 全绿 + ruff 绿 + `./init.sh full` 全量零回归 + 前端 `npm run build` 零改动确认
+- [x] `app/core/config.py`:`dev_auth_enabled: bool = False` 字段 + `_is_local_base_url` helper + validator 两条新分支(§4.6 规格,消息含大写 env 名)
+- [x] `app/main.py`:三 dev 端点收进条件注册(`dev_auth_enabled and app_env == "development"`),handler 内旧 app_env 检查删除,模块头注释同步
+- [x] `app/core/scheduler.py`:关闭分支非 testing 环境 WARNING(文案点名 SCHEDULER_ENABLED + scan_balance_warnings + reconcile_billing),testing 保持 debug
+- [x] `.env.example`:DEV_AUTH_ENABLED=true(注释:仅本地开发)+ SCHEDULER_ENABLED=false(注释:生产单副本 true)两段
+- [x] `tests/test_startup_config_guard.py`:§5 用例清单全落地(① 6 + ② 5 + ③ 2 = 13,实施拆 14 良性超集,红→绿(开态用例按 §4.8 测试体内自建 create_app)
+- [x] README.md / docs/LOGTO_SETUP.md / 认证体系文档 dev 端点说明补开关前提
+- [x] `pytest tests/test_startup_config_guard.py` 全绿 + ruff 绿 + `./init.sh full` 全量零回归 + 前端 `npm run build` 零改动确认(定向 14/14 + 全量 1089 passed 8 skipped + build 绿)

@@ -15,22 +15,6 @@
   },
   "features": [
     {
-      "id": "config-startup-guard",
-      "priority": 91,
-      "area": "配置-治理",
-      "title": "dev 后门与配置静默降级三件套(① /dev/token 改显式独立开关默认关、与 APP_ENV 解耦——不再押注部署环境变量设对;② LLM/embedding key 启动期 fail-fast 校验——不再运行时调 LLM 才失败;③ 低额预警 scheduler_enabled 显式化:部署清单+启动日志可见。第 10 次巡检业务风险 R5 🟡:dev 后门可铸 super_admin token / key 默认 sk-replace-me / scheduler 默认 False 静默不跑)",
-      "user_visible_behavior": "dev 环境默认不再暴露 /dev/token(需显式开独立开关);生产配置缺失 key 时启动期报错退出(而非运行时才失败);低额预警未启用时启动日志有明确提示。开关命名/fail-fast 环境范围/scheduler 显式化形态 EP2 用户拍板。",
-      "status": "in_progress",
-      "verification": [
-        "开关默认关时 /dev/token 不注册(404);显式开启且 dev 环境下行为不变(现有 dev 流测试零回归)",
-        "key 缺失/占位值时启动 fail-fast 测试;key 就位时启动正常",
-        "scheduler_enabled=False 时启动日志输出明确 WARN 提示"
-      ],
-      "notes": "生产加固系列第 6 条(EP1 2026-08-14 登记)。D7 拍板三件套全修。注意 ② key fail-fast 与「非 dev 环境拒绝默认 secret 启动」的既有校验(巡检正面清单)边界关系,EP2 对齐不重复。EP2 已完成 2026-08-24 Session 224:D1-D8 两轮 AskUserQuestion 用户逐项拍板(无默认采纳):D1 DEV_AUTH_ENABLED / D2 AND 语义默认关条件注册 / D3 openai key 占位一律拒启 / D4 embedding 本地 base_url 豁免 / D5 镜像既有 dev/testing 白名单 / D6 scheduler WARN+.env.example 两者 / D7 /dev/token TTL 不做留痕 / D8 单切片。② 落点 = 既有 _secrets_not_default validator 扩分支(对齐不重复)。plan v2(对抗式自审 3🟡 回写)+ §12 单切片 7 AC 就绪,EP3 从切片 01 接。",
-      "plan": "harness/docs/plan-config-startup-guard.md",
-      "depends_on": []
-    },
-    {
       "id": "rate-limit-login-lockout",
       "priority": 96,
       "area": "认证-安全",
@@ -69,7 +53,7 @@
       "id": "_milestone_archived",
       "priority": 0,
       "area": "里程碑",
-      "title": "[已归档 90 条 passing,见 archive/features-passing-archive.json]",
+      "title": "[已归档 91 条 passing,见 archive/features-passing-archive.json]",
       "status": "passing"
     }
   ],
