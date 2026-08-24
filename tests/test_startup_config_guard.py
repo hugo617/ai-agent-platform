@@ -64,8 +64,10 @@ def _patch_dev_gate(monkeypatch, *, dev_auth_enabled: bool, app_env: str) -> Non
     monkeypatch.setattr(settings, "app_env", app_env)
 
 
-def test_dev_endpoints_absent_by_default(monkeypatch):
-    """No env knobs touched: the three dev endpoints are not registered."""
+def test_dev_endpoints_absent_when_gate_closed(monkeypatch):
+    """Closed gate (dev_auth_enabled=False, the code default; pinned
+    explicitly so a developer's .env DEV_AUTH_ENABLED=true can't leak in):
+    the three dev endpoints are not registered."""
     _patch_dev_gate(monkeypatch, dev_auth_enabled=False, app_env="production")
     app = create_app()
     paths = _openapi_paths(app)
