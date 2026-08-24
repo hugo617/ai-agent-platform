@@ -53,6 +53,15 @@ const ACTION_LABEL: Record<string, string> = {
   logout: "登出",
   grant: "授权",
   revoke: "撤销",
+  // super-admin-write-audit: the three highest-risk write paths (recharge /
+  // pricing / knowledge distribution). Full action strings — the lookup is an
+  // exact match on log.action.
+  "billing.recharge": "充值",
+  "pricing.upsert": "定价新建",
+  "pricing.update": "定价编辑",
+  "pricing.deactivate": "定价停用",
+  "knowledge.distribute": "知识下发",
+  "knowledge.revoke": "知识撤回",
 };
 
 const LEVEL_VARIANT: Record<string, "default" | "secondary" | "destructive"> = {

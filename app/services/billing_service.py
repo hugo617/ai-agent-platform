@@ -45,6 +45,7 @@ from app.repositories.wallet import (
     WalletTransactionRepository,
 )
 from app.services.errors import BizError
+from app.services.logging_service import LoggingService
 
 # How many decimal places the cost snapshot keeps. Pricing is per-1k-tokens at
 # sub-cent precision, so 6dp is enough to represent a single token's cost for
@@ -232,6 +233,22 @@ class BillingService:
             operator_id=operator_id,
         )
         await self.txs.add(txn)
+        # Audit BEFORE commit so the audit row persists atomically with the
+        # recharge (user_service pattern — never commit→record, which leaves
+        # the audit row in an uncommitted transaction that get_db rolls back).
+        # txn.id is available because the repository's add() flushes.
+        await LoggingService(self.db).record(
+            action="billing.recharge",
+            module="billing",
+            message=f"recharged {amount} tokens to tenant {tenant_id}",
+            user_id=operator_id,
+            tenant_id=tenant_id,
+            level="info",
+            resource_type="wallet_transaction",
+            resource_id=txn.id,
+            details={"amount": amount, "balance_after": wallet.balance,
+                     "remark": remark},
+        )
         await self.db.commit()
 
         # Notification trigger (priority 54): inform the tenant a recharge
