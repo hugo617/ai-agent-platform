@@ -1,7 +1,7 @@
 {
   "project": "ai-agent-platform",
   "description": "已 passing feature 的历史归档(完整字段保留,审计用)",
-  "count": 89,
+  "count": 90,
   "features": [
     {
       "id": "data-export",
@@ -2234,6 +2234,34 @@
         "切片02 list+检索三路径 + G1 bypass(commit d21f8a9):list_visible_for 三路径(store 本店+下发 / group_admin 聚合 / super_admin 全局)+ search_by_embedding 三路径(join Document.is_deleted=False 守卫)+ retrieve role flag 转发 + G1 group_admin bypass 接通(require 传 db)+ retrieve_knowledge 工具 include_distributed=True / retrieve_for_debug False。16 tests。940 passed 零回归",
         "切片03 下发/撤回 API + distribute 权限码(commit dd43c0d):DistributeRequest(G4 XOR 在 service BizError 非 schema)+ KnowledgeDistributionRepository(pre-check upsert find_for_pair 非 IntegrityError catch,避 SQLite/PG flush timing 分叉)+ distribute_document(group 展开 + 跨集团拒绝)+ revoke_distribution(软删保留审计)+ 权限码 runtime seed 路径(非 migration,守 SCD2+casbin 同步铁律,对齐 devices/bookings 先例)。35 tests 含 conftest distribute policy 同步。979 passed 零回归",
         "切片04 集成验证 + feature 收尾(commit 962d7ff):6 AC 集成场景(+2 补强)走 service/repository 层 —— 完整下发链路 / group_admin 链路 / Category 跨级可见 / 源软删联动 / 跨租户隔离铁律三重 / D9 越界守卫(devices+bookings)。retrieve 语义 SQLite 无 pgvector 用「数据层断言+wiring 断言」双保险(spec §5 授权 mock)。/code-review 双轴:Standards 0 硬违规 / Spec AC3 生产边界(create_document 不接 category_id 是 plan 范围外 future feature)docstring 标注。987 passed 零回归。AC8 alembic:4 切片零新 migration,平凡满足"
+      ]
+    },
+    {
+      "id": "knowledge-tiered-foundation",
+      "priority": 90,
+      "area": "知识库-后端",
+      "title": "知识库分级 Feature A:数据模型 + 权限地基(groups 加 headquarters_tenant_id + group_tenants 唯一约束 + documents 加 scope/group_id/category_id + 新建 knowledge_categories/knowledge_distribution 表 + migration seed 预置 Category + group_admin 派生身份逻辑 + 单门店自成一集团自动化)",
+      "user_visible_behavior": "(地基 feature,无直接用户可见行为;为 B/C/D 提供数据模型与权限基础)搭建知识库三级权限的数据地基:① groups 表加 headquarters_tenant_id(总部门店指针);② group_tenants 从多对多收敛为一门店只属一集团(tenant_id 唯一);③ documents 表加 scope(platform/group/store)+ group_id + category_id 三字段(现有数据回填 store);④ 新建 knowledge_categories 表(带 scope+group_id+tenant_id,平台预置 Category)+ knowledge_distribution 表(下发关系,引用模型不拷贝);⑤ migration + seed 预置全局 Category(产品手册/FAQ/话术脚本/服务规范/促销文案);⑥ group_admin 派生身份逻辑:集团总部门店(group.headquarters_tenant_id 指向的 tenant)的 owner/admin 自动获得本集团知识库管理权(仅 object=knowledge,不扩其他域);⑦ 创建门店时若未指定集团,自动创建一个只有自己的 Group 并把自己设为总部(单门店=自成一集团)。",
+      "status": "passing",
+      "verification": [
+        "后端 app/models/group.py:Group 新增 headquarters_tenant_id(FK tenants.id,nullable);group_tenants 的 tenant_id 加唯一索引(收敛一对一);迁移双库兼容(PG + SQLite)",
+        "后端 app/models/document.py:Document 新增 scope(String default 'store' NOT NULL)+ group_id(FK groups.id nullable,scope='group' 时必填,service 层校验)+ category_id(FK knowledge_categories nullable);现有 documents 数据回填 scope='store'",
+        "后端 app/models/knowledge_category.py 新建:knowledge_categories 表(id/name/scope[platform|group|store]/group_id nullable/tenant_id nullable/sort_order/is_deleted/created_at/updated_at)+ 迁移",
+        "后端 app/models/knowledge_distribution.py 新建:knowledge_distribution 表(id/source_doc_id FK documents/target_tenant_id FK tenants/distributed_by FK users/distributed_at/is_active)+ UniqueConstraint(source_doc_id,target_tenant_id)+ 迁移",
+        "后端 migration:建 2 新表 + 改 2 表 + seed 预置全局 Category(产品手册/FAQ/话术脚本/服务规范/促销文案 5 条 scope=platform);alembic upgrade head && alembic check 无 drift",
+        "后端 app/services/permission_service.py:新增 is_group_admin(user_id, group_id) 派生判定 (只看 user 是否为 group.headquarters_tenant_id 的 owner/admin,与他在其他 tenant 的 role 解耦 —— 总部门店 member 非 group_admin;跨门店身份叠加按当前操作 group 上下文判定);casbin 策略:group_admin 对 object=knowledge 的 group 级操作放行(仅知识库域,不扩 devices/bookings 等)",
+        "后端 app/services/tenant_service.py 或 group_service.py:创建门店时若未指定 group_id,自动建 Group(name=门店名,headquarters_tenant_id=新门店)+ attach 该门店到此 group;单门店=自成一集团自动化",
+        "测试 tests/test_knowledge_foundation_api.py ~15 用例(group_admin 派生身份判定 + 单门店自成一集团自动化 + scope 字段默认值/回填 + category 预置 seed + knowledge_distribution 唯一约束 + 权限边界 group_admin 仅知识库域不扩 devices)+ ./init.sh 全绿(ruff + pytest 含新章节)+ alembic check 无 drift"
+      ],
+      "notes": "知识库分级管理系列 Feature A(地基,EP1 总纲 plan-knowledge-tiered-overview.md)。grill 12 决策(D1-D12,Session 188)已固化。**硬约束**:group_admin 是派生身份非显式角色(D11,总部门店 owner/admin 自动获得,不加角色枚举/不加 user_groups 表);scope=group 知识独立层级存 Group(D12,非用总部门店 scope=store 表达);一门店只属一集团(D8,GroupTenant 收敛一对一);单门店=自成一集团(D8+D10,创建门店时自动建 Group)。**Out of Scope**:不改 hq_staff 语义 / group_admin 不扩知识库外 object(D9)/ 不做富文本编辑器 / 不做门店间共享(铁律)/ 不做门店创建后迁移集团(D8,创建时定集团后归属不可改)。依赖图:A 是 frontier,B 依赖 A,C/D 依赖 B。",
+      "plan": "harness/docs/plan-knowledge-tiered-foundation.md",
+      "depends_on": "",
+      "evidence": [
+        "./init.sh full 实测 894 passed(原 890 + 切片03 新增 4 集成测试)零回归 + ruff clean;切片01(16 tests schema)+ 切片02(15 tests 派生+自动化)+ 切片03(4 tests 集成验证)三切片共 35 tests 入 tests/test_knowledge_foundation.py 全 pytestmark=smoke",
+        "数据模型契约(切片 01 commit 73602e5):Group +headquarters_tenant_id FK tenants SET NULL nullable / GroupTenant tenant_id 唯一索引收敛一对一(M2M 预检脏数据 RAISE 中止)/ Document +scope NOT NULL default='store' server_default 三层防护 + group_id/category_id nullable FK / knowledge_categories 部分唯一索引双库镜像(pgsql_where+sqlite_where)/ knowledge_distribution UniqueConstraint(source,target)+ 引用模型 CASCADE;1 内聚迁移 7 步双库兼容 + seed 5 platform Category 幂等(WHERE NOT EXISTS)",
+        "权限派生契约(切片 02 commit 5e8c303):permission_service.is_group_admin(db,user_id,group_id) async helper(查 group.headquarters_tenant_id → UserTenant SCD2 current_role → role in {owner,admin});check() 加 obj=='knowledge' bypass 分支(group_admin 放行,仅知识库域 D9 不扩 devices;keyword-only db=None 可选参 60+ caller 零改动);7 边界 tests + 4 bypass tests 全覆盖;tenant_service.create_tenant step7 自动建集团(同事务,失败回滚 AC8)",
+        "集成验证契约(切片 03 commit ad633c5):4 端到端集成测试 —— 完整流程(真 HTTP create_tenant 自动建集团 → HQ owner is_group_admin → check 放行 knowledge/拒 devices)+ 跨集团隔离(A group_admin 对 B is_group_admin=False)+ 手工连锁(HQ+分店 attach 一集团 → 分店 owner 非 group_admin)+ distribution 引用语义(源文档软删后关系行留存 is_active 仍 True,审计完整);/code-review 双轴(Standards+Spec)共识采纳:复用 _seed_user_role helper 消重 + 删 AC4 越界 effective 断言(避免钉死 Feature B list 逻辑)+ AC1/AC3 docstring 补充约束说明",
+        "迁移链无 drift:单 head 05fa069297cc(aa7a88a8e643 → 05fa069297cc 无分叉);切片 01 /code-review 双轴发现的 orphan index drift(idx_group_tenants_tenant_id 旧非唯一索引)已修(迁移 step5 drop+create 唯一索引,镜像 ce505ae8a1bd 范式);env.py+conftest.py 双注册新模型(create_all 建表 + autogenerate 识别)。PG 运行时 alembic upgrade head && alembic check 待 CI/docker(本会话无 PG,符合「迁移链 PG-only + SQLite 走 create_all」项目惯例)"
       ]
     }
   ]

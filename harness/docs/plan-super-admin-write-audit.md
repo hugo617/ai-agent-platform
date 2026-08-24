@@ -1,10 +1,10 @@
 # 计划:super_admin 三处最高危写操作补审计(充值 / 定价覆盖 / 知识下发与撤回)
 
 > **id**: super-admin-write-audit
-> **状态**: in_progress(EP2 完成 2026-08-24:PRD v2 经对抗式自审,1 切片就绪,待 EP3 `/implement`)
+> **状态**: passing(EP3 切片 01 完成 2026-08-24 Session 223:PR #173 merge d4a6ca9,CI 4/4 绿,全量 1075 零回归,feature 收官)
 > **优先级**: 92(生产加固系列第 5 条,风险 R4 🟡)
 > **创建日期**: 2026-08-24
-> **最后修订**: 2026-08-24(v2:自审 3🟡 回写)
+> **最后修订**: 2026-08-24(v3:EP3 切片 01 完成,checklist 全勾 + 实施注记回写)
 > **系列总纲**: [plan-risk-hardening-overview.md](./plan-risk-hardening-overview.md)(D6 已拍板:只补三处最高危,不做 super_admin 全量埋点)
 
 ---
@@ -136,6 +136,15 @@ message 统一英文短句(镜像 user_service "updated user xxx" 风格);不传
 7. **recharge resource_id 的 flush 依赖**(自审 🟡 回写):`resource_id=txn.id` 要求 `self.txs.add(txn)` 后 id 已生成(BaseRepository.add 的 flush 行为);若实施时发现未 flush,details 已含 {tenant, amount, balance_after} 业务键,追责链不依赖 resource_id,可留 None 并在本节补注记。
 8. **门店可见「被改价」历史无额外泄露**(自审 🟢 留痕):定价覆盖行 tenant_id=被覆盖租户 → 门店 logs:read 可见改价史;生效价本就是门店 `/billing/pricing` 可见内容,改价历史可见是 user story 6 的有意行为。
 
+### 4.7.9 切片 01 实施注记(EP3 回写,2026-08-24 Session 223)
+
+1. **§4.7.7 flush 依赖验证通过**:`BaseRepository.add` 内部 `flush()`(base.py),`txn.id` 在 add 后即可用——recharge 的 resource_id=txn.id 按原案落地,测试断言 `log.resource_id == txn.id` 锁定。
+2. **Decimal 序列化**:`_pricing_snapshot` 对价格字段 `Decimal.quantize(Decimal("0.000001"))` 后 `str()`——JSON 列收不了 Decimal(裸 str 会让 DB 往返值与内存 payload 值尾零不对称),量化到 Numeric(10,6) 列精度后两侧一致,且与 API 自身序列化口径相同("9.000000")。
+3. **快照字段超集**:§4.6 列名 4 字段,实施快照含第 5 键 `tenant_id`——PUT 可迁移 scope(tenant_id 可变),不记则 scope 迁移不可追责;D5「完整可追责」覆盖,测试断言该键。
+4. **§10.3 覆盖补强(Spec 轴发现)**:6 action 中 billing.recharge(门店 owner)+ pricing 三种(超管,GET /logs?action= 精确匹配断言)共 4 种经读端点验证;knowledge 两种由 action 串逐字断言 + §4.7.4 精确匹配机制覆盖(读端点 action 过滤是既有已测行为)。
+5. **code-review Standards 轴处置**:1 硬违规(定价审计+业务写在 API 层,「审计日志属 Service 职责」)——**plan D8 明文落点**(「定价在 API 层因业务逻辑在 API 层」),raw select/commit 先于本 feature 存在,提取 pricing 写路径入 service 层属独立重构,留痕为后续候选(与 booking_config 悬空同处置);2 判断项留痕:①4 处 record kwargs 内联(镜像 user_service 范式,抽 8 参数 helper 得不偿失)②测试 `patched_enforcer`/`_bind_role` 为第二份拷贝(rule of three 未到,第三消费者出现时升 conftest)。
+6. **D1-D9 复核窗口履行**:EP3 开工前(Session 223 开头)已向用户过一遍 §0.1/§4.5 决策清单,第三轮未获回复——维持「按推荐采纳」,复核窗口关闭。
+
 ### 4.8 其他实施决策
 
 - LoggingService 实例化方式:镜像 booking_config 的 `LoggingService(db).record(...)` 直接实例化(不注入),改动最小。
@@ -196,18 +205,18 @@ message 统一英文短句(镜像 user_service "updated user xxx" 风格);不传
 ### 切片依赖图
 
 ```
-01 三处审计落点 + 测试 + 前端标签(全栈单片)⬜ → feature 收尾
+01 三处审计落点 + 测试 + 前端标签(全栈单片)✅ PR #173 → feature 收尾(2026-08-24 Session 223)
 ```
 
-### 切片 01 — 三处最高危写操作接入 SystemLog(充值 / 定价 / 知识下发与撤回)+ 审计页标签
+### 切片 01 — 三处最高危写操作接入 SystemLog(充值 / 定价 / 知识下发与撤回)+ 审计页标签 ✅(PR #173 merge d4a6ca9,2026-08-24 Session 223,CI 4/4 绿:Migrations 44s / Backend 9m31s / E2E 1m49s / Frontend 28s)
 
 - **Blocked by**: 无(frontier,可立即开工)
 - **What it delivers**: 超管充值、定价三端点写、知识下发/撤回五类动作完成后,`GET /logs`(及前端审计页)可查出一条含操作者、目标租户、关键业务值(金额/定价双快照/下发目标)的审计记录;操作行为与 API 契约零变化;审计失败不阻断业务。
 - **Acceptance criteria**:
 
-- [ ] `app/services/billing_service.py`:`recharge` 在 `self.db.commit()` 之前落 `LoggingService.record`(action=`billing.recharge`/module=`billing`/level=info/user_id=operator_id/tenant_id=目标租户/resource_type=`wallet_transaction`/resource_id=交易行 id/details={amount, balance_after, remark})
-- [ ] `app/api/v1/billing.py`:三定价端点补 `user: CurrentUser = Depends(get_current_user)`(require_super_admin 依赖保持),POST→`pricing.upsert`(upsert 命中时 old_values=改前快照)/PUT→`pricing.update` 双快照/DELETE→`pricing.deactivate`(level=warn),均 commit 前落 record;details={scope: "platform"|"tenant"},tenant_id=被覆盖租户(平台级 None),resource_type=`model_pricing`
-- [ ] `app/services/knowledge_service.py`:`distribute_document` 与 `revoke_distribution` 在各自 commit 前落 record(`knowledge.distribute` level=info tenant_id=None details={document_id, target_tenant_ids 或 target_group_id, distributed_count} resource=document;`knowledge.revoke` level=warn tenant_id=目标租户 details={document_id, target_tenant_id} resource=`knowledge_distribution`)
-- [ ] `frontend/src/pages/logs-page.tsx`:ACTION_LABEL 补 6 个中文标签(充值/定价新建/定价编辑/定价停用/知识下发/知识撤回),其余零改动
-- [ ] `tests/test_super_admin_audit.py` 新建 ~12 用例(§5 清单),含:HTTP 接 seam 持久性验证(定价三端点经 app_client 后 DB 行仍存在)、审计失败不阻断充值、非超管 owner 下发也落审计、门店 owner 经 `GET /logs` 可见本店被充值记录
-- [ ] 定向 `pytest tests/test_super_admin_audit.py -q` 全绿 + ruff + `./init.sh full` 全量零回归 + 前端 `npm test`/`build`/`oxlint` 全绿
+- [x] `app/services/billing_service.py`:`recharge` 在 `self.db.commit()` 之前落 `LoggingService.record`(action=`billing.recharge`/module=`billing`/level=info/user_id=operator_id/tenant_id=目标租户/resource_type=`wallet_transaction`/resource_id=交易行 id/details={amount, balance_after, remark})
+- [x] `app/api/v1/billing.py`:三定价端点补 `user: CurrentUser = Depends(get_current_user)`(require_super_admin 依赖保持),POST→`pricing.upsert`(upsert 命中时 old_values=改前快照)/PUT→`pricing.update` 双快照/DELETE→`pricing.deactivate`(level=warn),均 commit 前落 record;details={scope: "platform"|"tenant"},tenant_id=被覆盖租户(平台级 None),resource_type=`model_pricing`
+- [x] `app/services/knowledge_service.py`:`distribute_document` 与 `revoke_distribution` 在各自 commit 前落 record(`knowledge.distribute` level=info tenant_id=None details={document_id, target_tenant_ids 或 target_group_id, distributed_count} resource=document;`knowledge.revoke` level=warn tenant_id=目标租户 details={document_id, target_tenant_id} resource=`knowledge_distribution`)
+- [x] `frontend/src/pages/logs-page.tsx`:ACTION_LABEL 补 6 个中文标签(充值/定价新建/定价编辑/定价停用/知识下发/知识撤回),其余零改动
+- [x] `tests/test_super_admin_audit.py` 新建 ~12 用例(§5 清单),含:HTTP 接 seam 持久性验证(定价三端点经 app_client 后 DB 行仍存在)、审计失败不阻断充值、非超管 owner 下发也落审计、门店 owner 经 `GET /logs` 可见本店被充值记录
+- [x] 定向 `pytest tests/test_super_admin_audit.py -q` 全绿 + ruff + `./init.sh full` 全量零回归 + 前端 `npm test`/`build`/`oxlint` 全绿
