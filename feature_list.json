@@ -26,7 +26,7 @@
       "area": "计费-后端",
       "title": "定价写路径提取 PricingService(pricing-service extraction):app/api/v1/billing.py 定价 4 端点(GET list / POST upsert / PUT update / DELETE deactivate)的业务+审计+事务全在 API 层(~200 行),提取 PricingService 归位分层;审计随迁保持 feature 92 树立的 record→commit 原子范式;裸 select(select(ModelPricing) upsert 查找)归位 Repository 层(铁律 2)",
       "user_visible_behavior": "零行为变化(纯结构重构):定价查询/新建/更新/停用的 API 契约、权限门控、审计记录(action/字段/level)逐字不变;tests/test_super_admin_audit.py 既有定价审计用例零改动通过是验收标准之一。",
-      "status": "in_progress",
+      "status": "passing",
       "verification": [
         "既有 8 定价用例零改动通过(tests/test_super_admin_audit.py 5 例 HTTP 接缝 + request-close 后 SystemLog 行仍在;tests/test_billing.py 3 例 CRUD/403/读生效价),执行序列 = 提取前基线绿 → 提取后仍绿",
         "新增 404 锁定用例通过:PUT+DELETE 不存在 pricing_id → 404 detail=「定价不存在」(green-on-both 回归锁,提取中唯一手工重写路径)",
@@ -35,9 +35,13 @@
         "分层合规:定价写段 API 层仅剩「取身份 → 调 service → None 抛 404」薄壳,依赖向 API → PricingService → ModelPricingRepository → Model 单向",
         "./init.sh full 全量零回归 + ruff 绿 + 前端 build 绿(git diff frontend/src 为空)"
       ],
-      "notes": "第 11 次巡检候选 Ⓑ(Worth exploring,暂定 pri 98;素材源:harness/docs/codebase-health-log.md 第 11 次条目 + feature 92 plan D8/code-review 留痕「提取 pricing 写路径入 service 层属独立重构留痕为后续候选」兑现)。feature 97(Ⓐ commit-scope-hardening)D3 明文「定价不碰 Ⓑ 独立立项」,本条即该独立立项。范围素材:billing.py 定价段 L199-399(4 端点 + _pricing_snapshot/_pricing_scope/_upsert_pricing 三 helper)。提取边界/端点签名/测试改造深度 EP2 用户拍板。EP2 登记 2026-08-25 Session 229。 EP2 已完成 2026-08-25 Session 229(单回环 grill→to-spec→to-tickets + 轻量对抗式自审回写 v2,🟡×1 采纳[404 锁定用例]+ 🟢×2[docstring 微调采纳/竞态留痕不修]):D1 写 3 端点入 service、GET 留 API(对齐兄弟读端点 repo 直调范式)/ D2 契约零变化 + service 返 None 由 API 抛 404(镜像 PUT /wallet 惯例)/ D3 既有用例零改动为主 + 唯一例外 1 条 404 锁定用例 / D4 单切片 —— 四项 AskUserQuestion 未获回复,按 Session 219/222 先例按推荐采纳并如实标注(plan §0.1),复核窗口 = EP3 开工前。plan 自检 4 项过(单切片无环/8 AC/首片无 blocker/零悬空)。",
+      "notes": "第 11 次巡检候选 Ⓑ(Worth exploring,暂定 pri 98;素材源:harness/docs/codebase-health-log.md 第 11 次条目 + feature 92 plan D8/code-review 留痕「提取 pricing 写路径入 service 层属独立重构留痕为后续候选」兑现)。feature 97(Ⓐ commit-scope-hardening)D3 明文「定价不碰 Ⓑ 独立立项」,本条即该独立立项。范围素材:billing.py 定价段 L199-399(4 端点 + _pricing_snapshot/_pricing_scope/_upsert_pricing 三 helper)。提取边界/端点签名/测试改造深度 EP2 用户拍板。EP2 登记 2026-08-25 Session 229。 EP2 已完成 2026-08-25 Session 229(单回环 grill→to-spec→to-tickets + 轻量对抗式自审回写 v2,🟡×1 采纳[404 锁定用例]+ 🟢×2[docstring 微调采纳/竞态留痕不修]):D1 写 3 端点入 service、GET 留 API(对齐兄弟读端点 repo 直调范式)/ D2 契约零变化 + service 返 None 由 API 抛 404(镜像 PUT /wallet 惯例)/ D3 既有用例零改动为主 + 唯一例外 1 条 404 锁定用例 / D4 单切片 —— 四项 AskUserQuestion 未获回复,按 Session 219/222 先例按推荐采纳并如实标注(plan §0.1),复核窗口 = EP3 开工前。plan 自检 4 项过(单切片无环/8 AC/首片无 blocker/零悬空)。 EP3 已完成 2026-08-25 Session 230(切片 01 唯一=末切片,feature 收官):复核窗口 EP3 开工首动作履行(D1-D4 用户逐项确认维持推荐,窗口关闭,plan §0.1);实施纯迁移零行为变化(契约/权限门/审计逐字不变);全量 1091(基线 1090+1);feature 收尾八步闭环(全量验证/status+evidence 3 条/sync-active/progress.md frontier/clean-state-checklist/文档影响评估[无新增改动项目指南文档,纯结构迁移 AGENTS.md 铁律不受影响]/依赖解锁扫描[无 depends_on 指向本条]/分支清理[本地+远端已删])。",
       "depends_on": [],
-      "evidence": [],
+      "evidence": [
+        "切片 01(唯一=末切片)PR #176 merge 31c7b39,CI 4/4 绿:Migrations 49s/Backend 8m4s/E2E 1m51s/Frontend 58s;commits dda18e4(实施)+af78d20(code-review 回写);D1-D4 复核窗口于 EP3 开工前履行(AskUserQuestion 用户逐项确认维持推荐,plan §0.1 留痕);PricingService 提取 = 4 处审计 record 归一化平衡括号对照 IDENTICAL ×4(仅 self.db/operator_id 两处计划规定机械重命名)且全在业务 commit 前(feature 92 范式);裸 select 归位 get_active_for_scope(billing.py select(=0,docstring 区分 get_for_model fallback 链);三写端点薄壳化(service 返 None + API 抛 404 镜像 PUT /wallet);404 锁定用例新增(green-on-both)",
+        "验证:既有 8 定价用例零改动通过(提取前基线 42 passed 留痕 → 提取后 43 passed 含新增 1 条)+ 404 用例单跑 1 passed + grep 'select(' app/api/v1/billing.py = 0 + 全量 1091 passed 8 skipped(基线 1090+1 零回归)+ ruff 绿 + 前端 build 绿(frontend/ 零改动 git diff 为空)",
+        "code-review 双轴(general-purpose ×2 并行):Standards 0 硬违规(1 判断项留痕:pricing_service.py 3 处 record 同形块可提 _record helper,系 billing.py 原样随迁存量,镜像 feature 92 同判不越界留巡检重评)/ Spec 0 缺失 0 越界 0 行为错误(1 良性超集留痕:BillingService docstring 一行→4 行);回写 plan §0.2(commit af78d20);分支清理闭环:本地 -d + 远端 DELETE 均完成,git branch -a 只剩 main"
+      ],
       "plan": "harness/docs/plan-pricing-service-extraction.md"
     },
     {

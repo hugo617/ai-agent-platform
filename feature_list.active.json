@@ -19,20 +19,7 @@
       "priority": 98,
       "area": "计费-后端",
       "title": "定价写路径提取 PricingService(pricing-service extraction):app/api/v1/billing.py 定价 4 端点(GET list / POST upsert / PUT update / DELETE deactivate)的业务+审计+事务全在 API 层(~200 行),提取 PricingService 归位分层;审计随迁保持 feature 92 树立的 record→commit 原子范式;裸 select(select(ModelPricing) upsert 查找)归位 Repository 层(铁律 2)",
-      "user_visible_behavior": "零行为变化(纯结构重构):定价查询/新建/更新/停用的 API 契约、权限门控、审计记录(action/字段/level)逐字不变;tests/test_super_admin_audit.py 既有定价审计用例零改动通过是验收标准之一。",
-      "status": "in_progress",
-      "verification": [
-        "既有 8 定价用例零改动通过(tests/test_super_admin_audit.py 5 例 HTTP 接缝 + request-close 后 SystemLog 行仍在;tests/test_billing.py 3 例 CRUD/403/读生效价),执行序列 = 提取前基线绿 → 提取后仍绿",
-        "新增 404 锁定用例通过:PUT+DELETE 不存在 pricing_id → 404 detail=「定价不存在」(green-on-both 回归锁,提取中唯一手工重写路径)",
-        "审计原子性逐处保持:PricingService 内 4 处 record(upsert 命中/新建、update、deactivate)全部位于对应 db.commit() 之前,kwargs 与 feature 92 落地值逐字一致(EP3 diff 对照留痕)",
-        "裸 select 归位:grep select( app/api/v1/billing.py → 0 处;ModelPricingRepository.get_active_for_scope 就位且 docstring 与 get_for_model 的 fallback 语义显式区分",
-        "分层合规:定价写段 API 层仅剩「取身份 → 调 service → None 抛 404」薄壳,依赖向 API → PricingService → ModelPricingRepository → Model 单向",
-        "./init.sh full 全量零回归 + ruff 绿 + 前端 build 绿(git diff frontend/src 为空)"
-      ],
-      "notes": "第 11 次巡检候选 Ⓑ(Worth exploring,暂定 pri 98;素材源:harness/docs/codebase-health-log.md 第 11 次条目 + feature 92 plan D8/code-review 留痕「提取 pricing 写路径入 service 层属独立重构留痕为后续候选」兑现)。feature 97(Ⓐ commit-scope-hardening)D3 明文「定价不碰 Ⓑ 独立立项」,本条即该独立立项。范围素材:billing.py 定价段 L199-399(4 端点 + _pricing_snapshot/_pricing_scope/_upsert_pricing 三 helper)。提取边界/端点签名/测试改造深度 EP2 用户拍板。EP2 登记 2026-08-25 Session 229。 EP2 已完成 2026-08-25 Session 229(单回环 grill→to-spec→to-tickets + 轻量对抗式自审回写 v2,🟡×1 采纳[404 锁定用例]+ 🟢×2[docstring 微调采纳/竞态留痕不修]):D1 写 3 端点入 service、GET 留 API(对齐兄弟读端点 repo 直调范式)/ D2 契约零变化 + service 返 None 由 API 抛 404(镜像 PUT /wallet 惯例)/ D3 既有用例零改动为主 + 唯一例外 1 条 404 锁定用例 / D4 单切片 —— 四项 AskUserQuestion 未获回复,按 Session 219/222 先例按推荐采纳并如实标注(plan §0.1),复核窗口 = EP3 开工前。plan 自检 4 项过(单切片无环/8 AC/首片无 blocker/零悬空)。",
-      "depends_on": [],
-      "evidence": [],
-      "plan": "harness/docs/plan-pricing-service-extraction.md"
+      "status": "passing"
     },
     {
       "id": "commit-scope-hardening",
@@ -63,17 +50,10 @@
       "status": "passing"
     },
     {
-      "id": "billing-reconciliation-job",
-      "priority": 93,
-      "area": "计费-后端",
-      "title": "计费对账闭环(usage_events 聚合 vs wallet_transactions 差额核对 job,挂现有 APScheduler 框架,产出日报+告警——「charge 失败仅 logger.exception+rollback 的少扣费」从静默变可见。第 10 次巡检业务风险 R3 后半 🔴:代码注释宣称的 reconciled from usage_events 对账 job 并不存在)",
-      "status": "passing"
-    },
-    {
       "id": "_milestone_archived",
       "priority": 0,
       "area": "里程碑",
-      "title": "[已归档 92 条 passing,见 archive/features-passing-archive.json]",
+      "title": "[已归档 93 条 passing,见 archive/features-passing-archive.json]",
       "status": "passing"
     }
   ],

@@ -1,10 +1,10 @@
 # 计划:定价写路径提取 PricingService(pricing-service extraction)
 
 > **id**: pricing-service-extraction
-> **状态**: in_progress(EP2 完成 v2[经轻量对抗式自审,见 §0],待 EP3 切片 01 实施)
+> **状态**: passing(2026-08-25 Session 230 切片 01[唯一=末切片]完成,PR #176 merge `31c7b39`,CI 4/4 绿;feature 收官)
 > **优先级**: 98(feature_list.json)
 > **创建日期**: 2026-08-25
-> **最后修订**: 2026-08-25(v2)
+> **最后修订**: 2026-08-25(v3:EP3 实施完成,§12 八 AC 全勾 + 状态行同 commit 翻 passing)
 
 ---
 
@@ -206,18 +206,18 @@
 ### 切片依赖图
 
 ```
-01 ⬜(唯一 = 末切片)
+01 ✅(唯一 = 末切片,PR #176 merge 31c7b39)
 ```
 
-### 切片 01 — PricingService 提取 + 裸 select 归位 + 404 锁定用例
+### 切片 01 — PricingService 提取 + 裸 select 归位 + 404 锁定用例 ✅(PR #176,merge `31c7b39`,CI 4/4 绿:Migrations 49s/Backend 8m4s/E2E 1m51s/Frontend 58s;commits `dda18e4` 实施 + `af78d20` code-review 回写)
 - **Blocked by**: 无(可立即开工)
 - **What it delivers**: 定价写三端点(POST/PUT/DELETE /billing/pricing)的业务、审计、事务全部由 PricingService 承接,API 层只剩薄壳;裸 select 归位 Repository(铁律 2);「审计属 Service 职责」的分层违规清零(feature 92 code-review 留痕的独立候选兑现);外部行为逐字不变 —— 既有 8 定价用例零改动通过 + 新增 404 锁定用例。
 - **Acceptance criteria**:
-  - [ ] `app/services/pricing_service.py` 新建:PricingService(upsert/update/deactivate)+ `_pricing_snapshot`/`_pricing_scope` 迁入;4 处 record 全在 commit 前,kwargs 与 feature 92 落地值逐字一致(diff 对照)
-  - [ ] `ModelPricingRepository.get_active_for_scope` 新方法:精确 scope 查找语义,docstring 显式区分 get_for_model 的 fallback 解析链
-  - [ ] `app/api/v1/billing.py`:三写端点收缩为「取身份 → 调 service → None 抛 404『定价不存在』」;删三模块级 helper;import 收拾(select/LoggingService/Decimal 出);GET /pricing 与其余端点零改动
-  - [ ] `tests/test_billing.py` 新增 404 锁定用例(PUT+DELETE 不存在 id → 404,green-on-both)
-  - [ ] 既有 8 定价用例零改动通过(提取前基线绿留痕 → 提取后仍绿)
-  - [ ] `grep -n "select(" app/api/v1/billing.py` = 0;`./init.sh full` 零回归 + ruff + 前端 build 绿(零前端改动)
-  - [ ] BillingService 类 docstring 一行微调(§7 🟢 良性超集留痕)
-  - [ ] feature 收尾八步(three-tier §4:status/evidence/sync-active/progress.md/checklist/文档影响评估/依赖解锁扫描/分支清理)
+  - [x] `app/services/pricing_service.py` 新建:PricingService(upsert/update/deactivate)+ `_pricing_snapshot`/`_pricing_scope` 迁入;4 处 record 全在 commit 前,kwargs 与 feature 92 落地值逐字一致(diff 对照)— 归一化平衡括号对照 IDENTICAL ×4(仅 self.db/operator_id 两处计划规定机械重命名,§0.2 留痕)
+  - [x] `ModelPricingRepository.get_active_for_scope` 新方法:精确 scope 查找语义,docstring 显式区分 get_for_model 的 fallback 解析链
+  - [x] `app/api/v1/billing.py`:三写端点收缩为「取身份 → 调 service → None 抛 404『定价不存在』」;删三模块级 helper;import 收拾(select/LoggingService/Decimal 出);GET /pricing 与其余端点零改动
+  - [x] `tests/test_billing.py` 新增 404 锁定用例(PUT+DELETE 不存在 id → 404,green-on-both)— `test_pricing_update_delete_missing_404`,提取前基线 42 passed 留痕 → 提取后 43 passed
+  - [x] 既有 8 定价用例零改动通过(提取前基线绿留痕 → 提取后仍绿)
+  - [x] `grep -n "select(" app/api/v1/billing.py` = 0;`./init.sh full` 零回归(1091 passed 8 skipped,基线 1090+1)+ ruff + 前端 build 绿(零前端改动,git diff frontend/ 为空)
+  - [x] BillingService 类 docstring 一行微调(§7 🟢 良性超集留痕)— 实际落 4 行,Spec 轴判良性如实记档(§0.2-2)
+  - [x] feature 收尾八步(three-tier §4:status/evidence/sync-active/progress.md/checklist/文档影响评估/依赖解锁扫描/分支清理)— 同收尾 commit 闭环:status passing + evidence 3 条 + check_plan_status_sync + sync-active(0 活跃)+ 依赖解锁扫描无 depends_on 指向 + 分支清理本地 -d + 远端 DELETE(只剩 main)
