@@ -1,7 +1,7 @@
 {
   "project": "ai-agent-platform",
   "description": "已 passing feature 的历史归档(完整字段保留,审计用)",
-  "count": 91,
+  "count": 92,
   "features": [
     {
       "id": "data-export",
@@ -2283,6 +2283,27 @@
         "切片 01(唯一=末切片)PR #174 merge cb9204f(2026-08-24 Session 225,CI 4/4 绿:Migrations 1m0s/Backend 10m30s/E2E 2m33s/Frontend 29s):commits 529e1bc+10712aa — ① 三 dev 端点(/oidc/jwks /dev/token /dev/bootstrap)收进 _register_dev_endpoints 条件注册(DEV_AUTH_ENABLED=true AND APP_ENV=development,默认关路由+OpenAPI 均不存在 fail-closed,handler 内旧 404 检查删除)/ ② _secrets_not_default validator 扩两分支:非 dev/testing openai_api_key 占位一律拒启 + embedding_api_key 占位仅非回环 base_url 拒启(_is_local_base_url 认 localhost/127.0.0.1/::1,解析失败从严)/ ③ init_scheduler 关闭分支非 testing 升 WARNING 点名 SCHEDULER_ENABLED+scan_balance_warnings(09:00)+reconcile_billing(09:30) + .env.example 两段 + README/LOGTO_SETUP/认证体系文档三处 dev 门控说明",
         "定向 pytest tests/test_startup_config_guard.py 14/14(plan §5 清单 13 拆 14 良性超集,开态用例测试体内自建 create_app)+ 相邻回归(billing_reconciliation/notifications/health)49 passed + 全量 pytest 1089 passed 8 skipped(基线 1075 + 14 零回归)+ ruff 绿",
         "前端 npm run build 绿(零前端改动确认:login-page 404 走 toast 优雅降级);code-review 双轴 0 硬违规/0 缺失/0 越界(1 微瑕 docstring 已修 commit 10712aa);feature 收尾八步闭环(plan v3 全勾 + 同 commit 翻 passing + sync-active + 依赖解锁扫描无下游 + 分支清理只剩 main);risk-hardening 系列 6 条全 passing,下一步 = 第 11 次巡检复验 Top5 清零"
+      ]
+    },
+    {
+      "id": "super-admin-write-audit",
+      "priority": 92,
+      "area": "审计-后端",
+      "title": "super_admin 三处最高危跨租户写操作补审计(充值 / 定价覆盖 / 知识下发与撤回补 LoggingService.record 写 SystemLog,复用现有审计基础设施与 audit-log-ui 前端页。第 10 次巡检业务风险 R4 🟡:最高权操作只留业务列不写 SystemLog,事后追责链断裂)",
+      "user_visible_behavior": "操作行为零变化;审计日志页可见新增的 super_admin 充值/定价/知识下发撤回记录。审计事件命名/分级与 detail 粒度(金额/定价快照/目标租户)EP2 用户拍板。",
+      "status": "passing",
+      "verification": [
+        "三处操作各写一条 SystemLog 的回归测试(充值/定价覆盖/知识下发+撤回)",
+        "审计记录字段完整:操作者/目标租户/关键业务值(金额或定价快照)可追责",
+        "audit-log-ui 既有查询端点能查出新增记录(零前端改动或最小改动)"
+      ],
+      "notes": "生产加固系列第 5 条(EP1 2026-08-14 登记)。D6 拍板:只补三处最高危,不做 super_admin 全量埋点;若第 11 次巡检复验认为不够再扩。 EP2 已完成 2026-08-24 Session 222(单回环 grill→to-spec→to-tickets + 双轴自审 3🟡 回写 v2,1 切片就绪):D1-D9 决策两轮问询未获回复,按 Session 219 先例以推荐方案采纳并在 plan §0.1/§4.5 逐项如实标注,复核窗口=EP3 开工前。 EP3 切片 01 完成 2026-08-24 Session 223(末切片即唯一切片,feature 收官):D1-D9 复核窗口开工前已履行(第三轮问询仍未获回复,维持推荐采纳,plan §4.7.9-6);code-review Standards 0 租户安全/Spec 0 缺失 0 越界,1 硬违规(定价审计在 API 层)= D8 明文落点留痕;§4.7.7 txn.id flush 依赖验证通过。",
+      "plan": "harness/docs/plan-super-admin-write-audit.md",
+      "depends_on": [],
+      "evidence": [
+        "切片 01(唯一=末切片)PR #173 merge d4a6ca9(2026-08-24 Session 223,CI 4/4 绿:Migrations 44s/Backend 9m31s/E2E 1m49s/Frontend 28s):commits 928b8bd+3e03854 — 三处 record→commit 埋点(充值 billing.recharge / 定价三端点 pricing.upsert|update|deactivate + CurrentUser dep / 知识 knowledge.distribute|revoke)+ 前端 ACTION_LABEL 6 中文标签,TDD 红→绿 12 用例(定价走 app_client HTTP 接缝断言真实 DB 持久、审计失败不阻断充值、空集团不记、门店 owner 读侧可见)",
+        "定向 pytest tests/test_super_admin_audit.py 12/12 + 相邻回归 198 passed + 全量 pytest 1075 passed 8 skipped(基线 1063 + 12 零回归)+ ruff 绿",
+        "前端 npm test 259/259 + build 绿 + oxlint 0/0;feature 收尾八步闭环(checklist 全勾 + plan v3 passing + sync-active + 依赖解锁扫描无下游 + 分支清理只剩 main)"
       ]
     }
   ]

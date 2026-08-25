@@ -1,7 +1,7 @@
 # 计划:commit-scope 悬空修复(三处「commit 后副作用写」生产 100% 丢失 + 3 个假阳性测试 + QW1 CI npm test)
 
 > **id**: commit-scope-hardening
-> **状态**: in_progress(EP3 切片 01 实施完成 2026-08-25,待 PR 合并后收尾翻 passing)
+> **状态**: passing(切片 01 唯一=末切片端到端 2026-08-25:PR #175 merge 80ea079,feature 收官)
 > **优先级**: 97(feature_list.json)
 > **创建日期**: 2026-08-25
 > **最后修订**: 2026-08-25(v3:EP3 实施注记 + §4.7-3/§5 方言断言勘误 + code-review 双轴回写;v2:对抗式自审 4🟡+1🟢 回写,零 🔴)
@@ -210,19 +210,21 @@
 切片 01(唯一 = 末切片)
 ```
 
-### 切片 01 — commit-scope 悬空修复(三处两范式 + 假阳性测试根除 + QW1 CI npm test)
+### 切片 01 ✅ — commit-scope 悬空修复(三处两范式 + 假阳性测试根除 + QW1 CI npm test)
+
+> **完成证据(2026-08-25)**:PR #175(merge `80ea079`,CI 4/4 绿:Migrations 53s / Backend 9m36s / E2E 1m57s / Frontend 54s[含新 npm run test step,259 vitest]);commits 0da3c4b + 4fd6eea;全量 1090 passed(基线 1089+1)零回归 + ruff + 前端 259/259 + build 绿(frontend/src 零改动);code-review 双轴 Standards 代码层 0 硬违规 / Spec 前 8 AC 满足 0 越界(§0.2-6)。
 
 - **Blocked by**: 无(frontier,可立即开工)
 - **What it delivers**: 配置写成功必有审计行(booking_config 审计从 100% 丢失到随业务原子持久);充值/角色变更后通知必达(recharge / role_change 从 100% 丢失到显式尾随 commit 持久,失败只丢通知不伤业务);三个假阳性测试根因根除且红证锁死防复燃;CI 从此每个 PR 跑前端 259 个 vitest 用例(QW1);CONTEXT.md「提交范围」词条 + 双 docstring 契约钉死两范式防再犯。
 - **文件清单**: `app/services/booking_config_service.py`(改)/ `app/services/billing_service.py`(改)/ `app/services/member_service.py`(改)/ `app/services/logging_service.py`(docstring)/ `app/services/notification_service.py`(docstring)/ `CONTEXT.md`(词条)/ `.github/workflows/ci.yml`(+1 step)/ `tests/test_booking_config_api.py`(A 章改造)/ `tests/test_notifications.py`(2 改造 + 1 新增)
 - **Acceptance criteria**:
 
-- [ ] `app/services/booking_config_service.py`:`_upsert` 的 record 整体移到 `flush` 之后 `commit` 之前(row.id 可用),commit 后仅剩 refresh + `_to_read` + return;模块 docstring 措辞同步为原子范式如实描述(§4.6-①)
-- [ ] `app/services/billing_service.py`:recharge 通知 stage(commit 后)包 `try/except Exception: logger.exception(...)` + `await self.db.commit()` 尾随,注释镜像 `_notify_super_admins`(§4.6-②)
-- [ ] `app/services/member_service.py`:update_role 通知 stage 与 recharge 完全同型同修(§4.6-③)
-- [ ] `app/services/logging_service.py` + `app/services/notification_service.py`:docstring 契约强化(record/create 必须落在持有它的提交范围内 + 两范式说明,零行为改动)(§4.6-④)
-- [ ] `CONTEXT.md`:「工程概念」节新增「提交范围(Commit Scope)」词条(§4.6-⑤ 定稿格式)
-- [ ] `tests/test_booking_config_api.py`:A 章用例改造 —— 删 mock 与误导性 passthrough docstring,双 PUT tenant-own 经 HTTP,请求结束后 db_session 断真实 SystemLog 行(create+update 两行,old/new_values 快照 + user_id/tenant_id/resource_id)(§4.8)
-- [ ] `tests/test_notifications.py`:recharge / role_change 两用例改造为 HTTP 接缝 + 跨 session 双持久断言(通知行 + 业务行);新增 role_change 炸通知 guard 对称用例;红证留存(3 改造用例修复前 FAIL,guard 用例 green-on-both)(§4.8)
-- [ ] `.github/workflows/ci.yml`:frontend job 在 oxlint 与 build 之间加 `npm run test` step(§4.6-⑥)
-- [ ] 验证:定向 `pytest tests/test_booking_config_api.py tests/test_notifications.py -q` 全绿 + `./init.sh full` 全量零回归 + ruff 绿 + 前端 `npm run test` 259/259 与 `npm run build` 绿(`git diff --stat frontend/src` 为空)+ feature 收尾八步(末切片即唯一切片)
+- [x] `app/services/booking_config_service.py`:`_upsert` 的 record 整体移到 `flush` 之后 `commit` 之前(row.id 可用),commit 后仅剩 refresh + `_to_read` + return;模块 docstring 措辞同步为原子范式如实描述(§4.6-①)
+- [x] `app/services/billing_service.py`:recharge 通知 stage(commit 后)包 `try/except Exception: logger.exception(...)` + `await self.db.commit()` 尾随,注释镜像 `_notify_super_admins`(§4.6-②)
+- [x] `app/services/member_service.py`:update_role 通知 stage 与 recharge 完全同型同修(§4.6-③)
+- [x] `app/services/logging_service.py` + `app/services/notification_service.py`:docstring 契约强化(record/create 必须落在持有它的提交范围内 + 两范式说明,零行为改动)(§4.6-④)
+- [x] `CONTEXT.md`:「工程概念」节新增「提交范围(Commit Scope)」词条(§4.6-⑤ 定稿格式)
+- [x] `tests/test_booking_config_api.py`:A 章用例改造 —— 删 mock 与误导性 passthrough docstring,双 PUT tenant-own 经 HTTP,请求结束后 db_session 断真实 SystemLog 行(create+update 两行,old/new_values 快照 + user_id/tenant_id/resource_id)(§4.8)
+- [x] `tests/test_notifications.py`:recharge / role_change 两用例改造为 HTTP 接缝 + 跨 session 双持久断言(通知行 + 业务行);新增 role_change 炸通知 guard 对称用例;红证留存(3 改造用例修复前 FAIL,guard 用例 green-on-both)(§4.8)
+- [x] `.github/workflows/ci.yml`:frontend job 在 oxlint 与 build 之间加 `npm run test` step(§4.6-⑥)
+- [x] 验证:定向 `pytest tests/test_booking_config_api.py tests/test_notifications.py -q` 全绿 + `./init.sh full` 全量零回归 + ruff 绿 + 前端 `npm run test` 259/259 与 `npm run build` 绿(`git diff --stat frontend/src` 为空)+ feature 收尾八步(末切片即唯一切片)

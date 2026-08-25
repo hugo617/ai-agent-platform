@@ -19,20 +19,7 @@
       "priority": 97,
       "area": "审计-后端",
       "title": "commit 后副作用写悬空修复(commit-scope hardening):三处同根同型「best-effort 副作用写在最终 commit() 之后 → 悬在隐式新事务 → get_db close 回滚 → 生产 100% 丢失」(booking_config 审计 / recharge 充值通知 / member_service.update_role role_change 通知)+ 定价 4 端点 API 层卫生 + 3 个假阳性测试改真实持久断言 + 顺手 QW1(CI frontend job 补 npm run test)",
-      "user_visible_behavior": "① 租户/平台管理员改预约网格配置后,审计日志页真的出现 booking_config 记录(现状 100% 从未持久,功能等于失效);② 租户被充值后用户铃铛真的收到「充值到账」通知(现状 100% 丢失);③ 成员角色被改后本人真的收到「角色变更」通知(现状 100% 丢失)。修复形态(统一 helper / 逐处 record→commit / 通知显式尾随 commit / 定价是否提取 PricingService)EP2 用户拍板;定价 4 端点本身行为正确,处置范围待定。",
-      "status": "in_progress",
-      "verification": [
-        "三处悬空的修复各自有「HTTP 接缝 + request-close 后跨 session 持久断言」测试(feature 92 test_super_admin_audit 已树立的范式):booking_config 审计行经真实 get_db 生命周期后仍在 DB;recharge 通知行经 HTTP 请求结束后仍在 DB;role_change 通知行同型断言",
-        "3 个假阳性测试改造:booking_config 的 mock-kwargs 用例改断真实 SystemLog 行;test_notifications 的 recharge/role_change 两用例改走 HTTP 接缝或跨 session 断言(同 session SELECT 假阳性根除),改造后用例在修复前必须红(锁死防复燃)",
-        "修复不破坏 best-effort 语义:通知/审计失败不阻断已提交的业务写(test_notification_failure_does_not_break_recharge 类语义保持);正确反例 = billing_reconciliation_service._notify_super_admins 显式尾随 commit",
-        "定价 4 端点处置(范围由 EP2 拍板):若纳入则业务+审计+事务移出 API 层进 Service(铁律:审计属 Service 职责),行为零变化;若不纳入则留痕不越界",
-        "QW1:CI frontend job 增加 npm run test step(vitest 259 用例进 CI,防倒挂加深),CI 4/4 绿",
-        "./init.sh full 全量零回归 + ruff + 前端 build 绿"
-      ],
-      "notes": "第 11 次巡检候选 Ⓐ(Strong Top,暂定 pri 97;素材源:harness/docs/codebase-health-log.md 第 11 次条目 Baseline 快照「commit-scope 悬空缺陷」表)。risk-hardening 直系续篇(同危害档 R4):feature 92 留痕的 3 处隐患全部坐实 + 新发现第 4 处(member role_change),全仓库普查后确认为完整清单;正确反例已在仓库(_notify_super_admins 显式尾随 commit),测试范式已由 feature 92 树立(test_super_admin_audit HTTP 接缝 + 跨 session 持久断言),估 ~250-300 行一天内。巡检建议 Ⓑ pricing-service-extraction 独立立项,本条定价处置范围(仅卫生收口 vs 完整提取)EP2 用户拍板。EP2 登记 2026-08-25 Session 227(同会话单回环 grill→to-spec→to-tickets)。 EP2 已完成 2026-08-25 Session 227(单回环 grill→to-spec→to-tickets + 对抗式自审 4🟡+1🟢 回写 v2,零 🔴):D1 booking_config 审计=record→commit 原子 / D2 两处通知=显式尾随 commit+guard(镜像 _notify_super_admins)/ D3 定价不碰 Ⓑ 独立立项 / D4 逐处改零新抽象 / D5 假阳性测试改真实持久断言(HTTP 接缝+跨 session,红证锁死)/ D6 单切片 / D7 CONTEXT 新增「提交范围(Commit Scope)」术语 —— 七项全 AskUserQuestion 用户逐项拍板无默认采纳。Ⓐ 范围收敛为 3 处源码悬空 + 3 假阳性 + QW1(定价处置=不碰)。EP2 复核取证:NotificationService.create 共 5 类调用点 + LoggingService.record 共 8 处直调,悬空恰 3 处与巡检一致无新增;get_db 正常路径不 commit 机制源码级确认;A 章 mock 用例 docstring 自称 passthrough 不实(autospec 无 side_effect 纯替换)更正入档 plan §4.7-7。",
-      "depends_on": [],
-      "evidence": [],
-      "plan": "harness/docs/plan-commit-scope-hardening.md"
+      "status": "passing"
     },
     {
       "id": "rate-limit-login-lockout",
@@ -63,17 +50,10 @@
       "status": "passing"
     },
     {
-      "id": "super-admin-write-audit",
-      "priority": 92,
-      "area": "审计-后端",
-      "title": "super_admin 三处最高危跨租户写操作补审计(充值 / 定价覆盖 / 知识下发与撤回补 LoggingService.record 写 SystemLog,复用现有审计基础设施与 audit-log-ui 前端页。第 10 次巡检业务风险 R4 🟡:最高权操作只留业务列不写 SystemLog,事后追责链断裂)",
-      "status": "passing"
-    },
-    {
       "id": "_milestone_archived",
       "priority": 0,
       "area": "里程碑",
-      "title": "[已归档 91 条 passing,见 archive/features-passing-archive.json]",
+      "title": "[已归档 92 条 passing,见 archive/features-passing-archive.json]",
       "status": "passing"
     }
   ],
