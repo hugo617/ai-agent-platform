@@ -21,6 +21,26 @@
   },
   "features": [
     {
+      "id": "pricing-service-extraction",
+      "priority": 98,
+      "area": "计费-后端",
+      "title": "定价写路径提取 PricingService(pricing-service extraction):app/api/v1/billing.py 定价 4 端点(GET list / POST upsert / PUT update / DELETE deactivate)的业务+审计+事务全在 API 层(~200 行),提取 PricingService 归位分层;审计随迁保持 feature 92 树立的 record→commit 原子范式;裸 select(select(ModelPricing) upsert 查找)归位 Repository 层(铁律 2)",
+      "user_visible_behavior": "零行为变化(纯结构重构):定价查询/新建/更新/停用的 API 契约、权限门控、审计记录(action/字段/level)逐字不变;tests/test_super_admin_audit.py 既有定价审计用例零改动通过是验收标准之一。",
+      "status": "in_progress",
+      "verification": [
+        "既有 8 定价用例零改动通过(tests/test_super_admin_audit.py 5 例 HTTP 接缝 + request-close 后 SystemLog 行仍在;tests/test_billing.py 3 例 CRUD/403/读生效价),执行序列 = 提取前基线绿 → 提取后仍绿",
+        "新增 404 锁定用例通过:PUT+DELETE 不存在 pricing_id → 404 detail=「定价不存在」(green-on-both 回归锁,提取中唯一手工重写路径)",
+        "审计原子性逐处保持:PricingService 内 4 处 record(upsert 命中/新建、update、deactivate)全部位于对应 db.commit() 之前,kwargs 与 feature 92 落地值逐字一致(EP3 diff 对照留痕)",
+        "裸 select 归位:grep select( app/api/v1/billing.py → 0 处;ModelPricingRepository.get_active_for_scope 就位且 docstring 与 get_for_model 的 fallback 语义显式区分",
+        "分层合规:定价写段 API 层仅剩「取身份 → 调 service → None 抛 404」薄壳,依赖向 API → PricingService → ModelPricingRepository → Model 单向",
+        "./init.sh full 全量零回归 + ruff 绿 + 前端 build 绿(git diff frontend/src 为空)"
+      ],
+      "notes": "第 11 次巡检候选 Ⓑ(Worth exploring,暂定 pri 98;素材源:harness/docs/codebase-health-log.md 第 11 次条目 + feature 92 plan D8/code-review 留痕「提取 pricing 写路径入 service 层属独立重构留痕为后续候选」兑现)。feature 97(Ⓐ commit-scope-hardening)D3 明文「定价不碰 Ⓑ 独立立项」,本条即该独立立项。范围素材:billing.py 定价段 L199-399(4 端点 + _pricing_snapshot/_pricing_scope/_upsert_pricing 三 helper)。提取边界/端点签名/测试改造深度 EP2 用户拍板。EP2 登记 2026-08-25 Session 229。 EP2 已完成 2026-08-25 Session 229(单回环 grill→to-spec→to-tickets + 轻量对抗式自审回写 v2,🟡×1 采纳[404 锁定用例]+ 🟢×2[docstring 微调采纳/竞态留痕不修]):D1 写 3 端点入 service、GET 留 API(对齐兄弟读端点 repo 直调范式)/ D2 契约零变化 + service 返 None 由 API 抛 404(镜像 PUT /wallet 惯例)/ D3 既有用例零改动为主 + 唯一例外 1 条 404 锁定用例 / D4 单切片 —— 四项 AskUserQuestion 未获回复,按 Session 219/222 先例按推荐采纳并如实标注(plan §0.1),复核窗口 = EP3 开工前。plan 自检 4 项过(单切片无环/8 AC/首片无 blocker/零悬空)。",
+      "depends_on": [],
+      "evidence": [],
+      "plan": "harness/docs/plan-pricing-service-extraction.md"
+    },
+    {
       "id": "commit-scope-hardening",
       "priority": 97,
       "area": "审计-后端",
@@ -43,6 +63,133 @@
         "收尾全量 1090 passed(基线 1089+1 新增 guard)8 skipped 零回归 + ruff 绿 + 前端 vitest 259/259 + build 绿,git diff frontend/src 为空;code-review 双轴:Standards 代码层 0 硬违规(判断项 2 留痕:3 处 guard 同形块 D4 压制留巡检重评)/ Spec 前 8 AC 满足 0 越界(conftest 越界判窄范围 blocker 豁免成立)"
       ],
       "plan": "harness/docs/plan-commit-scope-hardening.md"
+    },
+    {
+      "id": "rate-limit-login-lockout",
+      "priority": 96,
+      "area": "认证-安全",
+      "title": "全局 API 限流 + 登录防爆破(slowapi 限流框架接入[按用户/IP 可配,全端点]+ 登录失败计数锁定 + access_token_ttl 从 7 天降小时级。第 10 次巡检业务风险 R1 🔴:POST /auth/login 可无限尝试、全库零限流、TTL 10080 分钟)",
+      "user_visible_behavior": "登录连续失败触发锁定(锁定期内拒绝再试),超出限流配额的请求返回 429,token 有效期从 7 天降为小时级(需更频繁登录)。阈值(失败几次/锁多久/TTL 几小时/配额分级/存储后端)EP2 grill 用户拍板,不得默认采纳。",
+      "status": "passing",
+      "verification": [
+        "登录连续失败 N 次后触发锁定的回归测试(锁定窗口内正确密码也拒绝,窗口过后恢复)",
+        "超出配额返回 429(限流中间件生效)+ 正常配额内请求零影响(现有 API 测试零回归)",
+        "TTL 配置生效断言(新签发 token exp 为小时级)"
+      ],
+      "notes": "生产加固系列第 1 条(EP1 2026-08-14 登记,8 决策全用户拍板见 plan-risk-hardening-overview.md §EP1 决策记录)。D4 用户明确选择 slowapi 全局限流+登录锁定(比最小方案防护面广,接受新依赖与全局配置面),非默认采纳。新依赖 slowapi 需 EP2 评估引入方式。 EP2 完成(2026-08-14):11 项决策用户逐项拍板(锁定 5 次/15 分钟/账号维度/DB 持久 + TTL 480 分钟/session 8h 对齐/存量自然过期 + 内存限流/两档 120 与 5 每分/豁免 6 探针文档/{detail}+Retry-After+前端 toast),plan v2 经对抗式审查回写;status 按用户指令保持 not_started,EP3 切片 01 开工时翻 in_progress。 EP3 全 3 切片完成(2026-08-15 feature 收官):切片 01 登录失败锁定(PR #164)+ 切片 02 slowapi 全局限流(PR #165)+ 切片 03 末切片 TTL 收口 + 前端 429 事件桥(commit aa8be67)。",
+      "plan": "harness/docs/plan-rate-limit-login-lockout.md",
+      "depends_on": [],
+      "evidence": [
+        "切片 01(commit b1c3268,PR #164,merge 888a70b):User 加 failed_attempts/locked_until(迁移 b3f7a2c91d4e)+ UserRepository 三写方法(原子 UPDATE 自增)+ AuthService 锁定判定(锁内正确密码也拒/失败不计数不续期/OIDC-only 不计数/成功登录清零)+ SystemLog action=login_locked;pytest test_auth_local+test_auth 23 passed(15 既有 + 8 新);全量 1020 passed(基线 1012 零回归);/code-review 双轴 0 硬违规 + Spec 12/12 AC;CI 4/4 绿",
+        "切片 02(commits 5198b4f+84b30db+0599c5f,PR #165):slowapi 0.1.10 单例装配 + 默认档 120/分(验签 sub 键,伪造 sub 落 IP 档)+ 登录严档 5/分/IP + 豁免 6 探针路径短路 + sync 429 handler({detail}+Retry-After+X-RateLimit-*)+ middleware 装配 CORS 内层(两档 429 均带 ACAO);test_rate_limit 16 用例;全量 1036 passed(基线 1020 + 新增 16 零回归);CI 4/4 绿(E2E 2m5s);关键抓获:slowapi 装饰器端点返回 pydantic model 必须带 response: Response 参数否则成功登录 500(CI E2E 抓获,commit 0599c5f)",
+        "切片 03 末切片(commit aa8be67,2026-08-15):access_token_ttl_minutes 10080→480 + session_ttl_hours 168→8 + .env.example 统一 480/8(消除示例 60 分歧,存量 token 自然过期)+ client.ts 429→dispatchEvent(aap:rate-limited) 事件桥 + RateLimitedToast listener 挂 ToastProvider 子树(不清 token 不跳登录不重试)+ CONTEXT.md 术语「临时锁定(Temporary Lockout)」vs 管理员锁定;测试新增 5(后端 2:expires_in==28800 + session 行 expires_at≈now+8h;前端 3:429→事件→toast 全链[stub adapter 驱动真拦截器链]/429 不触发 AUTH_EXPIRED/401 不回归且 token 不清);grep 10080 与 \\b168\\b 在 app/ 归零;/code-review 双轴 Standards 0 硬违规(文档同步 2 处已修:配置指南表 + 前端 API 层文档)+ Spec 5/5 代码 AC 无越界",
+        "全量验证(2026-08-15 收官):./init.sh full exit 0 + 后端 tests 1007 passed(基线 1005 + 新增 2 零回归,另 cli 31=1038)+ alembic upgrade head && alembic check 干净(docker PG 实测,无新迁移)+ 前端 npm test 251/251(基线 248 + 新增 3)+ tsc -b 0 错 + npm run build 绿 + oxlint 0/0"
+      ]
+    },
+    {
+      "id": "booking-toctou-guard",
+      "priority": 95,
+      "area": "预约-后端",
+      "title": "预约时段 TOCTOU 竞态 DB 兜底(并发双订同一设备同时段从「应用层 check-then-insert 可双双落库」变为数据库层结构性拒绝——部分唯一索引[排除非占坑态]或事务内 advisory lock,形态 EP2 烤定。第 10 次巡检业务风险 R2 🔴:find_overlap 纯应用层,模型层刻意无唯一约束)",
+      "user_visible_behavior": "正常预约路径零变化;并发双订同一时段时,第二个请求收到明确冲突错误(而非双双成功落库)。兜底形态(索引 vs 锁)与「什么状态算占坑」的排除态语义 EP2 用户拍板。",
+      "status": "passing",
+      "verification": [
+        "并发竞态回归测试:两请求同时创建同设备同时段,恰一成功一被 DB 兜底拒绝(非应用层 if 拦截)",
+        "排除态语义测试:cancelled(及 EP2 定的其余非占坑态)时段可被重新预约",
+        "存量数据迁移:alembic 加约束时存量脏数据(历史双订)预检与处置路径明确"
+      ],
+      "notes": "生产加固系列第 2 条(EP1 2026-08-14 登记)。**EP2 已完成 2026-08-15**:8 项决策用户逐项拍板(D1 PG EXCLUDE 约束/D2 对齐 _ACTIVE_STATES/D3 同款 400/D4 PG 门控测试进 CI Migrations job/D5 预检拒迁/D6 create+update 全覆盖/D7 双防线/D8 简文不带 id);考古结论:D8 无软删列使「排除软删行」部分唯一索引范式无锚点 + 区间重叠非唯一索引可表达,TOCTOU 不在当时范围,非「考虑过 DB 兜底后拒绝」。**EP3 全 2 切片完成(2026-08-16 feature 收官)**:切片 01 DB 层结构性兜底(EXCLUDE 约束迁移,PR #167)+ 切片 02 末切片 服务层 400 映射 + 用例 ⑥ 竞态端到端 + 术语/文档收官。",
+      "plan": "harness/docs/plan-booking-toctou-guard.md",
+      "depends_on": [],
+      "evidence": [
+        "切片 01(commits 4ced028+50eaa67,PR #167,merge 596dccd,CI 4/4 绿含新 Migrations step「Postgres-gated booking-overlap tests」):迁移 9a8b7c6d5e4f(预检拒迁两条[active 重叠对 + 退化区间]经 _ACTIVE_STATES_SQL 常量单源插值 4 SQL 站点 + btree_gist + EXCLUDE excl_bookings_active_no_overlap + downgrade 后 pg_catalog 确认消失)+ PG 门控用例①-⑤ 7/7 + 同源防漂移测试 2 用例 + booking.py docstring + TDD 红证 + 拒迁实测(exit 1 带两数量与处置指引,清理后 upgrade 成功)+ alembic check 干净 + ./init.sh full 1040 passed(基线 1038 零回归)",
+        "切片 02 末切片(commits ba98551+1d874fc,2026-08-16):_map_exclusion_violation 纯判别 helper(sqlstate 23P01 → D8 简文 BizError[常量单源],非 23P01/无 sqlstate 属性 → re-raise 不吞)+ create(repo.add 捕获)与 update(db.flush 捕获)双路径 rollback + 400 映射;判别单测 3 用例(SQLite 常驻 X 章节,构造异常对象直测);PG 门控用例 ⑥ 服务路径竞态全链(conn1 未提交 + 另一 session BookingService.create[super_admin 路径]→ pg_stat_activity 确定性握手等 INSERT 阻塞 → commit → 断言 BizError 而非 IntegrityError,「竞态→400」真 PG 端到端);CONTEXT.md 术语「占坑态(Slot-Holding States)」+ 项目指南数据库 ORM 文档 PG-only EXCLUDE 约束范式段;/code-review 双轴 Standards 0🔴/4🟡(2 修:X1 消息断言 import 常量单源、_await_blocked_insert 移顶部 helper 区;2 留痕)+ Spec 6/6 无越界无实现错误",
+        "全量验证(2026-08-16 收官):./init.sh full exit 0 + 后端全量 1043 passed, 8 skipped(基线 1040 + 新增 3 零回归;8 skipped = PG 门控文件 SQLite 自动跳过)+ PG 门控 8/8(docker PG 5433 复跑)+ alembic upgrade head && alembic check 干净 + 前端 npm run build 绿(零前端改动确认)"
+      ]
+    },
+    {
+      "id": "chat-stream-wallet-gate",
+      "priority": 94,
+      "area": "计费-后端",
+      "title": "SSE 钱包门口径统一(/chat/stream 补与 composite 路径同口径的钱包预检 402,消除同一钱包契约两套口径[SSE 放行 vs composite 严格 402]的资损口。第 10 次巡检业务风险 R3 前半 🔴。不动 TurnAccountant——架构候选 ② 独立立项时消化)",
+      "user_visible_behavior": "无钱包租户调 /chat/stream 收到 402(此前可免费流式使用,本条是系列内唯一收紧用户行为的点);有余额租户零变化。预检时点与余额口径边界(零钱包 vs 负余额)EP2 用户拍板。",
+      "status": "passing",
+      "verification": [
+        "无钱包租户 /chat/stream 收 402(与 composite 路径口径一致)的回归测试",
+        "有余额租户流式路径零回归(现有 chat SSE 测试全绿)",
+        "两路径 402 错误体格式一致性断言"
+      ],
+      "notes": "生产加固系列第 3 条(EP1 2026-08-14 登记)。D5 拍板:先钱包门(止血)后对账(兜底);两 feature 都不动 TurnAccountant。**EP2 已完成 2026-08-16**:8 项决策用户逐项拍板(D1 连接前真 402/D2 逐字对齐 has_balance/D3 复用 composite 402 体/D4 前端完整对齐 composite 充值 UI/D5 移除流内旧门抽共享 helper/D6 conftest opt-in funded_wallet/D7 后端 HTTP 层 + 前端组件级 seam/D8 2 片线性)。**EP3 全 2 切片完成(2026-08-17 feature 收官)**:切片 01 后端统一钱包门(PR #169)+ 切片 02 末切片前端 402 充值引导 + feature 收尾。",
+      "plan": "harness/docs/plan-chat-stream-wallet-gate.md",
+      "depends_on": [],
+      "evidence": [
+        "切片 01(commits bf501fd 翻页 + 21c1a7b 实施 + a655bbe 审查回写,PR #169,merge 99d1fd2,CI 4/4 绿:Migrations 50s/Backend 11m12s/E2E 2m24s/Frontend 33s):chat.py 新增 `_require_wallet_balance` 共享 helper(super_admin 直返;has_balance 为假 → HTTPException 402 detail『token 余额不足,请联系总部充值』;无 try/except 查询异常 500 与 composite 对齐)+ SSE endpoint `_load_agent` 后 `create_or_get` 前预检(被拦不建会话不落用户消息)+ event_source 旧钱包门整段移除(含 fail-open)+ composite 内联预检替换为 helper(行为零变化)+ conftest opt-in funded_wallet fixture(balance=total_recharged=1_000_000)+ test_billing SSE 门矩阵 ①-⑧(含两路径 402 detail 逐字一致断言 ⑦)+ 19 个改严变红流式测试挂 fixture 不放宽断言;TDD 红证(改前 ①②③④⑥⑦ 红);全量 1048 passed 零回归(基线 1043 + 净增 5);/code-review Standards 0 硬违规 / Spec 8/8",
+        "切片 02 末切片(commits 798e0c9 实施 + b78c7bb 审查修复,2026-08-17):search.ts 新增 `ChatInsufficientBalanceError`(镜像 CompositeInsufficientBalanceError)+ sendChatStream 402 分支(fetch 手动容错解析 body detail,非 JSON 兜底后端同文案;401 特判不动,其余维持泛化)+ chat/index.tsx balanceError state + catch instanceof 分流(402 → 充值引导面板[Wallet icon + 标题 + 后端 detail + 说明行 + 前往充值 → /billing,镜像 composite AC4.8 含 text-foreground WCAG]而非 toast + localMessages 快照回滚 `localBefore`:被拦不留假用户消息/永久 typing 占位,且不清掉同会话上一轮流式内容[Standards 轴判断项② 修复])+ 发送前与切换会话双清除 + composite-chat.ts 头部过时注释统一口径;测试 8 条(单元 4[402 透传/402 非 JSON 兜底/401 不回归/500 泛化]+ 组件 4[面板渲染不留假消息/发送前清除/切换会话清除/上一轮内容保留]),TDD 先红后绿;/code-review Standards 0🔴/3🟡(1 修 2 留痕:面板 JSX 双份 rule-of-three、文案半角逗号忠于 AC 原文)/ Spec 0 缺失 0 越界(setLocalMessages 回滚判 D4 合理推导已入档 plan AC2 注记)",
+        "全量验证(2026-08-17 收官):前端 npm test 259/259(基线 251 + 新增 8 零回归)+ npm run build 绿 + npx oxlint 0 warning 0 error;./init.sh full **1048 passed, 8 skipped**(基线 1048 零回归,后端零改动)+ ruff 全绿;依赖解锁扫描:无任何 feature depends_on → chat-stream-wallet-gate,系列新 frontier = billing-reconciliation-job(93,R3 后半,not_started + plan 指总纲,需先走各自 EP2 回环)"
+      ]
+    },
+    {
+      "id": "billing-reconciliation-job",
+      "priority": 93,
+      "area": "计费-后端",
+      "title": "计费对账闭环(usage_events 聚合 vs wallet_transactions 差额核对 job,挂现有 APScheduler 框架,产出日报+告警——「charge 失败仅 logger.exception+rollback 的少扣费」从静默变可见。第 10 次巡检业务风险 R3 后半 🔴:代码注释宣称的 reconciled from usage_events 对账 job 并不存在)",
+      "user_visible_behavior": "终端用户无直接可见变化;运营/管理侧新增对账日报与差额告警。对账周期/差额容忍度/告警通道/是否自动补扣(建议只报不补)EP2 用户拍板。",
+      "status": "passing",
+      "verification": [
+        "对账 job 差额检出测试:构造 charge 失败/缺失的 usage_event,job 产出正确差额记录并触发告警",
+        "无差额时零告警(不误报)",
+        "job 幂等:同窗口重跑不产生重复差额记录"
+      ],
+      "notes": "生产加固系列第 4 条(EP1 2026-08-14 登记)。复用 app/core/scheduler.py(notification-scheduler pri 84 归档件建的 APScheduler 框架)。对账结果落表按「按需加表,不预建空架子」铁律 EP2 评估:已拍板复用 SystemLog。 EP2 2026-08-17 Session 219(10 决策:D1-D7 用户拍板/D8-D10 工程判断标注);EP3 全 2 切片完成 2026-08-17 Session 220/221。",
+      "plan": "harness/docs/plan-billing-reconciliation-job.md",
+      "depends_on": [],
+      "evidence": [
+        "切片 01(commits 130f20b 翻页 + 0a0d8f9 实施 + bc8d955 审查回写,PR #171,merge 28a2034,CI 4/4 绿:Migrations 43s/Backend 11m14s/E2E 1m56s/Frontend 28s):`BillingReconciliationService.run(as_of, force)` 双层检出(事件级 NOT EXISTS 漏扣明细[LOOKBACK_BUFFER=30min 常量单源]+ per-tenant 聚合残余差[与事件级共用 cutoff 窗口防在途误报]+ 钱包终身不变式[refund/adjust 带符号求和])+ 每 run 一条 SystemLog(action=billing_reconciliation,差额 warning/干净 info,details_json 全量报告,直写不走 LoggingService)+ as_of 日粒度幂等锁(同日 skip,force 绕过)+ 事件首告去重(历史 run new_alerted_event_ids 并集,details_json 只存本 run 新告)+ scheduler reconcile_billing 薄壳(吞错不崩)+ CronTrigger 09:30 注册;SQLite 常驻直调测试 11 用例(factory 绑 StaticPool,fixed AS_OF + 显式 created_at 钉死缓冲边界,对照组走真实 BillingService.charge 链路);/code-review Standards 0🔴/4🟡(1 修 refund_adjust_by_wallet 重命名)/ Spec 8/8 + §4.7 实施注记回写;全量 1059 passed 零回归(基线 1048+11)",
+        "切片 02 末切片(commits 0964f92 实施 + bd42518 审查回写,2026-08-17):service 通知编排 ——`_super_admin_targets`(全体 platform_role='super_admin' AND is_deleted=False,首个 active membership[valid_to IS NULL,earliest valid_from+id tiebreak]租户,无 membership None 哨兵)+ `_notify_super_admins`(type=system/title=计费对账发现差额/content=摘要/link=/logs[App.tsx 实测审计页路由],无 membership logger.warning 跳过,NotificationService.create SAVEPOINT flush→编排末尾一次 commit 镜像 scan_balance_warnings);调用点 has_discrepancy 分支 SystemLog commit 之后,整个 notify stage try/except best-effort;CONTEXT.md「Token 计费」节术语「对账(Reconciliation)」(双层口径/只报不补/首告去重,glossary 零实现细节);用例 8 四条(8a targeting 字段逐项+双 membership 落点+无 membership warning/8b 无超管不崩 run 记录仍落/8c 干净 run 超管在场也零通知/8d 通知 stage 抛错 run 不抛)TDD 红→绿;/code-review Standards 0🔴/4🟡(2 修:best-effort 扩全 stage + 删死返回值/2 留痕:run() 拆分留巡检 + 豁免延伸 User/UserTenant 入档 §4.7)/ Spec 0 缺失 0 越界(tiebreak 消歧入档)",
+        "全量验证(2026-08-17 收官):后端 `pytest -ra --strict-markers` 1063 passed, 8 skipped(基线 1048 → 切片 01 +11 → 切片 02 +4,零回归;8 skipped = PG 门控)+ ruff 全绿 + 前端 `npm run build` 绿(1.93s,零前端改动确认);feature 收尾八步闭环(status passing + plan 状态行同 commit 翻 + check_plan_status_sync exit 0 + sync-active + 依赖解锁扫描[无 depends_on 指向,新 frontier = 92 super-admin-write-audit]+ 分支清理 PR 合并后)"
+      ]
+    },
+    {
+      "id": "super-admin-write-audit",
+      "priority": 92,
+      "area": "审计-后端",
+      "title": "super_admin 三处最高危跨租户写操作补审计(充值 / 定价覆盖 / 知识下发与撤回补 LoggingService.record 写 SystemLog,复用现有审计基础设施与 audit-log-ui 前端页。第 10 次巡检业务风险 R4 🟡:最高权操作只留业务列不写 SystemLog,事后追责链断裂)",
+      "user_visible_behavior": "操作行为零变化;审计日志页可见新增的 super_admin 充值/定价/知识下发撤回记录。审计事件命名/分级与 detail 粒度(金额/定价快照/目标租户)EP2 用户拍板。",
+      "status": "passing",
+      "verification": [
+        "三处操作各写一条 SystemLog 的回归测试(充值/定价覆盖/知识下发+撤回)",
+        "审计记录字段完整:操作者/目标租户/关键业务值(金额或定价快照)可追责",
+        "audit-log-ui 既有查询端点能查出新增记录(零前端改动或最小改动)"
+      ],
+      "notes": "生产加固系列第 5 条(EP1 2026-08-14 登记)。D6 拍板:只补三处最高危,不做 super_admin 全量埋点;若第 11 次巡检复验认为不够再扩。 EP2 已完成 2026-08-24 Session 222(单回环 grill→to-spec→to-tickets + 双轴自审 3🟡 回写 v2,1 切片就绪):D1-D9 决策两轮问询未获回复,按 Session 219 先例以推荐方案采纳并在 plan §0.1/§4.5 逐项如实标注,复核窗口=EP3 开工前。 EP3 切片 01 完成 2026-08-24 Session 223(末切片即唯一切片,feature 收官):D1-D9 复核窗口开工前已履行(第三轮问询仍未获回复,维持推荐采纳,plan §4.7.9-6);code-review Standards 0 租户安全/Spec 0 缺失 0 越界,1 硬违规(定价审计在 API 层)= D8 明文落点留痕;§4.7.7 txn.id flush 依赖验证通过。",
+      "plan": "harness/docs/plan-super-admin-write-audit.md",
+      "depends_on": [],
+      "evidence": [
+        "切片 01(唯一=末切片)PR #173 merge d4a6ca9(2026-08-24 Session 223,CI 4/4 绿:Migrations 44s/Backend 9m31s/E2E 1m49s/Frontend 28s):commits 928b8bd+3e03854 — 三处 record→commit 埋点(充值 billing.recharge / 定价三端点 pricing.upsert|update|deactivate + CurrentUser dep / 知识 knowledge.distribute|revoke)+ 前端 ACTION_LABEL 6 中文标签,TDD 红→绿 12 用例(定价走 app_client HTTP 接缝断言真实 DB 持久、审计失败不阻断充值、空集团不记、门店 owner 读侧可见)",
+        "定向 pytest tests/test_super_admin_audit.py 12/12 + 相邻回归 198 passed + 全量 pytest 1075 passed 8 skipped(基线 1063 + 12 零回归)+ ruff 绿",
+        "前端 npm test 259/259 + build 绿 + oxlint 0/0;feature 收尾八步闭环(checklist 全勾 + plan v3 passing + sync-active + 依赖解锁扫描无下游 + 分支清理只剩 main)"
+      ]
+    },
+    {
+      "id": "config-startup-guard",
+      "priority": 91,
+      "area": "配置-治理",
+      "title": "dev 后门与配置静默降级三件套(① /dev/token 改显式独立开关默认关、与 APP_ENV 解耦——不再押注部署环境变量设对;② LLM/embedding key 启动期 fail-fast 校验——不再运行时调 LLM 才失败;③ 低额预警 scheduler_enabled 显式化:部署清单+启动日志可见。第 10 次巡检业务风险 R5 🟡:dev 后门可铸 super_admin token / key 默认 sk-replace-me / scheduler 默认 False 静默不跑)",
+      "user_visible_behavior": "dev 环境默认不再暴露 /dev/token(需显式开独立开关);生产配置缺失 key 时启动期报错退出(而非运行时才失败);低额预警未启用时启动日志有明确提示。开关命名/fail-fast 环境范围/scheduler 显式化形态 EP2 用户拍板。",
+      "status": "passing",
+      "verification": [
+        "开关默认关时 /dev/token 不注册(404);显式开启且 dev 环境下行为不变(现有 dev 流测试零回归)",
+        "key 缺失/占位值时启动 fail-fast 测试;key 就位时启动正常",
+        "scheduler_enabled=False 时启动日志输出明确 WARN 提示"
+      ],
+      "notes": "生产加固系列第 6 条(EP1 2026-08-14 登记)。D7 拍板三件套全修。注意 ② key fail-fast 与「非 dev 环境拒绝默认 secret 启动」的既有校验(巡检正面清单)边界关系,EP2 对齐不重复。EP2 已完成 2026-08-24 Session 224:D1-D8 两轮 AskUserQuestion 用户逐项拍板(无默认采纳):D1 DEV_AUTH_ENABLED / D2 AND 语义默认关条件注册 / D3 openai key 占位一律拒启 / D4 embedding 本地 base_url 豁免 / D5 镜像既有 dev/testing 白名单 / D6 scheduler WARN+.env.example 两者 / D7 /dev/token TTL 不做留痕 / D8 单切片。② 落点 = 既有 _secrets_not_default validator 扩分支(对齐不重复)。plan v2(对抗式自审 3🟡 回写)+ §12 单切片 7 AC 就绪,EP3 从切片 01 接。 EP3 已完成 2026-08-24 Session 225:切片 01(唯一=末切片)PR #174 merge cb9204f,TDD 红→绿 14 用例;②-1「全默认」因 conftest env 泄漏改为 kwargs 全显式(§4.8 优先级);系列收官(96/95/94/93/92/91 全 passing)。",
+      "plan": "harness/docs/plan-config-startup-guard.md",
+      "depends_on": [],
+      "evidence": [
+        "切片 01(唯一=末切片)PR #174 merge cb9204f(2026-08-24 Session 225,CI 4/4 绿:Migrations 1m0s/Backend 10m30s/E2E 2m33s/Frontend 29s):commits 529e1bc+10712aa — ① 三 dev 端点(/oidc/jwks /dev/token /dev/bootstrap)收进 _register_dev_endpoints 条件注册(DEV_AUTH_ENABLED=true AND APP_ENV=development,默认关路由+OpenAPI 均不存在 fail-closed,handler 内旧 404 检查删除)/ ② _secrets_not_default validator 扩两分支:非 dev/testing openai_api_key 占位一律拒启 + embedding_api_key 占位仅非回环 base_url 拒启(_is_local_base_url 认 localhost/127.0.0.1/::1,解析失败从严)/ ③ init_scheduler 关闭分支非 testing 升 WARNING 点名 SCHEDULER_ENABLED+scan_balance_warnings(09:00)+reconcile_billing(09:30) + .env.example 两段 + README/LOGTO_SETUP/认证体系文档三处 dev 门控说明",
+        "定向 pytest tests/test_startup_config_guard.py 14/14(plan §5 清单 13 拆 14 良性超集,开态用例测试体内自建 create_app)+ 相邻回归(billing_reconciliation/notifications/health)49 passed + 全量 pytest 1089 passed 8 skipped(基线 1075 + 14 零回归)+ ruff 绿",
+        "前端 npm run build 绿(零前端改动确认:login-page 404 走 toast 优雅降级);code-review 双轴 0 硬违规/0 缺失/0 越界(1 微瑕 docstring 已修 commit 10712aa);feature 收尾八步闭环(plan v3 全勾 + 同 commit 翻 passing + sync-active + 依赖解锁扫描无下游 + 分支清理只剩 main);risk-hardening 系列 6 条全 passing,下一步 = 第 11 次巡检复验 Top5 清零"
+      ]
     },
     {
       "id": "knowledge-tiered-foundation",
@@ -174,133 +321,6 @@
         "./init.sh full 本地全量绿(exit 0:ruff + 全量 pytest)+ CI(PR #163)Backend 同码 1012 passed(1006 基线零回归 + 新增 6)零回归,Migrations/Frontend/E2E 4/4 绿;联动 test_knowledge_foundation + test_hq_platform_role 79 passed",
         "全 feature 累计 git diff origin/main --stat 仅白名单 3 文件:app/services/permission_service.py + tests/test_permission_service.py + CONTEXT.md —— 全部 require/check 调用点零改动(白名单外零改动,审计锚);check()/require()/require_permission() 签名冻结零改动",
         "/code-review 切片 02 双轴:Spec 轴 7 条代码 AC 全绿无越界(AC8 收尾仪式随后完成);Standards 轴 0 硬违规,1 条采纳(docstring/内联注释双述 → 瘦身),4 条 judgement call 按 plan 明文保留(独立短路测试是 AC3 字面要求;verdict 术语沿用 plan D2;⑤ 降级测试是切片 What-it-delivers 明文项)"
-      ]
-    },
-    {
-      "id": "rate-limit-login-lockout",
-      "priority": 96,
-      "area": "认证-安全",
-      "title": "全局 API 限流 + 登录防爆破(slowapi 限流框架接入[按用户/IP 可配,全端点]+ 登录失败计数锁定 + access_token_ttl 从 7 天降小时级。第 10 次巡检业务风险 R1 🔴:POST /auth/login 可无限尝试、全库零限流、TTL 10080 分钟)",
-      "user_visible_behavior": "登录连续失败触发锁定(锁定期内拒绝再试),超出限流配额的请求返回 429,token 有效期从 7 天降为小时级(需更频繁登录)。阈值(失败几次/锁多久/TTL 几小时/配额分级/存储后端)EP2 grill 用户拍板,不得默认采纳。",
-      "status": "passing",
-      "verification": [
-        "登录连续失败 N 次后触发锁定的回归测试(锁定窗口内正确密码也拒绝,窗口过后恢复)",
-        "超出配额返回 429(限流中间件生效)+ 正常配额内请求零影响(现有 API 测试零回归)",
-        "TTL 配置生效断言(新签发 token exp 为小时级)"
-      ],
-      "notes": "生产加固系列第 1 条(EP1 2026-08-14 登记,8 决策全用户拍板见 plan-risk-hardening-overview.md §EP1 决策记录)。D4 用户明确选择 slowapi 全局限流+登录锁定(比最小方案防护面广,接受新依赖与全局配置面),非默认采纳。新依赖 slowapi 需 EP2 评估引入方式。 EP2 完成(2026-08-14):11 项决策用户逐项拍板(锁定 5 次/15 分钟/账号维度/DB 持久 + TTL 480 分钟/session 8h 对齐/存量自然过期 + 内存限流/两档 120 与 5 每分/豁免 6 探针文档/{detail}+Retry-After+前端 toast),plan v2 经对抗式审查回写;status 按用户指令保持 not_started,EP3 切片 01 开工时翻 in_progress。 EP3 全 3 切片完成(2026-08-15 feature 收官):切片 01 登录失败锁定(PR #164)+ 切片 02 slowapi 全局限流(PR #165)+ 切片 03 末切片 TTL 收口 + 前端 429 事件桥(commit aa8be67)。",
-      "plan": "harness/docs/plan-rate-limit-login-lockout.md",
-      "depends_on": [],
-      "evidence": [
-        "切片 01(commit b1c3268,PR #164,merge 888a70b):User 加 failed_attempts/locked_until(迁移 b3f7a2c91d4e)+ UserRepository 三写方法(原子 UPDATE 自增)+ AuthService 锁定判定(锁内正确密码也拒/失败不计数不续期/OIDC-only 不计数/成功登录清零)+ SystemLog action=login_locked;pytest test_auth_local+test_auth 23 passed(15 既有 + 8 新);全量 1020 passed(基线 1012 零回归);/code-review 双轴 0 硬违规 + Spec 12/12 AC;CI 4/4 绿",
-        "切片 02(commits 5198b4f+84b30db+0599c5f,PR #165):slowapi 0.1.10 单例装配 + 默认档 120/分(验签 sub 键,伪造 sub 落 IP 档)+ 登录严档 5/分/IP + 豁免 6 探针路径短路 + sync 429 handler({detail}+Retry-After+X-RateLimit-*)+ middleware 装配 CORS 内层(两档 429 均带 ACAO);test_rate_limit 16 用例;全量 1036 passed(基线 1020 + 新增 16 零回归);CI 4/4 绿(E2E 2m5s);关键抓获:slowapi 装饰器端点返回 pydantic model 必须带 response: Response 参数否则成功登录 500(CI E2E 抓获,commit 0599c5f)",
-        "切片 03 末切片(commit aa8be67,2026-08-15):access_token_ttl_minutes 10080→480 + session_ttl_hours 168→8 + .env.example 统一 480/8(消除示例 60 分歧,存量 token 自然过期)+ client.ts 429→dispatchEvent(aap:rate-limited) 事件桥 + RateLimitedToast listener 挂 ToastProvider 子树(不清 token 不跳登录不重试)+ CONTEXT.md 术语「临时锁定(Temporary Lockout)」vs 管理员锁定;测试新增 5(后端 2:expires_in==28800 + session 行 expires_at≈now+8h;前端 3:429→事件→toast 全链[stub adapter 驱动真拦截器链]/429 不触发 AUTH_EXPIRED/401 不回归且 token 不清);grep 10080 与 \\b168\\b 在 app/ 归零;/code-review 双轴 Standards 0 硬违规(文档同步 2 处已修:配置指南表 + 前端 API 层文档)+ Spec 5/5 代码 AC 无越界",
-        "全量验证(2026-08-15 收官):./init.sh full exit 0 + 后端 tests 1007 passed(基线 1005 + 新增 2 零回归,另 cli 31=1038)+ alembic upgrade head && alembic check 干净(docker PG 实测,无新迁移)+ 前端 npm test 251/251(基线 248 + 新增 3)+ tsc -b 0 错 + npm run build 绿 + oxlint 0/0"
-      ]
-    },
-    {
-      "id": "booking-toctou-guard",
-      "priority": 95,
-      "area": "预约-后端",
-      "title": "预约时段 TOCTOU 竞态 DB 兜底(并发双订同一设备同时段从「应用层 check-then-insert 可双双落库」变为数据库层结构性拒绝——部分唯一索引[排除非占坑态]或事务内 advisory lock,形态 EP2 烤定。第 10 次巡检业务风险 R2 🔴:find_overlap 纯应用层,模型层刻意无唯一约束)",
-      "user_visible_behavior": "正常预约路径零变化;并发双订同一时段时,第二个请求收到明确冲突错误(而非双双成功落库)。兜底形态(索引 vs 锁)与「什么状态算占坑」的排除态语义 EP2 用户拍板。",
-      "status": "passing",
-      "verification": [
-        "并发竞态回归测试:两请求同时创建同设备同时段,恰一成功一被 DB 兜底拒绝(非应用层 if 拦截)",
-        "排除态语义测试:cancelled(及 EP2 定的其余非占坑态)时段可被重新预约",
-        "存量数据迁移:alembic 加约束时存量脏数据(历史双订)预检与处置路径明确"
-      ],
-      "notes": "生产加固系列第 2 条(EP1 2026-08-14 登记)。**EP2 已完成 2026-08-15**:8 项决策用户逐项拍板(D1 PG EXCLUDE 约束/D2 对齐 _ACTIVE_STATES/D3 同款 400/D4 PG 门控测试进 CI Migrations job/D5 预检拒迁/D6 create+update 全覆盖/D7 双防线/D8 简文不带 id);考古结论:D8 无软删列使「排除软删行」部分唯一索引范式无锚点 + 区间重叠非唯一索引可表达,TOCTOU 不在当时范围,非「考虑过 DB 兜底后拒绝」。**EP3 全 2 切片完成(2026-08-16 feature 收官)**:切片 01 DB 层结构性兜底(EXCLUDE 约束迁移,PR #167)+ 切片 02 末切片 服务层 400 映射 + 用例 ⑥ 竞态端到端 + 术语/文档收官。",
-      "plan": "harness/docs/plan-booking-toctou-guard.md",
-      "depends_on": [],
-      "evidence": [
-        "切片 01(commits 4ced028+50eaa67,PR #167,merge 596dccd,CI 4/4 绿含新 Migrations step「Postgres-gated booking-overlap tests」):迁移 9a8b7c6d5e4f(预检拒迁两条[active 重叠对 + 退化区间]经 _ACTIVE_STATES_SQL 常量单源插值 4 SQL 站点 + btree_gist + EXCLUDE excl_bookings_active_no_overlap + downgrade 后 pg_catalog 确认消失)+ PG 门控用例①-⑤ 7/7 + 同源防漂移测试 2 用例 + booking.py docstring + TDD 红证 + 拒迁实测(exit 1 带两数量与处置指引,清理后 upgrade 成功)+ alembic check 干净 + ./init.sh full 1040 passed(基线 1038 零回归)",
-        "切片 02 末切片(commits ba98551+1d874fc,2026-08-16):_map_exclusion_violation 纯判别 helper(sqlstate 23P01 → D8 简文 BizError[常量单源],非 23P01/无 sqlstate 属性 → re-raise 不吞)+ create(repo.add 捕获)与 update(db.flush 捕获)双路径 rollback + 400 映射;判别单测 3 用例(SQLite 常驻 X 章节,构造异常对象直测);PG 门控用例 ⑥ 服务路径竞态全链(conn1 未提交 + 另一 session BookingService.create[super_admin 路径]→ pg_stat_activity 确定性握手等 INSERT 阻塞 → commit → 断言 BizError 而非 IntegrityError,「竞态→400」真 PG 端到端);CONTEXT.md 术语「占坑态(Slot-Holding States)」+ 项目指南数据库 ORM 文档 PG-only EXCLUDE 约束范式段;/code-review 双轴 Standards 0🔴/4🟡(2 修:X1 消息断言 import 常量单源、_await_blocked_insert 移顶部 helper 区;2 留痕)+ Spec 6/6 无越界无实现错误",
-        "全量验证(2026-08-16 收官):./init.sh full exit 0 + 后端全量 1043 passed, 8 skipped(基线 1040 + 新增 3 零回归;8 skipped = PG 门控文件 SQLite 自动跳过)+ PG 门控 8/8(docker PG 5433 复跑)+ alembic upgrade head && alembic check 干净 + 前端 npm run build 绿(零前端改动确认)"
-      ]
-    },
-    {
-      "id": "chat-stream-wallet-gate",
-      "priority": 94,
-      "area": "计费-后端",
-      "title": "SSE 钱包门口径统一(/chat/stream 补与 composite 路径同口径的钱包预检 402,消除同一钱包契约两套口径[SSE 放行 vs composite 严格 402]的资损口。第 10 次巡检业务风险 R3 前半 🔴。不动 TurnAccountant——架构候选 ② 独立立项时消化)",
-      "user_visible_behavior": "无钱包租户调 /chat/stream 收到 402(此前可免费流式使用,本条是系列内唯一收紧用户行为的点);有余额租户零变化。预检时点与余额口径边界(零钱包 vs 负余额)EP2 用户拍板。",
-      "status": "passing",
-      "verification": [
-        "无钱包租户 /chat/stream 收 402(与 composite 路径口径一致)的回归测试",
-        "有余额租户流式路径零回归(现有 chat SSE 测试全绿)",
-        "两路径 402 错误体格式一致性断言"
-      ],
-      "notes": "生产加固系列第 3 条(EP1 2026-08-14 登记)。D5 拍板:先钱包门(止血)后对账(兜底);两 feature 都不动 TurnAccountant。**EP2 已完成 2026-08-16**:8 项决策用户逐项拍板(D1 连接前真 402/D2 逐字对齐 has_balance/D3 复用 composite 402 体/D4 前端完整对齐 composite 充值 UI/D5 移除流内旧门抽共享 helper/D6 conftest opt-in funded_wallet/D7 后端 HTTP 层 + 前端组件级 seam/D8 2 片线性)。**EP3 全 2 切片完成(2026-08-17 feature 收官)**:切片 01 后端统一钱包门(PR #169)+ 切片 02 末切片前端 402 充值引导 + feature 收尾。",
-      "plan": "harness/docs/plan-chat-stream-wallet-gate.md",
-      "depends_on": [],
-      "evidence": [
-        "切片 01(commits bf501fd 翻页 + 21c1a7b 实施 + a655bbe 审查回写,PR #169,merge 99d1fd2,CI 4/4 绿:Migrations 50s/Backend 11m12s/E2E 2m24s/Frontend 33s):chat.py 新增 `_require_wallet_balance` 共享 helper(super_admin 直返;has_balance 为假 → HTTPException 402 detail『token 余额不足,请联系总部充值』;无 try/except 查询异常 500 与 composite 对齐)+ SSE endpoint `_load_agent` 后 `create_or_get` 前预检(被拦不建会话不落用户消息)+ event_source 旧钱包门整段移除(含 fail-open)+ composite 内联预检替换为 helper(行为零变化)+ conftest opt-in funded_wallet fixture(balance=total_recharged=1_000_000)+ test_billing SSE 门矩阵 ①-⑧(含两路径 402 detail 逐字一致断言 ⑦)+ 19 个改严变红流式测试挂 fixture 不放宽断言;TDD 红证(改前 ①②③④⑥⑦ 红);全量 1048 passed 零回归(基线 1043 + 净增 5);/code-review Standards 0 硬违规 / Spec 8/8",
-        "切片 02 末切片(commits 798e0c9 实施 + b78c7bb 审查修复,2026-08-17):search.ts 新增 `ChatInsufficientBalanceError`(镜像 CompositeInsufficientBalanceError)+ sendChatStream 402 分支(fetch 手动容错解析 body detail,非 JSON 兜底后端同文案;401 特判不动,其余维持泛化)+ chat/index.tsx balanceError state + catch instanceof 分流(402 → 充值引导面板[Wallet icon + 标题 + 后端 detail + 说明行 + 前往充值 → /billing,镜像 composite AC4.8 含 text-foreground WCAG]而非 toast + localMessages 快照回滚 `localBefore`:被拦不留假用户消息/永久 typing 占位,且不清掉同会话上一轮流式内容[Standards 轴判断项② 修复])+ 发送前与切换会话双清除 + composite-chat.ts 头部过时注释统一口径;测试 8 条(单元 4[402 透传/402 非 JSON 兜底/401 不回归/500 泛化]+ 组件 4[面板渲染不留假消息/发送前清除/切换会话清除/上一轮内容保留]),TDD 先红后绿;/code-review Standards 0🔴/3🟡(1 修 2 留痕:面板 JSX 双份 rule-of-three、文案半角逗号忠于 AC 原文)/ Spec 0 缺失 0 越界(setLocalMessages 回滚判 D4 合理推导已入档 plan AC2 注记)",
-        "全量验证(2026-08-17 收官):前端 npm test 259/259(基线 251 + 新增 8 零回归)+ npm run build 绿 + npx oxlint 0 warning 0 error;./init.sh full **1048 passed, 8 skipped**(基线 1048 零回归,后端零改动)+ ruff 全绿;依赖解锁扫描:无任何 feature depends_on → chat-stream-wallet-gate,系列新 frontier = billing-reconciliation-job(93,R3 后半,not_started + plan 指总纲,需先走各自 EP2 回环)"
-      ]
-    },
-    {
-      "id": "billing-reconciliation-job",
-      "priority": 93,
-      "area": "计费-后端",
-      "title": "计费对账闭环(usage_events 聚合 vs wallet_transactions 差额核对 job,挂现有 APScheduler 框架,产出日报+告警——「charge 失败仅 logger.exception+rollback 的少扣费」从静默变可见。第 10 次巡检业务风险 R3 后半 🔴:代码注释宣称的 reconciled from usage_events 对账 job 并不存在)",
-      "user_visible_behavior": "终端用户无直接可见变化;运营/管理侧新增对账日报与差额告警。对账周期/差额容忍度/告警通道/是否自动补扣(建议只报不补)EP2 用户拍板。",
-      "status": "passing",
-      "verification": [
-        "对账 job 差额检出测试:构造 charge 失败/缺失的 usage_event,job 产出正确差额记录并触发告警",
-        "无差额时零告警(不误报)",
-        "job 幂等:同窗口重跑不产生重复差额记录"
-      ],
-      "notes": "生产加固系列第 4 条(EP1 2026-08-14 登记)。复用 app/core/scheduler.py(notification-scheduler pri 84 归档件建的 APScheduler 框架)。对账结果落表按「按需加表,不预建空架子」铁律 EP2 评估:已拍板复用 SystemLog。 EP2 2026-08-17 Session 219(10 决策:D1-D7 用户拍板/D8-D10 工程判断标注);EP3 全 2 切片完成 2026-08-17 Session 220/221。",
-      "plan": "harness/docs/plan-billing-reconciliation-job.md",
-      "depends_on": [],
-      "evidence": [
-        "切片 01(commits 130f20b 翻页 + 0a0d8f9 实施 + bc8d955 审查回写,PR #171,merge 28a2034,CI 4/4 绿:Migrations 43s/Backend 11m14s/E2E 1m56s/Frontend 28s):`BillingReconciliationService.run(as_of, force)` 双层检出(事件级 NOT EXISTS 漏扣明细[LOOKBACK_BUFFER=30min 常量单源]+ per-tenant 聚合残余差[与事件级共用 cutoff 窗口防在途误报]+ 钱包终身不变式[refund/adjust 带符号求和])+ 每 run 一条 SystemLog(action=billing_reconciliation,差额 warning/干净 info,details_json 全量报告,直写不走 LoggingService)+ as_of 日粒度幂等锁(同日 skip,force 绕过)+ 事件首告去重(历史 run new_alerted_event_ids 并集,details_json 只存本 run 新告)+ scheduler reconcile_billing 薄壳(吞错不崩)+ CronTrigger 09:30 注册;SQLite 常驻直调测试 11 用例(factory 绑 StaticPool,fixed AS_OF + 显式 created_at 钉死缓冲边界,对照组走真实 BillingService.charge 链路);/code-review Standards 0🔴/4🟡(1 修 refund_adjust_by_wallet 重命名)/ Spec 8/8 + §4.7 实施注记回写;全量 1059 passed 零回归(基线 1048+11)",
-        "切片 02 末切片(commits 0964f92 实施 + bd42518 审查回写,2026-08-17):service 通知编排 ——`_super_admin_targets`(全体 platform_role='super_admin' AND is_deleted=False,首个 active membership[valid_to IS NULL,earliest valid_from+id tiebreak]租户,无 membership None 哨兵)+ `_notify_super_admins`(type=system/title=计费对账发现差额/content=摘要/link=/logs[App.tsx 实测审计页路由],无 membership logger.warning 跳过,NotificationService.create SAVEPOINT flush→编排末尾一次 commit 镜像 scan_balance_warnings);调用点 has_discrepancy 分支 SystemLog commit 之后,整个 notify stage try/except best-effort;CONTEXT.md「Token 计费」节术语「对账(Reconciliation)」(双层口径/只报不补/首告去重,glossary 零实现细节);用例 8 四条(8a targeting 字段逐项+双 membership 落点+无 membership warning/8b 无超管不崩 run 记录仍落/8c 干净 run 超管在场也零通知/8d 通知 stage 抛错 run 不抛)TDD 红→绿;/code-review Standards 0🔴/4🟡(2 修:best-effort 扩全 stage + 删死返回值/2 留痕:run() 拆分留巡检 + 豁免延伸 User/UserTenant 入档 §4.7)/ Spec 0 缺失 0 越界(tiebreak 消歧入档)",
-        "全量验证(2026-08-17 收官):后端 `pytest -ra --strict-markers` 1063 passed, 8 skipped(基线 1048 → 切片 01 +11 → 切片 02 +4,零回归;8 skipped = PG 门控)+ ruff 全绿 + 前端 `npm run build` 绿(1.93s,零前端改动确认);feature 收尾八步闭环(status passing + plan 状态行同 commit 翻 + check_plan_status_sync exit 0 + sync-active + 依赖解锁扫描[无 depends_on 指向,新 frontier = 92 super-admin-write-audit]+ 分支清理 PR 合并后)"
-      ]
-    },
-    {
-      "id": "super-admin-write-audit",
-      "priority": 92,
-      "area": "审计-后端",
-      "title": "super_admin 三处最高危跨租户写操作补审计(充值 / 定价覆盖 / 知识下发与撤回补 LoggingService.record 写 SystemLog,复用现有审计基础设施与 audit-log-ui 前端页。第 10 次巡检业务风险 R4 🟡:最高权操作只留业务列不写 SystemLog,事后追责链断裂)",
-      "user_visible_behavior": "操作行为零变化;审计日志页可见新增的 super_admin 充值/定价/知识下发撤回记录。审计事件命名/分级与 detail 粒度(金额/定价快照/目标租户)EP2 用户拍板。",
-      "status": "passing",
-      "verification": [
-        "三处操作各写一条 SystemLog 的回归测试(充值/定价覆盖/知识下发+撤回)",
-        "审计记录字段完整:操作者/目标租户/关键业务值(金额或定价快照)可追责",
-        "audit-log-ui 既有查询端点能查出新增记录(零前端改动或最小改动)"
-      ],
-      "notes": "生产加固系列第 5 条(EP1 2026-08-14 登记)。D6 拍板:只补三处最高危,不做 super_admin 全量埋点;若第 11 次巡检复验认为不够再扩。 EP2 已完成 2026-08-24 Session 222(单回环 grill→to-spec→to-tickets + 双轴自审 3🟡 回写 v2,1 切片就绪):D1-D9 决策两轮问询未获回复,按 Session 219 先例以推荐方案采纳并在 plan §0.1/§4.5 逐项如实标注,复核窗口=EP3 开工前。 EP3 切片 01 完成 2026-08-24 Session 223(末切片即唯一切片,feature 收官):D1-D9 复核窗口开工前已履行(第三轮问询仍未获回复,维持推荐采纳,plan §4.7.9-6);code-review Standards 0 租户安全/Spec 0 缺失 0 越界,1 硬违规(定价审计在 API 层)= D8 明文落点留痕;§4.7.7 txn.id flush 依赖验证通过。",
-      "plan": "harness/docs/plan-super-admin-write-audit.md",
-      "depends_on": [],
-      "evidence": [
-        "切片 01(唯一=末切片)PR #173 merge d4a6ca9(2026-08-24 Session 223,CI 4/4 绿:Migrations 44s/Backend 9m31s/E2E 1m49s/Frontend 28s):commits 928b8bd+3e03854 — 三处 record→commit 埋点(充值 billing.recharge / 定价三端点 pricing.upsert|update|deactivate + CurrentUser dep / 知识 knowledge.distribute|revoke)+ 前端 ACTION_LABEL 6 中文标签,TDD 红→绿 12 用例(定价走 app_client HTTP 接缝断言真实 DB 持久、审计失败不阻断充值、空集团不记、门店 owner 读侧可见)",
-        "定向 pytest tests/test_super_admin_audit.py 12/12 + 相邻回归 198 passed + 全量 pytest 1075 passed 8 skipped(基线 1063 + 12 零回归)+ ruff 绿",
-        "前端 npm test 259/259 + build 绿 + oxlint 0/0;feature 收尾八步闭环(checklist 全勾 + plan v3 passing + sync-active + 依赖解锁扫描无下游 + 分支清理只剩 main)"
-      ]
-    },
-    {
-      "id": "config-startup-guard",
-      "priority": 91,
-      "area": "配置-治理",
-      "title": "dev 后门与配置静默降级三件套(① /dev/token 改显式独立开关默认关、与 APP_ENV 解耦——不再押注部署环境变量设对;② LLM/embedding key 启动期 fail-fast 校验——不再运行时调 LLM 才失败;③ 低额预警 scheduler_enabled 显式化:部署清单+启动日志可见。第 10 次巡检业务风险 R5 🟡:dev 后门可铸 super_admin token / key 默认 sk-replace-me / scheduler 默认 False 静默不跑)",
-      "user_visible_behavior": "dev 环境默认不再暴露 /dev/token(需显式开独立开关);生产配置缺失 key 时启动期报错退出(而非运行时才失败);低额预警未启用时启动日志有明确提示。开关命名/fail-fast 环境范围/scheduler 显式化形态 EP2 用户拍板。",
-      "status": "passing",
-      "verification": [
-        "开关默认关时 /dev/token 不注册(404);显式开启且 dev 环境下行为不变(现有 dev 流测试零回归)",
-        "key 缺失/占位值时启动 fail-fast 测试;key 就位时启动正常",
-        "scheduler_enabled=False 时启动日志输出明确 WARN 提示"
-      ],
-      "notes": "生产加固系列第 6 条(EP1 2026-08-14 登记)。D7 拍板三件套全修。注意 ② key fail-fast 与「非 dev 环境拒绝默认 secret 启动」的既有校验(巡检正面清单)边界关系,EP2 对齐不重复。EP2 已完成 2026-08-24 Session 224:D1-D8 两轮 AskUserQuestion 用户逐项拍板(无默认采纳):D1 DEV_AUTH_ENABLED / D2 AND 语义默认关条件注册 / D3 openai key 占位一律拒启 / D4 embedding 本地 base_url 豁免 / D5 镜像既有 dev/testing 白名单 / D6 scheduler WARN+.env.example 两者 / D7 /dev/token TTL 不做留痕 / D8 单切片。② 落点 = 既有 _secrets_not_default validator 扩分支(对齐不重复)。plan v2(对抗式自审 3🟡 回写)+ §12 单切片 7 AC 就绪,EP3 从切片 01 接。 EP3 已完成 2026-08-24 Session 225:切片 01(唯一=末切片)PR #174 merge cb9204f,TDD 红→绿 14 用例;②-1「全默认」因 conftest env 泄漏改为 kwargs 全显式(§4.8 优先级);系列收官(96/95/94/93/92/91 全 passing)。",
-      "plan": "harness/docs/plan-config-startup-guard.md",
-      "depends_on": [],
-      "evidence": [
-        "切片 01(唯一=末切片)PR #174 merge cb9204f(2026-08-24 Session 225,CI 4/4 绿:Migrations 1m0s/Backend 10m30s/E2E 2m33s/Frontend 29s):commits 529e1bc+10712aa — ① 三 dev 端点(/oidc/jwks /dev/token /dev/bootstrap)收进 _register_dev_endpoints 条件注册(DEV_AUTH_ENABLED=true AND APP_ENV=development,默认关路由+OpenAPI 均不存在 fail-closed,handler 内旧 404 检查删除)/ ② _secrets_not_default validator 扩两分支:非 dev/testing openai_api_key 占位一律拒启 + embedding_api_key 占位仅非回环 base_url 拒启(_is_local_base_url 认 localhost/127.0.0.1/::1,解析失败从严)/ ③ init_scheduler 关闭分支非 testing 升 WARNING 点名 SCHEDULER_ENABLED+scan_balance_warnings(09:00)+reconcile_billing(09:30) + .env.example 两段 + README/LOGTO_SETUP/认证体系文档三处 dev 门控说明",
-        "定向 pytest tests/test_startup_config_guard.py 14/14(plan §5 清单 13 拆 14 良性超集,开态用例测试体内自建 create_app)+ 相邻回归(billing_reconciliation/notifications/health)49 passed + 全量 pytest 1089 passed 8 skipped(基线 1075 + 14 零回归)+ ruff 绿",
-        "前端 npm run build 绿(零前端改动确认:login-page 404 走 toast 优雅降级);code-review 双轴 0 硬违规/0 缺失/0 越界(1 微瑕 docstring 已修 commit 10712aa);feature 收尾八步闭环(plan v3 全勾 + 同 commit 翻 passing + sync-active + 依赖解锁扫描无下游 + 分支清理只剩 main);risk-hardening 系列 6 条全 passing,下一步 = 第 11 次巡检复验 Top5 清零"
       ]
     },
     {
