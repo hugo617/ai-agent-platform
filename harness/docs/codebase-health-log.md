@@ -19,6 +19,7 @@
 | 2026-07-30(第 8 次) | 6 候选(2 Strong + 4 Worth exploring)+ 5 deep 判定 + 1 拒绝;**Explore agent ×2 并行**后端+前端扫描。**Strong ×2**:④ Customers 双视图拆分(Top,第 4 个未拆的 store/hq 双视图 page,834 行单文件 4 组件,零单测,镜像 bookings/devices/chat split 第 4 实例)/ ③ queries.ts+endpoints.ts 按 domain 切(1560+1514 行,22 个零耦合 section,useApiMutation 68× leverage 保留放 core,barrel 保 import 零变化,第 6 次 not-shallow 判决 locality 阈值破)。**Worth exploring ×4**:① Booking 写路径 Principal 接缝泄漏(5× if access.require idiom + 顺序漂移,device +6× 同受益;受 end/no_show get-before-require 枚举防御约束,authorize_write 便利方法)/ ② chat 计费配对双实现(SSE _record_usage 不扣费 vs composite 内置 charge,seam 最清晰无 ADR 张力)/ ⑤ Settings 抽 ApiTokenCard(非 split,子组件抽离,ApiTokenCard 354 行临界)/ ⑥ bookings/shared-dialog 按 Dialog 拆(5 Dialog+RowMenu 668 行)。**deep 判定 5**:permission_service 845(SCD2↔casbin 仍 depth)/ booking_state+booking_service 整体(状态机完整 7 边 + 4 integrity guard)/ exports.py 4 generator 查询异构深(抽 Protocol 只搬 4-liner YAGNI)/ agents-page 单 function 单职责 / users+billing-admin 单视图。**拒绝 1**:customerNameOf(实测 2 处非 3,fallback null vs "-" 语义故意不同,leverage 为负) | ④ Customers 双视图拆分(范式第 4 实例 + 解锁单测 + 零行为变更零 ADR 风险) | No(待用户选) | — | `~/.cache/ai-agent-platform-architecture-reviews/2026-07-30-v2.html` |
 | 2026-07-31(第 9 次,**2026-08-14 补录**:当时漏记本表) | 5 候选(英文格式报告):① UserLocator — UserService super_admin lookup seam(Top)/ ② TurnAccountant record+charge 单 seam / ③ Principal.authorize_write + booking order unify / ④ MemberService 无直测 / ⑤ composite 扇出注入 session factory | ① UserLocator | Yes(候选 1) | [plan-user-service-lookup-seam.md](./plan-user-service-lookup-seam.md)(feature `user-service-lookup-seam` pri 84,2026-08-01 passing;候选 ②③④⑤ 未立项,② 于第 10 次三度复现) | `~/.cache/ai-agent-platform-architecture-reviews/2026-07-31.html` |
 | 2026-08-14(第 10 次) | 6 候选(Strong ×4:① permission check() bypass 判定链结构化(Top,≠第 7/8 次已关闭的「拆 permission_service」,新切口:knowledge-tiered 刚加第五层带可选 db 的 bypass,顺序错=静默权限漏洞,87 调用点)/ ② TurnAccountant 计费编排下沉(第 6/9/10 次三度独立复现,升 Strong)/ ③ graph.py 三路编排分家 composite/orchestrator/tools(deletion test 干净,468→854 行 +82%,顺带收敛 3 份 usage_acc 循环 + 第 9 次候选⑤ session factory)/ ⑤ 前端类型契约防线(types.ts 1350 行唯一未拆的 api 层 module + CI frontend job 不执行 228 个已写 vitest 用例);Worth exploring ×1:④ TenantScopedRepository 软删契约进基类(5 子类同形状覆盖,ApiTokenRepository 漏覆盖靠 service 手工过滤,与 ADR-0002 无交集);Speculative ×1:⑥ settings-page 迁 knowledge 目录范式(第 7 次降级前科,新论据=knowledge 范式已验证+settings 零测试))+ <b>业务功能风险 Top5 新板块</b>(🔴无限流+7天TTL / 🔴booking TOCTOU 无唯一约束 / 🔴计费 best-effort 无对账+SSE 无钱包放行 / 🟡super_admin 跨租户写零审计 / 🟡dev 后门押注 APP_ENV)+ Quick wins 6 条(CI 加 npm run test 居首);**Explore agent ×3 并行**(后端架构/业务功能/前端与测试)+ 主 agent 事实抽查 7 组 + 冒烟 201 passed | ① 权限 check() bypass 判定链结构化(安全单点 + 恶化中 + interface 不变 87 调用点零改动) | Yes(候选 ① 2026-08-14 立项并 passing;业务风险 Top5 板块同日立项 risk-hardening 系列 6 条) | ① [plan-perm-check-bypass.md](./plan-perm-check-bypass.md)(feature pri 86,2026-08-14 passing)+ [plan-risk-hardening-overview.md](./plan-risk-hardening-overview.md)(EP1 系列总纲,6 feature pri 96-91 not_started,8 决策全用户拍板;收官要求第 11 次巡检复验 Top5 清零;候选 ②-⑥ 未立项) | `~/.cache/ai-agent-platform-architecture-reviews/2026-08-14.html` |
+| 2026-08-25(第 11 次,risk-hardening 收官复验) | **Top5 清零复验 ✅:6/6 真实落地,0 项「passing 但代码站不住」→ risk-hardening 系列正式收官记档**;候选 ②-⑥ 复评全维持(② TurnAccountant Strong 四度复现[第 6/9/10/11 次],计费编排块 140→171 行微膨胀,钱包门子论据被 feature 94 消解但新论据=对账 job 一致性前置;③ graph.py Strong 零涨幅零动作[854 行,末次提交 2026-08-07];④ 软删契约 Worth exploring 论据略增强[同形状覆盖 5→7,ApiToken 反模式原样];⑤ types.ts+CI vitest Strong 恶化维度[259 用例 CI 仍零执行,倒挂加深];⑥ settings Speculative 零变化)+ **新候选 2**(Ⓐ commit-scope-hardening Strong Top[暂定 pri 97]:commit 后副作用写悬空 3 处源码[booking_config 审计 100% 从未持久 + recharge 通知 + 新发现第 4 处 member role_change 通知]+ 3 假阳性测试放行,危害与 R4 同档,~250-300 行一天内;Ⓑ pricing-service-extraction Worth exploring[暂定 pri 98]:定价 4 端点业务+审计在 API 层,提取 PricingService ~200 行,feature 92 D8 留痕兑现)+ Quick wins 记分(4 清/1 欠[CI npm test 一行仍最欠]/1 部分[verification_codes 系第 10 次误记销案更正,endpoints_dir 空目录 + API_TOKEN_PREFIX 反向 import 仍欠]);涨幅检查:graph.py 0% / permission_service 949→1081(+13.9% 未破 1100,增量来自候选①重构本身,首破 1000 需盯);**Explore agent ×3 并行**(1 次内容过滤误杀重派)+ 主 agent 基线采集 + 冒烟 211 passed + 前端 vitest 259/259 实测 | Ⓐ commit-scope-hardening(risk-hardening 直系续篇,同危害档 + 测试范式已由 feature 92 树立 + 成本一天;QW1 CI npm test 随下个 PR 顺手带上) | No(待用户拍板立项) | — | `~/.cache/ai-agent-platform-architecture-reviews/2026-08-25.html` |
 
 ---
 
@@ -341,3 +342,91 @@
 - 第 **100** 个 feature 完成时(当前 89,距下次 11 个)
 - 或 §1.2 触发条件任一满足(尤其 graph.py 再涨 >20%、check() 再加 bypass 层、permission_service 破 1100 行)
 - 或:CI 仍未执行前端测试 / booking TOCTOU 未加 DB 兜底(业务风险 Top2 未消)时,下次巡检优先复评
+
+---
+
+## Baseline 快照(2026-08-25,第 11 次巡检 · risk-hardening 收官复验)
+
+### 🏁 Top5 清零结论(risk-hardening 系列正式收官记档)
+
+第 10 次巡检业务风险 Top5(R1 限流+TTL 96 / R2 booking TOCTOU 95 / R3 对账+SSE 钱包门 94+93 / R4 超管写审计 92 / R5 dev 后门 91)**全部在代码层真清零**——6 feature 逐项验「代码 + 接线 + 测试」三位一体,非只看 status:
+
+| 风险 | 关键代码证据 | 关键测试证据 |
+|---|---|---|
+| R1(96) | User.failed_attempts/locked_until + 原子 UPDATE RETURNING 自增;AuthService 锁定判定在密码判定**之前**;slowapi 单例 `app.add_middleware(RateLimitMiddleware)` 真接线(CORS 内层)+ 429 handler Retry-After;TTL 480 分钟(10080 零残留) | 锁定 7 用例(锁内拒/窗口过恢复/清零/OIDC-only 不计)+ TTL 2 + test_rate_limit 16 |
+| R2(95) | 迁移 9a8b7c6d5e4f EXCLUDE USING gist 半开区间 WHERE 占坑态 + btree_gist + 预检拒迁;`_map_exclusion_violation` 23P01→BizError,create/update 双路径捕获;应用层预检保留(双防线) | CI Migrations job 真跑 test_booking_overlap_pg 7 用例(含 pg_stat_activity 确定性竞态握手,断言 BizError) |
+| R3a(94) | `_require_wallet_balance` 共享 helper;SSE 预检在 create_or_get 之前(402 不建会话不落消息);旧流内门零残留;两路径 402 detail 逐字一致 | test_billing SSE 门矩阵 ①-⑦(含无副作用断言 + detail 逐字一致) |
+| R3b(93) | `BillingReconciliationService.run` 双层检出 + 日粒度幂等锁 + 首告去重 + 每 run 一条 SystemLog 直写;scheduler 09:30 注册 + 薄壳吞错 | test_billing_reconciliation 15 用例(差额/无误报/幂等/去重/通知 best-effort) |
+| R4(92) | 6 action 全 record→commit 原子(billing.recharge / pricing ×3 / knowledge ×2);定价 Decimal 量化双快照 | test_super_admin_audit 12 用例(HTTP 接缝断言真实 SystemLog 行,非 mock;审计失败不阻断充值) |
+| R5(91) | `_register_dev_endpoints` AND 条件注册(默认关路由+OpenAPI 均不存在);validator 扩 openai/embedding 两分支 fail-closed;scheduler 关闭非 testing 升 WARNING | test_startup_config_guard 14 用例(开关矩阵 7 + 校验 5 + scheduler 2) |
+
+已知设计边界(代码自知注释,非缺口):限流单副本内存存储(多副本需 Redis);`.env.example` DEV_AUTH_ENABLED=true 依赖不整体拷进生产(AND 语义边界已有用例钉住)。
+
+**系列收官判定:risk-hardening 6 条(96/95/94/93/92/91)全 passing + 代码层复验清零 → 正式收官。**
+
+### 新发现:commit-scope 悬空缺陷(候选 Ⓐ 素材)
+
+feature 92 留痕的 3 处既有隐患全部坐实,且**新发现第 4 处**(全仓库普查后确认为完整清单):
+
+| # | 位置 | 事实 | 生产影响 |
+|---|---|---|---|
+| 1 | booking_config_service._upsert(L142 commit→L146 record) | 审计行悬在隐式新事务,get_db close 回滚;测试 mock record 只断言 kwargs(docstring 自称 passthrough 不实) | **审计 100% 从未持久化,功能等于失效** |
+| 2 | billing_service.recharge(L252 commit→L260 通知 create) | 通知 create 只 savepoint 内 flush,caller commits 契约未履行;测试同 session SELECT 假阳性 | 充值到账通知 100% 丢失 |
+| 3 | app/api/v1/billing.py 定价 4 端点(L199-399) | 行为正确(record 全在 commit 前)但业务+审计+事务全在 API 层(铁律:审计属 Service;feature 92 code-review 1 硬违规 D8 留痕) | 层次卫生:复用者绕审计 / 裸 select 绕 Repository |
+| 4 | **member_service.update_role(L108 commit→L117 create)** | 与 #2 完全同型;测试同型假阳性 | role_change 通知 100% 丢失(**feature 92 留痕未列,本次新发现**) |
+
+正确反例已在仓库(证明可修):`billing_reconciliation_service._notify_super_admins` 显式尾随 commit;feature 92 的 test_super_admin_audit 已树立「HTTP 接缝 + 跨 session 持久断言」锁死测试范式。
+
+### 后端 service/api top 12 + agents(按行数)
+
+```
+     335 app/api/v1/bookings.py
+     374 app/services/customer_service.py
+     381 app/services/conversation_service.py
+     398 app/api/v1/billing.py          <-- +85 vs 上次 313(定价审计埋点,功能增量)
+     444 app/services/device_service.py
+     465 app/services/billing_reconciliation_service.py   <-- 新(feature 93)
+     485 app/services/user_service.py
+     495 app/api/v1/exports.py
+     558 app/api/v1/chat.py             <-- -1 持平(计费编排块内部 140→171,候选 ②)
+     676 app/services/knowledge_service.py    <-- +43(knowledge.distribute/revoke 审计)
+     910 app/services/booking_service.py      <-- 最大 service,+43(TOCTOU 双路径捕获)
+    1081 app/services/permission_service.py   <-- 最大,+132 vs 上次 949(+13.9%)
+     854 app/agents/graph.py            <-- 零涨幅(末次提交 2026-08-07,候选 ③ 冻结)
+```
+
+### 前端 fat files(按行数)
+
+```
+     545 frontend/src/pages/groups-page.tsx
+     590 frontend/src/pages/chat/index.tsx
+     670 frontend/src/pages/bookings/hq-view.tsx
+     690 frontend/src/pages/billing-admin-page.tsx
+     719 frontend/src/pages/users-page.tsx
+     841 frontend/src/pages/agents-page.tsx
+    1192 frontend/src/pages/settings-page.tsx    <-- 持平(候选 ⑥,2026-07-31 后零触碰)
+    1350 frontend/src/api/types.ts               <-- 持平(api 三件套唯一未拆,候选 ⑤)
+```
+
+### 质量基线(本次巡检时点)
+
+- 后端测试:**1097 collected**(+171 vs 上次 926);收尾全量最近记录 1089 passed 零回归;冒烟 `pytest -m smoke` **211 passed 全绿**(本次实测)
+- 前端 vitest:**259 用例 / 31 文件全绿**(本次实测 10.0s;+31 vs 上次 228)——**CI frontend job 仍只跑 oxlint+build,259 用例 CI 零执行 ⚠(QW1 仍欠)**
+- TODO/FIXME/HACK/XXX:**2 处真实**(Logto OIDC 占位 ×2 持平;+1 误报=scope-badge 注释 bg-XXX 类名)
+- 依赖方向:service→api 反向 import **2 处持平**(api_token_service 常量 / permission_service contextvar;QW6 残留)
+- CONTEXT.md(142 行)/ docs/adr/(2 Accepted):本次候选零冲突
+- 第 10 次以来 **72 commits**(risk-hardening 6 feature 13 PR + 收尾)
+
+### 涨幅分析(vs 2026-08-14 第 10 次)
+
+- **graph.py 0%(854→854)**——未触发「再涨 >20%」,候选 ③ 冻结状态
+- **permission_service 949→1081(+13.9%)**——未破 1100 触发线,但 11 次巡检**首次破 1000**;增量 +132 来自候选 ①(perm-check-bypass 判定链结构化)本身,属有意的结构化投资非债;距 1100 仅 19 行,下次巡检重点盯
+- booking_service +43 / billing.py +85 / knowledge_service +43 / chat.py -1:全部为 risk-hardening 功能增量(双路径捕获 / 定价审计 / 知识审计 / 钱包门),非债
+- 第 10 次候选 ②-⑥ 复评:**全部维持原 badge,零关闭零升级**(② 论据质变:钱包门子论据被 94 消解,新论据=对账 job 一致性前置)
+
+### 下次巡检 trigger
+
+- 第 **100** 个 feature 完成时(当前 91 passing,距下次 9 个)
+- 或 §1.2 触发条件任一满足(尤其 **permission_service 破 1100 行[当前 1081,距 19 行]**、graph.py 复涨、TurnAccountant 第 5 度复现)
+- 或:候选 Ⓐ commit-scope-hardening 立项落地后(复验悬空清零 + 假阳性测试修毕)
+- 或:CI frontend job 仍未执行 npm test(QW1 连续两巡检未清时升级催办)
