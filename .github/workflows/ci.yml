@@ -144,7 +144,7 @@ jobs:
             --cov-fail-under=80
 
   frontend:
-    name: Frontend (typecheck + build + lint)
+    name: Frontend (typecheck + build + lint + unit tests)
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -164,6 +164,9 @@ jobs:
 
       - name: Lint (oxlint)
         run: npx oxlint src/
+
+      - name: Unit tests (vitest)
+        run: npm run test
 
       - name: Typecheck & build
         run: npm run build

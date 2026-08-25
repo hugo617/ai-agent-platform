@@ -136,6 +136,10 @@ _Avoid_: permission chain, bypass list
 平台默认 + 租户覆盖的两级配置范式(NULL `tenant_id` = 平台行,非空 = 租户覆盖)。`TwoScopeRepository` 基类统一读路径(`get_platform`/`get_for_tenant`);与 `TenantScopedRepository` 互补 —— 后者 `tenant_id` 必填(业务数据隔离),前者 `tenant_id` 可空(配置两级覆盖)。**纳入的 3 个 repo**:booking_config / llm_config / embedding_config(对抗式审查后从「4 repo」修正:tenant_config 是单租户异类、ModelPricing 是 `(tenant_id, model)` 二维 key 异类,均排除)。`is_active` 过滤差异(llm/embedding 有、booking 无)用基类钩子 `_active_filter` 吸收(booking 设 None 不过滤),**不靠给 booking 加死列**。`get_effective` 三级 fallback 和 `_upsert` 写路径(crypto/audit delta)由各 service 自留,不进基类。边界详见 [ADR-0002](docs/adr/0002-twoscope-config-repository.md)。
 _Avoid_: two-level config(改用 Two-Scope), config table(泛指,无法区分单/双 scope)
 
+**提交范围(Commit Scope)**:
+副作用写(审计 / 通知)必须落在「持有它的提交范围」内才会持久,否则悬在 session 隐式新事务里,随请求结束 `get_db` 关闭回滚而 100% 丢失。两个合法范式:**原子**(副作用与业务写在同一事务,record/create 在业务 `commit()` 之前 —— user_service 审计范式,业务成功 ⇒ 审计必持久)/ **显式尾随 commit**(业务先提交,副作用随后单独 `commit()`,外包 try/except 只丢副作用不伤业务 —— `_notify_super_admins` 范式)。反例:业务 `commit()` 之后裸写副作用且不提交(曾致 booking_config 审计 / 充值通知 / 角色变更通知三处生产全丢)。
+_Avoid_: 事务边界(泛称,不点明提交归属), autocommit(本项目未用)
+
 ## 范围外(明确不录)
 
 以下概念虽在项目内使用,但属于**通用编程/协议概念**,不在本 glossary:

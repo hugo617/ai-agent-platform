@@ -47,6 +47,14 @@ class LoggingService:
         audit flush would poison the session and the caller's subsequent
         ``commit()`` would fail with PendingRollbackError — audit logging could
         break an otherwise-successful user update.
+
+        Commit-scope contract: the audit row only persists if ``record`` is
+        called inside the caller's commit scope, i.e. BEFORE the business
+        ``commit()`` (atomic pattern — audit and business write commit
+        together, the user_service precedent). This method never commits; a
+        record made after the final ``commit()`` dangles in the session's
+        implicit new transaction and is rolled back when the request's
+        ``get_db`` closes — 100% lost in production.
         """
         try:
             async with self.db.begin_nested():

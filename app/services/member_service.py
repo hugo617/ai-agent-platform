@@ -8,6 +8,8 @@ Each operation checks the matching ``users:*`` casbin permission and keeps the
 casbin grouping policy (``g``) in sync with the DB role.
 """
 
+import logging
+
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.tenant import UserTenant
@@ -15,6 +17,8 @@ from app.repositories.tenant import UserRepository, UserTenantRepository
 from app.schemas.user import MemberCreate, MemberRead, MemberUpdate
 from app.services.errors import BizError, NotFoundError
 from app.services.permission_service import permission_service
+
+logger = logging.getLogger(__name__)
 
 
 class MemberService:
@@ -114,14 +118,23 @@ class MemberService:
         # changed. Best-effort — never breaks the committed role change above.
         from app.services.notification_service import NotificationService
 
-        await NotificationService(self.db).create(
-            tenant_id=tenant_id,
-            user_id=target_user_id,
-            type="role_change",
-            title="角色变更",
-            content=f"您的角色已变更为「{payload.role}」。",
-            link="/members",
-        )
+        try:
+            await NotificationService(self.db).create(
+                tenant_id=tenant_id,
+                user_id=target_user_id,
+                type="role_change",
+                title="角色变更",
+                content=f"您的角色已变更为「{payload.role}」。",
+                link="/members",
+            )
+            # create() only flushes inside its SAVEPOINT — the caller of a
+            # best-effort insert must commit it (mirrors
+            # _notify_super_admins / scan_balance_warnings).
+            await self.db.commit()
+        except Exception:  # noqa: BLE001 — must not break the committed role change
+            logger.exception(
+                "role-change notification failed (role change already committed)"
+            )
         return self._to_read(membership)
 
     async def remove(

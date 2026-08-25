@@ -1,11 +1,22 @@
 # 计划:commit-scope 悬空修复(三处「commit 后副作用写」生产 100% 丢失 + 3 个假阳性测试 + QW1 CI npm test)
 
 > **id**: commit-scope-hardening
-> **状态**: in_progress(EP2 完成 2026-08-25:D1-D7 全用户拍板,v2 自审回写,单切片就绪待 EP3)
+> **状态**: in_progress(EP3 切片 01 实施完成 2026-08-25,待 PR 合并后收尾翻 passing)
 > **优先级**: 97(feature_list.json)
 > **创建日期**: 2026-08-25
-> **最后修订**: 2026-08-25(v2:对抗式自审 4🟡+1🟢 回写,零 🔴)
+> **最后修订**: 2026-08-25(v3:EP3 实施注记 + §4.7-3/§5 方言断言勘误 + code-review 双轴回写;v2:对抗式自审 4🟡+1🟢 回写,零 🔴)
 > **素材源**: [codebase-health-log.md](./codebase-health-log.md) 第 11 次条目 Baseline 快照「commit-scope 悬空缺陷」表(候选 Ⓐ Strong Top;risk-hardening 系列直系续篇,同 R4 危害档)
+
+---
+
+## 0.2 EP3 实施注记与勘误(v3,Session 228)
+
+1. **§4.7-3 / §5 方言断言勘误(实证证伪)**:原断言「请求结束时 get_db 的 session.close() 会回滚该连接上的未提交事务,故 HTTP 接缝 + 请求结束后用 db_session 断言 = 悬空行查不到」对**纯裸 INSERT** 成立(实验证实),但对 `record`/`create` 的 **SAVEPOINT 形态在 SQLite legacy 驱动下不成立**:pysqlite legacy 隔离模式从不发真 BEGIN,SAVEPOINT 无外层事务时其 RELEASE 等价 COMMIT(裸 sqlite3 驱动实验:`SAVEPOINT→INSERT→RELEASE` 后显式 rollback 行仍在)→ 悬空行被驱动意外持久化,跨 session 断言照样查到,红证不可达。§5「悬空/持久语义与 PG 一致,无方言差异」同此证伪 —— 方言差异恰在 SAVEPOINT 边界。
+2. **对应适配(conftest.py 越界豁免,§11 允许清单补一行)**:test engine 改 `isolation_level=None` + `begin` 事件显式 `BEGIN`(`in_transaction` 检查防止 StaticPool 共享连接的双 BEGIN —— db_session 在 commit 后 refresh 会留下打开读事务,请求 session 再 BEGIN 会炸;在事务中则跳过、加入既有事务,等价旧行为)。效果:SAVEPOINT 恒落真实外层事务,RELEASE 永不意外提交,测试栈获得 PG 生产回滚语义(SQLAlchemy 文档「Serializable isolation / Savepoints / Transactional DDL」标准配方)。豁免依据:AGENTS.md「窄范围 blocker 修复」—— 不改则 D5 红证物理不可达(断言层无解,行已被驱动提交);只给测试文件单独建引擎会造成双测试栈、其余 HTTP 用例仍假绿。红证留存:stash 源码修复终验 3 改造用例 3 failed,恢复后全绿。
+3. **§4.6-① 方法级 docstring**:plan 仅要求模块 docstring 措辞同步,实施顺带把 `_upsert` 方法 docstring 补原子范式一句(code-review 判良性超集)。
+4. **ci.yml job name 文案**同步为「typecheck + build + lint + unit tests」(§4.6-⑥ 只要求加 step;良性超集)。
+5. **§4.8 role_change 改造用例 setup 细节**:原用例手动 seed User/UserTenant/casbin;改造后走 HTTP POST `/tenants/me/members/` 建成员(镜像 test_users_api 既有先例),membership 断言加 SCD2 `valid_to IS NULL` 过滤 + 通知行加 `tenant_id` 断言(等价增强,code-review 判非偏离)。
+6. **code-review 双轴结论(2026-08-25,general-purpose ×2 并行)**:Standards 代码层 **0 硬违规**;判断项 2 留痕 —— ① 3 处 guard 同形块(recharge/update_role/_notify_super_admins)rule-of-three 名义到界,plan D4 明文「逐处改零新抽象」压制,下次巡检 `/improve-codebase-architecture` 重评提取;② conftest `exec_driver_sql("BEGIN")` SQLite 专有限于测试基建,注释已载缘由。Spec 前 8 条 AC 全满足、§11 禁碰项逐项未触碰、§4.6①-⑥ 字段级吻合;唯一「缺失」= AC-9 收尾八步(本就排在 PR 合并后,见 §12 勘误于收尾 commit 勾选)。
 
 ---
 
@@ -187,7 +198,7 @@
 
 ## 11. 不越界声明
 
-本次改动**只**涉及:上表 3 个 service 文件的事务边界(共 3 个方法体)+ 2 个 docstring + CONTEXT.md 1 词条 + ci.yml 1 step + 2 个测试文件的 4 个用例。**不**触碰:`app/api/v1/billing.py`(定价路径)、`LoggingService.record` / `NotificationService.create` 的代码行为、`get_db`、任何 repository/model/schema、任何前端文件、任何其他 service 的既有 commit 位置(正确的那些一律不动)。
+本次改动**只**涉及:上表 3 个 service 文件的事务边界(共 3 个方法体)+ 2 个 docstring + CONTEXT.md 1 词条 + ci.yml 1 step(+job name 文案同步,见 §0.2-4)+ 2 个测试文件的 4 个用例 + **tests/conftest.py 的 test engine 事务模式适配(EP3 越界豁免,见 §0.2-2,不改则 D5 红证物理不可达)**。**不**触碰:`app/api/v1/billing.py`(定价路径)、`LoggingService.record` / `NotificationService.create` 的代码行为、`get_db`、任何 repository/model/schema、任何前端文件、任何其他 service 的既有 commit 位置(正确的那些一律不动)。
 
 ---
 

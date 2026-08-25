@@ -11,7 +11,9 @@ Covers:
   PUT /notifications/{id}/read (ownership → 404 for someone else's),
   PUT /notifications/read-all.
 - Triggers: recharge creates a tenant-wide notification; role-change creates
-  a targeted notification for the affected user.
+  a targeted notification for the affected user. Both asserted over the HTTP
+  seam post-request (cross-session) so a dangling notify write that get_db
+  would roll back fails the test instead of silently passing.
 - Scheduler job ``scan_balance_warnings``: creates balance_warning rows for
   low-balance wallets + dedupes (a second scan within 24h adds nothing).
 
@@ -258,68 +260,101 @@ async def test_broadcast_read_is_per_user(db_session, test_env):
 
 
 @pytest.mark.asyncio
-async def test_recharge_creates_notification(app_client, db_session, test_env):
-    """BillingService.recharge fires a tenant-wide recharge notification."""
-    await _seed_wallet(db_session, test_env.tenant_id, balance=0)
+async def test_recharge_creates_notification(super_admin_client, db_session, test_env):
+    """POST /billing/recharge persists the wallet txn AND the tenant-wide
+    recharge notification across the request lifecycle.
 
-    from app.services.billing_service import BillingService
-
-    txn = await BillingService(db_session).recharge(
-        tenant_id=test_env.tenant_id,
-        amount=500,
-        operator_id="admin",
-    )
-    assert txn.balance_after == 500
+    HTTP seam rewrite: the former test called the service directly and SELECTed
+    on the same session, which sees its own uncommitted row — a false positive
+    that hid the dangling notify write (the notification INSERT never had a
+    committing owner, so ``get_db``'s teardown rolled it back: 100% lost in
+    production). Post-request assertions on ``db_session`` only see rows that
+    truly persisted.
+    """
+    from sqlalchemy import select
 
     from app.models.notification import Notification
+    from app.models.wallet import WalletTransaction
 
-    rows = (
+    await _seed_wallet(db_session, test_env.tenant_id, balance=0)
+
+    resp = await super_admin_client.post(
+        "/api/v1/billing/recharge",
+        json={"tenant_id": test_env.tenant_id, "amount": 500},
+        headers=AUTH,
+    )
+    assert resp.status_code == 201, resp.text
+    assert resp.json()["balance_after"] == 500
+
+    # business row survived the request close (committed before the notify stage)
+    txn = (
         await db_session.execute(
-            select(Notification).where(
-                Notification.type == "recharge"
-            )
+            select(WalletTransaction).where(WalletTransaction.type == "recharge")
         )
-    ).scalars().all()
-    assert len(rows) == 1
+    ).scalar_one()
+    assert txn.amount == 500
+    assert txn.tenant_id == test_env.tenant_id
+
+    # notification row truly persisted (was dangling pre-fix)
+    row = (
+        await db_session.execute(
+            select(Notification).where(Notification.type == "recharge")
+        )
+    ).scalar_one()
     # tenant-wide (user_id NULL) so owner + admins all see it.
-    assert rows[0].user_id is None
-    assert "500" in rows[0].content
+    assert row.user_id is None
+    assert row.tenant_id == test_env.tenant_id
+    assert "500" in row.content
 
 
 @pytest.mark.asyncio
 async def test_role_change_creates_notification(app_client, db_session, test_env):
-    """MemberService.update_role fires a role_change notification for the user."""
-    from app.models.tenant import User, UserTenant
+    """PATCH /tenants/me/members/{target} persists the role change AND the
+    targeted role_change notification across the request lifecycle.
 
-    target = "target-user"
-    db_session.add(User(id=target, email="t@example.com", status="active"))
-    db_session.add(
-        UserTenant(user_id=target, tenant_id=test_env.tenant_id, role="member")
-    )
-    await db_session.commit()
-    test_env.enforcer.add_role_for_user_in_domain(target, "member", test_env.tenant_id)
-
-    from app.schemas.user import MemberUpdate
-    from app.services.member_service import MemberService
-
-    await MemberService(db_session).update_role(
-        actor_id=test_env.owner_user,
-        tenant_id=test_env.tenant_id,
-        target_user_id=target,
-        payload=MemberUpdate(role="admin"),
-        platform_role=None,
-    )
+    Same HTTP-seam rewrite as the recharge test above: the former same-session
+    SELECT could see the dangling (never-committed) notification row.
+    """
+    from sqlalchemy import select
 
     from app.models.notification import Notification
+    from app.models.tenant import UserTenant
 
-    row = (
+    resp = await app_client.post(
+        "/api/v1/tenants/me/members/",
+        json={"user_id": "target-user", "role": "member", "email": "t@example.com"},
+        headers=AUTH,
+    )
+    assert resp.status_code == 201, resp.text
+
+    resp = await app_client.patch(
+        "/api/v1/tenants/me/members/target-user",
+        json={"role": "admin"},
+        headers=AUTH,
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["role"] == "admin"
+
+    # business row: the SCD2 current membership carries the new role
+    membership = (
         await db_session.execute(
-            select(Notification).where(
-                Notification.type == "role_change"
+            select(UserTenant).where(
+                UserTenant.user_id == "target-user",
+                UserTenant.tenant_id == test_env.tenant_id,
+                UserTenant.valid_to.is_(None),
             )
         )
     ).scalar_one()
-    assert row.user_id == target  # targeted at the affected user
+    assert membership.role == "admin"
+
+    # notification row truly persisted (was dangling pre-fix)
+    row = (
+        await db_session.execute(
+            select(Notification).where(Notification.type == "role_change")
+        )
+    ).scalar_one()
+    assert row.user_id == "target-user"  # targeted at the affected user
+    assert row.tenant_id == test_env.tenant_id
     assert "admin" in row.content
 
 
@@ -356,6 +391,58 @@ async def test_notification_failure_does_not_break_recharge(db_session, test_env
         assert txn.balance_after == 100
     finally:
         ns_mod.NotificationRepository.create = original  # type: ignore[method-assign]
+
+
+@pytest.mark.asyncio
+async def test_role_change_notification_failure_does_not_break(
+    app_client, db_session, test_env
+):
+    """A broken notification insert must not abort the committed role change.
+
+    Mirrors ``test_notification_failure_does_not_break_recharge``: the repo
+    insert is patched to violate the title's String(200) so the failure goes
+    through ``NotificationService.create``'s real SAVEPOINT path; the PATCH
+    must still return 200 and the membership row must persist (the guard's
+    symmetric lock — notification failure costs only the notification).
+    """
+    from sqlalchemy import select
+
+    from app.models.tenant import UserTenant
+    from app.services import notification_service as ns_mod
+
+    resp = await app_client.post(
+        "/api/v1/tenants/me/members/",
+        json={"user_id": "boom-user", "role": "member", "email": "b@x.com"},
+        headers=AUTH,
+    )
+    assert resp.status_code == 201, resp.text
+
+    original = ns_mod.NotificationRepository.create
+
+    async def _bad_create(self, notification):  # noqa: ANN001
+        notification.title = "x" * 10_000  # violates String(200)
+        return await original(self, notification)
+
+    ns_mod.NotificationRepository.create = _bad_create  # type: ignore[method-assign]
+    try:
+        resp = await app_client.patch(
+            "/api/v1/tenants/me/members/boom-user",
+            json={"role": "admin"},
+            headers=AUTH,
+        )
+        assert resp.status_code == 200, resp.text
+    finally:
+        ns_mod.NotificationRepository.create = original  # type: ignore[method-assign]
+
+    membership = (
+        await db_session.execute(
+            select(UserTenant).where(
+                UserTenant.user_id == "boom-user",
+                UserTenant.valid_to.is_(None),
+            )
+        )
+    ).scalar_one()
+    assert membership.role == "admin"  # role change persisted despite the failure
 
 
 # ----------------------------------------------------- scheduler job

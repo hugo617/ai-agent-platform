@@ -7,8 +7,9 @@ resolved window the HqView grid renders against.
 Writes go through upserts that enforce "one row per scope" — there is no DB
 unique constraint, so this service is the sole place that guarantee is made
 (see the model docstring for why). Each upsert records an audit log row via
-:class:`LoggingService` (module ``booking_config``) with old/new values, so
-config changes are traceable (who changed which store's slot length).
+:class:`LoggingService` (module ``booking_config``) **inside the same
+transaction as the config write**, so config changes are traceable (who
+changed which store's slot length) with the audit persisting atomically.
 
 Structurally parallel to :class:`LlmConfigService` but drops the crypto path
 (no secrets here) and adds the audit-log call (config changes are a notable
@@ -107,6 +108,10 @@ class BookingConfigService:
     ) -> BookingConfigRead:
         """Create or patch one config row, then write an audit log entry.
 
+        Both writes commit atomically: the audit ``record`` runs inside the
+        same transaction as the config write (before ``commit()``), so a
+        successful config change always leaves a persistent audit row.
+
         Every field on the payload is authoritative (the frontend sends all
         three on save), so there is no "patch a subset" path — same contract as
         ``TenantConfigService.upsert``.
@@ -139,10 +144,12 @@ class BookingConfigService:
             message = f"created booking config ({message_scope})"
 
         await db.flush()
-        await db.commit()
-        await db.refresh(row)
-        read = _to_read(row)
-
+        # Audit BEFORE commit so the audit row persists atomically with the
+        # config write (user_service pattern). After the commit it would
+        # dangle in the session's implicit new transaction, which get_db
+        # rolls back on request close — the audit was silently 100% lost in
+        # production before this ordering was fixed. row.id is available
+        # because flush() above assigned it.
         await LoggingService(db).record(
             action=action,
             module="booking_config",
@@ -159,7 +166,9 @@ class BookingConfigService:
                 "window_end": row.window_end,
             },
         )
-        return read
+        await db.commit()
+        await db.refresh(row)
+        return _to_read(row)
 
     async def upsert_platform(
         self, db: AsyncSession, payload: BookingConfigUpsert, *, actor_id: str

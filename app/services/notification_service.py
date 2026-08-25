@@ -50,6 +50,16 @@ class NotificationService:
         Without this the session would be poisoned and the caller's subsequent
         ``commit()`` would fail with PendingRollbackError — a notification
         failure could break an otherwise-successful recharge.
+
+        Commit-scope contract: ``create`` only flushes inside its SAVEPOINT —
+        it never commits, so the CALLER must place the call inside a commit
+        scope. Two valid patterns: atomic (create before the business
+        ``commit()``, so business write and notification commit together) or
+        trailing commit (create after the business commit, then explicitly
+        ``await db.commit()`` guarded by try/except — the
+        ``_notify_super_admins`` / ``scan_balance_warnings`` pattern). A bare
+        create after the final commit dangles uncommitted and is rolled back
+        when the request's ``get_db`` closes — 100% lost in production.
         """
         try:
             async with self.db.begin_nested():
