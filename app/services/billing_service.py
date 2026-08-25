@@ -57,7 +57,11 @@ _COST_QUANT = Decimal("0.000001")
 
 
 class BillingService:
-    """Prepaid-wallet accounting: balance gate, charge, recharge, pricing."""
+    """Prepaid-wallet accounting: balance gate, charge, recharge, pricing reads.
+
+    The pricing here is read-only price resolution for ``calc_cost``; pricing
+    *writes* (upsert/update/deactivate) live in ``PricingService``.
+    """
 
     def __init__(self, db: AsyncSession) -> None:
         self.db = db

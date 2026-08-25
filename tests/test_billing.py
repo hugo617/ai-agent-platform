@@ -663,6 +663,30 @@ async def test_pricing_crud_super_admin(super_admin_client, db_session, test_env
 
 
 @pytest.mark.asyncio
+async def test_pricing_update_delete_missing_404(super_admin_client, test_env):
+    """PUT/DELETE a non-existent pricing id → 404 定价不存在.
+
+    Locks the PricingService-returns-None → API-raises-404 contract — the
+    one hand-written branch of the service extraction. Green-on-both
+    regression lock (passes before and after the extraction; same precedent
+    as feature 97's guard case).
+    """
+    missing = "f" * 32  # valid 32-hex id shape, guaranteed not to exist
+    payload = {"model": "m", "input_price_per_1k": "1", "output_price_per_1k": "1"}
+    resp = await super_admin_client.put(
+        f"/api/v1/billing/pricing/{missing}", json=payload, headers=AUTH
+    )
+    assert resp.status_code == 404
+    assert resp.json()["detail"] == "定价不存在"
+
+    resp = await super_admin_client.delete(
+        f"/api/v1/billing/pricing/{missing}", headers=AUTH
+    )
+    assert resp.status_code == 404
+    assert resp.json()["detail"] == "定价不存在"
+
+
+@pytest.mark.asyncio
 async def test_pricing_owner_cannot_write(app_client, test_env):
     """owner (not super admin) cannot create pricing → 403."""
     resp = await app_client.post(
