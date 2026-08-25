@@ -16,8 +16,9 @@ criteria):
   403; store role carrying ``tenant_id`` → 403 (anti-forgery).
 - V. duration is free-form Integer — 1 / 240 / any minute value accepted;
   non-positive (0, -5) → 422; malformed window → 422.
-- A. audit — upsert calls ``LoggingService.record`` with ``module=booking_config``
-  and non-empty ``old_values``/``new_values`` (mocker.spy).
+- A. audit — upserts persist real ``SystemLog`` rows (module=booking_config,
+  non-empty ``old_values``/``new_values``) verified post-request over the HTTP
+  seam, never via mocked ``record`` kwargs.
 
 Tests use ``create_all`` (not the migration), so the seeded platform default
 row is absent unless a test inserts it directly — this is what makes the E3
@@ -357,43 +358,68 @@ async def test_v_malformed_window_rejected(super_admin_client):
 
 @pytest.mark.asyncio
 async def test_a_upsert_writes_audit_log(app_client, db_session, test_env):
-    """PUT /tenant/{own} calls LoggingService.record with module=booking_config
-    and non-empty old/new values (P2 测法: patch.object spy on the class method).
+    """PUT /tenant/{own} persists real SystemLog rows across the request
+    lifecycle (HTTP seam + post-request DB assertion).
 
-    Uses ``unittest.mock.patch.object`` (the project convention — no pytest-mock
-    dependency) with a real method passthrough so the audit row still writes
-    while we observe the call kwargs.
+    Two PUTs create then update the tenant row; after the requests close,
+    the audit rows must survive ``get_db``'s session teardown. This is the
+    rewrite of the former mock-kwargs test: patching ``LoggingService.record``
+    asserted call arguments but never verified a row persists — the audit was
+    written after ``commit()`` and rolled back on request close (100% lost in
+    production), while the mock kept the test green.
     """
-    from unittest.mock import patch
+    from sqlalchemy import select
 
-    from app.services.logging_service import LoggingService
+    from app.models.log import SystemLog
 
     tid = test_env.tenant_id
-    with patch.object(LoggingService, "record", autospec=True) as spy:
-        resp = await app_client.put(
-            f"/api/v1/bookings/config/tenant/{tid}",
-            json={**_VALID, "default_duration_minutes": 60},
-            headers=AUTH,
-        )
-        assert resp.status_code == 200, resp.text
+    resp = await app_client.put(
+        f"/api/v1/bookings/config/tenant/{tid}",
+        json={**_VALID, "default_duration_minutes": 60},
+        headers=AUTH,
+    )
+    assert resp.status_code == 200, resp.text
+    config_id = resp.json()["id"]
 
-        spy.assert_called_once()
-        kwargs = spy.call_args.kwargs
-        assert kwargs["module"] == "booking_config"
-        assert kwargs["action"] == "booking_config.create"  # first write = create
-        assert kwargs["old_values"] is None  # nothing existed before
-        assert kwargs["new_values"]["default_duration_minutes"] == 60
-        assert kwargs["tenant_id"] == tid
+    # second PUT on the same row records an update with old_values populated
+    resp = await app_client.put(
+        f"/api/v1/bookings/config/tenant/{tid}",
+        json={**_VALID, "default_duration_minutes": 90},
+        headers=AUTH,
+    )
+    assert resp.status_code == 200, resp.text
 
-        # second PUT on the same row records an update with old_values populated
-        resp = await app_client.put(
-            f"/api/v1/bookings/config/tenant/{tid}",
-            json={**_VALID, "default_duration_minutes": 90},
-            headers=AUTH,
+    rows = (
+        await db_session.execute(
+            select(SystemLog).where(SystemLog.module == "booking_config")
         )
-        assert resp.status_code == 200, resp.text
-        assert spy.call_count == 2
-        kwargs = spy.call_args.kwargs
-        assert kwargs["action"] == "booking_config.update"
-        assert kwargs["old_values"]["default_duration_minutes"] == 60
-        assert kwargs["new_values"]["default_duration_minutes"] == 90
+    ).scalars().all()
+    assert len(rows) == 2
+    by_action = {row.action: row for row in rows}
+
+    create_row = by_action["booking_config.create"]  # first write = create
+    assert create_row.old_values is None  # nothing existed before
+    assert create_row.new_values == {
+        "default_duration_minutes": 60,
+        "window_start": "08:00",
+        "window_end": "22:00",
+    }
+    assert create_row.user_id == test_env.owner_user
+    assert create_row.tenant_id == tid
+    assert create_row.resource_type == "booking_config"
+    assert create_row.resource_id == config_id
+
+    update_row = by_action["booking_config.update"]
+    assert update_row.old_values == {
+        "default_duration_minutes": 60,
+        "window_start": "08:00",
+        "window_end": "22:00",
+    }
+    assert update_row.new_values == {
+        "default_duration_minutes": 90,
+        "window_start": "08:00",
+        "window_end": "22:00",
+    }
+    assert update_row.user_id == test_env.owner_user
+    assert update_row.tenant_id == tid
+    assert update_row.resource_id == config_id

@@ -32,6 +32,7 @@ Design notes (see ``plan-token-wallet-billing.md``):
   the message write when possible.
 """
 
+import logging
 from decimal import ROUND_HALF_UP, Decimal
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -46,6 +47,8 @@ from app.repositories.wallet import (
 )
 from app.services.errors import BizError
 from app.services.logging_service import LoggingService
+
+logger = logging.getLogger(__name__)
 
 # How many decimal places the cost snapshot keeps. Pricing is per-1k-tokens at
 # sub-cent precision, so 6dp is enough to represent a single token's cost for
@@ -257,14 +260,23 @@ class BillingService:
         # committed recharge (the txn is already persisted above).
         from app.services.notification_service import NotificationService
 
-        await NotificationService(self.db).create(
-            tenant_id=tenant_id,
-            user_id=None,
-            type="recharge",
-            title="充值到账",
-            content=f"钱包已充值 {amount} tokens,当前余额 {wallet.balance}。",
-            link="/billing",
-        )
+        try:
+            await NotificationService(self.db).create(
+                tenant_id=tenant_id,
+                user_id=None,
+                type="recharge",
+                title="充值到账",
+                content=f"钱包已充值 {amount} tokens,当前余额 {wallet.balance}。",
+                link="/billing",
+            )
+            # create() only flushes inside its SAVEPOINT — the caller of a
+            # best-effort insert must commit it (mirrors
+            # _notify_super_admins / scan_balance_warnings).
+            await self.db.commit()
+        except Exception:  # noqa: BLE001 — must not break the committed recharge
+            logger.exception(
+                "recharge notification failed (recharge already committed)"
+            )
         return txn
 
     # --------------------------------------------------------------- bootstrap

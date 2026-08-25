@@ -33,6 +33,7 @@ os.environ.setdefault("RATE_LIMIT_DEFAULT", "3/minute")
 
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy import event
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
 
@@ -187,9 +188,31 @@ async def test_env() -> AsyncIterator[_TestEnv]:
 
     engine = create_async_engine(
         "sqlite+aiosqlite:///:memory:",
-        connect_args={"check_same_thread": False},
+        connect_args={"check_same_thread": False, "isolation_level": None},
         poolclass=StaticPool,
     )
+
+    # Match production (Postgres) transaction semantics. pysqlite's legacy
+    # isolation mode emulates transactions in the driver and never emits a
+    # real BEGIN, so a SAVEPOINT written with no outer transaction open gets
+    # committed by its own RELEASE — silently persisting dangling writes made
+    # after the final commit() (the exact commit-scope defect class this
+    # suite must be able to catch; without this, post-request assertions see
+    # rows that production would have rolled back). Disabling the driver's
+    # implicit transactions and emitting an explicit BEGIN keeps savepoints
+    # inside a real outer transaction, so an uncommitted session is rolled
+    # back on close (SQLAlchemy docs: "Serializable isolation / Savepoints /
+    # Transactional DDL"). The in_transaction guard makes the shared
+    # StaticPool connection work like before when a sibling session already
+    # holds it open (e.g. db_session's post-commit refresh): the new
+    # transaction simply joins the open one instead of raising
+    # "cannot start a transaction within a transaction".
+    @event.listens_for(engine.sync_engine, "begin")
+    def _pg_like_explicit_begin(conn):  # pragma: no cover - wiring, exercised everywhere
+        raw = conn.connection.dbapi_connection.driver_connection
+        if not raw.in_transaction:
+            conn.exec_driver_sql("BEGIN")
+
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
