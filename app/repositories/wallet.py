@@ -119,6 +119,28 @@ class ModelPricingRepository(BaseRepository[ModelPricing]):
         result = await self.db.execute(stmt)
         return result.scalar_one_or_none()
 
+    async def get_active_for_scope(
+        self, model: str, tenant_id: str | None
+    ) -> ModelPricing | None:
+        """Exact-scope lookup: the active row for (model, tenant_id), no fallback.
+
+        Write-side counterpart to ``get_for_model`` — do not substitute one
+        for the other: ``get_for_model`` is the read-side *resolution chain*
+        (tenant override > platform default fallback, used by
+        ``BillingService.calc_cost``); this method matches the *exact* scope
+        only (``tenant_id IS NULL`` for platform, ``tenant_id == X`` for an
+        override) and is what ``PricingService.upsert`` uses to find the one
+        active row it may update in place.
+        """
+        stmt = select(ModelPricing).where(
+            ModelPricing.tenant_id.is_(None) if tenant_id is None
+            else ModelPricing.tenant_id == tenant_id,
+            ModelPricing.model == model,
+            ModelPricing.is_active.is_(True),
+        )
+        result = await self.db.execute(stmt)
+        return result.scalar_one_or_none()
+
     async def list_active(self, tenant_id: str | None = None) -> list[ModelPricing]:
         """List active pricing rows.
 

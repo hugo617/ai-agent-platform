@@ -24,6 +24,19 @@
 
 本 feature 的提取边界 / 端点契约 / 测试深度 / 切片数(D1-D4)按任务要求于 2026-08-25 Session 229 发起 AskUserQuestion 问询,**未获回复**。处置:按 Session 219/222 先例(「未获回复按推荐采纳并如实标注」),D1-D4 全部按推荐方案落地,逐项如实标注。**复核窗口 = EP3 开工前**(EP3 首个动作向用户过一遍 D1-D4 清单,仍未获回复则窗口关闭、维持推荐,留痕于此;推翻成本局部 —— 提取是纯迁移,任何决策回退只影响落点不影响行为)。
 
+> **复核窗口已履行并关闭(2026-08-25 Session 230,EP3 开工首动作)**:AskUserQuestion 逐项问询 D1-D4,**用户全部确认维持推荐方案**(写 3 端点 GET 留 API / service 返 None + API 抛 404 / 零改动 + 1 条 404 锁定用例 / 1 切片)。无异议,按 plan 原案实施,窗口关闭。
+
+---
+
+## 0.2 EP3 实施注记(code-review 双轴回写,Session 230)
+
+实施 commit `dda18e4`(分支 feat/pricing-service-extraction-slice-01);双轴审查(general-purpose ×2 并行)结论 **Standards 0 硬违规 / Spec 0 缺失 0 越界 0 行为错误**,留痕 2 项:
+
+1. **🟡 判断项留痕(Standards)**:pricing_service.py 内 3 处 `LoggingService.record(...)` 调用同形(~14 kwargs,仅 action/message/old_values 有异),可提取私有 `_record()` helper 聚拢 —— 系 billing.py 原样随迁的存量重复(镜像 feature 92「4 处 record kwargs 内联」同判),纯迁移切片不顺手重构(不越界规则),留巡检重评;若第 5 处 record 出现(rule of three 已到)应升 helper。
+2. **🟢 良性超集留痕(Spec)**:§7/§11 承诺 BillingService 类 docstring「一行微调/一句说明」,实际落为 4 行(首行收窄为 pricing reads + 两行指向 PricingService)—— 内容仍是防误读说明,方向与 spec 一致,如实记档不改回。
+
+审计逐字对照实施注记:4 处 record kwargs 经归一化平衡括号提取对照 **IDENTICAL ×4**(归一化仅含两处计划规定机械重命名:`db`→`self.db`、`user_id=user.user_id`→`user_id=operator_id`);`_pricing_snapshot`/`_pricing_scope` 迁移逐字一致。
+
 ---
 
 ## 1. Problem Statement
