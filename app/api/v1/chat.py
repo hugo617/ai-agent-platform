@@ -11,7 +11,6 @@ usage events. Contrast with ``chat_stream`` (single agent, SSE, 1 usage event).
 """
 
 import json
-import logging
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
@@ -22,18 +21,17 @@ from app.agents.graph import composite_query, stream_agent
 from app.agents.token_budget import truncate_history
 from app.api.deps import CurrentUser, get_current_user, require_permission
 from app.core.database import get_db
-from app.models.agent import Agent, Conversation
-from app.models.message import Message
-from app.models.usage_event import UsageEvent
+from app.models.agent import Agent
 from app.repositories.agent import AgentRepository
 from app.repositories.conversation import MessageRepository
-from app.repositories.usage_event import UsageEventRepository
 from app.schemas.conversation import ChatRequest, CompositeRequest, CompositeResponse
 from app.services.conversation_service import ConversationService
 from app.services.llm_config_service import llm_config_service
 from app.services.permission_service import permission_service
-
-logger = logging.getLogger(__name__)
+from app.services.turn_accountant_service import (
+    TurnAccountantService,
+    extract_usage_int,
+)
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
@@ -67,160 +65,6 @@ async def _require_wallet_balance(db: AsyncSession, user: CurrentUser) -> None:
             status_code=status.HTTP_402_PAYMENT_REQUIRED,
             detail="token 余额不足,请联系总部充值",
         )
-
-
-def _u(usage_data: dict | None, key: str) -> int | None:
-    """Read a token count from the usage payload, None-safe.
-
-    Returns None when there's no usage (e.g. a stubbed stream in tests or a
-    provider that didn't return usage) so the Message column stays NULL.
-    """
-    if usage_data is None:
-        return None
-    val = usage_data.get("usage", {}).get(key)
-    return int(val) if val is not None else None
-
-
-async def _record_usage(
-    db: AsyncSession,
-    conv: Conversation,
-    msg: Message,
-    agent: Agent,
-    user: CurrentUser,
-    usage_data: dict | None,
-) -> UsageEvent | None:
-    """Append a UsageEvent ledger row for this assistant turn.
-
-    No-op when there's no usage data (stubbed streams / provider didn't
-    return usage). Wrapped in try/except so a ledger write failure never
-    surfaces to the user — the chat already succeeded, losing one usage
-    record is preferable to erroring the whole reply.
-
-    Returns the persisted ``UsageEvent`` (so the caller can pass it to
-    ``BillingService.charge``), or None when nothing was recorded.
-    """
-    if usage_data is None:
-        return None
-    total = _u(usage_data, "total_tokens")
-    if total is None:
-        return None
-    try:
-        repo = UsageEventRepository(db)
-        event = await repo.add(
-            UsageEvent(
-                tenant_id=conv.tenant_id,
-                conversation_id=conv.id,
-                message_id=msg.id,
-                agent_id=agent.id,
-                customer_id=conv.customer_id,  # Token 费用管理系列 3/4: 透传
-                user_id=user.user_id,
-                model=usage_data.get("model") or "",
-                prompt_tokens=_u(usage_data, "input_tokens") or 0,
-                completion_tokens=_u(usage_data, "output_tokens") or 0,
-                total_tokens=total,
-                cost=None,  # filled by BillingService.charge below
-            )
-        )
-        await db.commit()
-        return event
-    except Exception:  # noqa: BLE001 - ledger is best-effort
-        # Drop the pending usage_events insert only — the assistant message
-        # was already committed by ``append_message``, so it survives the
-        # rollback. We swallow the error to keep the chat reply intact.
-        await db.rollback()
-        return None
-
-
-async def _charge_usage(
-    db: AsyncSession, tenant_id: str, event: UsageEvent | None
-) -> None:
-    """Debit the wallet for a usage event (best-effort, never blocks).
-
-    Runs after the assistant message + usage event are committed, so a billing
-    failure is logged and swallowed — we never break a finished chat over a
-    bookkeeping error. Discrepancies are reconciled from the usage_events
-    ledger (which is the authoritative record of consumption).
-    """
-    if event is None:
-        return
-    try:
-        from app.services.billing_service import BillingService
-
-        await BillingService(db).charge(tenant_id, event, operator_id=None)
-    except Exception:  # noqa: BLE001 - billing is best-effort
-        # logger.exception (not a bare pass): composite writes N+1 charge rows
-        # per turn, so a silent swallow would multiply a quiet billing bug
-        # across every agent + the synthesize step. The SSE path benefits too
-        # — a charge failure used to vanish without a trace. (plan §Step 7-8:
-        # "except 用 logger.exception,不裸吞".)
-        logger.exception(
-            "wallet charge failed (tenant=%s, event=%s)", tenant_id, event.id
-        )
-        await db.rollback()
-
-
-async def _record_composite_usage(
-    db: AsyncSession,
-    conv: Conversation,
-    msg: Message,
-    *,
-    agent_id: str | None,
-    user: CurrentUser,
-    prompt_tokens: int,
-    completion_tokens: int,
-    total_tokens: int,
-    model: str,
-) -> UsageEvent | None:
-    """Append one UsageEvent ledger row for a composite turn (priority 72).
-
-    NOT shared with ``_record_usage``: that one takes an ``Agent`` object (it
-    also pulls tokens out of an SSE usage dict), while composite billing drives
-    N+1 rows from already-resolved token triples + a bare ``agent_id`` (None for
-    the synthesize row). Each call records one event then charges the wallet
-    *paired* (record commit → charge), so a charge failure rolls back only the
-    current WalletTransaction, not the committed UsageEvent — see H4.
-
-    best-effort like the SSE path: a ledger/charge failure is logged (NOT
-    silently swallowed — N+1 rows amplify the cost of a quiet bug) and the next
-    row proceeds, so one bad row never drops the whole batch. Returns the
-    persisted event (or None on failure) for test observability.
-    """
-    try:
-        repo = UsageEventRepository(db)
-        event = await repo.add(
-            UsageEvent(
-                tenant_id=conv.tenant_id,
-                conversation_id=conv.id,
-                message_id=msg.id,
-                # None for the synthesize row (the N+1th call has no agent).
-                agent_id=agent_id,
-                customer_id=conv.customer_id,  #透传:composite 为该 customer 服务
-                user_id=user.user_id,
-                model=model,
-                prompt_tokens=prompt_tokens,
-                completion_tokens=completion_tokens,
-                total_tokens=total_tokens,
-                cost=None,  # filled by BillingService.charge below
-            )
-        )
-        await db.commit()
-    except Exception:  # noqa: BLE001 - ledger is best-effort
-        # logger.exception (not a bare pass): composite writes N+1 rows per
-        # turn, so a silent swallow would multiply a quiet bug across every
-        # agent + the synthesize step. The audit trail matters here.
-        logger.exception(
-            "composite UsageEvent insert failed (agent_id=%s, conv=%s)",
-            agent_id,
-            conv.id,
-        )
-        await db.rollback()
-        return None
-
-    # Paired charge: the UsageEvent is committed above, so a charge failure
-    # rolls back only the WalletTransaction (best-effort). Reconciliation
-    # recovers the gap from the usage_events ledger.
-    await _charge_usage(db, conv.tenant_id, event)
-    return event
 
 
 @router.post(
@@ -354,20 +198,18 @@ async def chat_stream(
                 conv.id,
                 "assistant",
                 partial,
-                prompt_tokens=_u(usage_data, "input_tokens"),
-                completion_tokens=_u(usage_data, "output_tokens"),
-                total_tokens=_u(usage_data, "total_tokens"),
+                prompt_tokens=extract_usage_int(usage_data, "input_tokens"),
+                completion_tokens=extract_usage_int(usage_data, "output_tokens"),
+                total_tokens=extract_usage_int(usage_data, "total_tokens"),
                 model=usage_data.get("model") if usage_data else None,
                 status="failed",
                 error=str(e),
             )
-            if usage_data and _u(usage_data, "total_tokens"):
-                event = await _record_usage(
-                    db, conv, msg, agent, user, usage_data
-                )
-                # Debit the wallet for the consumed tokens (best-effort: a
-                # billing error never breaks an otherwise-completed reply).
-                await _charge_usage(db, user.tenant_id, event)
+            # Record the partial turn's usage + paired wallet charge through
+            # the TurnAccountant seam (one call; no usage → no-op).
+            await TurnAccountantService(db).record_stream_turn(
+                conv, msg, agent.id, user.user_id, usage_data
+            )
             return
 
         # Persist the assistant reply once streaming completes, carrying the
@@ -378,19 +220,18 @@ async def chat_stream(
             conv.id,
             "assistant",
             "".join(full_reply),
-            prompt_tokens=_u(usage_data, "input_tokens"),
-            completion_tokens=_u(usage_data, "output_tokens"),
-            total_tokens=_u(usage_data, "total_tokens"),
+            prompt_tokens=extract_usage_int(usage_data, "input_tokens"),
+            completion_tokens=extract_usage_int(usage_data, "output_tokens"),
+            total_tokens=extract_usage_int(usage_data, "total_tokens"),
             model=usage_data.get("model") if usage_data else None,
         )
-        # Append a usage ledger entry. Wrapped in try/except so a ledger
-        # write failure never breaks an otherwise-successful chat — losing
-        # one usage record is preferable to losing the whole reply.
-        event = await _record_usage(db, conv, msg, agent, user, usage_data)
-        # Debit the wallet for the consumed tokens (best-effort). Runs after
-        # the usage event is committed so a billing failure doesn't roll back
-        # the message/usage we just persisted.
-        await _charge_usage(db, user.tenant_id, event)
+        # Record the usage ledger row + paired wallet charge in one call. The
+        # record→charge ordering contract lives in TurnAccountantService
+        # (best-effort: a bookkeeping failure never breaks an
+        # otherwise-successful chat).
+        await TurnAccountantService(db).record_stream_turn(
+            conv, msg, agent.id, user.user_id, usage_data
+        )
         yield "data: [DONE]\n\n"
 
     return StreamingResponse(event_source(), media_type="text/event-stream")
@@ -524,14 +365,15 @@ async def composite_chat(
     # which already serializes — parallel charges would only contend. Each
     # fragment → one event (agent_id set); the synthesize call → one event
     # (agent_id=None). All share message_id = the synthesized Message and
-    # customer_id = conv.customer_id (透传).
+    # customer_id = conv.customer_id (透传). Record + paired charge per row
+    # live in TurnAccountantService.record_composite_row.
+    accountant = TurnAccountantService(db)
     for frag in result["fragments"]:
-        await _record_composite_usage(
-            db,
+        await accountant.record_composite_row(
             conv,
             msg,
-            agent_id=frag["agent_id"],
-            user=user,
+            frag["agent_id"],
+            user.user_id,
             prompt_tokens=frag["input_tokens"],
             completion_tokens=frag["output_tokens"],
             total_tokens=frag["total_tokens"],
@@ -539,12 +381,11 @@ async def composite_chat(
         )
     # Synthesize row (the N+1th): agent_id=None, model = synth model.
     su = result["synthesize_usage"]
-    await _record_composite_usage(
-        db,
+    await accountant.record_composite_row(
         conv,
         msg,
-        agent_id=None,
-        user=user,
+        None,
+        user.user_id,
         prompt_tokens=su["input_tokens"],
         completion_tokens=su["output_tokens"],
         total_tokens=su["total_tokens"],
