@@ -4,7 +4,7 @@
 > **状态**: in_progress(EP2 已完成 2026-08-25 Session 231,切片 01 待 EP3 实施)
 > **优先级**: 99(feature_list.json)
 > **创建日期**: 2026-08-25
-> **最后修订**: 2026-08-25(v1 首发,EP2 单回环完成;自审三项已吸收进 v1)
+> **最后修订**: 2026-08-26(v1.2:EP3 code-review 回写,§0.2 实施注记)
 
 ---
 
@@ -12,13 +12,33 @@
 
 v1 首发,无修订。(自审 §7 的三项发现已同步吸收进 v1 正文,见 §0.1 与 §7 说明。)
 
+**v1.1(2026-08-26 Session 232,EP3 开工)**:仅 §0.1 复核窗口关闭留痕,D4-D7 决策与正文零改动。
+
+**v1.2(2026-08-26 Session 232,EP3 code-review 回写)**:新增 §0.2 实施注记;正文决策零改动。
+
 ---
 
 ## 0.1 决策拍板状态说明
 
 本 feature 的架构主轴三决策(**D1 seam 形态 / D2 两路径统一程度 / D3 SSE 是否 paired charge**)于 2026-08-25 Session 231 经 AskUserQuestion 问询,**用户逐项拍板全部采纳推荐方案**——本 feature 是「必须问用户拍板,不默认采纳」的指定项,无默认采纳成分。
 
-次级工程形态四决策(**D4 钱包门处置 / D5 N+1 循环形态 / D6 测试策略 / D7 切片数**)第二轮 AskUserQuestion 问询**未获回复**。处置:按 Session 219/222/229 先例(「未获回复按推荐采纳并如实标注」),D4-D7 全部按推荐方案落地,逐项如实标注于 §4.5。**复核窗口 = EP3 开工前**(EP3 首个动作向用户过一遍 D4-D7 清单,仍未获回复则窗口关闭、维持推荐,留痕于此;推翻成本局部——收口是纯结构迁移,任何决策回退只影响落点不影响行为)。
+次级工程形态四决策(**D4 钱包门处置 / D5 N+1 循环形态 / D6 测试策略 / D7 切片数**)第二轮 AskUserQuestion 问询**未获回复**。处置:按 Session 219/222/229 先例(「未获回复按推荐采纳并如实标注」),D4-D7 全部按推荐方案落地,逐项如实标注于 §4.5。**复核窗口 = EP3 开工前**。
+
+**✅ 复核窗口已关闭(2026-08-26 Session 232,EP3 开工首动作)**:AskUserQuestion 逐项问询 D4-D7(含各推荐方案与推翻选项)**仍未获回复**——按本节预设协议,窗口关闭,D4-D7 **维持推荐方案**落地(D4 钱包门不动留 API / D5 保持循环改单调用 / D6 六例零改动+四条 seam 单测 / D7 单切片)。§4.5 决策表与正文零改动。
+
+---
+
+## 0.2 实施注记(EP3 Session 232,commit a04aa4b + PR #177)
+
+实施与 plan 承诺的偏差逐项留痕(均为留痕级,无阻塞):
+
+1. **`_u` 落地形态 = 改名公开 `extract_usage_int`**(§4.5 授权「EP3 定名」两形态之一):迁入 seam 模块并公开,chat.py `append_message` 的 token 列参数改 import 之——无双份实现,无私有名跨模块 import。
+2. **record 失败日志文案统一为 `"UsageEvent insert failed (agent_id=%s, conv=%s)"`**:旧 composite 版为 `"composite UsageEvent insert failed ..."`(去 `composite ` 前缀以覆盖两路径),落在 §7 🟡 已采纳的「统一 logger.exception 良性超集」边界内;charge 失败文案 `"wallet charge failed (tenant=%s, event=%s)"` 逐字镜像现状。
+3. **SSE 异常分支守卫吸收的边缘语义统一**:旧异常分支调用点守卫 `if usage_data and _u(usage_data, "total_tokens")` 为**真值**判断(total=0 跳过记账);seam 入口统一为旧正常分支 `_record_usage` 内部的 **None** 判断(§4.6 规格:「`total_tokens` 缺失 → 返回 None」)。退化场景「失败轮 + total_tokens=0」从「跳过」变为「记 0-token 事件」——两路径契约统一(本 feature 的目的本身),HTTP 用例锁不到该边缘,如实施注记留痕。
+4. **charge 的 tenant 来源统一 `conv.tenant_id`**:旧 SSE 路径 `_charge_usage(db, user.tenant_id, ...)`、composite 路径 `conv.tenant_id`;两者恒等(conv 均以 `user.tenant_id` 创建),§4.6 核心规格即写 `charge(conv.tenant_id, ...)`,合规非行为变化,记档。
+5. **seam 单测 case 1「两入口各覆盖」落地为 stream 双守卫态**(usage_data=None / total_tokens 缺失):composite 入口三元组签名必填,无「无 usage」态可表达(§4.6 对其无守卫规格);其退化输入(record 抛错)由 case 2 覆盖。测试文件 docstring 已自述。
+6. **kwargs 对照留痕(AC 证据)**:脚本归一化对照——旧 composite 版 UsageEvent 构造 kwargs 与新 `_record_and_charge` 核心**严格一致**;旧 SSE 版五项值表达式(model `or ""` / prompt `or 0` / completion `or 0` / total 解析 / None 守卫)与新 SSE 入口逐项 **IDENTICAL**(仅 `_u`→`extract_usage_int` 改名)。
+7. **code-review 双轴结果**:Standards 轴 0 硬违规 0 阻塞(铁律 1/2 逐条核验通过;弱项 Data Clumps / Feature Envy 仓库先例背书现形态,留巡检);Spec 轴 0 缺失(上述 1-3 为全部偏差,均有据可查)。
 
 ---
 
