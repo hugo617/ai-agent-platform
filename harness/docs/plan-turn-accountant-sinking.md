@@ -1,10 +1,10 @@
 # 计划:TurnAccountant 计费编排下沉收口(turn-accountant sinking)
 
 > **id**: turn-accountant-sinking
-> **状态**: in_progress(EP2 已完成 2026-08-25 Session 231,切片 01 待 EP3 实施)
+> **状态**: passing(EP3 完成 2026-08-26 Session 232,切片 01 = 唯一=末切片,PR #177 merge `ef2d9eb`,feature 收官)
 > **优先级**: 99(feature_list.json)
 > **创建日期**: 2026-08-25
-> **最后修订**: 2026-08-26(v1.2:EP3 code-review 回写,§0.2 实施注记)
+> **最后修订**: 2026-08-26(v1.3:EP3 收官,§12 八 AC 全勾 + 状态行翻 passing)
 
 ---
 
@@ -15,6 +15,8 @@ v1 首发,无修订。(自审 §7 的三项发现已同步吸收进 v1 正文,�
 **v1.1(2026-08-26 Session 232,EP3 开工)**:仅 §0.1 复核窗口关闭留痕,D4-D7 决策与正文零改动。
 
 **v1.2(2026-08-26 Session 232,EP3 code-review 回写)**:新增 §0.2 实施注记;正文决策零改动。
+
+**v1.3(2026-08-26 Session 232,EP3 收官)**:§12 八 AC 全勾 + 切片标题追加 ✅ PR #177 证据 + 状态行同 commit 翻 passing;feature 收尾八步闭环(feature_list evidence 3 条 + sync-active + 依赖解锁扫描无指向 + 分支清理只剩 main)。
 
 ---
 
@@ -227,20 +229,20 @@ v1 首发,无修订。(自审 §7 的三项发现已同步吸收进 v1 正文,�
 ### 切片依赖图
 
 ```
-01 ⬜(唯一 = 末切片,Blocked by: 无)
+01 ✅(唯一 = 末切片,Blocked by: 无;已完成 2026-08-26 Session 232)
 ```
 
-### 切片 01 — TurnAccountantService 收口 + 三调用点收缩 + seam 单测(末切片 = feature 收官)
+### 切片 01 — TurnAccountantService 收口 + 三调用点收缩 + seam 单测(末切片 = feature 收官)✅ PR #177 commit `a04aa4b` + 回写 `65c6231`,merge `ef2d9eb`,CI 4/4 绿(Migrations 46s / Backend 10m44s / E2E 2m8s / Frontend 43s)
 - **Blocked by**: 无(可立即开工)
 - **What it delivers**: 两路径记账编排(record + paired charge)收口进 TurnAccountantService 单 seam,record→charge 顺序契约单点持有;chat.py 计费编排块 ~171 行 → ~20 行,API 层 UsageEventRepository 直摸清零;外部行为逐字不变——既有 6 条计费用例零改动通过 + 4 条 seam 单测新增;feature 收尾八步同片闭环。
 - **Acceptance criteria**:
-  - [ ] `app/services/turn_accountant_service.py` 新建:TurnAccountantService(`record_stream_turn` + `record_composite_row` 两薄入口 + `_record_and_charge` 单核心 paired charge);UsageEvent 构造 kwargs 与现状逐字一致(diff 对照留痕);record 失败统一 `logger.exception` + rollback + 不 charge;charge 失败 `logger.exception`(文案镜像现状)+ rollback + 事件行存活;`operator_id=None` 保持
-  - [ ] `_u`(或其公开改名)迁入 seam 模块,chat.py 不再自有 dict 解析副本(无双份实现)
-  - [ ] `app/api/v1/chat.py`:删 `_record_usage`/`_charge_usage`/`_record_composite_usage`;SSE 正常/异常两调用点 + composite N+1 循环体改单调用;守卫(`if usage_data and _u(...)`)逐字迁入 seam 入口;import 收拾(UsageEvent/UsageEventRepository 出);`_require_wallet_balance` 与其延迟 import 原样保留(D4);「serial 不是 gather」注释留原地(D5)
-  - [ ] `grep -n "_record_usage\|_charge_usage\|_record_composite_usage\|UsageEventRepository" app/api/v1/chat.py` = 0 处
-  - [ ] `tests/test_turn_accountant.py` 新建 4 条 seam 单测通过(不记不扣 / record 失败不 charge / charge 失败不伤事件行 / paired 全链事件+txn+余额)
-  - [ ] 既有 6 条计费用例零改动通过(收口前基线绿留痕 → 收口后仍绿)
-  - [ ] `./init.sh full` 零回归 + ruff 绿 + 前端 build 绿(git diff frontend/ 为空)
-  - [ ] feature 收尾八步(three-tier §4:全量验证/status+evidence/sync-active/progress.md/checklist/文档影响评估/依赖解锁扫描/分支清理)
+  - [x] `app/services/turn_accountant_service.py` 新建:TurnAccountantService(`record_stream_turn` + `record_composite_row` 两薄入口 + `_record_and_charge` 单核心 paired charge);UsageEvent 构造 kwargs 与现状逐字一致(diff 对照留痕);record 失败统一 `logger.exception` + rollback + 不 charge;charge 失败 `logger.exception`(文案镜像现状)+ rollback + 事件行存活;`operator_id=None` 保持
+  - [x] `_u`(或其公开改名)迁入 seam 模块,chat.py 不再自有 dict 解析副本(无双份实现)
+  - [x] `app/api/v1/chat.py`:删 `_record_usage`/`_charge_usage`/`_record_composite_usage`;SSE 正常/异常两调用点 + composite N+1 循环体改单调用;守卫(`if usage_data and _u(...)`)逐字迁入 seam 入口;import 收拾(UsageEvent/UsageEventRepository 出);`_require_wallet_balance` 与其延迟 import 原样保留(D4);「serial 不是 gather」注释留原地(D5)
+  - [x] `grep -n "_record_usage\|_charge_usage\|_record_composite_usage\|UsageEventRepository" app/api/v1/chat.py` = 0 处
+  - [x] `tests/test_turn_accountant.py` 新建 4 条 seam 单测通过(不记不扣 / record 失败不 charge / charge 失败不伤事件行 / paired 全链事件+txn+余额)
+  - [x] 既有 6 条计费用例零改动通过(收口前基线绿留痕 → 收口后仍绿)
+  - [x] `./init.sh full` 零回归 + ruff 绿 + 前端 build 绿(git diff frontend/ 为空)
+  - [x] feature 收尾八步(three-tier §4:全量验证/status+evidence/sync-active/progress.md/checklist/文档影响评估/依赖解锁扫描/分支清理)
 
 > EP2 plan 自检(four-tier §3):① 切片依赖图无环(单切片)✅ ② 每片有 AC(8 条 `- [ ]`)✅ ③ 首片可立即开工(Blocked by: 无)✅ ④ plan 主体决策已落定(D1-D7 全拍板/按先例采纳,零 TODO 悬空)✅

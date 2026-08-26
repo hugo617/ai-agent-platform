@@ -19,21 +19,7 @@
       "priority": 99,
       "area": "计费-后端",
       "title": "TurnAccountant 计费编排下沉收口(turn-accountant sinking):app/api/v1/chat.py 计费编排块(L52-222,~171 行,第 10 次 140 → 第 11 次 171 微膨胀)双实现收口单 seam——SSE 路径 _record_usage(记 UsageEvent 不扣费,charge 由 caller 分两步调,×2 调用点顺序敏感)vs composite 路径 _record_composite_usage(内置 paired record→charge,N+1 循环内联 ~34 行);UsageEventRepository 被 API 层直摸 3 处 + BillingService 延迟 import 2 处;record→charge 顺序契约散在 3 处调用点无 locality。TurnAccountant 至今是巡检概念(app/ 零匹配),本条即该 seam 落地",
-      "user_visible_behavior": "零行为变化(纯结构重构):SSE 与 composite 两路径的 UsageEvent 记账、钱包扣费、best-effort 容错语义逐字保持;既有行为锚定用例(tests/test_usage_tracking.py 4 例 SSE 计费 + tests/test_composite_chat.py N+1 UsageEvents 用例)零改动通过是验收标准之一;对账 job(93)的漏扣检出继续以 record→charge 配对为前提",
-      "status": "in_progress",
-      "verification": [
-        "既有 SSE 计费 4 用例零改动通过(tests/test_usage_tracking.py:records_usage_on_message_and_ledger / without_usage_keeps_nulls_and_no_ledger / interrupted_stream_records_partial_usage / usage_events_tenant_isolated);执行序列 = 收口前基线绿 → 收口后仍绿(green-on-both)",
-        "既有 composite 计费 2 用例零改动通过(tests/test_composite_chat.py:records_n_plus_1_usage_events / customer_id_propagated_to_usage_events)",
-        "record→charge 顺序契约单点持有:chat.py 三调用点(SSE 正常/异常 + composite N+1 循环)全部为对 TurnAccountantService 的单次调用;grep _record_usage|_charge_usage|_record_composite_usage app/api/v1/chat.py = 0 处",
-        "分层合规:grep UsageEventRepository app/api/v1/chat.py = 0 处(API 层不再直摸 repo);依赖向 API → TurnAccountantService → UsageEventRepository/BillingService 单向",
-        "新增 tests/test_turn_accountant.py 4 条 seam 单测通过(不记不扣 / record 失败不 charge / charge 失败不伤已 commit 事件行 / paired 全链事件+txn+余额)",
-        "UsageEvent 构造 kwargs 与现状逐字一致(EP3 diff 对照留痕);charge operator_id=None 保持;SSE record 失败统一 logger.exception(良性超集留痕)",
-        "./init.sh full 全量零回归 + ruff 绿 + 前端 build 绿(git diff frontend/src 为空)"
-      ],
-      "notes": "第 11 次巡检候选 ②(Strong,第 6/9/10/11 次四度复现,候选池最强;素材源:harness/docs/codebase-health-log.md 第 10/11 次条目 + ~/.cache/ai-agent-platform-architecture-reviews/2026-08-25.html)。历史留痕兑现:chat-stream-wallet-gate(94)title 明文「不动 TurnAccountant——架构候选 ② 独立立项时消化」,plan-risk-hardening-overview.md 系列边界 D5 同承诺,本条即该独立立项。新论据 = billing-reconciliation-job(93)已落地,_find_missed_events 的 NOT EXISTS 漏扣检出恰以「每条 UsageEvent 配对 consume WalletTransaction」的 record→charge 契约为前提——论据从「防漏」升级为「对账一致性前置」。变化:feature 94 把钱包门统一为共享 helper(子论据「两套口径」已消解)但同一修复让 API 层计费 helper 净增 +31 行,「在 API 层打补丁」路线走到头。架构取向(seam 形态/两路径统一程度/SSE paired charge 等)EP2 用户拍板不默认采纳。EP2 登记 2026-08-25 Session 231。 EP2 已完成 2026-08-25 Session 231(单回环 grill→to-spec→to-tickets + 轻量对抗式自审 3 项吸收进 v1:🟡×2[SSE record 静默吞 vs composite 有日志的不对称→统一 logger.exception 良性超集 / _u 跨模块 import 形态→迁 seam 模块 EP3 定名]+🟢×1[seam 返回值保留供测试可观测]):D1 新建 TurnAccountantService / D2 两薄入口+单核心 / D3 SSE 也 paired charge —— 三项架构主轴 AskUserQuestion 用户逐项拍板全采纳推荐;D4 钱包门不动留 API / D5 N+1 循环保持换调用 / D6 既有 6 例零改动+4 条 seam 单测 / D7 单切片 —— 四项次级形态第二轮问询未获回复按 Session 219/222/229 先例推荐采纳并如实标注(plan §0.1),复核窗口 = EP3 开工前。plan 自检 4 项过(单切片无环/8 AC/首片无 blocker/零 TODO 悬空)。",
-      "depends_on": [],
-      "evidence": [],
-      "plan": "harness/docs/plan-turn-accountant-sinking.md"
+      "status": "passing"
     },
     {
       "id": "pricing-service-extraction",
@@ -64,17 +50,10 @@
       "status": "passing"
     },
     {
-      "id": "chat-stream-wallet-gate",
-      "priority": 94,
-      "area": "计费-后端",
-      "title": "SSE 钱包门口径统一(/chat/stream 补与 composite 路径同口径的钱包预检 402,消除同一钱包契约两套口径[SSE 放行 vs composite 严格 402]的资损口。第 10 次巡检业务风险 R3 前半 🔴。不动 TurnAccountant——架构候选 ② 独立立项时消化)",
-      "status": "passing"
-    },
-    {
       "id": "_milestone_archived",
       "priority": 0,
       "area": "里程碑",
-      "title": "[已归档 93 条 passing,见 archive/features-passing-archive.json]",
+      "title": "[已归档 94 条 passing,见 archive/features-passing-archive.json]",
       "status": "passing"
     }
   ],
